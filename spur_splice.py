@@ -201,7 +201,7 @@ def simclr_forward_loss(model: SimCLRModel, criterion: SimCLRLoss, image, splice
     projections = model(images)
     f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
     features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-    loss, decor_loss, entropy_loss, spectral_loss, _ = criterion(features)
+    loss, decor_loss, entropy_loss, _, _ = criterion(features)
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
         splice_loss = splice_regularizer(projections)
@@ -209,7 +209,6 @@ def simclr_forward_loss(model: SimCLRModel, criterion: SimCLRLoss, image, splice
     parts = {
         "decor": decor_loss,
         "entropy": entropy_loss,
-        "spectral": spectral_loss,
         "splice": splice_loss,
     }
     return loss, parts, bsz
@@ -222,7 +221,6 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args:
     losses = AverageMeter()
     decor_losses = AverageMeter()
     entropy_losses = AverageMeter()
-    spectral_losses = AverageMeter()
     splice_losses = AverageMeter()
 
     end = time.time()
@@ -237,7 +235,6 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args:
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
-        spectral_losses.update(parts["spectral"].item(), bsz)
         splice_losses.update(parts["splice"].item(), bsz)
 
         if args.optimizer == "SAM":
@@ -270,9 +267,7 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args:
     return {
         "loss": losses.avg,
         "decor_loss": decor_losses.avg,
-        "entropy_loss": entropy_losses.avg,
-        "spectral_loss": spectral_losses.avg,
-        "splice_loss": splice_losses.avg,
+        "entropy_loss": entropy_losses.avg
     }
 
 
@@ -361,8 +356,6 @@ def log_rank_metrics(model: SimCLRModel, train_loader, optimizer: torch.optim.Op
                 "SSL train loss": train_metrics["loss"],
                 "SSL decor loss": train_metrics["decor_loss"],
                 "SSL entropy loss": train_metrics["entropy_loss"],
-                "SSL spectral flattening loss": train_metrics["spectral_loss"],
-                "SSL SpLiCE regularization loss": train_metrics["splice_loss"],
                 "SSL learning rate": optimizer.param_groups[0]["lr"],
             },
             step=epoch,
@@ -403,6 +396,7 @@ def main() -> None:
     start_epoch = load_checkpoint(model, optimizer, args.resume, device) + 1 if args.resume else 1
     if device.type == "cuda":
         cudnn.benchmark = False
+        cudnn.enabled = False
 
     last_probe_epoch = 0
     for epoch in range(start_epoch, args.epochs + 1):
