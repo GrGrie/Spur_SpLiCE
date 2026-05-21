@@ -43,9 +43,15 @@ def _download(url: str, root: str, subfolder: str):
     str
         A path to the desired file
     """
+    # normalize paths and ensure URL uses forward slashes (os.path.join may introduce backslashes on Windows)
+    url = url.replace("\\", "/")
     root_subfolder = os.path.join(root, subfolder)
     os.makedirs(root_subfolder, exist_ok=True)
-    filename = os.path.basename(url)
+    # extract filename from the URL (works whether URL or path)
+    if url.startswith("http://") or url.startswith("https://"):
+        filename = url.split("/")[-1]
+    else:
+        filename = os.path.basename(url)
     download_target = os.path.join(root_subfolder, filename)
 
     if os.path.isfile(download_target):
@@ -112,7 +118,7 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         if os.path.isfile(concept_path):
             concepts = torch.load(concept_path, map_location=torch.device(device))
         else:
-            with open(vocab_path, "r") as f:
+            with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
                 if vocabulary_size > 0:
                     lines = lines[-vocabulary_size:]
@@ -165,7 +171,7 @@ def get_vocabulary(name: str, vocabulary_size: int, download_root = None):
         vocab_path = _download(os.path.join(GITHUB_HOST_LINK, "vocab", name + ".txt"), download_root or os.path.expanduser("~/.cache/splice/"), "vocab")
 
         vocab = []
-        with open(vocab_path, "r") as f:
+        with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
             if vocabulary_size > 0:
                 lines = lines[-vocabulary_size:]

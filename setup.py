@@ -1,6 +1,22 @@
 import os
-import pkg_resources
 from setuptools import setup, find_packages
+
+
+def _read_requirements(req_path: str):
+    reqs = []
+    try:
+        with open(req_path, "r") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                reqs.append(line)
+    except FileNotFoundError:
+        return []
+    return reqs
+
+
+requirements_path = os.path.join(os.path.dirname(__file__), "requirements.txt")
 
 setup(
     name="splice",
@@ -10,10 +26,5 @@ setup(
     author_email="aoesterling@g.harvard.edu, usha_bhalla@g.harvard.edu",
     py_modules=["splice"],
     packages=find_packages(exclude=["experiments*", "data*"]),
-    install_requires=[
-        str(r)
-        for r in pkg_resources.parse_requirements(
-            open(os.path.join(os.path.dirname(__file__), "requirements.txt"))
-        )
-    ],
+    install_requires=_read_requirements(requirements_path),
 )
