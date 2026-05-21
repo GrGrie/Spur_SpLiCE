@@ -31,9 +31,9 @@ class WaterbirdsConfig:
     eval_split: str = "val"
 
 
-def waterbirds_transforms(image_size: int = 224) -> tuple[transforms.Compose, transforms.Compose]:
+def waterbirds_transforms(image_size: int = 224) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
     normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
-    train_transform = transforms.Compose(
+    ssl_train_transform = transforms.Compose(
         [
             transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
             transforms.RandomHorizontalFlip(),
@@ -48,6 +48,14 @@ def waterbirds_transforms(image_size: int = 224) -> tuple[transforms.Compose, tr
             normalize,
         ]
     )
+    linear_train_transform = transforms.Compose(
+        [
+            transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ]
+    )
     eval_transform = transforms.Compose(
         [
             transforms.Resize((image_size, image_size)),
@@ -55,7 +63,7 @@ def waterbirds_transforms(image_size: int = 224) -> tuple[transforms.Compose, tr
             normalize,
         ]
     )
-    return train_transform, eval_transform
+    return ssl_train_transform, linear_train_transform, eval_transform
 
 
 class WaterbirdsDataset(WILDSDataset):
@@ -133,9 +141,9 @@ def make_waterbirds_loaders(
     batch_size: int,
     num_workers: int,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
-    train_transform, eval_transform = waterbirds_transforms(config.image_size)
+    _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
-    train_dataset = full_dataset.get_subset(config.train_split, transform=train_transform)
+    train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
     eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
 
     train_loader = get_train_loader(
@@ -162,9 +170,9 @@ def make_waterbirds_ssl_loader(
     batch_size: int,
     num_workers: int,
 ) -> torch.utils.data.DataLoader:
-    train_transform, _ = waterbirds_transforms(config.image_size)
+    ssl_train_transform, _, _ = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
-    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(train_transform))
+    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
     return get_ssl_train_loader(
         "standard",
         train_dataset,
