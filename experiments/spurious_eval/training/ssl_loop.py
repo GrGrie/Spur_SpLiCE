@@ -33,17 +33,22 @@ def simclr_forward_loss(
     model: SimCLRModel,
     criterion: SimCLRLoss,
     image,
+    splice_scores=None,
     splice_regularizer=None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
     bsz = image[0].size(0)
     images = torch.cat([image[0], image[1]], dim=0)
-    projections = model(images)
+    embeddings = model.encoder(images)
+    projections = F.normalize(model.head(embeddings), dim=1)
     f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
     features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
     loss, decor_loss, entropy_loss, _, _ = criterion(features)
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
-        splice_loss = splice_regularizer(projections)
+        repeated_scores = None
+        if splice_scores is not None:
+            repeated_scores = torch.cat([splice_scores, splice_scores], dim=0)
+        splice_loss = splice_regularizer(embeddings, repeated_scores)
         loss = loss + splice_loss
     parts = {
         "decor": decor_loss,
@@ -68,9 +73,10 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
         image = data[0]
         image[0] = image[0].to(args.device, non_blocking=True)
         image[1] = image[1].to(args.device, non_blocking=True)
+        splice_scores = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
-        loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_regularizer)
+        loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
@@ -80,7 +86,7 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
             optimizer.zero_grad()
             loss.backward()
             optimizer.first_step()
-            loss, _, _ = simclr_forward_loss(model, criterion, image, splice_regularizer)
+            loss, _, _ = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
             optimizer.zero_grad()
             loss.backward()
             optimizer.second_step()
@@ -97,8 +103,15 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
                 "Train: [{0}][{1}/{2}]\t"
                 "BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
                 "DT {data_time.val:.3f} ({data_time.avg:.3f})\t"
-                "loss {loss.val:.3f} ({loss.avg:.3f})".format(
-                    epoch, idx + 1, len(train_loader), batch_time=batch_time, data_time=data_time, loss=losses
+                "loss {loss.val:.3f} ({loss.avg:.3f})\t"
+                "splice {splice.val:.3f} ({splice.avg:.3f})".format(
+                    epoch,
+                    idx + 1,
+                    len(train_loader),
+                    batch_time=batch_time,
+                    data_time=data_time,
+                    loss=losses,
+                    splice=splice_losses,
                 )
             )
             sys.stdout.flush()
@@ -107,6 +120,7 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
         "loss": losses.avg,
         "decor_loss": decor_losses.avg,
         "entropy_loss": entropy_losses.avg,
+        "splice_loss": splice_losses.avg,
     }
 
 
@@ -149,6 +163,7 @@ def log_rank_metrics(
                 "SSL train loss": train_metrics["loss"],
                 "SSL decor loss": train_metrics["decor_loss"],
                 "SSL entropy loss": train_metrics["entropy_loss"],
+                "SSL splice loss": train_metrics["splice_loss"],
                 "SSL learning rate": optimizer.param_groups[0]["lr"],
             },
             step=epoch,

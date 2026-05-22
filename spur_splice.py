@@ -19,7 +19,7 @@ from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
-from splice.ssl_regularization import SpliceConfig, build_splice_regularizer
+from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig, build_splice_regularizer, splice_mode_uses_scores
 
 
 def str_to_bool(value) -> bool:
@@ -85,11 +85,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank_threshold", type=float, default=0.1)
 
     parser.add_argument("--use_splice", type=str_to_bool, nargs="?", const=True, default=False)
+    parser.add_argument("--splice_mode", type=str, default="none", choices=["none", "augment", "corr_reg", "augment_corr_reg"])
+    parser.add_argument("--splice_concepts", type=str, default="")
+    parser.add_argument("--splice_score_threshold", type=float, default=0.01)
+    parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
+    parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
+    parser.add_argument("--splice_vocab", type=str, default="laion")
+    parser.add_argument("--splice_vocab_size", type=int, default=10000)
+    parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
+    parser.add_argument("--splice_batch_size", type=int, default=128)
+    parser.add_argument("--splice_num_workers", type=int, default=0)
 
     args = parser.parse_args()
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
     args.linear_lr_decay_epochs = [int(epoch.strip()) for epoch in args.linear_lr_decay_epochs.split(",") if epoch.strip()]
+    if args.use_splice and args.splice_mode == "none":
+        args.splice_mode = "corr_reg"
+    args.use_splice = args.splice_mode != "none"
+    if args.use_splice and not args.splice_concepts.strip():
+        parser.error("--splice_concepts must be provided when --splice_mode is not none.")
+    if args.splice_mode in {"corr_reg", "augment_corr_reg"} and args.splice_weight <= 0:
+        parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -124,7 +141,7 @@ def format_run_name(args: argparse.Namespace) -> str:
     optimizer_name = args.optimizer
     if optimizer_name.lower() == "sam":
         optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
-    splice_name = f"splice{args.splice_weight:g}" if args.use_splice else "nosplice"
+    splice_name = f"{args.splice_mode}_w{args.splice_weight:g}" if args.use_splice else "nosplice"
     return (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}"
@@ -173,7 +190,39 @@ def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
     config = dataset_spec["config"](root_dir=args.data_folder)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    return dataset_spec["ssl_loader"](config, args.batch_size, **loader_kwargs)
+    concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
+    return dataset_spec["ssl_loader"](
+        config,
+        args.batch_size,
+        concept_scorer=concept_scorer,
+        splice_mode=args.splice_mode,
+        splice_score_threshold=args.splice_score_threshold,
+        **loader_kwargs,
+    )
+
+
+def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
+    return SpliceConfig(
+        use_splice=args.use_splice,
+        splice_weight=args.splice_weight,
+        mode=args.splice_mode,
+        concepts=args.splice_concepts,
+        l1_penalty=args.splice_l1_penalty,
+        vocab=args.splice_vocab,
+        vocab_size=args.splice_vocab_size,
+        model=args.splice_model,
+        score_threshold=args.splice_score_threshold,
+        score_reduction=args.splice_score_reduction,
+        batch_size=args.splice_batch_size,
+        num_workers=args.splice_num_workers,
+        device=args.device,
+    )
+
+
+def build_splice_concept_scorer(args: argparse.Namespace) -> SpliceConceptScorer:
+    scorer = SpliceConceptScorer(build_splice_config(args))
+    print("[INFO] SpLiCE concepts:", [(idx, scorer.vocabulary[idx]) for idx in scorer.concept_indices])
+    return scorer
 
 
 def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
@@ -224,9 +273,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
         model.encoder = torch.nn.DataParallel(model.encoder)
     criterion = SimCLRLoss(temperature=args.temp).to(device)
     optimizer = build_optimizer(args, model)
-    splice_regularizer = None
-    if args.use_splice:
-        splice_regularizer = build_splice_regularizer(SpliceConfig(use_splice=True, splice_weight=args.splice_weight))
+    splice_regularizer = build_splice_regularizer(build_splice_config(args))
     return train_loader, model, criterion, optimizer, splice_regularizer
 
 
