@@ -9,11 +9,12 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
-from torch.utils.data import DataLoader, TensorDataset
 
-from experiments.spurious_eval.metrics import entropy_effective_rank, topk_accuracy
-from experiments.spurious_eval.resnet import LinearClassifier, build_resnet_encoder, load_encoder_checkpoint
-from experiments.spurious_eval.waterbirds import WaterbirdsConfig, make_waterbirds_loaders
+from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.metrics import entropy_effective_rank
+from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
+from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
+from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 
 
 @dataclass
@@ -24,8 +25,8 @@ class ProbeHistory:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Linear probing on Waterbirds")
-    parser.add_argument("--dataset", default="waterbirds", choices=["waterbirds"])
+    parser = argparse.ArgumentParser("Linear probing on spurious-correlation datasets")
+    parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--train_set_linear_layer", default="ds_train", choices=["train", "val", "ds_train", "us_train", "balanced_train"])
     parser.add_argument("--eval_split", default="val", choices=["val", "test"])
@@ -125,17 +126,6 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
     return loader_kwargs
 
 
-def make_feature_loader(feature_dataset: TensorDataset, batch_size: int, seed: int, shuffle: bool) -> DataLoader:
-    loader_generator = torch.Generator()
-    loader_generator.manual_seed(seed)
-    return DataLoader(
-        feature_dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        generator=loader_generator,
-    )
-
-
 def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimizer, epoch: int) -> None:
     lr = args.learning_rate
     if args.cosine:
@@ -168,110 +158,20 @@ def consume_spurssl_head_rng(feature_dim: int, args: argparse.Namespace) -> None
         raise ValueError(f"Unsupported SpurSSL head: {args.head}")
 
 
-def extract_features(encoder: torch.nn.Module, loader: DataLoader, device: torch.device) -> TensorDataset:
-    encoder.eval()
-    features, labels, metadata = [], [], []
-    with torch.no_grad():
-        for images, batch_labels, batch_metadata in loader:
-            images = images.to(device, non_blocking=True)
-            batch_features = encoder(images)
-            features.append(batch_features.cpu())
-            labels.append(batch_labels.cpu())
-            metadata.append(batch_metadata.cpu())
-    return TensorDataset(torch.cat(features, dim=0), torch.cat(labels, dim=0), torch.cat(metadata, dim=0))
-
-
-def train_one_epoch(
-    feature_loader: DataLoader,
-    classifier: LinearClassifier,
-    criterion: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    device: torch.device,
-) -> tuple[float, float, torch.Tensor, torch.Tensor, torch.Tensor]:
-    classifier.train()
-    total_loss = 0.0
-    total_seen = 0
-    total_acc = 0.0
-    all_predictions, all_labels, all_metadata = [], [], []
-
-    for features, labels, metadata in feature_loader:
-        features = features.to(device)
-        labels = labels.to(device)
-        outputs = classifier(features)
-        loss = criterion(outputs, labels)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        batch_size = labels.shape[0]
-        acc1 = topk_accuracy(outputs, labels, topk=(1,))[0].item()
-        total_loss += loss.item() * batch_size
-        total_acc += acc1 * batch_size
-        total_seen += batch_size
-        all_predictions.append(outputs.argmax(dim=1).cpu())
-        all_labels.append(labels.cpu())
-        all_metadata.append(metadata.cpu())
-
-    return (
-        total_loss / total_seen,
-        total_acc / total_seen,
-        torch.cat(all_predictions),
-        torch.cat(all_labels),
-        torch.cat(all_metadata),
-    )
-
-
-def validate(
-    feature_loader: DataLoader,
-    classifier: LinearClassifier,
-    criterion: torch.nn.Module,
-    device: torch.device,
-) -> tuple[float, float, torch.Tensor, torch.Tensor, torch.Tensor]:
-    classifier.eval()
-    total_loss = 0.0
-    total_seen = 0
-    total_acc = 0.0
-    all_predictions, all_labels, all_metadata = [], [], []
-
-    with torch.no_grad():
-        for features, labels, metadata in feature_loader:
-            features = features.to(device)
-            labels = labels.to(device)
-            outputs = classifier(features)
-            loss = criterion(outputs, labels)
-
-            batch_size = labels.shape[0]
-            acc1 = topk_accuracy(outputs, labels, topk=(1,))[0].item()
-            total_loss += loss.item() * batch_size
-            total_acc += acc1 * batch_size
-            total_seen += batch_size
-            all_predictions.append(outputs.argmax(dim=1).cpu())
-            all_labels.append(labels.cpu())
-            all_metadata.append(metadata.cpu())
-
-    return (
-        total_loss / total_seen,
-        total_acc / total_seen,
-        torch.cat(all_predictions),
-        torch.cat(all_labels),
-        torch.cat(all_metadata),
-    )
-
-
 def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[str, float]:
     args = parse_args() if args is None else normalize_args(args)
     set_seed(args.seed)
     device = torch.device(args.device)
 
-    config = WaterbirdsConfig(
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    config = dataset_spec["config"](
         root_dir=args.data_folder,
         train_split=args.train_set_linear_layer,
         eval_split=args.eval_split,
     )
     train_loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     val_loader_kwargs = make_dataloader_kwargs(args, shuffle=False)
-    train_loader, val_loader = make_waterbirds_loaders(
+    train_loader, val_loader = dataset_spec["probe_loaders"](
         config,
         args.batch_size,
         train_loader_kwargs=train_loader_kwargs,
@@ -293,7 +193,7 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         cudnn.benchmark = False
 
     consume_spurssl_head_rng(feature_dim, args)
-    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=2).to(device)
+    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=dataset_spec["num_classes"]).to(device)
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(
         classifier.parameters(),

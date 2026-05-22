@@ -1,11 +1,11 @@
 # Spurious Evaluation
 
-This folder contains a small, reusable Waterbirds linear-probing path copied in behavior from `../SpurSSL` without modifying that project.
+This folder contains reusable spurious-correlation dataset, SSL-training, and linear-probing support copied in behavior from `../SpurSSL` without modifying that project.
 
 Example:
 
 ```bash
-python waterbirds_linear_probe.py \
+python linear_probe.py \
   --data_folder ./datasets \
   --dataset waterbirds \
   --train_set_linear_layer ds_train \
@@ -26,3 +26,16 @@ source files.
 The expected dataset layout is either `DATA_FOLDER/waterbirds/metadata.csv`,
 `DATA_FOLDER/waterbird_complete95_forest2water2/metadata.csv`, or a
 `DATA_FOLDER` that directly contains `metadata.csv`.
+
+## Code Map
+
+- `datasets/`: dataset adapters, WILDS-style compatibility, transforms, and dataset registration.
+- `models/`: encoder and SSL model definitions.
+- `losses/`: contrastive losses.
+- `training/`: SSL/probe loops, checkpointing, and optimizer utilities.
+- `metrics.py`: group accuracy and representation-rank metrics.
+- `linear_probe.py`: reusable linear-probing command implementation used by the root `linear_probe.py` entrypoint.
+
+The root `spur_splice.py` is the SSL training entrypoint. Use `--use_splice` and
+`--splice_weight` there to enable SpLiCE as an additional training loss once the
+regularizer is implemented in `splice/ssl_regularization.py`.

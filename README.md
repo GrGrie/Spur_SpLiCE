@@ -34,11 +34,18 @@ pip install .
 
 ## Examples
 
+### Main Entrypoints
+
+- `spur_splice.py`: SSL training with optional linear probing. Enable SpLiCE regularization with `--use_splice` and `--splice_weight`.
+- `linear_probe.py`: linear probing for a checkpoint and dataset selected by `--dataset`.
+- `splice/decompose_image.py`: SpLiCE decomposition for a single image.
+- `splice/decompose_data.py`: SpLiCE decomposition for a dataset or one class.
+
 ### Sample Concept Decomposition
-To get the concept decomposition of a single image (we include an example image 308175 from MSCOCO), run the `decompose_image.py` script. The `-l1_penalty` argument can be used to control the sparsity of the decompositions.
+To get the concept decomposition of a single image (we include an example image 308175 from MSCOCO), run the `splice/decompose_image.py` script. The `-l1_penalty` argument can be used to control the sparsity of the decompositions.
 
 ```bash
-python decompose_image.py -path 000000308175.jpg -out_path image308175_decomp.txt -l1_penalty 0.25 --verbose
+python splice/decompose_image.py -path 000000308175.jpg -out_path image308175_decomp.txt -l1_penalty 0.25 --verbose
 ```
 ![example_mscoco_image](000000308175.jpg)
 
@@ -59,7 +66,7 @@ CLIP, SpLiCE Cosine Sim:    0.5363
 ```
 
 ### Class/Dataset Concept Distributions
-To generate a concept distribution for a given class, run the script `concept_distribution.py`, which generates a bar plot of the concepts given by `decompose_data.py`. The number of concepts to be plotted can be controlled with the `-plot_topk` argument. An example distribution of the top 10 concepts from the 'jack-o-lantern' class from ImageNetVal is given below.
+To generate a concept distribution for a given class, run the script `concept_distribution.py`, which generates a bar plot of the concepts given by `splice/decompose_data.py`. The number of concepts to be plotted can be controlled with the `-plot_topk` argument. An example distribution of the top 10 concepts from the 'jack-o-lantern' class from ImageNetVal is given below.
 
 
 ```bash
@@ -69,10 +76,10 @@ python concept_distribution.py -dataset ImageNetVal -out_folder imagenet_jackola
 
 
 ### Class/Dataset Concept Decomposition
-To decompose an entire dataset, run the `decompose_data.py` script. An example decomposition for CIFAR-10 is shown below.  
+To decompose an entire dataset, run the `splice/decompose_data.py` script. An example decomposition for CIFAR-10 is shown below.  
 
 ```bash
-python decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 --verbose
+python splice/decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 --verbose
 ```
 ```
 Concept Decomposition:
@@ -97,7 +104,7 @@ Average CLIP, SpLiCE Cosine Sim:    0.4345
 This can also be done for a single class with the `-class_label` tag. Here, we show the "deer" class of CIFAR-10:
 
 ```bash
-python decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 -class_label 4 --verbose
+python splice/decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 -class_label 4 --verbose
 ```
 
 ```

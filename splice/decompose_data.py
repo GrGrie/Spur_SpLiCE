@@ -1,8 +1,12 @@
 import argparse
+import sys
 import torch
-import splice
-from PIL import Image
 from torch.utils.data import DataLoader
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import splice
 import experiments.datasets as datasets
 
 def main():

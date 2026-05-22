@@ -5,38 +5,21 @@ import json
 import math
 import os
 import random
-import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
-import torch.nn.functional as F
 
 from experiments.spurious_eval import linear_probe
-from experiments.spurious_eval.metrics import entropy_effective_rank
-from experiments.spurious_eval.optim import adjust_learning_rate, build_optimizer, warmup_learning_rate
-from experiments.spurious_eval.simclr import SimCLRLoss, SimCLRModel
-from experiments.spurious_eval.splice_regularization import SpliceConfig, build_splice_regularizer
-from experiments.spurious_eval.waterbirds import DATASET_REGISTRY, WaterbirdsConfig
-
-
-class AverageMeter:
-    def __init__(self) -> None:
-        self.reset()
-
-    def reset(self) -> None:
-        self.val = 0.0
-        self.avg = 0.0
-        self.sum = 0.0
-        self.count = 0
-
-    def update(self, val: float, n: int = 1) -> None:
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.losses.contrastive import SimCLRLoss
+from experiments.spurious_eval.models.simclr import SimCLRModel
+from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
+from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
+from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
+from splice.ssl_regularization import SpliceConfig, build_splice_regularizer
 
 
 def str_to_bool(value) -> bool:
@@ -187,124 +170,10 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
 
 
 def build_ssl_loader(args: argparse.Namespace):
-    if args.dataset != "waterbirds":
-        raise ValueError(f"Unsupported dataset: {args.dataset}")
-    config = WaterbirdsConfig(root_dir=args.data_folder)
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    config = dataset_spec["config"](root_dir=args.data_folder)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    return DATASET_REGISTRY[args.dataset]["ssl_loader"](config, args.batch_size, **loader_kwargs)
-
-
-def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, args: argparse.Namespace, epoch: int, path: str) -> None:
-    print("==> Saving...")
-    torch.save(
-        {
-            "opt": args,
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "epoch": epoch,
-        },
-        path,
-    )
-
-
-def load_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, path: str, device: torch.device) -> int:
-    try:
-        checkpoint = torch.load(path, map_location=device, weights_only=False)
-    except TypeError:
-        checkpoint = torch.load(path, map_location=device)
-    model.load_state_dict(checkpoint["model"], strict=True)
-    optimizer.load_state_dict(checkpoint["optimizer"])
-    return int(checkpoint.get("epoch", 0))
-
-
-def simclr_forward_loss(model: SimCLRModel, criterion: SimCLRLoss, image, splice_regularizer=None) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
-    bsz = image[0].size(0)
-    images = torch.cat([image[0], image[1]], dim=0)
-    projections = model(images)
-    f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
-    features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-    loss, decor_loss, entropy_loss, _, _ = criterion(features)
-    splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
-    if splice_regularizer is not None:
-        splice_loss = splice_regularizer(projections)
-        loss = loss + splice_loss
-    parts = {
-        "decor": decor_loss,
-        "entropy": entropy_loss,
-        "splice": splice_loss,
-    }
-    return loss, parts, bsz
-
-
-def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args: argparse.Namespace, splice_regularizer) -> dict[str, float]:
-    model.train()
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    decor_losses = AverageMeter()
-    entropy_losses = AverageMeter()
-    splice_losses = AverageMeter()
-
-    end = time.time()
-    for idx, data in enumerate(train_loader):
-        data_time.update(time.time() - end)
-        image = data[0]
-        image[0] = image[0].to(args.device, non_blocking=True)
-        image[1] = image[1].to(args.device, non_blocking=True)
-        warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
-
-        loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_regularizer)
-        losses.update(loss.item(), bsz)
-        decor_losses.update(parts["decor"].item(), bsz)
-        entropy_losses.update(parts["entropy"].item(), bsz)
-        splice_losses.update(parts["splice"].item(), bsz)
-
-        if args.optimizer == "SAM":
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.first_step()
-            loss, _, _ = simclr_forward_loss(model, criterion, image, splice_regularizer)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.second_step()
-            optimizer.step()
-        else:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        batch_time.update(time.time() - end)
-        end = time.time()
-        if (idx + 1) % args.print_freq == 0:
-            print(
-                "Train: [{0}][{1}/{2}]\t"
-                "BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
-                "DT {data_time.val:.3f} ({data_time.avg:.3f})\t"
-                "loss {loss.val:.3f} ({loss.avg:.3f})".format(
-                    epoch, idx + 1, len(train_loader), batch_time=batch_time, data_time=data_time, loss=losses
-                )
-            )
-            sys.stdout.flush()
-
-    return {
-        "loss": losses.avg,
-        "decor_loss": decor_losses.avg,
-        "entropy_loss": entropy_losses.avg
-    }
-
-
-def extract_normalized_train_features(model: SimCLRModel, train_loader, args: argparse.Namespace) -> torch.Tensor:
-    model.eval()
-    features = []
-    with torch.no_grad():
-        for data in train_loader:
-            image = data[0]
-            images = image[0].to(args.device, non_blocking=True)
-            embeddings = model.encoder(images)
-            features.append(embeddings.cpu())
-    features = F.normalize(torch.cat(features, dim=0), dim=1)
-    print("Extracted features shape:", features.shape)
-    return features
+    return dataset_spec["ssl_loader"](config, args.batch_size, **loader_kwargs)
 
 
 def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
@@ -359,29 +228,6 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     if args.use_splice:
         splice_regularizer = build_splice_regularizer(SpliceConfig(use_splice=True, splice_weight=args.splice_weight))
     return train_loader, model, criterion, optimizer, splice_regularizer
-
-
-def log_rank_metrics(model: SimCLRModel, train_loader, optimizer: torch.optim.Optimizer, train_metrics: dict[str, float], epoch: int, args: argparse.Namespace, wandb_run) -> None:
-    train_features = extract_normalized_train_features(model, train_loader, args)
-    entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_features)
-    print(
-        "epoch {}, entropy {:.2f}, effective rank {}, and energy-based rank {}".format(
-            epoch, entropy, effective_rank, energy_based_rank
-        )
-    )
-    if wandb_run is not None:
-        wandb_run.log(
-            {
-                "Entropy": entropy,
-                "Effective rank": effective_rank,
-                "Energy-based rank": energy_based_rank,
-                "SSL train loss": train_metrics["loss"],
-                "SSL decor loss": train_metrics["decor_loss"],
-                "SSL entropy loss": train_metrics["entropy_loss"],
-                "SSL learning rate": optimizer.param_groups[0]["lr"],
-            },
-            step=epoch,
-        )
 
 
 def maybe_run_periodic_probe(args: argparse.Namespace, save_file: str, epoch: int) -> bool:
