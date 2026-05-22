@@ -101,8 +101,39 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def seed_worker(worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
+def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(args.seed)
+    loader_kwargs = {
+        "num_workers": args.num_workers,
+        "pin_memory": True,
+        "generator": loader_generator,
+    }
+    if shuffle or args.num_workers > 0:
+        loader_kwargs["worker_init_fn"] = seed_worker
+    return loader_kwargs
+
+
+def make_feature_loader(feature_dataset: TensorDataset, batch_size: int, seed: int, shuffle: bool) -> DataLoader:
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(seed)
+    return DataLoader(
+        feature_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        generator=loader_generator,
+    )
 
 
 def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimizer, epoch: int) -> None:
@@ -238,7 +269,14 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         train_split=args.train_set_linear_layer,
         eval_split=args.eval_split,
     )
-    train_loader, val_loader = make_waterbirds_loaders(config, args.batch_size, args.num_workers)
+    train_loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
+    val_loader_kwargs = make_dataloader_kwargs(args, shuffle=False)
+    train_loader, val_loader = make_waterbirds_loaders(
+        config,
+        args.batch_size,
+        train_loader_kwargs=train_loader_kwargs,
+        eval_loader_kwargs=val_loader_kwargs,
+    )
 
     encoder, feature_dim = build_resnet_encoder(args.model)
     if args.ckpt:
@@ -268,8 +306,8 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
     train_features = extract_features(encoder, train_loader, device)
     print("[INFO] Extracting frozen validation features")
     val_features = extract_features(encoder, val_loader, device)
-    feature_loader = DataLoader(train_features, batch_size=args.batch_size, shuffle=True)
-    val_feature_loader = DataLoader(val_features, batch_size=args.batch_size, shuffle=False)
+    feature_loader = make_feature_loader(train_features, args.batch_size, args.seed, shuffle=True)
+    val_feature_loader = make_feature_loader(val_features, args.batch_size, args.seed, shuffle=False)
 
     history = ProbeHistory([], [], [])
     best_val_acc = best_val_wg_acc = best_val_bg_acc = 0.0

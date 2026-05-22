@@ -139,8 +139,15 @@ class WaterbirdsDataset(WILDSDataset):
 def make_waterbirds_loaders(
     config: WaterbirdsConfig,
     batch_size: int,
-    num_workers: int,
+    num_workers: int | None = None,
+    train_loader_kwargs: dict | None = None,
+    eval_loader_kwargs: dict | None = None,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
+    train_loader_kwargs = train_loader_kwargs or {}
+    eval_loader_kwargs = eval_loader_kwargs or {}
+    if num_workers is not None:
+        train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
+        eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
     _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
     train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
@@ -150,17 +157,15 @@ def make_waterbirds_loaders(
         "standard",
         train_dataset,
         batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=True,
         drop_last=False,
+        **train_loader_kwargs,
     )
     eval_loader = get_eval_loader(
         "standard",
         eval_dataset,
         batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=True,
         drop_last=False,
+        **eval_loader_kwargs,
     )
     return train_loader, eval_loader
 
@@ -168,8 +173,11 @@ def make_waterbirds_loaders(
 def make_waterbirds_ssl_loader(
     config: WaterbirdsConfig,
     batch_size: int,
-    num_workers: int,
+    num_workers: int | None = None,
+    **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
+    if num_workers is not None:
+        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
     ssl_train_transform, _, _ = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
     train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
@@ -179,9 +187,8 @@ def make_waterbirds_ssl_loader(
         batch_size=batch_size,
         uniform_over_groups=False,
         grouper=full_dataset._eval_grouper,
-        num_workers=num_workers,
-        pin_memory=True,
         drop_last=False,
+        **loader_kwargs,
     )
 
 

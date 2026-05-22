@@ -161,15 +161,37 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.enabled = False
+
+
+def seed_worker(worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
+def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(args.seed)
+    loader_kwargs = {
+        "num_workers": args.num_workers,
+        "pin_memory": True,
+        "generator": loader_generator,
+    }
+    if shuffle or args.num_workers > 0:
+        loader_kwargs["worker_init_fn"] = seed_worker
+    return loader_kwargs
 
 
 def build_ssl_loader(args: argparse.Namespace):
     if args.dataset != "waterbirds":
         raise ValueError(f"Unsupported dataset: {args.dataset}")
     config = WaterbirdsConfig(root_dir=args.data_folder)
-    return DATASET_REGISTRY[args.dataset]["ssl_loader"](config, args.batch_size, args.num_workers)
+    loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
+    return DATASET_REGISTRY[args.dataset]["ssl_loader"](config, args.batch_size, **loader_kwargs)
 
 
 def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, args: argparse.Namespace, epoch: int, path: str) -> None:
@@ -309,12 +331,12 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "num_zero_high": 0,
         "num_zero_low": 0,
         "batch_size": args.batch_size,
-        "num_workers": args.num_workers,
-        "epochs": args.linear_probe_epochs,
-        "learning_rate": args.linear_learning_rate,
-        "lr_decay_epochs": args.linear_lr_decay_epochs,
-        "lr_decay_rate": args.linear_lr_decay_rate,
-        "weight_decay": args.linear_weight_decay,
+        "num_workers": 32,
+        "epochs": 100,
+        "learning_rate": 1.0,
+        "lr_decay_epochs": [60, 75, 90],
+        "lr_decay_rate": 0.2,
+        "weight_decay": 0,
         "momentum": 0.9,
         "cosine": args.cosine,
         "seed": args.seed,
