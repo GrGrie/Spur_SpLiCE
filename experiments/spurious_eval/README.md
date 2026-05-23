@@ -104,6 +104,54 @@ Use concept names for readability when possible. Integer vocabulary indices are
 also accepted, which is useful after running a concept-discovery script and
 recording exact indices. The selected SpLiCE concepts are printed at startup.
 
+To discover a candidate concept list automatically, run the standalone helper:
+
+```bash
+python tools/discover_splice_spurious_concepts.py \
+  --data_folder ./datasets \
+  --split train \
+  --out_path outputs/waterbirds_splice_concepts.json \
+  --top_k 20
+```
+
+This helper does not change training behavior. It decomposes the selected
+Waterbirds split with frozen SpLiCE, ranks concepts whose weights separate
+`land` vs. `water` background more than `landbird` vs. `waterbird` label, and
+writes:
+
+- `outputs/waterbirds_splice_concepts.json`: detailed scores and group means.
+- `outputs/waterbirds_splice_concepts.concepts.txt`: comma-separated concept
+  names for `--splice_concepts`.
+- `outputs/waterbirds_splice_concepts.indices.txt`: comma-separated vocabulary
+  indices for `--splice_concepts`.
+
+Example follow-up command:
+
+```bash
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode corr_reg \
+  --splice_concepts "$(cat outputs/waterbirds_splice_concepts.concepts.txt)" \
+  --splice_weight 0.1
+```
+
+Before running `augment`, calibrate `--splice_score_threshold` for the exact
+concept list you plan to use:
+
+```bash
+python tools/summarize_splice_scores.py \
+  --data_folder ./datasets \
+  --split train \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --out_path outputs/waterbirds_splice_score_summary.json
+```
+
+Use the printed percentiles to choose how aggressive the targeted augmentation
+should be. For example, using the `p75` value means roughly the top 25% most
+background-concept-heavy images receive strong augmentation; using `p90` limits
+strong augmentation to roughly the top 10%.
+
 Expected outcomes:
 
 - Average accuracy may stay similar or drop slightly.
