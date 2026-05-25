@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import torch
+import torch.backends.cudnn as cudnn
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -23,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--disable_cudnn",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Disable cuDNN for SpLiCE/OpenCLIP image encoding on CUDA.",
+    )
     parser.add_argument("--splice_model", default="open_clip:ViT-B-32")
     parser.add_argument("--splice_vocab", default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
@@ -34,6 +41,13 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated thresholds to report counts for.",
     )
     return parser.parse_args()
+
+
+def configure_torch_backend(args: argparse.Namespace) -> None:
+    if str(args.device).startswith("cuda") and args.disable_cudnn:
+        cudnn.enabled = False
+        cudnn.benchmark = False
+        cudnn.deterministic = True
 
 
 def parse_thresholds(raw_thresholds: str) -> list[float]:
@@ -76,6 +90,7 @@ def summarize(scores: torch.Tensor, thresholds: list[float]) -> dict:
 
 def main() -> None:
     args = parse_args()
+    configure_torch_backend(args)
     config = SpliceConfig(
         use_splice=True,
         mode="augment",
