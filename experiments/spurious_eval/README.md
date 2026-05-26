@@ -54,6 +54,13 @@ the trainable ResNet encoder; SpLiCE does not replace the SSL backbone. Instead,
 SpLiCE produces a scalar spurious-background score from a manual list of concept
 names or vocabulary indices passed with `--splice_concepts`.
 
+During training, SpLiCE affects downstream predictions only indirectly through
+the learned representation. In `augment`, high-score images receive stronger
+SSL augmentations, which can weaken easy visual shortcuts. In `corr_reg`, the
+SSL loop penalizes correlation between encoder features and the frozen SpLiCE
+concept score, encouraging the encoder to make those selected cues less
+linearly available to the downstream linear probe.
+
 The current implementation supports two interventions:
 
 - `augment`: concept-aware augmentation. Before SSL training starts, SpLiCE
@@ -108,6 +115,7 @@ To discover a candidate concept list automatically, run the standalone helper:
 
 ```bash
 python tools/discover_splice_spurious_concepts.py \
+  --dataset waterbirds \
   --data_folder ./datasets \
   --split train \
   --out_path outputs/waterbirds_splice_concepts.json \
@@ -115,9 +123,38 @@ python tools/discover_splice_spurious_concepts.py \
 ```
 
 This helper does not change training behavior. It decomposes the selected
-Waterbirds split with frozen SpLiCE, ranks concepts whose weights separate
-`land` vs. `water` background more than `landbird` vs. `waterbird` label, and
-writes:
+split with frozen SpLiCE and ranks concepts by conditional association with the
+spurious attribute rather than the target label. For every concept weight `c`,
+binary spurious attribute `s`, and binary target label `y`, the score is:
+
+```text
+mean_y abs(E[c | s=1,y] - E[c | s=0,y])
+  - label_penalty * mean_s abs(E[c | y=1,s] - E[c | y=0,s])
+  - instability_penalty * std_y(E[c | s=1,y] - E[c | s=0,y])
+```
+
+The first term rewards concepts that separate the spurious attribute inside
+each target class. The second term penalizes concepts that separate the target
+label inside each spurious group. The instability term penalizes concepts whose
+spurious effect changes sharply across target classes. This keeps discovery
+dataset-aware through metadata, without hard-coding Waterbirds-specific concept
+names.
+
+Dataset adapters expose which metadata columns are target and spurious. After a
+new binary spurious-correlation dataset is registered in `DATASET_REGISTRY`, you
+can override those columns explicitly:
+
+```bash
+python tools/discover_splice_spurious_concepts.py \
+  --dataset celeba \
+  --data_folder ./datasets \
+  --split train \
+  --target_metadata_index 1 \
+  --spurious_metadata_index 0 \
+  --out_path outputs/celeba_splice_concepts.json
+```
+
+The helper writes:
 
 - `outputs/waterbirds_splice_concepts.json`: detailed scores and group means.
 - `outputs/waterbirds_splice_concepts.concepts.txt`: comma-separated concept

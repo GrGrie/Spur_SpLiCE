@@ -13,16 +13,29 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 import splice
-from experiments.spurious_eval.datasets.waterbirds import WaterbirdsDataset
+from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from splice.ssl_regularization import identity_collate
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Discover Waterbirds spurious concepts with frozen SpLiCE")
+    parser = argparse.ArgumentParser("Discover spurious concepts with frozen SpLiCE")
+    parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--split", default="train", choices=["train", "ds_train", "us_train", "balanced_train", "val", "test"])
     parser.add_argument("--out_path", required=True)
     parser.add_argument("--top_k", type=int, default=20)
+    parser.add_argument(
+        "--target_metadata_index",
+        type=int,
+        default=None,
+        help="Metadata column containing the target label. Defaults to the dataset spec or column 1.",
+    )
+    parser.add_argument(
+        "--spurious_metadata_index",
+        type=int,
+        default=None,
+        help="Metadata column containing the spurious attribute. Defaults to the dataset spec or column 0.",
+    )
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -38,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
     parser.add_argument("--min_mean_weight", type=float, default=0.0)
     parser.add_argument("--label_penalty", type=float, default=1.0)
+    parser.add_argument("--instability_penalty", type=float, default=1.0)
     parser.add_argument("--use_abs_score", action="store_true")
     return parser.parse_args()
 
@@ -67,10 +81,48 @@ def load_splice(args: argparse.Namespace):
     return preprocess, vocabulary, splicemodel
 
 
+def resolve_metadata_indices(args: argparse.Namespace, dataset_spec: dict) -> tuple[int, int]:
+    spurious_index = args.spurious_metadata_index
+    target_index = args.target_metadata_index
+    if spurious_index is None:
+        spurious_index = dataset_spec.get("spurious_metadata_index", 0)
+    if target_index is None:
+        target_index = dataset_spec.get("target_metadata_index", 1)
+    if spurious_index == target_index:
+        raise ValueError("--spurious_metadata_index and --target_metadata_index must point to different metadata columns.")
+    return int(spurious_index), int(target_index)
+
+
+def metadata_value_names(dataset, metadata_index: int, values: torch.Tensor) -> dict[int, str]:
+    fields = getattr(dataset, "_metadata_fields", None)
+    metadata_map = getattr(dataset, "_metadata_map", None)
+    if fields is None or metadata_map is None or metadata_index >= len(fields):
+        return {int(value.item()): str(int(value.item())) for value in values}
+    field_name = fields[metadata_index]
+    names = metadata_map.get(field_name)
+    if names is None:
+        return {int(value.item()): str(int(value.item())) for value in values}
+    result = {}
+    for value in values:
+        index = int(value.item())
+        result[index] = names[index].strip() if index < len(names) else str(index)
+    return result
+
+
+def build_dataset_subset(args: argparse.Namespace):
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    full_dataset = dataset_spec["dataset"](args.data_folder) if "dataset" in dataset_spec else None
+    if full_dataset is None:
+        raise ValueError(
+            f"Dataset spec for {args.dataset!r} must expose a 'dataset' class for concept discovery."
+        )
+    return dataset_spec, full_dataset, full_dataset.get_subset(args.split, transform=None)
+
+
 def decompose_by_group(args: argparse.Namespace):
     preprocess, vocabulary, splicemodel = load_splice(args)
-    full_dataset = WaterbirdsDataset(args.data_folder)
-    subset = full_dataset.get_subset(args.split, transform=None)
+    dataset_spec, full_dataset, subset = build_dataset_subset(args)
+    spurious_index, target_index = resolve_metadata_indices(args, dataset_spec)
     loader = DataLoader(
         subset,
         batch_size=args.batch_size,
@@ -80,58 +132,101 @@ def decompose_by_group(args: argparse.Namespace):
     )
 
     vocab_size = len(vocabulary)
-    group_sums = torch.zeros(4, vocab_size, dtype=torch.float64)
-    group_counts = torch.zeros(4, dtype=torch.float64)
+    group_sums: dict[tuple[int, int], torch.Tensor] = {}
+    group_counts: dict[tuple[int, int], int] = {}
     total_sum = torch.zeros(vocab_size, dtype=torch.float64)
     total_count = 0
+    spurious_values = set()
+    target_values = set()
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader, start=1):
             images = torch.stack([preprocess(item[0]) for item in batch], dim=0).to(args.device)
             metadata = torch.stack([item[2] for item in batch], dim=0)
             weights = splicemodel.encode_image(images).detach().cpu().double()
-            groups = metadata[:, 0].long() + 2 * metadata[:, 1].long()
+            spurious = metadata[:, spurious_index].long()
+            target = metadata[:, target_index].long()
 
-            for group in range(4):
-                mask = groups == group
-                if mask.any():
-                    group_sums[group] += weights[mask].sum(dim=0)
-                    group_counts[group] += mask.sum().item()
+            for spurious_value in torch.unique(spurious).tolist():
+                for target_value in torch.unique(target).tolist():
+                    mask = (spurious == spurious_value) & (target == target_value)
+                    if not mask.any():
+                        continue
+                    key = (int(spurious_value), int(target_value))
+                    if key not in group_sums:
+                        group_sums[key] = torch.zeros(vocab_size, dtype=torch.float64)
+                        group_counts[key] = 0
+                    group_sums[key] += weights[mask].sum(dim=0)
+                    group_counts[key] += int(mask.sum().item())
+                    spurious_values.add(int(spurious_value))
+                    target_values.add(int(target_value))
             total_sum += weights.sum(dim=0)
             total_count += weights.shape[0]
             if batch_idx % 10 == 0:
                 print(f"[INFO] Processed {total_count} images", flush=True)
 
-    group_means = group_sums / group_counts.clamp_min(1).unsqueeze(1)
+    spurious_values_tensor = torch.tensor(sorted(spurious_values), dtype=torch.long)
+    target_values_tensor = torch.tensor(sorted(target_values), dtype=torch.long)
+    if len(spurious_values_tensor) != 2 or len(target_values_tensor) != 2:
+        raise ValueError(
+            "Conditional concept scoring currently expects binary spurious and target attributes. "
+            f"Got {len(spurious_values_tensor)} spurious values and {len(target_values_tensor)} target values."
+        )
+    group_means = {
+        key: group_sums[key] / max(group_counts[key], 1)
+        for key in group_sums
+    }
     dataset_mean = total_sum / max(total_count, 1)
-    return vocabulary, group_means, group_counts, dataset_mean, total_count
+    metadata_names = {
+        "spurious": metadata_value_names(full_dataset, spurious_index, spurious_values_tensor),
+        "target": metadata_value_names(full_dataset, target_index, target_values_tensor),
+    }
+    return vocabulary, group_means, group_counts, dataset_mean, total_count, spurious_values_tensor, target_values_tensor, metadata_names
 
 
 def rank_concepts(
     vocabulary: list[str],
-    group_means: torch.Tensor,
-    group_counts: torch.Tensor,
+    group_means: dict[tuple[int, int], torch.Tensor],
+    group_counts: dict[tuple[int, int], int],
     dataset_mean: torch.Tensor,
+    spurious_values: torch.Tensor,
+    target_values: torch.Tensor,
+    metadata_names: dict,
     args: argparse.Namespace,
 ) -> list[dict]:
-    land_background_mean = (group_means[0] * group_counts[0] + group_means[2] * group_counts[2]) / (
-        group_counts[0] + group_counts[2]
-    ).clamp_min(1)
-    water_background_mean = (group_means[1] * group_counts[1] + group_means[3] * group_counts[3]) / (
-        group_counts[1] + group_counts[3]
-    ).clamp_min(1)
-    landbird_mean = (group_means[0] * group_counts[0] + group_means[1] * group_counts[1]) / (
-        group_counts[0] + group_counts[1]
-    ).clamp_min(1)
-    waterbird_mean = (group_means[2] * group_counts[2] + group_means[3] * group_counts[3]) / (
-        group_counts[2] + group_counts[3]
-    ).clamp_min(1)
+    s0, s1 = [int(value.item()) for value in spurious_values]
+    y0, y1 = [int(value.item()) for value in target_values]
+    required_groups = [(s0, y0), (s1, y0), (s0, y1), (s1, y1)]
+    missing_groups = [key for key in required_groups if key not in group_means]
+    if missing_groups:
+        raise ValueError(f"Missing required spurious/target groups for conditional scoring: {missing_groups}")
 
-    background_effect = water_background_mean - land_background_mean
-    label_effect = waterbird_mean - landbird_mean
-    signed_score = background_effect.abs() - args.label_penalty * label_effect.abs()
+    spurious_effect_by_target = torch.stack(
+        [
+            group_means[(s1, y0)] - group_means[(s0, y0)],
+            group_means[(s1, y1)] - group_means[(s0, y1)],
+        ]
+    )
+    target_effect_by_spurious = torch.stack(
+        [
+            group_means[(s0, y1)] - group_means[(s0, y0)],
+            group_means[(s1, y1)] - group_means[(s1, y0)],
+        ]
+    )
+    spurious_effect = spurious_effect_by_target.abs().mean(dim=0)
+    target_effect = target_effect_by_spurious.abs().mean(dim=0)
+    instability = spurious_effect_by_target.std(dim=0, unbiased=False)
+    signed_score = spurious_effect - args.label_penalty * target_effect - args.instability_penalty * instability
     score = signed_score.abs() if args.use_abs_score else signed_score
     eligible = dataset_mean >= args.min_mean_weight
+
+    group_mean_payload = {}
+    for (spurious_value, target_value), means in group_means.items():
+        key = (
+            f"{metadata_names['target'].get(target_value, str(target_value))}_"
+            f"on_{metadata_names['spurious'].get(spurious_value, str(spurious_value))}"
+        )
+        group_mean_payload[key] = means
 
     candidates = []
     for index in torch.argsort(score, descending=True).tolist():
@@ -142,14 +237,21 @@ def rank_concepts(
                 "index": index,
                 "concept": vocabulary[index],
                 "score": round(score[index].item(), 8),
-                "background_effect": round(background_effect[index].item(), 8),
-                "label_effect": round(label_effect[index].item(), 8),
+                "spurious_effect": round(spurious_effect[index].item(), 8),
+                "target_effect": round(target_effect[index].item(), 8),
+                "instability": round(instability[index].item(), 8),
+                "spurious_effect_by_target": {
+                    metadata_names["target"].get(y0, str(y0)): round(spurious_effect_by_target[0, index].item(), 8),
+                    metadata_names["target"].get(y1, str(y1)): round(spurious_effect_by_target[1, index].item(), 8),
+                },
+                "target_effect_by_spurious": {
+                    metadata_names["spurious"].get(s0, str(s0)): round(target_effect_by_spurious[0, index].item(), 8),
+                    metadata_names["spurious"].get(s1, str(s1)): round(target_effect_by_spurious[1, index].item(), 8),
+                },
                 "mean_weight": round(dataset_mean[index].item(), 8),
                 "group_means": {
-                    "landbird_on_land": round(group_means[0, index].item(), 8),
-                    "landbird_on_water": round(group_means[1, index].item(), 8),
-                    "waterbird_on_land": round(group_means[2, index].item(), 8),
-                    "waterbird_on_water": round(group_means[3, index].item(), 8),
+                    key: round(values[index].item(), 8)
+                    for key, values in group_mean_payload.items()
                 },
             }
         )
@@ -158,27 +260,30 @@ def rank_concepts(
     return candidates
 
 
-def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts: torch.Tensor, total_count: int) -> None:
+def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts: dict[tuple[int, int], int], total_count: int) -> None:
     out_path = Path(args.out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "method": "background_effect_abs_minus_label_effect_abs",
+        "method": "conditional_spurious_effect_minus_target_effect_minus_instability",
+        "formula": "mean_y abs(E[c|s=1,y]-E[c|s=0,y]) - label_penalty * mean_s abs(E[c|y=1,s]-E[c|y=0,s]) - instability_penalty * std_y(E[c|s=1,y]-E[c|s=0,y])",
+        "dataset": args.dataset,
         "split": args.split,
         "total_count": total_count,
         "group_counts": {
-            "landbird_on_land": int(group_counts[0].item()),
-            "landbird_on_water": int(group_counts[1].item()),
-            "waterbird_on_land": int(group_counts[2].item()),
-            "waterbird_on_water": int(group_counts[3].item()),
+            f"spurious_{spurious_value}_target_{target_value}": count
+            for (spurious_value, target_value), count in group_counts.items()
         },
         "settings": {
             "top_k": args.top_k,
+            "target_metadata_index": args.target_metadata_index,
+            "spurious_metadata_index": args.spurious_metadata_index,
             "splice_model": args.splice_model,
             "splice_vocab": args.splice_vocab,
             "splice_vocab_size": args.splice_vocab_size,
             "splice_l1_penalty": args.splice_l1_penalty,
             "min_mean_weight": args.min_mean_weight,
             "label_penalty": args.label_penalty,
+            "instability_penalty": args.instability_penalty,
             "use_abs_score": args.use_abs_score,
         },
         "concepts": candidates,
@@ -198,15 +303,33 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
     for candidate in candidates:
         print(
             f"  {candidate['index']:5d} {candidate['concept']:<30} "
-            f"score={candidate['score']:.6f} bg={candidate['background_effect']:.6f} "
-            f"label={candidate['label_effect']:.6f}"
+            f"score={candidate['score']:.6f} spurious={candidate['spurious_effect']:.6f} "
+            f"target={candidate['target_effect']:.6f} instability={candidate['instability']:.6f}"
         )
 
 
 def main() -> None:
     args = parse_args()
-    vocabulary, group_means, group_counts, dataset_mean, total_count = decompose_by_group(args)
-    candidates = rank_concepts(vocabulary, group_means, group_counts, dataset_mean, args)
+    (
+        vocabulary,
+        group_means,
+        group_counts,
+        dataset_mean,
+        total_count,
+        spurious_values,
+        target_values,
+        metadata_names,
+    ) = decompose_by_group(args)
+    candidates = rank_concepts(
+        vocabulary,
+        group_means,
+        group_counts,
+        dataset_mean,
+        spurious_values,
+        target_values,
+        metadata_names,
+        args,
+    )
     write_outputs(args, candidates, group_counts, total_count)
 
 

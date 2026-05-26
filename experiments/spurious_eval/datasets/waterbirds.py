@@ -265,8 +265,11 @@ def make_waterbirds_ssl_loader(
 
 
 WATERBIRDS_SPEC = {
+    "dataset": WaterbirdsDataset,
     "config": WaterbirdsConfig,
     "ssl_loader": make_waterbirds_ssl_loader,
     "probe_loaders": make_waterbirds_loaders,
     "num_classes": 2,
+    "spurious_metadata_index": 0,
+    "target_metadata_index": 1,
 }
