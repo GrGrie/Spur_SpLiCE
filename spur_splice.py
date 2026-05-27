@@ -141,11 +141,20 @@ def format_run_name(args: argparse.Namespace) -> str:
     optimizer_name = args.optimizer
     if optimizer_name.lower() == "sam":
         optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
-    splice_name = f"{args.splice_mode}_w{args.splice_weight:g}" if args.use_splice else "nosplice"
-    return (
+    if not args.use_splice:
+        splice_name = "nosplice"
+    elif args.splice_mode == "augment":
+        score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
+        splice_name = f"augment{args.splice_score_threshold:g}"
+    else:
+        splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
+    run_name = (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}"
     )
+    if args.use_splice and args.splice_mode == "augment":
+        run_name = f"{run_name}_score{score_reduction}"
+    return run_name
 
 
 def write_run_config(args: argparse.Namespace) -> None:
