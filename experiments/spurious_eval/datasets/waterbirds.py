@@ -29,13 +29,17 @@ class WaterbirdsConfig:
     image_size: int = 224
     train_split: str = "ds_train"
     eval_split: str = "val"
+    ssl_crop_min: float = 0.2
 
 
-def waterbirds_transforms(image_size: int = 224) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
+def waterbirds_transforms(
+    image_size: int = 224,
+    ssl_crop_min: float = 0.2,
+) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
     normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
     ssl_train_transform = transforms.Compose(
         [
-            transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
+            transforms.RandomResizedCrop(size=image_size, scale=(ssl_crop_min, 1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomApply(
                 [
@@ -229,7 +233,10 @@ def make_waterbirds_ssl_loader(
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(config.image_size)
+    ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(
+        config.image_size,
+        ssl_crop_min=config.ssl_crop_min,
+    )
     full_dataset = WaterbirdsDataset(config.root_dir)
     if splice_mode in {"augment", "augment_corr_reg"}:
         if concept_scorer is None:

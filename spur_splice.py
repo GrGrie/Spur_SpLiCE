@@ -59,6 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
     parser.add_argument("--temp", type=float, default=0.5)
+    parser.add_argument("--ssl_crop_min", "--ssl-crop-min", dest="ssl_crop_min", type=float, default=0.2)
 
     parser.add_argument("--cosine", action="store_true")
     parser.add_argument("--warm", action="store_true")
@@ -107,6 +108,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_concepts must be provided when --splice_mode is not none.")
     if args.splice_mode in {"corr_reg", "augment_corr_reg"} and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
+    if not 0 < args.ssl_crop_min <= 1:
+        parser.error("--ssl-crop-min must be in the interval (0, 1].")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -197,7 +200,7 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
 
 def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
-    config = dataset_spec["config"](root_dir=args.data_folder)
+    config = dataset_spec["config"](root_dir=args.data_folder, ssl_crop_min=args.ssl_crop_min)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
     return dataset_spec["ssl_loader"](
