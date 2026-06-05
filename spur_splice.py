@@ -33,6 +33,31 @@ def str_to_bool(value) -> bool:
     raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
 
 
+def parse_float_tuple(value: str, expected_len: int, option_name: str) -> tuple[float, ...]:
+    try:
+        values = tuple(float(part.strip()) for part in value.split(",") if part.strip())
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{option_name} must be a comma-separated list of floats.") from exc
+    if len(values) != expected_len:
+        raise argparse.ArgumentTypeError(f"{option_name} expects {expected_len} comma-separated floats.")
+    return values
+
+
+def parse_color_jitter(value: str) -> tuple[float, float, float, float]:
+    values = parse_float_tuple(value, 4, "--splice_strong_color_jitter")
+    return values[0], values[1], values[2], values[3]
+
+
+def parse_blur_sigma(value: str) -> tuple[float, float]:
+    values = parse_float_tuple(value, 2, "--splice_strong_blur_sigma")
+    return values[0], values[1]
+
+
+def validate_probability(value: float | None, option_name: str) -> None:
+    if value is not None and not 0 <= value <= 1:
+        raise argparse.ArgumentTypeError(f"{option_name} must be in the interval [0, 1].")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Spur_SpLiCE SimCLR SSL training")
     parser.add_argument("--print_freq", type=int, default=10)
@@ -97,6 +122,56 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
     parser.add_argument("--splice_batch_size", type=int, default=128)
     parser.add_argument("--splice_num_workers", type=int, default=0)
+    parser.add_argument(
+        "--splice_strong_crop",
+        type=float,
+        nargs="?",
+        const=0.08,
+        default=None,
+        help="Enable a stronger crop for high-score samples. With no value, uses 0.08; omitted keeps standard ssl_crop_min.",
+    )
+    parser.add_argument(
+        "--splice_strong_color_jitter",
+        type=parse_color_jitter,
+        nargs="?",
+        const="0.8,0.8,0.8,0.2",
+        default=None,
+        help="Enable stronger ColorJitter as brightness,contrast,saturation,hue. With no value, uses 0.8,0.8,0.8,0.2.",
+    )
+    parser.add_argument(
+        "--splice_strong_color_jitter_p",
+        type=float,
+        default=None,
+        help="Probability for strong ColorJitter. Also enables strong ColorJitter with default strengths if used alone.",
+    )
+    parser.add_argument(
+        "--splice_strong_grayscale_p",
+        type=float,
+        nargs="?",
+        const=0.3,
+        default=None,
+        help="Enable stronger RandomGrayscale probability. With no value, uses 0.3.",
+    )
+    parser.add_argument(
+        "--splice_strong_blur_p",
+        type=float,
+        nargs="?",
+        const=0.5,
+        default=None,
+        help="Enable GaussianBlur for high-score samples. With no value, uses probability 0.5.",
+    )
+    parser.add_argument(
+        "--splice_strong_blur_kernel_size",
+        type=int,
+        default=None,
+        help="GaussianBlur kernel size. Also enables blur with default probability if used alone.",
+    )
+    parser.add_argument(
+        "--splice_strong_blur_sigma",
+        type=parse_blur_sigma,
+        default=None,
+        help="GaussianBlur sigma as min,max. Also enables blur with default probability if used alone.",
+    )
 
     args = parser.parse_args()
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
@@ -110,6 +185,22 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
     if not 0 < args.ssl_crop_min <= 1:
         parser.error("--ssl-crop-min must be in the interval (0, 1].")
+    if args.splice_strong_crop is not None and not 0 < args.splice_strong_crop <= 1:
+        parser.error("--splice_strong_crop must be in the interval (0, 1].")
+    probability_args = {
+        "--splice_strong_color_jitter_p": args.splice_strong_color_jitter_p,
+        "--splice_strong_grayscale_p": args.splice_strong_grayscale_p,
+        "--splice_strong_blur_p": args.splice_strong_blur_p,
+    }
+    for option_name, value in probability_args.items():
+        try:
+            validate_probability(value, option_name)
+        except argparse.ArgumentTypeError as exc:
+            parser.error(str(exc))
+    if args.splice_strong_blur_kernel_size is not None and args.splice_strong_blur_kernel_size <= 0:
+        parser.error("--splice_strong_blur_kernel_size must be positive.")
+    if args.splice_strong_blur_sigma is not None and args.splice_strong_blur_sigma[0] > args.splice_strong_blur_sigma[1]:
+        parser.error("--splice_strong_blur_sigma min must be <= max.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -148,9 +239,11 @@ def format_run_name(args: argparse.Namespace) -> str:
         splice_name = "nosplice"
     elif args.splice_mode == "augment":
         score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
-        splice_name = f"augment{args.splice_score_threshold:g}"
+        splice_name = f"augment{args.splice_score_threshold:g}_{format_strong_aug_name(args)}"
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
+        if args.splice_mode == "augment_corr_reg":
+            splice_name = f"{splice_name}_{format_strong_aug_name(args)}"
     run_name = (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}"
@@ -158,6 +251,29 @@ def format_run_name(args: argparse.Namespace) -> str:
     if args.use_splice and args.splice_mode == "augment":
         run_name = f"{run_name}_score{score_reduction}"
     return run_name
+
+
+def format_strong_aug_name(args: argparse.Namespace) -> str:
+    parts = []
+    if args.splice_strong_crop is not None:
+        parts.append(f"crop{args.splice_strong_crop:g}")
+    if args.splice_strong_color_jitter is not None or args.splice_strong_color_jitter_p is not None:
+        jitter = args.splice_strong_color_jitter or (0.8, 0.8, 0.8, 0.2)
+        jitter_values = "-".join(f"{value:g}" for value in jitter)
+        probability = 0.9 if args.splice_strong_color_jitter_p is None else args.splice_strong_color_jitter_p
+        parts.append(f"cj{jitter_values}p{probability:g}")
+    if args.splice_strong_grayscale_p is not None:
+        parts.append(f"gray{args.splice_strong_grayscale_p:g}")
+    if (
+        args.splice_strong_blur_p is not None
+        or args.splice_strong_blur_kernel_size is not None
+        or args.splice_strong_blur_sigma is not None
+    ):
+        probability = 0.5 if args.splice_strong_blur_p is None else args.splice_strong_blur_p
+        kernel_size = 23 if args.splice_strong_blur_kernel_size is None else args.splice_strong_blur_kernel_size
+        sigma = args.splice_strong_blur_sigma or (0.1, 2.0)
+        parts.append(f"blur{probability:g}k{kernel_size}s{sigma[0]:g}-{sigma[1]:g}")
+    return "standardAug" if not parts else "_".join(parts)
 
 
 def write_run_config(args: argparse.Namespace) -> None:
@@ -200,7 +316,17 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
 
 def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
-    config = dataset_spec["config"](root_dir=args.data_folder, ssl_crop_min=args.ssl_crop_min)
+    config = dataset_spec["config"](
+        root_dir=args.data_folder,
+        ssl_crop_min=args.ssl_crop_min,
+        splice_strong_crop=args.splice_strong_crop,
+        splice_strong_color_jitter=args.splice_strong_color_jitter,
+        splice_strong_color_jitter_p=args.splice_strong_color_jitter_p,
+        splice_strong_grayscale_p=args.splice_strong_grayscale_p,
+        splice_strong_blur_p=args.splice_strong_blur_p,
+        splice_strong_blur_kernel_size=args.splice_strong_blur_kernel_size,
+        splice_strong_blur_sigma=args.splice_strong_blur_sigma,
+    )
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
     return dataset_spec["ssl_loader"](

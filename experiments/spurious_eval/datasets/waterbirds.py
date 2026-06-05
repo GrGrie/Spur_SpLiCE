@@ -30,43 +30,102 @@ class WaterbirdsConfig:
     train_split: str = "ds_train"
     eval_split: str = "val"
     ssl_crop_min: float = 0.2
+    splice_strong_crop: float | None = None
+    splice_strong_color_jitter: tuple[float, float, float, float] | None = None
+    splice_strong_color_jitter_p: float | None = None
+    splice_strong_grayscale_p: float | None = None
+    splice_strong_blur_p: float | None = None
+    splice_strong_blur_kernel_size: int | None = None
+    splice_strong_blur_sigma: tuple[float, float] | None = None
+
+
+def _strong_color_jitter_enabled(
+    color_jitter: tuple[float, float, float, float] | None,
+    probability: float | None,
+) -> bool:
+    return color_jitter is not None or probability is not None
+
+
+def _strong_blur_enabled(config: WaterbirdsConfig) -> bool:
+    return (
+        config.splice_strong_blur_p is not None
+        or config.splice_strong_blur_kernel_size is not None
+        or config.splice_strong_blur_sigma is not None
+    )
+
+
+def _build_ssl_transform(
+    image_size: int,
+    crop_min: float,
+    color_jitter: tuple[float, float, float, float],
+    color_jitter_p: float,
+    grayscale_p: float,
+    normalize: transforms.Normalize,
+    blur_p: float | None = None,
+    blur_kernel_size: int = 23,
+    blur_sigma: tuple[float, float] = (0.1, 2.0),
+) -> transforms.Compose:
+    transform_steps = [
+        transforms.RandomResizedCrop(size=image_size, scale=(crop_min, 1.0)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomApply(
+            [
+                transforms.ColorJitter(*color_jitter),
+            ],
+            p=color_jitter_p,
+        ),
+        transforms.RandomGrayscale(p=grayscale_p),
+    ]
+    if blur_p is not None:
+        transform_steps.append(
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=blur_kernel_size, sigma=blur_sigma)], p=blur_p)
+        )
+    transform_steps.extend([transforms.ToTensor(), normalize])
+    return transforms.Compose(transform_steps)
 
 
 def waterbirds_transforms(
     image_size: int = 224,
     ssl_crop_min: float = 0.2,
+    strong_config: WaterbirdsConfig | None = None,
 ) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
     normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
-    ssl_train_transform = transforms.Compose(
-        [
-            transforms.RandomResizedCrop(size=image_size, scale=(ssl_crop_min, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply(
-                [
-                    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
-                ],
-                p=0.8,
-            ),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.ToTensor(),
-            normalize,
-        ]
+    ssl_train_transform = _build_ssl_transform(
+        image_size=image_size,
+        crop_min=ssl_crop_min,
+        color_jitter=(0.4, 0.4, 0.4, 0.1),
+        color_jitter_p=0.8,
+        grayscale_p=0.2,
+        normalize=normalize,
     )
-    strong_ssl_train_transform = transforms.Compose(
-        [
-            transforms.RandomResizedCrop(size=image_size, scale=(0.08, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply(
-                [
-                    transforms.ColorJitter(0.8, 0.8, 0.8, 0.2),
-                ],
-                p=0.9,
-            ),
-            transforms.RandomGrayscale(p=0.3),
-            transforms.RandomApply([transforms.GaussianBlur(kernel_size=23, sigma=(0.1, 2.0))], p=0.5),
-            transforms.ToTensor(),
-            normalize,
-        ]
+    strong_config = strong_config or WaterbirdsConfig(image_size=image_size, ssl_crop_min=ssl_crop_min)
+    use_strong_color_jitter = _strong_color_jitter_enabled(
+        strong_config.splice_strong_color_jitter,
+        strong_config.splice_strong_color_jitter_p,
+    )
+    strong_color_jitter = strong_config.splice_strong_color_jitter
+    if strong_color_jitter is None:
+        strong_color_jitter = (0.8, 0.8, 0.8, 0.2) if use_strong_color_jitter else (0.4, 0.4, 0.4, 0.1)
+    strong_color_jitter_p = strong_config.splice_strong_color_jitter_p
+    if strong_color_jitter_p is None:
+        strong_color_jitter_p = 0.9 if use_strong_color_jitter else 0.8
+    strong_grayscale_p = strong_config.splice_strong_grayscale_p
+    if strong_grayscale_p is None:
+        strong_grayscale_p = 0.2
+    strong_blur_p = None
+    if _strong_blur_enabled(strong_config):
+        strong_blur_p = 0.5 if strong_config.splice_strong_blur_p is None else strong_config.splice_strong_blur_p
+
+    strong_ssl_train_transform = _build_ssl_transform(
+        image_size=image_size,
+        crop_min=strong_config.splice_strong_crop if strong_config.splice_strong_crop is not None else ssl_crop_min,
+        color_jitter=strong_color_jitter,
+        color_jitter_p=strong_color_jitter_p,
+        grayscale_p=strong_grayscale_p,
+        normalize=normalize,
+        blur_p=strong_blur_p,
+        blur_kernel_size=strong_config.splice_strong_blur_kernel_size or 23,
+        blur_sigma=strong_config.splice_strong_blur_sigma or (0.1, 2.0),
     )
     linear_train_transform = transforms.Compose(
         [
@@ -236,6 +295,7 @@ def make_waterbirds_ssl_loader(
     ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(
         config.image_size,
         ssl_crop_min=config.ssl_crop_min,
+        strong_config=config,
     )
     full_dataset = WaterbirdsDataset(config.root_dir)
     if splice_mode in {"augment", "augment_corr_reg"}:

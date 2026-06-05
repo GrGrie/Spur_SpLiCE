@@ -55,8 +55,8 @@ SpLiCE produces a scalar spurious-background score from a manual list of concept
 names or vocabulary indices passed with `--splice_concepts`.
 
 During training, SpLiCE affects downstream predictions only indirectly through
-the learned representation. In `augment`, high-score images receive stronger
-SSL augmentations, which can weaken easy visual shortcuts. In `corr_reg`, the
+the learned representation. In `augment`, high-score images can receive
+explicitly enabled stronger SSL augmentations, which can weaken easy visual shortcuts. In `corr_reg`, the
 SSL loop penalizes correlation between encoder features and the frozen SpLiCE
 concept score, encouraging the encoder to make those selected cues less
 linearly available to the downstream linear probe.
@@ -65,10 +65,10 @@ The current implementation supports two interventions:
 
 - `augment`: concept-aware augmentation. Before SSL training starts, SpLiCE
   scores every Waterbirds training image. Images whose selected concept score is
-  at least `--splice_score_threshold` receive stronger SimCLR augmentations
-  (tighter random crops, stronger color jitter, grayscale, and blur). This is
-  meant to weaken easy background shortcuts while preserving the normal SimCLR
-  objective.
+  at least `--splice_score_threshold` receive only the stronger SimCLR
+  components explicitly enabled with `--splice_strong_*` flags. This is meant
+  to support controlled augmentation ablations while preserving the normal
+  SimCLR objective.
 - `corr_reg`: correlation regularization. Each SSL batch carries the frozen
   SpLiCE score for every image. The training loop penalizes squared correlation
   between ResNet encoder features and those scores, scaled by `--splice_weight`.
@@ -87,7 +87,11 @@ python spur_splice.py \
   --data_folder ./datasets \
   --splice_mode augment \
   --splice_concepts "water,lake,forest,tree,grass" \
-  --splice_score_threshold 0.01
+  --splice_score_threshold 0.01 \
+  --splice_strong_crop \
+  --splice_strong_color_jitter \
+  --splice_strong_grayscale_p \
+  --splice_strong_blur_p
 
 # Option C: SpLiCE/feature correlation regularization only
 python spur_splice.py \
@@ -184,21 +188,60 @@ python tools/summarize_splice_scores.py \
   --out_path outputs/waterbirds_splice_score_summary.json
 ```
 
-Use the printed percentiles to choose how aggressive the targeted augmentation
-should be. For example, using the `p75` value means roughly the top 25% most
-background-concept-heavy images receive strong augmentation; using `p90` limits
-strong augmentation to roughly the top 10%.
+Use the printed percentiles to choose how many samples should receive the
+explicitly enabled targeted augmentation components. For example, using the
+`p75` value means roughly the top 25% most background-concept-heavy images are
+routed to the configured strong transform; using `p90` limits that route to
+roughly the top 10%.
 
 Expected outcomes:
 
 - Average accuracy may stay similar or drop slightly.
 - Worst-group accuracy should improve if the selected concepts are genuinely
   spurious background cues.
-- If `--splice_score_threshold` is too low, too many samples receive strong
-  augmentation and training may become noisy.
+- If `--splice_score_threshold` is too low, too many samples receive the
+  configured strong augmentation components and training may become noisy.
 - If `--splice_weight` is too high, useful representation quality can degrade.
 - If the chosen concepts describe the bird itself rather than the background,
   both average and worst-group accuracy may suffer.
+
+Strong augmentation is now controlled as explicit deltas over the standard
+SimCLR transform. If `--splice_mode augment` is used without any
+`--splice_strong_*` arguments, high-score images still go through the standard
+SimCLR transform. Add only the components you want to ablate:
+
+```bash
+# Strong crop only, using the old strong default min scale 0.08.
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode augment \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --splice_score_threshold 0.01 \
+  --splice_strong_crop
+
+# Strong color jitter only, with custom jitter strengths and probability.
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode augment \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --splice_score_threshold 0.01 \
+  --splice_strong_color_jitter 0.7,0.7,0.7,0.15 \
+  --splice_strong_color_jitter_p 0.85
+
+# Recreate the previous bundled strong transform.
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode augment \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --splice_score_threshold 0.01 \
+  --splice_strong_crop \
+  --splice_strong_color_jitter \
+  --splice_strong_grayscale_p \
+  --splice_strong_blur_p
+```
 
 Recommended experiment order:
 
