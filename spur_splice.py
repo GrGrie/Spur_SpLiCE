@@ -33,6 +33,15 @@ def str_to_bool(value) -> bool:
     raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
 
 
+def optional_bool(value: str) -> bool | None:
+    value = str(value).strip().lower()
+    if value in {"true", "yes", "y", "on"}:
+        return True
+    if value in {"", "false", "no", "n", "off", "none", "null"}:
+        return False
+    return None
+
+
 def parse_float_tuple(value: str, expected_len: int, option_name: str) -> tuple[float, ...]:
     try:
         values = tuple(float(part.strip()) for part in value.split(",") if part.strip())
@@ -43,12 +52,28 @@ def parse_float_tuple(value: str, expected_len: int, option_name: str) -> tuple[
     return values
 
 
-def parse_color_jitter(value: str) -> tuple[float, float, float, float]:
+def parse_optional_float_or_bool(value: str, default_value: float, option_name: str) -> float | None:
+    bool_value = optional_bool(value)
+    if bool_value is not None:
+        return default_value if bool_value else None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{option_name} expects true, false, or a float value.") from exc
+
+
+def parse_optional_color_jitter(value: str) -> tuple[float, float, float, float] | None:
+    bool_value = optional_bool(value)
+    if bool_value is not None:
+        return (0.8, 0.8, 0.8, 0.2) if bool_value else None
     values = parse_float_tuple(value, 4, "--splice_strong_color_jitter")
     return values[0], values[1], values[2], values[3]
 
 
-def parse_blur_sigma(value: str) -> tuple[float, float]:
+def parse_optional_blur_sigma(value: str) -> tuple[float, float] | None:
+    bool_value = optional_bool(value)
+    if bool_value is not None:
+        return (0.1, 2.0) if bool_value else None
     values = parse_float_tuple(value, 2, "--splice_strong_blur_sigma")
     return values[0], values[1]
 
@@ -124,41 +149,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_num_workers", type=int, default=0)
     parser.add_argument(
         "--splice_strong_crop",
-        type=float,
+        type=lambda value: parse_optional_float_or_bool(value, 0.08, "--splice_strong_crop"),
         nargs="?",
-        const=0.08,
+        const="true",
         default=None,
-        help="Enable a stronger crop for high-score samples. With no value, uses 0.08; omitted keeps standard ssl_crop_min.",
+        help="Enable a stronger crop for high-score samples. Accepts true, false, or a crop min scale. True/no value uses 0.08.",
     )
     parser.add_argument(
         "--splice_strong_color_jitter",
-        type=parse_color_jitter,
+        type=parse_optional_color_jitter,
         nargs="?",
-        const="0.8,0.8,0.8,0.2",
+        const="true",
         default=None,
-        help="Enable stronger ColorJitter as brightness,contrast,saturation,hue. With no value, uses 0.8,0.8,0.8,0.2.",
+        help="Enable stronger ColorJitter. Accepts true, false, or brightness,contrast,saturation,hue. True/no value uses 0.8,0.8,0.8,0.2.",
     )
     parser.add_argument(
         "--splice_strong_color_jitter_p",
-        type=float,
+        type=lambda value: parse_optional_float_or_bool(value, 0.9, "--splice_strong_color_jitter_p"),
         default=None,
-        help="Probability for strong ColorJitter. Also enables strong ColorJitter with default strengths if used alone.",
+        help="Probability for strong ColorJitter. Accepts true, false, or a probability. True uses 0.9.",
     )
     parser.add_argument(
         "--splice_strong_grayscale_p",
-        type=float,
+        type=lambda value: parse_optional_float_or_bool(value, 0.3, "--splice_strong_grayscale_p"),
         nargs="?",
-        const=0.3,
+        const="true",
         default=None,
-        help="Enable stronger RandomGrayscale probability. With no value, uses 0.3.",
+        help="Enable stronger RandomGrayscale probability. Accepts true, false, or a probability. True/no value uses 0.3.",
     )
     parser.add_argument(
         "--splice_strong_blur_p",
-        type=float,
+        type=lambda value: parse_optional_float_or_bool(value, 0.5, "--splice_strong_blur_p"),
         nargs="?",
-        const=0.5,
+        const="true",
         default=None,
-        help="Enable GaussianBlur for high-score samples. With no value, uses probability 0.5.",
+        help="Enable GaussianBlur for high-score samples. Accepts true, false, or a probability. True/no value uses 0.5.",
     )
     parser.add_argument(
         "--splice_strong_blur_kernel_size",
@@ -168,9 +193,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--splice_strong_blur_sigma",
-        type=parse_blur_sigma,
+        type=parse_optional_blur_sigma,
         default=None,
-        help="GaussianBlur sigma as min,max. Also enables blur with default probability if used alone.",
+        help="GaussianBlur sigma as min,max. Accepts true, false, or min,max. True uses 0.1,2.0.",
     )
 
     args = parser.parse_args()

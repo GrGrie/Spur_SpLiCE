@@ -243,6 +243,30 @@ python spur_splice.py \
   --splice_strong_blur_p
 ```
 
+For a single Slurm script, pass boolean variables as argument values:
+
+```bash
+SPLICE_STRONG_CROP="true"
+SPLICE_STRONG_COLOR_JITTER="false"
+SPLICE_STRONG_GRAYSCALE_P="true"
+SPLICE_STRONG_BLUR_P="0.25"
+
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode augment \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --splice_score_threshold 0.01 \
+  --splice_strong_crop "$SPLICE_STRONG_CROP" \
+  --splice_strong_color_jitter "$SPLICE_STRONG_COLOR_JITTER" \
+  --splice_strong_grayscale_p "$SPLICE_STRONG_GRAYSCALE_P" \
+  --splice_strong_blur_p "$SPLICE_STRONG_BLUR_P"
+```
+
+Each strong argument accepts `true`, `false`, or a custom value. For example,
+`--splice_strong_crop 0.12`, `--splice_strong_color_jitter 0.7,0.7,0.7,0.15`,
+and `--splice_strong_blur_sigma 0.1,1.0` are valid.
+
 Recommended experiment order:
 
 1. Train the `none` baseline and record average and worst-group linear-probe
