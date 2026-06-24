@@ -457,6 +457,17 @@ def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_prob
     run_linear_probe(args, save_file, args.epochs)
 
 
+def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
+    if args.checkpoint_dir:
+        return
+    save_folder = Path(args.save_folder)
+    checkpoint_paths = sorted(save_folder.glob("*.pth"))
+    for checkpoint_path in checkpoint_paths:
+        checkpoint_path.unlink()
+    if checkpoint_paths:
+        print(f"[INFO] Removed {len(checkpoint_paths)} checkpoint file(s) from {save_folder}")
+
+
 def main() -> None:
     args = parse_args()
     print(args)
@@ -496,6 +507,7 @@ def main() -> None:
     save_file = os.path.join(args.save_folder, "last.pth")
     save_checkpoint(model, optimizer, args, args.epochs, save_file)
     maybe_run_final_probe(args, save_file, last_probe_epoch)
+    cleanup_default_checkpoints(args)
 
     if wandb_run is not None:
         wandb_run.finish()
