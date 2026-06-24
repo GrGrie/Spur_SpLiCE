@@ -452,10 +452,32 @@ def format_strong_aug_name(args: argparse.Namespace) -> str:
     return "standardAug" if not parts else "_".join(parts)
 
 
+def strong_aug_config(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "crop": args.splice_strong_crop,
+        "color_jitter": args.splice_strong_color_jitter,
+        "color_jitter_p": args.splice_strong_color_jitter_p,
+        "grayscale_p": args.splice_strong_grayscale_p,
+        "blur_p": args.splice_strong_blur_p,
+        "blur_kernel_size": args.splice_strong_blur_kernel_size,
+        "blur_sigma": args.splice_strong_blur_sigma,
+        "run_name_fragment": format_strong_aug_name(args),
+    }
+
+
+def print_strong_aug_config(args: argparse.Namespace) -> None:
+    config = strong_aug_config(args)
+    print("[INFO] Strong augmentation config:")
+    for key, value in config.items():
+        print(f"  {key}: {value}")
+
+
 def write_run_config(args: argparse.Namespace) -> None:
     config_path = Path(args.save_folder) / "args.json"
+    payload = vars(args).copy()
+    payload["strong_aug"] = strong_aug_config(args)
     with config_path.open("w", encoding="utf-8") as file:
-        json.dump(vars(args), file, indent=2, sort_keys=True)
+        json.dump(payload, file, indent=2, sort_keys=True)
         file.write("\n")
 
 
@@ -622,6 +644,7 @@ def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     print(args)
+    print_strong_aug_config(args)
     set_seed(args.seed)
     device = torch.device(args.device)
     args.device = str(device)
@@ -630,7 +653,9 @@ def main() -> None:
     if args.use_wandb:
         import wandb
 
-        wandb_run = wandb.init(project=args.wandb_name, name=args.model_name, config=vars(args), entity=args.entity)
+        wandb_config = vars(args).copy()
+        wandb_config["strong_aug"] = strong_aug_config(args)
+        wandb_run = wandb.init(project=args.wandb_name, name=args.model_name, config=wandb_config, entity=args.entity)
 
     train_loader, model, criterion, optimizer, splice_regularizer = build_training_state(args, device)
     start_epoch = load_checkpoint(model, optimizer, args.resume, device) + 1 if args.resume else 1
