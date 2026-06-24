@@ -267,6 +267,28 @@ Each strong argument accepts `true`, `false`, or a custom value. For example,
 `--splice_strong_crop 0.12`, `--splice_strong_color_jitter 0.7,0.7,0.7,0.15`,
 and `--splice_strong_blur_sigma 0.1,1.0` are valid.
 
+`spur_splice.py` can also run the full SpLiCE concept pipeline before training.
+Set `--splice_concepts auto` or leave `--splice_concepts` empty when a SpLiCE
+mode is enabled. The script will discover top concepts, write a score summary,
+then train with the selected concepts:
+
+```bash
+python spur_splice.py \
+  --dataset celeba \
+  --data_folder ./datasets \
+  --splice_mode augment \
+  --splice_concepts auto \
+  --splice_auto_top_k 10 \
+  --splice_score_reduction max \
+  --splice_score_threshold 0.03 \
+  --splice_strong_crop true
+```
+
+Automatic discovery writes `outputs/<dataset>_splice_concepts.json`,
+`outputs/<dataset>_splice_concepts.concepts.txt`,
+`outputs/<dataset>_splice_concepts.indices.txt`, and
+`outputs/<dataset>_splice_score_summary.json`.
+
 Recommended experiment order:
 
 1. Train the `none` baseline and record average and worst-group linear-probe

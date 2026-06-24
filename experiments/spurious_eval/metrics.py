@@ -43,25 +43,31 @@ def topk_accuracy(output: torch.Tensor, target: torch.Tensor, topk: tuple[int, .
         return results
 
 
-def waterbirds_group_ids(metadata: torch.Tensor) -> torch.Tensor:
-    """Return SpurSSL/WILDS group IDs for metadata columns [background, y]."""
+def spurious_group_ids(metadata: torch.Tensor) -> torch.Tensor:
+    """Return group IDs for metadata columns [spurious_attribute, y]."""
 
     if metadata.ndim == 1:
         metadata = metadata.unsqueeze(0)
-    return metadata[:, 0].long() + 2 * metadata[:, 1].long()
+    spurious = metadata[:, 0].long()
+    labels = metadata[:, 1].long()
+    spurious_cardinality = int(spurious.max().item()) + 1 if spurious.numel() else 1
+    return spurious + spurious_cardinality * labels
 
 
 def compute_group_metrics(
     predictions: torch.Tensor,
     labels: torch.Tensor,
     metadata: torch.Tensor,
-    n_groups: int = 4,
+    n_groups: int | None = None,
 ) -> GroupMetrics:
     """Compute average, worst-group, and best-group accuracy as fractions."""
 
     predictions = predictions.cpu().long()
     labels = labels.cpu().long()
-    groups = waterbirds_group_ids(metadata.cpu())
+    metadata = metadata.cpu()
+    groups = spurious_group_ids(metadata)
+    if n_groups is None:
+        n_groups = int(groups.max().item()) + 1 if groups.numel() else 0
     correct = predictions.eq(labels).float()
 
     group_accuracy = torch.zeros(n_groups, dtype=torch.float32)

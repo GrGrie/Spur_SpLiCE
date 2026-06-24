@@ -20,6 +20,8 @@ from experiments.spurious_eval.training.checkpointing import load_checkpoint, sa
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
 from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig, build_splice_regularizer, splice_mode_uses_scores
+from tools import discover_splice_spurious_concepts as concept_discovery
+from tools import summarize_splice_scores as score_summary
 
 
 def str_to_bool(value) -> bool:
@@ -81,6 +83,124 @@ def parse_optional_blur_sigma(value: str) -> tuple[float, float] | None:
 def validate_probability(value: float | None, option_name: str) -> None:
     if value is not None and not 0 <= value <= 1:
         raise argparse.ArgumentTypeError(f"{option_name} must be in the interval [0, 1].")
+
+
+def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
+    out_dir = Path(args.splice_auto_out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dataset_name = str(args.dataset)
+    discovery_path = out_dir / f"{dataset_name}_splice_concepts.json"
+    summary_path = out_dir / f"{dataset_name}_splice_score_summary.json"
+
+    discovery_args = argparse.Namespace(
+        dataset=args.dataset,
+        data_folder=args.data_folder,
+        split=args.splice_auto_split,
+        out_path=str(discovery_path),
+        top_k=args.splice_auto_top_k,
+        target_metadata_index=None,
+        spurious_metadata_index=None,
+        batch_size=args.splice_batch_size,
+        num_workers=args.splice_num_workers,
+        device=args.device,
+        disable_cudnn=True,
+        splice_model=args.splice_model,
+        splice_vocab=args.splice_vocab,
+        splice_vocab_size=args.splice_vocab_size,
+        splice_l1_penalty=args.splice_l1_penalty,
+        min_mean_weight=args.splice_auto_min_mean_weight,
+        label_penalty=args.splice_auto_label_penalty,
+        instability_penalty=args.splice_auto_instability_penalty,
+        use_abs_score=args.splice_auto_use_abs_score,
+    )
+    print(
+        "[INFO] Auto-discovering SpLiCE concepts: "
+        f"dataset={args.dataset} split={args.splice_auto_split} top_k={args.splice_auto_top_k}"
+    )
+    (
+        vocabulary,
+        group_means,
+        group_counts,
+        dataset_mean,
+        total_count,
+        spurious_values,
+        target_values,
+        metadata_names,
+    ) = concept_discovery.decompose_by_group(discovery_args)
+    candidates = concept_discovery.rank_concepts(
+        vocabulary,
+        group_means,
+        group_counts,
+        dataset_mean,
+        spurious_values,
+        target_values,
+        metadata_names,
+        discovery_args,
+    )
+    concept_discovery.write_outputs(discovery_args, candidates, group_counts, total_count)
+
+    concepts_path = discovery_path.with_suffix(".concepts.txt")
+    concepts = concepts_path.read_text(encoding="utf-8").strip()
+    if not concepts:
+        raise ValueError(f"Automatic concept discovery produced no concepts at {concepts_path}")
+    args.splice_concepts = concepts
+    args.splice_auto_concepts_path = str(concepts_path)
+    args.splice_auto_indices_path = str(discovery_path.with_suffix(".indices.txt"))
+    args.splice_auto_discovery_path = str(discovery_path)
+    args.splice_auto_summary_path = str(summary_path)
+    print(f"[INFO] Auto-selected SpLiCE concepts: {args.splice_concepts}")
+
+    summary_args = argparse.Namespace(
+        dataset=args.dataset,
+        data_folder=args.data_folder,
+        split=args.splice_auto_split,
+        splice_concepts=args.splice_concepts,
+        out_path=str(summary_path),
+        batch_size=args.splice_batch_size,
+        num_workers=args.splice_num_workers,
+        device=args.device,
+        disable_cudnn=True,
+        splice_model=args.splice_model,
+        splice_vocab=args.splice_vocab,
+        splice_vocab_size=args.splice_vocab_size,
+        splice_l1_penalty=args.splice_l1_penalty,
+        splice_score_reduction=args.splice_score_reduction,
+        candidate_thresholds=args.splice_auto_candidate_thresholds,
+    )
+    print(f"[INFO] Summarizing SpLiCE scores for auto-selected concepts -> {summary_path}")
+    score_summary.configure_torch_backend(summary_args)
+    summary_config = SpliceConfig(
+        use_splice=True,
+        mode="augment",
+        concepts=summary_args.splice_concepts,
+        l1_penalty=summary_args.splice_l1_penalty,
+        vocab=summary_args.splice_vocab,
+        vocab_size=summary_args.splice_vocab_size,
+        model=summary_args.splice_model,
+        score_reduction=summary_args.splice_score_reduction,
+        batch_size=summary_args.batch_size,
+        num_workers=summary_args.num_workers,
+        device=summary_args.device,
+    )
+    scorer = SpliceConceptScorer(summary_config)
+    dataset_spec = DATASET_REGISTRY[summary_args.dataset]
+    full_dataset = dataset_spec["dataset"](summary_args.data_folder)
+    subset = full_dataset.get_subset(summary_args.split, transform=None)
+    scores = scorer.score_dataset(subset)
+    thresholds = score_summary.parse_thresholds(summary_args.candidate_thresholds)
+    summary = score_summary.summarize(scores, thresholds)
+    summary["split"] = summary_args.split
+    summary["dataset"] = summary_args.dataset
+    summary["splice_concepts"] = summary_args.splice_concepts
+    summary["resolved_concepts"] = [
+        {"index": index, "concept": scorer.vocabulary[index]} for index in scorer.concept_indices
+    ]
+    summary["score_reduction"] = summary_args.splice_score_reduction
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print("[INFO] Score distribution:")
+    for key in ["count", "min", "p10", "p25", "median", "p75", "p90", "p95", "max"]:
+        print(f"  {key}: {summary[key]}")
+    print(f"[INFO] Wrote score summary to {summary_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -148,6 +268,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_batch_size", type=int, default=128)
     parser.add_argument("--splice_num_workers", type=int, default=0)
     parser.add_argument(
+        "--splice_auto_top_k",
+        type=int,
+        default=10,
+        help="Number of concepts to discover when --splice_concepts is empty or auto.",
+    )
+    parser.add_argument(
+        "--splice_auto_split",
+        type=str,
+        default="train",
+        choices=["train", "ds_train", "us_train", "balanced_train", "val", "test"],
+        help="Dataset split used for automatic SpLiCE concept discovery and score summary.",
+    )
+    parser.add_argument(
+        "--splice_auto_out_dir",
+        type=str,
+        default="outputs",
+        help="Directory for automatic concept-discovery and score-summary files.",
+    )
+    parser.add_argument(
+        "--splice_auto_candidate_thresholds",
+        type=str,
+        default="0.005,0.01,0.02,0.03,0.05,0.1",
+        help="Candidate thresholds reported in the automatic score summary.",
+    )
+    parser.add_argument("--splice_auto_min_mean_weight", type=float, default=0.0)
+    parser.add_argument("--splice_auto_label_penalty", type=float, default=1.0)
+    parser.add_argument("--splice_auto_instability_penalty", type=float, default=1.0)
+    parser.add_argument("--splice_auto_use_abs_score", action="store_true")
+    parser.add_argument(
         "--splice_strong_crop",
         type=lambda value: parse_optional_float_or_bool(value, 0.08, "--splice_strong_crop"),
         nargs="?",
@@ -205,7 +354,9 @@ def parse_args() -> argparse.Namespace:
         args.splice_mode = "corr_reg"
     args.use_splice = args.splice_mode != "none"
     if args.use_splice and not args.splice_concepts.strip():
-        parser.error("--splice_concepts must be provided when --splice_mode is not none.")
+        args.splice_concepts = "auto"
+    if args.use_splice and args.splice_concepts.strip().lower() == "auto":
+        auto_discover_splice_concepts(args)
     if args.splice_mode in {"corr_reg", "augment_corr_reg"} and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
     if not 0 < args.ssl_crop_min <= 1:

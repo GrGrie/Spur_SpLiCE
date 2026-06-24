@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
@@ -23,12 +24,12 @@ from experiments.spurious_eval.datasets.wilds_compat import (
 )
 
 
-WATERBIRDS_MEAN = (0.485, 0.456, 0.406)
-WATERBIRDS_STD = (0.229, 0.224, 0.225)
+CELEBA_MEAN = (0.485, 0.456, 0.406)
+CELEBA_STD = (0.229, 0.224, 0.225)
 
 
 @dataclass(frozen=True)
-class WaterbirdsConfig(StrongAugmentationConfig):
+class CelebAConfig(StrongAugmentationConfig):
     root_dir: str = "./datasets"
     image_size: int = 224
     train_split: str = "ds_train"
@@ -36,13 +37,13 @@ class WaterbirdsConfig(StrongAugmentationConfig):
     ssl_crop_min: float = 0.2
 
 
-def waterbirds_transforms(
+def celeba_transforms(
     image_size: int = 224,
     ssl_crop_min: float = 0.2,
-    strong_config: WaterbirdsConfig | None = None,
+    strong_config: CelebAConfig | None = None,
 ) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
-    normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
-    strong_config = strong_config or WaterbirdsConfig(image_size=image_size, ssl_crop_min=ssl_crop_min)
+    normalize = transforms.Normalize(mean=CELEBA_MEAN, std=CELEBA_STD)
+    strong_config = strong_config or CelebAConfig(image_size=image_size, ssl_crop_min=ssl_crop_min)
     ssl_train_transform, strong_ssl_train_transform = build_standard_and_strong_ssl_transforms(
         image_size=image_size,
         ssl_crop_min=ssl_crop_min,
@@ -68,8 +69,6 @@ def waterbirds_transforms(
 
 
 class ConceptAwareSSLSubset(torch.utils.data.Dataset):
-    """Wrap a WILDS subset and attach precomputed SpLiCE scores for SSL training."""
-
     def __init__(self, subset: torch.utils.data.Dataset, scores: torch.Tensor, transform: ConceptAwareTwoCropTransform) -> None:
         if len(subset) != len(scores):
             raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} scores for {len(subset)} samples.")
@@ -99,63 +98,78 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
         return self.subset.eval(y_pred, y_true, metadata)
 
 
-class WaterbirdsDataset(WILDSDataset):
-    """Waterbirds with WILDS-style metadata and SpurSSL-compatible splits."""
+class CelebADataset(WILDSDataset):
+    """CelebA with Male as target and Blond_Hair as the spurious attribute."""
 
-    _dataset_name = "waterbirds"
+    _dataset_name = "celeba"
 
     def __init__(self, root_dir: str = "./datasets", split_scheme: str = "official") -> None:
         self.root_dir = Path(root_dir)
         self._data_dir = self._find_data_dir(self.root_dir)
-        metadata_path = Path(self.data_dir) / "metadata.csv"
-        if not metadata_path.exists():
-            raise FileNotFoundError(f"Waterbirds metadata not found at {metadata_path}")
-
-        metadata_df = pd.read_csv(metadata_path)
-        required_columns = {"img_filename", "y", "place", "split"}
-        missing = required_columns.difference(metadata_df.columns)
+        attrs_path = self._data_dir / "list_attr_celeba.csv"
+        if not attrs_path.exists():
+            raise FileNotFoundError(f"CelebA attributes not found at {attrs_path}")
+        attrs = pd.read_csv(attrs_path)
+        required_columns = {"image_id", "Male", "Blond_Hair"}
+        if not required_columns.issubset(attrs.columns):
+            if attrs.columns[0] != "image_id":
+                attrs = attrs.rename(columns={attrs.columns[0]: "image_id"})
+        missing = required_columns.difference(attrs.columns)
         if missing:
-            raise ValueError(f"Waterbirds metadata is missing columns: {sorted(missing)}")
+            raise ValueError(f"CelebA attributes are missing columns: {sorted(missing)}")
 
-        self.metadata_df = metadata_df.reset_index(drop=True)
-        self._y_array = torch.LongTensor(self.metadata_df["y"].values)
+        self.attrs = attrs.reset_index(drop=True)
+        self._input_array = self.attrs["image_id"].astype(str).values
+        self._y_array = torch.LongTensor((self.attrs["Male"].astype(int).values == 1).astype(np.int64))
+        blond_hair = (self.attrs["Blond_Hair"].astype(int).values == 1).astype(np.int64)
         self._y_size = 1
         self._n_classes = 2
-        self._metadata_array = torch.stack(
-            (
-                torch.LongTensor(self.metadata_df["place"].values),
-                self._y_array,
-            ),
-            dim=1,
-        )
-        self._metadata_fields = ["background", "y"]
+        self._metadata_array = torch.stack((torch.LongTensor(blond_hair), self._y_array), dim=1)
+        self._metadata_fields = ["hair_color", "y"]
         self._metadata_map = {
-            "background": [" land", "water"],
-            "y": [" landbird", "waterbird"],
+            "hair_color": ["not_blond", "blond"],
+            "y": ["not_male", "male"],
         }
-        self._input_array = self.metadata_df["img_filename"].values
         self._split_scheme = split_scheme
         if self._split_scheme != "official":
             raise ValueError(f"Split scheme {self._split_scheme} not recognized")
-        self._split_array = self.metadata_df["split"].values
-        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["background", "y"])
+        self._split_array = self._load_split_array()
+        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["hair_color", "y"])
         super().__init__(root_dir, split_scheme)
 
     @staticmethod
     def _find_data_dir(root_dir: Path) -> Path:
-        candidates = [
-            root_dir,
-            root_dir / "waterbirds",
-            root_dir / "waterbird_complete95_forest2water2",
-        ]
+        candidates = [root_dir, root_dir / "celeba"]
         for candidate in candidates:
-            if (candidate / "metadata.csv").exists():
+            if (candidate / "list_attr_celeba.csv").exists():
                 return candidate
         searched = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(f"Could not find Waterbirds metadata.csv. Searched: {searched}")
+        raise FileNotFoundError(f"Could not find CelebA list_attr_celeba.csv. Searched: {searched}")
+
+    def _load_split_array(self) -> np.ndarray:
+        split_path = self._data_dir / "list_eval_partition.csv"
+        if split_path.exists():
+            splits = pd.read_csv(split_path)
+            if "partition" not in splits.columns:
+                splits = splits.rename(columns={splits.columns[-1]: "partition"})
+            if "image_id" not in splits.columns:
+                splits = splits.rename(columns={splits.columns[0]: "image_id"})
+            split_lookup = dict(zip(splits["image_id"].astype(str), splits["partition"].astype(int)))
+            return np.asarray([split_lookup[str(image_id)] for image_id in self._input_array], dtype=np.int64)
+
+        rng = np.random.RandomState(0)
+        permutation = rng.permutation(len(self._input_array))
+        split_array = np.zeros(len(self._input_array), dtype=np.int64)
+        val_start = int(round(0.8 * len(permutation)))
+        test_start = int(round(0.9 * len(permutation)))
+        split_array[permutation[val_start:test_start]] = 1
+        split_array[permutation[test_start:]] = 2
+        return split_array
 
     def get_input(self, idx: int):
-        image_path = Path(self.data_dir) / self._input_array[idx]
+        image_path = self._data_dir / "img_align_celeba" / self._input_array[idx]
+        if not image_path.exists():
+            raise FileNotFoundError(f"CelebA image not found at {image_path}")
         return Image.open(image_path).convert("RGB")
 
     def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
@@ -169,8 +183,8 @@ class WaterbirdsDataset(WILDSDataset):
         return metrics.as_spurssl_dict(), "\n".join(lines)
 
 
-def make_waterbirds_loaders(
-    config: WaterbirdsConfig,
+def make_celeba_loaders(
+    config: CelebAConfig,
     batch_size: int,
     num_workers: int | None = None,
     train_loader_kwargs: dict | None = None,
@@ -181,30 +195,17 @@ def make_waterbirds_loaders(
     if num_workers is not None:
         train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
         eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
-    full_dataset = WaterbirdsDataset(config.root_dir)
+    _, _, linear_train_transform, eval_transform = celeba_transforms(config.image_size)
+    full_dataset = CelebADataset(config.root_dir)
     train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
     eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
-
-    train_loader = get_train_loader(
-        "standard",
-        train_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **train_loader_kwargs,
-    )
-    eval_loader = get_eval_loader(
-        "standard",
-        eval_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **eval_loader_kwargs,
-    )
+    train_loader = get_train_loader("standard", train_dataset, batch_size=batch_size, drop_last=False, **train_loader_kwargs)
+    eval_loader = get_eval_loader("standard", eval_dataset, batch_size=batch_size, drop_last=False, **eval_loader_kwargs)
     return train_loader, eval_loader
 
 
-def make_waterbirds_ssl_loader(
-    config: WaterbirdsConfig,
+def make_celeba_ssl_loader(
+    config: CelebAConfig,
     batch_size: int,
     num_workers: int | None = None,
     concept_scorer=None,
@@ -214,12 +215,12 @@ def make_waterbirds_ssl_loader(
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(
+    ssl_train_transform, strong_ssl_train_transform, _, _ = celeba_transforms(
         config.image_size,
         ssl_crop_min=config.ssl_crop_min,
         strong_config=config,
     )
-    full_dataset = WaterbirdsDataset(config.root_dir)
+    full_dataset = CelebADataset(config.root_dir)
     if splice_mode in {"augment", "augment_corr_reg"}:
         if concept_scorer is None:
             raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
@@ -253,11 +254,11 @@ def make_waterbirds_ssl_loader(
     )
 
 
-WATERBIRDS_SPEC = {
-    "dataset": WaterbirdsDataset,
-    "config": WaterbirdsConfig,
-    "ssl_loader": make_waterbirds_ssl_loader,
-    "probe_loaders": make_waterbirds_loaders,
+CELEBA_SPEC = {
+    "dataset": CelebADataset,
+    "config": CelebAConfig,
+    "ssl_loader": make_celeba_ssl_loader,
+    "probe_loaders": make_celeba_loaders,
     "num_classes": 2,
     "spurious_metadata_index": 0,
     "target_metadata_index": 1,

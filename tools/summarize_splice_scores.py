@@ -11,12 +11,13 @@ import torch.backends.cudnn as cudnn
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from experiments.spurious_eval.datasets.waterbirds import WaterbirdsDataset
+from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Summarize SpLiCE concept-score distribution for Waterbirds")
+    parser = argparse.ArgumentParser("Summarize SpLiCE concept-score distribution for a spurious-eval dataset")
+    parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--split", default="train", choices=["train", "ds_train", "us_train", "balanced_train", "val", "test"])
     parser.add_argument("--splice_concepts", required=True, help="Comma-separated concept names or vocabulary indices.")
@@ -105,12 +106,14 @@ def main() -> None:
         device=args.device,
     )
     scorer = SpliceConceptScorer(config)
-    full_dataset = WaterbirdsDataset(args.data_folder)
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    full_dataset = dataset_spec["dataset"](args.data_folder)
     subset = full_dataset.get_subset(args.split, transform=None)
     scores = scorer.score_dataset(subset)
     thresholds = parse_thresholds(args.candidate_thresholds)
     summary = summarize(scores, thresholds)
     summary["split"] = args.split
+    summary["dataset"] = args.dataset
     summary["splice_concepts"] = args.splice_concepts
     summary["resolved_concepts"] = [
         {"index": index, "concept": scorer.vocabulary[index]} for index in scorer.concept_indices

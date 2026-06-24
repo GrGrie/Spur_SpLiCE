@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
+import numpy as np
 import torch
-from PIL import Image
-from torchvision import transforms
+from PIL import Image, ImageDraw
+from torchvision import datasets, transforms
 
 from experiments.spurious_eval.metrics import compute_group_metrics
 from experiments.spurious_eval.datasets.augmentation import (
@@ -23,26 +23,44 @@ from experiments.spurious_eval.datasets.wilds_compat import (
 )
 
 
-WATERBIRDS_MEAN = (0.485, 0.456, 0.406)
-WATERBIRDS_STD = (0.229, 0.224, 0.225)
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD = (0.2470, 0.2435, 0.2616)
+CIFAR10_CLASSES = [
+    "airplane",
+    "automobile",
+    "bird",
+    "cat",
+    "deer",
+    "dog",
+    "frog",
+    "horse",
+    "ship",
+    "truck",
+]
 
 
 @dataclass(frozen=True)
-class WaterbirdsConfig(StrongAugmentationConfig):
+class SpurCIFAR10Config(StrongAugmentationConfig):
     root_dir: str = "./datasets"
-    image_size: int = 224
+    image_size: int = 32
     train_split: str = "ds_train"
     eval_split: str = "val"
     ssl_crop_min: float = 0.2
+    val_fraction: float = 0.1
+    train_spurious_correlation: float = 0.95
+    eval_spurious_correlation: float = 0.5
+    spurious_seed: int = 0
+    line_width: int = 2
+    download: bool = True
 
 
-def waterbirds_transforms(
-    image_size: int = 224,
+def spur_cifar10_transforms(
+    image_size: int = 32,
     ssl_crop_min: float = 0.2,
-    strong_config: WaterbirdsConfig | None = None,
+    strong_config: SpurCIFAR10Config | None = None,
 ) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
-    normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
-    strong_config = strong_config or WaterbirdsConfig(image_size=image_size, ssl_crop_min=ssl_crop_min)
+    normalize = transforms.Normalize(mean=CIFAR10_MEAN, std=CIFAR10_STD)
+    strong_config = strong_config or SpurCIFAR10Config(image_size=image_size, ssl_crop_min=ssl_crop_min)
     ssl_train_transform, strong_ssl_train_transform = build_standard_and_strong_ssl_transforms(
         image_size=image_size,
         ssl_crop_min=ssl_crop_min,
@@ -68,8 +86,6 @@ def waterbirds_transforms(
 
 
 class ConceptAwareSSLSubset(torch.utils.data.Dataset):
-    """Wrap a WILDS subset and attach precomputed SpLiCE scores for SSL training."""
-
     def __init__(self, subset: torch.utils.data.Dataset, scores: torch.Tensor, transform: ConceptAwareTwoCropTransform) -> None:
         if len(subset) != len(scores):
             raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} scores for {len(subset)} samples.")
@@ -99,64 +115,88 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
         return self.subset.eval(y_pred, y_true, metadata)
 
 
-class WaterbirdsDataset(WILDSDataset):
-    """Waterbirds with WILDS-style metadata and SpurSSL-compatible splits."""
+class SpurCIFAR10Dataset(WILDSDataset):
+    """CIFAR-10 with a binary colored horizontal-line shortcut."""
 
-    _dataset_name = "waterbirds"
+    _dataset_name = "spur_cifar10"
 
-    def __init__(self, root_dir: str = "./datasets", split_scheme: str = "official") -> None:
+    def __init__(
+        self,
+        root_dir: str = "./datasets",
+        split_scheme: str = "official",
+        val_fraction: float = 0.1,
+        train_spurious_correlation: float = 0.95,
+        eval_spurious_correlation: float = 0.5,
+        spurious_seed: int = 0,
+        line_width: int = 2,
+        download: bool = True,
+    ) -> None:
         self.root_dir = Path(root_dir)
-        self._data_dir = self._find_data_dir(self.root_dir)
-        metadata_path = Path(self.data_dir) / "metadata.csv"
-        if not metadata_path.exists():
-            raise FileNotFoundError(f"Waterbirds metadata not found at {metadata_path}")
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        self._data_dir = self.root_dir
+        self.line_width = line_width
+        self.line_colors = ((255, 0, 0), (0, 160, 255))
 
-        metadata_df = pd.read_csv(metadata_path)
-        required_columns = {"img_filename", "y", "place", "split"}
-        missing = required_columns.difference(metadata_df.columns)
-        if missing:
-            raise ValueError(f"Waterbirds metadata is missing columns: {sorted(missing)}")
+        self.train_dataset = datasets.CIFAR10(str(self.root_dir), train=True, download=download)
+        self.test_dataset = datasets.CIFAR10(str(self.root_dir), train=False, download=download)
+        train_labels = np.asarray(self.train_dataset.targets, dtype=np.int64)
+        test_labels = np.asarray(self.test_dataset.targets, dtype=np.int64)
 
-        self.metadata_df = metadata_df.reset_index(drop=True)
-        self._y_array = torch.LongTensor(self.metadata_df["y"].values)
+        train_count = len(train_labels)
+        val_count = int(round(train_count * val_fraction))
+        train_split_count = train_count - val_count
+        split_train = np.zeros(train_split_count, dtype=np.int64)
+        split_val = np.ones(val_count, dtype=np.int64)
+        split_test = np.full(len(test_labels), 2, dtype=np.int64)
+        self._split_array = np.concatenate([split_train, split_val, split_test])
+
+        labels = np.concatenate([train_labels, test_labels])
+        self._y_array = torch.LongTensor(labels)
         self._y_size = 1
-        self._n_classes = 2
-        self._metadata_array = torch.stack(
-            (
-                torch.LongTensor(self.metadata_df["place"].values),
-                self._y_array,
-            ),
-            dim=1,
-        )
-        self._metadata_fields = ["background", "y"]
+        self._n_classes = 10
+        train_spurious = self._make_spurious_values(train_labels[:train_split_count], train_spurious_correlation, spurious_seed)
+        val_spurious = self._make_spurious_values(train_labels[train_split_count:], eval_spurious_correlation, spurious_seed + 1)
+        test_spurious = self._make_spurious_values(test_labels, eval_spurious_correlation, spurious_seed + 2)
+        spurious = np.concatenate([train_spurious, val_spurious, test_spurious])
+        self._metadata_array = torch.stack((torch.LongTensor(spurious), self._y_array), dim=1)
+        self._metadata_fields = ["line_color", "y"]
         self._metadata_map = {
-            "background": [" land", "water"],
-            "y": [" landbird", "waterbird"],
+            "line_color": ["red", "blue"],
+            "y": CIFAR10_CLASSES,
         }
-        self._input_array = self.metadata_df["img_filename"].values
+        self._source_is_train = np.concatenate(
+            [np.ones(train_count, dtype=bool), np.zeros(len(test_labels), dtype=bool)]
+        )
+        self._source_indices = np.concatenate([np.arange(train_count), np.arange(len(test_labels))])
         self._split_scheme = split_scheme
         if self._split_scheme != "official":
             raise ValueError(f"Split scheme {self._split_scheme} not recognized")
-        self._split_array = self.metadata_df["split"].values
-        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["background", "y"])
+        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["line_color", "y"])
         super().__init__(root_dir, split_scheme)
 
     @staticmethod
-    def _find_data_dir(root_dir: Path) -> Path:
-        candidates = [
-            root_dir,
-            root_dir / "waterbirds",
-            root_dir / "waterbird_complete95_forest2water2",
-        ]
-        for candidate in candidates:
-            if (candidate / "metadata.csv").exists():
-                return candidate
-        searched = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(f"Could not find Waterbirds metadata.csv. Searched: {searched}")
+    def _make_spurious_values(labels: np.ndarray, correlation: float, seed: int) -> np.ndarray:
+        rng = np.random.RandomState(seed)
+        target_parity = labels % 2
+        matches = rng.rand(len(labels)) < correlation
+        return np.where(matches, target_parity, 1 - target_parity).astype(np.int64)
 
     def get_input(self, idx: int):
-        image_path = Path(self.data_dir) / self._input_array[idx]
-        return Image.open(image_path).convert("RGB")
+        source_idx = int(self._source_indices[idx])
+        if self._source_is_train[idx]:
+            image, _ = self.train_dataset[source_idx]
+        else:
+            image, _ = self.test_dataset[source_idx]
+        image = image.convert("RGB")
+        line_color = int(self.metadata_array[idx, 0].item())
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
+        half_width = max(1, self.line_width) // 2
+        center_y = height // 2
+        y0 = max(0, center_y - half_width)
+        y1 = min(height - 1, y0 + max(1, self.line_width) - 1)
+        draw.rectangle([0, y0, width - 1, y1], fill=self.line_colors[line_color])
+        return image
 
     def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
         metrics = compute_group_metrics(y_pred, y_true, metadata)
@@ -169,8 +209,8 @@ class WaterbirdsDataset(WILDSDataset):
         return metrics.as_spurssl_dict(), "\n".join(lines)
 
 
-def make_waterbirds_loaders(
-    config: WaterbirdsConfig,
+def make_spur_cifar10_loaders(
+    config: SpurCIFAR10Config,
     batch_size: int,
     num_workers: int | None = None,
     train_loader_kwargs: dict | None = None,
@@ -181,30 +221,25 @@ def make_waterbirds_loaders(
     if num_workers is not None:
         train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
         eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
-    full_dataset = WaterbirdsDataset(config.root_dir)
+    _, _, linear_train_transform, eval_transform = spur_cifar10_transforms(config.image_size)
+    full_dataset = SpurCIFAR10Dataset(
+        config.root_dir,
+        val_fraction=config.val_fraction,
+        train_spurious_correlation=config.train_spurious_correlation,
+        eval_spurious_correlation=config.eval_spurious_correlation,
+        spurious_seed=config.spurious_seed,
+        line_width=config.line_width,
+        download=config.download,
+    )
     train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
     eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
-
-    train_loader = get_train_loader(
-        "standard",
-        train_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **train_loader_kwargs,
-    )
-    eval_loader = get_eval_loader(
-        "standard",
-        eval_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **eval_loader_kwargs,
-    )
+    train_loader = get_train_loader("standard", train_dataset, batch_size=batch_size, drop_last=False, **train_loader_kwargs)
+    eval_loader = get_eval_loader("standard", eval_dataset, batch_size=batch_size, drop_last=False, **eval_loader_kwargs)
     return train_loader, eval_loader
 
 
-def make_waterbirds_ssl_loader(
-    config: WaterbirdsConfig,
+def make_spur_cifar10_ssl_loader(
+    config: SpurCIFAR10Config,
     batch_size: int,
     num_workers: int | None = None,
     concept_scorer=None,
@@ -214,12 +249,20 @@ def make_waterbirds_ssl_loader(
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(
+    ssl_train_transform, strong_ssl_train_transform, _, _ = spur_cifar10_transforms(
         config.image_size,
         ssl_crop_min=config.ssl_crop_min,
         strong_config=config,
     )
-    full_dataset = WaterbirdsDataset(config.root_dir)
+    full_dataset = SpurCIFAR10Dataset(
+        config.root_dir,
+        val_fraction=config.val_fraction,
+        train_spurious_correlation=config.train_spurious_correlation,
+        eval_spurious_correlation=config.eval_spurious_correlation,
+        spurious_seed=config.spurious_seed,
+        line_width=config.line_width,
+        download=config.download,
+    )
     if splice_mode in {"augment", "augment_corr_reg"}:
         if concept_scorer is None:
             raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
@@ -253,12 +296,12 @@ def make_waterbirds_ssl_loader(
     )
 
 
-WATERBIRDS_SPEC = {
-    "dataset": WaterbirdsDataset,
-    "config": WaterbirdsConfig,
-    "ssl_loader": make_waterbirds_ssl_loader,
-    "probe_loaders": make_waterbirds_loaders,
-    "num_classes": 2,
+SPUR_CIFAR10_SPEC = {
+    "dataset": SpurCIFAR10Dataset,
+    "config": SpurCIFAR10Config,
+    "ssl_loader": make_spur_cifar10_ssl_loader,
+    "probe_loaders": make_spur_cifar10_loaders,
+    "num_classes": 10,
     "spurious_metadata_index": 0,
     "target_metadata_index": 1,
 }
