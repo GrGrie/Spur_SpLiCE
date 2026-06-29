@@ -613,30 +613,36 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     return train_loader, model, criterion, optimizer, splice_regularizer
 
 
-def maybe_run_periodic_probe(args: argparse.Namespace, save_file: str, epoch: int) -> bool:
+def get_probe_score(metrics: dict[str, float]) -> float:
+    for key in ["worst_group_acc", "wg_acc", "linear_worst_group_acc", "test_worst_group_acc", "val_worst_group_acc"]:
+        if key in metrics:
+            return float(metrics[key])
+    raise KeyError(f"Could not find worst-group accuracy in probe metrics: {metrics.keys()}")
+
+
+def maybe_run_periodic_probe(args: argparse.Namespace, save_file: str, epoch: int) -> dict[str, float] | None:
     if args.linear_probe_mode != "periodic":
-        return False
+        return None
     if not args.linear_probe_freq or epoch % args.linear_probe_freq != 0:
-        return False
-    run_linear_probe(args, save_file, epoch)
-    return True
+        return None
+    return run_linear_probe(args, save_file, epoch)
 
 
-def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_probed_epoch: int) -> None:
+def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_probed_epoch: int) -> dict[str, float] | None:
     if args.linear_probe_mode == "none":
-        return
+        return None
     if already_probed_epoch == args.epochs:
-        return
-    run_linear_probe(args, save_file, args.epochs)
+        return None
+    return run_linear_probe(args, save_file, args.epochs)
 
 
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
-    if args.checkpoint_dir:
-        return
     save_folder = Path(args.save_folder)
-    checkpoint_paths = sorted(save_folder.glob("*.pth"))
+    checkpoint_paths = sorted(save_folder.glob("*.pth")) + sorted(save_folder.glob("*.pth.tmp"))
+
     for checkpoint_path in checkpoint_paths:
         checkpoint_path.unlink()
+
     if checkpoint_paths:
         print(f"[INFO] Removed {len(checkpoint_paths)} checkpoint file(s) from {save_folder}")
 
@@ -664,6 +670,10 @@ def main() -> None:
         cudnn.enabled = False
 
     last_probe_epoch = 0
+    best_probe_score = float("-inf")
+    best_file = os.path.join(args.save_folder, "best.pth")
+    probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
+
     for epoch in range(start_epoch, args.epochs + 1):
         adjust_learning_rate(args, optimizer, epoch)
         time1 = time.time()
@@ -675,14 +685,32 @@ def main() -> None:
             log_rank_metrics(model, train_loader, optimizer, train_metrics, epoch, args, wandb_run)
 
         if epoch % args.save_freq == 0:
-            save_file = os.path.join(args.save_folder, f"ckpt_epoch_{epoch}.pth")
-            save_checkpoint(model, optimizer, args, epoch, save_file)
-            if maybe_run_periodic_probe(args, save_file, epoch):
-                last_probe_epoch = epoch
+            save_checkpoint(model, optimizer, args, epoch, probe_file)
+            probe_metrics = maybe_run_periodic_probe(args, probe_file, epoch)
 
-    save_file = os.path.join(args.save_folder, "last.pth")
-    save_checkpoint(model, optimizer, args, args.epochs, save_file)
-    maybe_run_final_probe(args, save_file, last_probe_epoch)
+            if probe_metrics is not None:
+                last_probe_epoch = epoch
+                probe_score = get_probe_score(probe_metrics)
+
+                if probe_score > best_probe_score:
+                    best_probe_score = probe_score
+                    os.replace(probe_file, best_file)
+                    print(f"[INFO] New best checkpoint at epoch {epoch}: WG Acc.={best_probe_score:.4f}")
+                elif os.path.exists(probe_file):
+                    os.remove(probe_file)
+
+    save_checkpoint(model, optimizer, args, args.epochs, probe_file)
+    final_metrics = maybe_run_final_probe(args, probe_file, last_probe_epoch)
+
+    if final_metrics is not None:
+        final_score = get_probe_score(final_metrics)
+        if final_score > best_probe_score:
+            best_probe_score = final_score
+            os.replace(probe_file, best_file)
+            print(f"[INFO] New best final checkpoint: WG Acc.={best_probe_score:.4f}")
+        elif os.path.exists(probe_file):
+            os.remove(probe_file)
+
     cleanup_default_checkpoints(args)
 
     if wandb_run is not None:

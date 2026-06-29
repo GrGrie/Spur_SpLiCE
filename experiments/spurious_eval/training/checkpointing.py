@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import torch
 
 
@@ -10,7 +11,8 @@ def save_checkpoint(
     epoch: int,
     path: str,
 ) -> None:
-    print("==> Saving...")
+    print(f"==> Saving checkpoint to {path}")
+    tmp_path = f"{path}.tmp"
     torch.save(
         {
             "opt": args,
@@ -18,8 +20,9 @@ def save_checkpoint(
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
         },
-        path,
+        tmp_path,
     )
+    os.replace(tmp_path, path)
 
 
 def load_checkpoint(
