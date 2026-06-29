@@ -242,9 +242,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train_set_linear_layer", type=str, default="ds_train", choices=["train", "ds_train", "us_train", "balanced_train", "val"])
     parser.add_argument("--linear_eval_split", type=str, default="val", choices=["val", "test"])
     parser.add_argument("--linear_probe_mode", type=str, default="periodic", choices=["final", "periodic", "none"])
-    parser.add_argument("--linear_probe_epochs", type=int, default=None)
+    parser.add_argument("--linear_probe_epochs", type=int, default=100)
     parser.add_argument("--linear_probe_freq", type=int, default=None)
-    parser.add_argument("--linear_learning_rate", type=float, default=None)
+    parser.add_argument("--linear_learning_rate", type=float, default=1.0)
     parser.add_argument("--linear_lr_decay_epochs", type=str, default="60,75,90")
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--linear_weight_decay", type=float, default=0.0)
@@ -266,7 +266,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
     parser.add_argument("--splice_batch_size", type=int, default=128)
-    parser.add_argument("--splice_num_workers", type=int, default=0)
+    parser.add_argument("--splice_num_workers", type=int, default=1)
     parser.add_argument(
         "--splice_auto_top_k",
         type=int,
@@ -394,9 +394,9 @@ def parse_args() -> argparse.Namespace:
         args.warmup_to = args.learning_rate
         args.warm_epochs = 0
     if args.linear_probe_epochs is None:
-        args.linear_probe_epochs = args.epochs
+        args.linear_probe_epochs = 100
     if args.linear_learning_rate is None:
-        args.linear_learning_rate = args.learning_rate
+        args.linear_learning_rate = 1.0
     if args.linear_probe_freq is None:
         args.linear_probe_freq = args.save_freq if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
@@ -585,12 +585,12 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "num_zero_high": 0,
         "num_zero_low": 0,
         "batch_size": args.batch_size,
-        "num_workers": 32,
-        "epochs": 100,
-        "learning_rate": 1.0,
+        "num_workers": args.num_workers,
+        "epochs": args.linear_probe_epochs,
+        "learning_rate": args.linear_learning_rate,
         "lr_decay_epochs": [60, 75, 90],
-        "lr_decay_rate": 0.2,
-        "weight_decay": 0,
+        "lr_decay_rate": args.linear_lr_decay_rate,
+        "weight_decay": args.linear_weight_decay,
         "momentum": 0.9,
         "cosine": args.cosine,
         "seed": args.seed,
@@ -614,10 +614,23 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:
-    for key in ["worst_group_acc", "wg_acc", "linear_worst_group_acc", "test_worst_group_acc", "val_worst_group_acc"]:
+    preferred_keys = [
+        "Average over last 10 linear val worst-group acc",
+        "Average over 10 last linear val worst-group acc",
+        "Average over last 10 linear test worst-group acc",
+        "Average over 10 last linear test worst-group acc",
+        "Last linear val worst-group acc",
+        "Linear val worst-group acc",
+    ]
+
+    for key in preferred_keys:
         if key in metrics:
             return float(metrics[key])
-    raise KeyError(f"Could not find worst-group accuracy in probe metrics: {metrics.keys()}")
+
+    raise KeyError(
+        "Could not find averaged worst-group accuracy in probe metrics. "
+        f"Available keys: {list(metrics.keys())}"
+    )
 
 
 def maybe_run_periodic_probe(args: argparse.Namespace, save_file: str, epoch: int) -> dict[str, float] | None:
