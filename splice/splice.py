@@ -65,7 +65,7 @@ def _download(url: str, root: str, subfolder: str):
             output.write(buffer)
     return download_target
 
-def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, **kwargs):
+def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, pretrained: str = "laion2b_s34b_b79k", **kwargs):
     """load SpLiCE
 
     Parameters
@@ -91,7 +91,8 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
                 tokenizer = clip.tokenize
             elif library == "open_clip":
                 import open_clip
-                clip_backbone = open_clip.create_model(model_name, device=device, pretrained='laion2b_s34b_b79k') ##FIXME maybe allow specifying pretrained? probs not though
+                print(f"[INFO] Loading OpenCLIP backbone {model_name!r} with pretrained={pretrained!r}")
+                clip_backbone = open_clip.create_model(model_name, device=device, pretrained=pretrained)
                 tokenizer = open_clip.get_tokenizer(model_name)
             else:
                 raise RuntimeError("Only CLIP and Open CLIP supported at this time. Try manual construction instead.")
@@ -213,7 +214,7 @@ def get_tokenizer(name: str):
     else:
         raise RuntimeError(f"Library {name} not supported. Try manual construction instead.")
     
-def get_preprocess(name: str):
+def get_preprocess(name: str, pretrained: str = "laion2b_s34b_b79k"):
     """get_preprocess Gets image preprocessing transform
 
     Parameters
@@ -237,7 +238,7 @@ def get_preprocess(name: str):
                 return clip.load(model_name)[1]
             elif library == "open_clip":
                 import open_clip
-                return open_clip.create_model_and_transforms(model_name)[2]
+                return open_clip.create_model_and_transforms(model_name, pretrained=pretrained)[2]
             else:
                 raise RuntimeError("Only CLIP and Open CLIP supported at this time. Try manual construction instead.")
         else:

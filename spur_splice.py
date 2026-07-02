@@ -105,6 +105,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         device=args.device,
         disable_cudnn=True,
         splice_model=args.splice_model,
+        splice_pretrained=args.splice_pretrained,
         splice_vocab=args.splice_vocab,
         splice_vocab_size=args.splice_vocab_size,
         splice_l1_penalty=args.splice_l1_penalty,
@@ -161,6 +162,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         device=args.device,
         disable_cudnn=True,
         splice_model=args.splice_model,
+        splice_pretrained=args.splice_pretrained,
         splice_vocab=args.splice_vocab,
         splice_vocab_size=args.splice_vocab_size,
         splice_l1_penalty=args.splice_l1_penalty,
@@ -181,6 +183,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         batch_size=summary_args.batch_size,
         num_workers=summary_args.num_workers,
         device=summary_args.device,
+        pretrained=summary_args.splice_pretrained,
     )
     scorer = SpliceConceptScorer(summary_config)
     dataset_spec = DATASET_REGISTRY[summary_args.dataset]
@@ -265,6 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_vocab", type=str, default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
+    parser.add_argument("--splice_pretrained", type=str, default="laion2b_s34b_b79k")
     parser.add_argument("--splice_batch_size", type=int, default=128)
     parser.add_argument("--splice_num_workers", type=int, default=1)
     parser.add_argument(
@@ -549,6 +553,7 @@ def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
         vocab=args.splice_vocab,
         vocab_size=args.splice_vocab_size,
         model=args.splice_model,
+        pretrained=args.splice_pretrained,
         score_threshold=args.splice_score_threshold,
         score_reduction=args.splice_score_reduction,
         batch_size=args.splice_batch_size,

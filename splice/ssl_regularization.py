@@ -19,6 +19,7 @@ class SpliceConfig:
     vocab: str = "laion"
     vocab_size: int = 10000
     model: str = "open_clip:ViT-B-32"
+    pretrained: str = "laion2b_s34b_b79k"
     score_threshold: float = 0.01
     score_reduction: str = "mean"
     batch_size: int = 128
@@ -69,7 +70,7 @@ class SpliceConceptScorer:
     def __init__(self, config: SpliceConfig) -> None:
         self.config = config
         self.device = torch.device(config.device)
-        self.preprocess = splice.get_preprocess(config.model)
+        self.preprocess = splice.get_preprocess(config.model, pretrained=config.pretrained)
         self.vocabulary = splice.get_vocabulary(config.vocab, config.vocab_size)
         self.concept_indices = resolve_concept_indices(config.concepts, self.vocabulary)
         self.model = splice.load(
@@ -77,6 +78,7 @@ class SpliceConceptScorer:
             config.vocab,
             config.vocab_size,
             config.device,
+            pretrained=config.pretrained,
             l1_penalty=config.l1_penalty,
             return_weights=True,
         )

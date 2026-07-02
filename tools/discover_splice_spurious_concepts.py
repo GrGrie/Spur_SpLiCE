@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
         help="Disable cuDNN for SpLiCE/OpenCLIP image encoding on CUDA.",
     )
     parser.add_argument("--splice_model", default="open_clip:ViT-B-32")
+    parser.add_argument("--splice_pretrained", default="laion2b_s34b_b79k")
     parser.add_argument("--splice_vocab", default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
@@ -65,13 +66,14 @@ def configure_torch_backend(args: argparse.Namespace) -> None:
 
 def load_splice(args: argparse.Namespace):
     configure_torch_backend(args)
-    preprocess = splice.get_preprocess(args.splice_model)
+    preprocess = splice.get_preprocess(args.splice_model, pretrained=args.splice_pretrained)
     vocabulary = splice.get_vocabulary(args.splice_vocab, args.splice_vocab_size)
     splicemodel = splice.load(
         args.splice_model,
         args.splice_vocab,
         args.splice_vocab_size,
         args.device,
+        pretrained=args.splice_pretrained,
         l1_penalty=args.splice_l1_penalty,
         return_weights=True,
     )
