@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
-from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig
+from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig, dataset_score_cache_key
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,6 +32,8 @@ def parse_args() -> argparse.Namespace:
         help="Disable cuDNN for SpLiCE/OpenCLIP image encoding on CUDA.",
     )
     parser.add_argument("--splice_model", default="open_clip:ViT-B-32")
+    parser.add_argument("--splice_pretrained", default="laion2b_s34b_b79k")
+    parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
     parser.add_argument("--splice_vocab", default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
@@ -100,6 +102,8 @@ def main() -> None:
         vocab=args.splice_vocab,
         vocab_size=args.splice_vocab_size,
         model=args.splice_model,
+        pretrained=args.splice_pretrained,
+        score_cache_dir=args.splice_score_cache_dir,
         score_reduction=args.splice_score_reduction,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -109,7 +113,10 @@ def main() -> None:
     dataset_spec = DATASET_REGISTRY[args.dataset]
     full_dataset = dataset_spec["dataset"](args.data_folder)
     subset = full_dataset.get_subset(args.split, transform=None)
-    scores = scorer.score_dataset(subset)
+    scores = scorer.score_dataset(
+        subset,
+        cache_key=dataset_score_cache_key(args.dataset, full_dataset, args.split),
+    )
     thresholds = parse_thresholds(args.candidate_thresholds)
     summary = summarize(scores, thresholds)
     summary["split"] = args.split

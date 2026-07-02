@@ -14,7 +14,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import splice
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
-from splice.ssl_regularization import identity_collate
+from splice.ssl_regularization import (
+    SpliceConfig,
+    dataset_score_cache_key,
+    identity_collate,
+    save_score_cache,
+    score_cache_path,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_vocab", default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
+    parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
     parser.add_argument("--min_mean_weight", type=float, default=0.0)
     parser.add_argument("--label_penalty", type=float, default=1.0)
     parser.add_argument("--instability_penalty", type=float, default=1.0)
@@ -140,12 +147,14 @@ def decompose_by_group(args: argparse.Namespace):
     total_count = 0
     spurious_values = set()
     target_values = set()
+    per_image_weights = []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader, start=1):
             images = torch.stack([preprocess(item[0]) for item in batch], dim=0).to(args.device)
             metadata = torch.stack([item[2] for item in batch], dim=0)
             weights = splicemodel.encode_image(images).detach().cpu().double()
+            per_image_weights.append(weights.float())
             spurious = metadata[:, spurious_index].long()
             target = metadata[:, target_index].long()
 
@@ -180,7 +189,41 @@ def decompose_by_group(args: argparse.Namespace):
         "spurious": metadata_value_names(full_dataset, spurious_index, spurious_values_tensor),
         "target": metadata_value_names(full_dataset, target_index, target_values_tensor),
     }
-    return vocabulary, group_means, group_counts, dataset_mean, total_count, spurious_values_tensor, target_values_tensor, metadata_names
+    return (
+        vocabulary,
+        group_means,
+        group_counts,
+        dataset_mean,
+        total_count,
+        spurious_values_tensor,
+        target_values_tensor,
+        metadata_names,
+        torch.cat(per_image_weights, dim=0),
+        full_dataset,
+    )
+
+
+def cache_discovered_scores(args, candidates: list[dict], weights: torch.Tensor, full_dataset) -> None:
+    concept_indices = sorted(candidate["index"] for candidate in candidates)
+    if not concept_indices:
+        return
+    selected_weights = weights[:, concept_indices]
+    cache_key = dataset_score_cache_key(args.dataset, full_dataset, args.split)
+    for reduction in ("mean", "max"):
+        config = SpliceConfig(
+            concepts=",".join(str(index) for index in concept_indices),
+            l1_penalty=args.splice_l1_penalty,
+            vocab=args.splice_vocab,
+            vocab_size=args.splice_vocab_size,
+            model=args.splice_model,
+            pretrained=args.splice_pretrained,
+            score_reduction=reduction,
+            score_cache_dir=args.splice_score_cache_dir,
+        )
+        scores = selected_weights.mean(dim=1) if reduction == "mean" else selected_weights.max(dim=1).values
+        path = score_cache_path(config, len(weights), concept_indices, cache_key)
+        save_score_cache(scores, path)
+    print("[INFO] Discovery scores are ready for training; no second SpLiCE image pass is needed.", flush=True)
 
 
 def rank_concepts(
@@ -334,6 +377,8 @@ def main() -> None:
         spurious_values,
         target_values,
         metadata_names,
+        per_image_weights,
+        full_dataset,
     ) = decompose_by_group(args)
     candidates = rank_concepts(
         vocabulary,
@@ -346,6 +391,7 @@ def main() -> None:
         args,
     )
     write_outputs(args, candidates, group_counts, total_count)
+    cache_discovered_scores(args, candidates, per_image_weights, full_dataset)
 
 
 if __name__ == "__main__":

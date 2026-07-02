@@ -22,6 +22,7 @@ from experiments.spurious_eval.datasets.wilds_compat import (
     get_ssl_train_loader,
     get_train_loader,
 )
+from splice.ssl_regularization import dataset_score_cache_key
 
 
 WATERBIRDS_MEAN = (0.485, 0.456, 0.406)
@@ -220,7 +221,9 @@ def make_waterbirds_ssl_loader(
         if concept_scorer is None:
             raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(score_subset)
+        scores = concept_scorer.score_dataset(
+            score_subset, cache_key=dataset_score_cache_key("waterbirds", full_dataset, "train")
+        )
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
@@ -230,7 +233,9 @@ def make_waterbirds_ssl_loader(
         if concept_scorer is None:
             raise ValueError("SpLiCE correlation regularization requires a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(score_subset)
+        scores = concept_scorer.score_dataset(
+            score_subset, cache_key=dataset_score_cache_key("waterbirds", full_dataset, "train")
+        )
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,

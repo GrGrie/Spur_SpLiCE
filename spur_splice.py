@@ -19,7 +19,13 @@ from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
-from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig, build_splice_regularizer, splice_mode_uses_scores
+from splice.ssl_regularization import (
+    SpliceConceptScorer,
+    SpliceConfig,
+    build_splice_regularizer,
+    dataset_score_cache_key,
+    splice_mode_uses_scores,
+)
 from tools import discover_splice_spurious_concepts as concept_discovery
 from tools import summarize_splice_scores as score_summary
 
@@ -106,6 +112,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         disable_cudnn=True,
         splice_model=args.splice_model,
         splice_pretrained=args.splice_pretrained,
+        splice_score_cache_dir=args.splice_score_cache_dir,
         splice_vocab=args.splice_vocab,
         splice_vocab_size=args.splice_vocab_size,
         splice_l1_penalty=args.splice_l1_penalty,
@@ -127,6 +134,8 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         spurious_values,
         target_values,
         metadata_names,
+        per_image_weights,
+        discovery_dataset,
     ) = concept_discovery.decompose_by_group(discovery_args)
     candidates = concept_discovery.rank_concepts(
         vocabulary,
@@ -139,6 +148,10 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         discovery_args,
     )
     concept_discovery.write_outputs(discovery_args, candidates, group_counts, total_count)
+    concept_discovery.cache_discovered_scores(
+        discovery_args, candidates, per_image_weights, discovery_dataset
+    )
+    del per_image_weights
 
     concepts_path = discovery_path.with_suffix(".concepts.txt")
     concepts = concepts_path.read_text(encoding="utf-8").strip()
@@ -189,7 +202,10 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
     dataset_spec = DATASET_REGISTRY[summary_args.dataset]
     full_dataset = dataset_spec["dataset"](summary_args.data_folder)
     subset = full_dataset.get_subset(summary_args.split, transform=None)
-    scores = scorer.score_dataset(subset)
+    scores = scorer.score_dataset(
+        subset,
+        cache_key=dataset_score_cache_key(summary_args.dataset, full_dataset, summary_args.split),
+    )
     thresholds = score_summary.parse_thresholds(summary_args.candidate_thresholds)
     summary = score_summary.summarize(scores, thresholds)
     summary["split"] = summary_args.split
@@ -269,6 +285,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
     parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
     parser.add_argument("--splice_pretrained", type=str, default="laion2b_s34b_b79k")
+    parser.add_argument(
+        "--splice_score_cache_dir",
+        type=str,
+        default="outputs/splice_score_cache",
+        help="Directory used to cache per-image SpLiCE scores between training runs.",
+    )
     parser.add_argument("--splice_batch_size", type=int, default=128)
     parser.add_argument("--splice_num_workers", type=int, default=1)
     parser.add_argument(
@@ -554,6 +576,7 @@ def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
         vocab_size=args.splice_vocab_size,
         model=args.splice_model,
         pretrained=args.splice_pretrained,
+        score_cache_dir=args.splice_score_cache_dir,
         score_threshold=args.splice_score_threshold,
         score_reduction=args.splice_score_reduction,
         batch_size=args.splice_batch_size,

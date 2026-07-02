@@ -22,6 +22,7 @@ from experiments.spurious_eval.datasets.wilds_compat import (
     get_ssl_train_loader,
     get_train_loader,
 )
+from splice.ssl_regularization import dataset_score_cache_key
 
 
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
@@ -149,6 +150,8 @@ class SpurCIFAR10Dataset(WILDSDataset):
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = self.root_dir
         self.line_width = line_width
+        self.train_spurious_correlation = train_spurious_correlation
+        self.spurious_seed = spurious_seed
         self.line_colors = LINE_COLORS
 
         self.train_dataset = datasets.CIFAR10(str(self.root_dir), train=True, download=download)
@@ -298,7 +301,8 @@ def make_spur_cifar10_ssl_loader(
         if concept_scorer is None:
             raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(score_subset)
+        cache_key = dataset_score_cache_key("spur_cifar10", full_dataset, "train")
+        scores = concept_scorer.score_dataset(score_subset, cache_key=cache_key)
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
@@ -308,7 +312,8 @@ def make_spur_cifar10_ssl_loader(
         if concept_scorer is None:
             raise ValueError("SpLiCE correlation regularization requires a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(score_subset)
+        cache_key = dataset_score_cache_key("spur_cifar10", full_dataset, "train")
+        scores = concept_scorer.score_dataset(score_subset, cache_key=cache_key)
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
