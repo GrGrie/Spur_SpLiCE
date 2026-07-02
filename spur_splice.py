@@ -377,6 +377,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_strong_blur_kernel_size must be positive.")
     if args.splice_strong_blur_sigma is not None and args.splice_strong_blur_sigma[0] > args.splice_strong_blur_sigma[1]:
         parser.error("--splice_strong_blur_sigma min must be <= max.")
+    if args.dataset == "spur_cifar10" and args.model.endswith("_large"):
+        parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:

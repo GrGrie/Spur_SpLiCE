@@ -7,7 +7,7 @@ import torch
 
 @dataclass(frozen=True)
 class GroupMetrics:
-    """Binary classification metrics grouped by Waterbirds metadata."""
+    """Classification metrics grouped by spurious-attribute and target metadata."""
 
     average: float
     worst_group: float

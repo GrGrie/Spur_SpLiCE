@@ -37,6 +37,18 @@ CIFAR10_CLASSES = [
     "ship",
     "truck",
 ]
+LINE_COLORS = [
+    (230, 25, 75),
+    (60, 180, 75),
+    (255, 225, 25),
+    (0, 130, 200),
+    (245, 130, 48),
+    (145, 30, 180),
+    (70, 240, 240),
+    (240, 50, 230),
+    (210, 245, 60),
+    (250, 190, 212),
+]
 
 
 @dataclass(frozen=True)
@@ -48,7 +60,7 @@ class SpurCIFAR10Config(StrongAugmentationConfig):
     ssl_crop_min: float = 0.2
     val_fraction: float = 0.1
     train_spurious_correlation: float = 0.95
-    eval_spurious_correlation: float = 0.5
+    eval_spurious_correlation: float = 0.1
     spurious_seed: int = 0
     line_width: int = 2
     download: bool = True
@@ -116,7 +128,7 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
 
 
 class SpurCIFAR10Dataset(WILDSDataset):
-    """CIFAR-10 with a binary colored horizontal-line shortcut."""
+    """CIFAR-10 with one class-associated horizontal-line color per class."""
 
     _dataset_name = "spur_cifar10"
 
@@ -126,7 +138,7 @@ class SpurCIFAR10Dataset(WILDSDataset):
         split_scheme: str = "official",
         val_fraction: float = 0.1,
         train_spurious_correlation: float = 0.95,
-        eval_spurious_correlation: float = 0.5,
+        eval_spurious_correlation: float = 0.1,
         spurious_seed: int = 0,
         line_width: int = 2,
         download: bool = True,
@@ -135,7 +147,7 @@ class SpurCIFAR10Dataset(WILDSDataset):
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = self.root_dir
         self.line_width = line_width
-        self.line_colors = ((255, 0, 0), (0, 160, 255))
+        self.line_colors = LINE_COLORS
 
         self.train_dataset = datasets.CIFAR10(str(self.root_dir), train=True, download=download)
         self.test_dataset = datasets.CIFAR10(str(self.root_dir), train=False, download=download)
@@ -161,7 +173,7 @@ class SpurCIFAR10Dataset(WILDSDataset):
         self._metadata_array = torch.stack((torch.LongTensor(spurious), self._y_array), dim=1)
         self._metadata_fields = ["line_color", "y"]
         self._metadata_map = {
-            "line_color": ["red", "blue"],
+            "line_color": [f"{class_name}_color" for class_name in CIFAR10_CLASSES],
             "y": CIFAR10_CLASSES,
         }
         self._source_is_train = np.concatenate(
@@ -176,10 +188,13 @@ class SpurCIFAR10Dataset(WILDSDataset):
 
     @staticmethod
     def _make_spurious_values(labels: np.ndarray, correlation: float, seed: int) -> np.ndarray:
+        if not 0 <= correlation <= 1:
+            raise ValueError("Spurious correlation must be in the interval [0, 1].")
         rng = np.random.RandomState(seed)
-        target_parity = labels % 2
         matches = rng.rand(len(labels)) < correlation
-        return np.where(matches, target_parity, 1 - target_parity).astype(np.int64)
+        alternative_offsets = rng.randint(1, len(CIFAR10_CLASSES), size=len(labels))
+        alternative_colors = (labels + alternative_offsets) % len(CIFAR10_CLASSES)
+        return np.where(matches, labels, alternative_colors).astype(np.int64)
 
     def get_input(self, idx: int):
         source_idx = int(self._source_indices[idx])

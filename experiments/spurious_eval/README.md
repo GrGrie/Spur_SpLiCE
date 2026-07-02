@@ -289,6 +289,13 @@ Automatic discovery writes `outputs/<dataset>_splice_concepts.json`,
 `outputs/<dataset>_splice_concepts.indices.txt`, and
 `outputs/<dataset>_splice_score_summary.json`.
 
+For `spur_cifar10`, each CIFAR-10 class is assigned one of ten fixed horizontal-line
+colors. Training images receive their class-associated color with probability `0.95`;
+otherwise they receive one of the other nine colors uniformly. Validation and test use
+correlation `0.1`, making line color independent of class. Worst-group accuracy is
+computed over the 100 `(class, line_color)` combinations. Use the CIFAR stem with
+`--model resnet18` rather than `resnet18_large`.
+
 Recommended experiment order:
 
 1. Train the `none` baseline and record average and worst-group linear-probe

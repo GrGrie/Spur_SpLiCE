@@ -167,11 +167,8 @@ def decompose_by_group(args: argparse.Namespace):
 
     spurious_values_tensor = torch.tensor(sorted(spurious_values), dtype=torch.long)
     target_values_tensor = torch.tensor(sorted(target_values), dtype=torch.long)
-    if len(spurious_values_tensor) != 2:
-        raise ValueError(
-            "Conditional concept scoring currently expects a binary spurious attribute. "
-            f"Got {len(spurious_values_tensor)} spurious values."
-        )
+    if len(spurious_values_tensor) < 2:
+        raise ValueError("Conditional concept scoring requires at least two spurious attribute values.")
     group_means = {
         key: group_sums[key] / max(group_counts[key], 1)
         for key in group_sums
@@ -194,26 +191,33 @@ def rank_concepts(
     metadata_names: dict,
     args: argparse.Namespace,
 ) -> list[dict]:
-    s0, s1 = [int(value.item()) for value in spurious_values]
+    spurious_list = [int(value.item()) for value in spurious_values]
     target_list = [int(value.item()) for value in target_values]
-    required_groups = [(spurious_value, target_value) for spurious_value in (s0, s1) for target_value in target_list]
+    required_groups = [
+        (spurious_value, target_value)
+        for spurious_value in spurious_list
+        for target_value in target_list
+    ]
     missing_groups = [key for key in required_groups if key not in group_means]
     if missing_groups:
         raise ValueError(f"Missing required spurious/target groups for conditional scoring: {missing_groups}")
 
-    spurious_effect_by_target = torch.stack(
+    concept_means = torch.stack(
         [
-            group_means[(s1, target_value)] - group_means[(s0, target_value)]
+            torch.stack([group_means[(spurious_value, target_value)] for spurious_value in spurious_list])
             for target_value in target_list
         ]
     )
-    target_means_by_spurious = torch.stack(
-        [
-            torch.stack([group_means[(spurious_value, target_value)] for target_value in target_list])
-            for spurious_value in (s0, s1)
-        ]
-    )
-    spurious_effect = spurious_effect_by_target.abs().mean(dim=0)
+    spurious_pairwise_differences = (
+        concept_means[:, :, None, :] - concept_means[:, None, :, :]
+    ).abs()
+    spurious_pairs = torch.triu_indices(len(spurious_list), len(spurious_list), offset=1)
+    spurious_effect_by_target = spurious_pairwise_differences[
+        :, spurious_pairs[0], spurious_pairs[1], :
+    ].mean(dim=1)
+    spurious_effect = spurious_effect_by_target.mean(dim=0)
+
+    target_means_by_spurious = concept_means.permute(1, 0, 2)
     target_effect_by_spurious = (
         target_means_by_spurious - target_means_by_spurious.mean(dim=1, keepdim=True)
     ).abs().mean(dim=1)
@@ -251,8 +255,11 @@ def rank_concepts(
                     for target_idx, target_value in enumerate(target_list)
                 },
                 "target_effect_by_spurious": {
-                    metadata_names["spurious"].get(s0, str(s0)): round(target_effect_by_spurious[0, index].item(), 8),
-                    metadata_names["spurious"].get(s1, str(s1)): round(target_effect_by_spurious[1, index].item(), 8),
+                    metadata_names["spurious"].get(spurious_value, str(spurious_value)): round(
+                        target_effect_by_spurious[spurious_idx, index].item(),
+                        8,
+                    )
+                    for spurious_idx, spurious_value in enumerate(spurious_list)
                 },
                 "mean_weight": round(dataset_mean[index].item(), 8),
                 "group_means": {
@@ -271,7 +278,7 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
     out_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "method": "conditional_spurious_effect_minus_target_effect_minus_instability",
-        "formula": "mean_y abs(E[c|s=1,y]-E[c|s=0,y]) - label_penalty * mean_s mean_y abs(E[c|s,y]-mean_y E[c|s,y]) - instability_penalty * std_y(E[c|s=1,y]-E[c|s=0,y])",
+        "formula": "mean_y mean_{s_i<s_j} abs(E[c|s_i,y]-E[c|s_j,y]) - label_penalty * mean_s mean_y abs(E[c|s,y]-mean_y E[c|s,y]) - instability_penalty * std_y(pairwise_spurious_effect_y)",
         "dataset": args.dataset,
         "split": args.split,
         "total_count": total_count,
