@@ -13,6 +13,7 @@ from experiments.spurious_eval.datasets.augmentation import (
     StrongAugmentationConfig,
     build_standard_and_strong_ssl_transforms,
 )
+from experiments.spurious_eval.datasets.paths import resolve_dataset_root
 from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -143,16 +144,11 @@ class WaterbirdsDataset(WILDSDataset):
 
     @staticmethod
     def _find_data_dir(root_dir: Path) -> Path:
-        candidates = [
+        return resolve_dataset_root(
             root_dir,
-            root_dir / "waterbirds",
-            root_dir / "waterbird_complete95_forest2water2",
-        ]
-        for candidate in candidates:
-            if (candidate / "metadata.csv").exists():
-                return candidate
-        searched = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(f"Could not find Waterbirds metadata.csv. Searched: {searched}")
+            "waterbirds",
+            ["metadata.csv"],
+        )
 
     def get_input(self, idx: int):
         image_path = Path(self.data_dir) / self._input_array[idx]

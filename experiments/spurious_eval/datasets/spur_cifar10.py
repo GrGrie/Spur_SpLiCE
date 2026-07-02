@@ -13,6 +13,7 @@ from experiments.spurious_eval.datasets.augmentation import (
     StrongAugmentationConfig,
     build_standard_and_strong_ssl_transforms,
 )
+from experiments.spurious_eval.datasets.paths import resolve_dataset_root
 from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -143,7 +144,8 @@ class SpurCIFAR10Dataset(WILDSDataset):
         line_width: int = 2,
         download: bool = True,
     ) -> None:
-        self.root_dir = Path(root_dir)
+        requested_root = Path(root_dir).expanduser()
+        self.root_dir = self._find_cifar_root(requested_root)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = self.root_dir
         self.line_width = line_width
@@ -185,6 +187,20 @@ class SpurCIFAR10Dataset(WILDSDataset):
             raise ValueError(f"Split scheme {self._split_scheme} not recognized")
         self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["line_color", "y"])
         super().__init__(root_dir, split_scheme)
+
+    @staticmethod
+    def _find_cifar_root(root_dir: Path) -> Path:
+        try:
+            return resolve_dataset_root(root_dir, "spur_cifar10", ["cifar-10-batches-py"])
+        except FileNotFoundError:
+            pass
+
+        try:
+            return resolve_dataset_root(root_dir, "cifar10", ["cifar-10-batches-py"])
+        except FileNotFoundError:
+            pass
+
+        return root_dir
 
     @staticmethod
     def _make_spurious_values(labels: np.ndarray, correlation: float, seed: int) -> np.ndarray:

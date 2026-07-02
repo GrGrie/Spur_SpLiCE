@@ -14,6 +14,7 @@ from experiments.spurious_eval.datasets.augmentation import (
     StrongAugmentationConfig,
     build_standard_and_strong_ssl_transforms,
 )
+from experiments.spurious_eval.datasets.paths import resolve_dataset_root
 from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -139,12 +140,7 @@ class CelebADataset(WILDSDataset):
 
     @staticmethod
     def _find_data_dir(root_dir: Path) -> Path:
-        candidates = [root_dir, root_dir / "celeba"]
-        for candidate in candidates:
-            if (candidate / "list_attr_celeba.csv").exists():
-                return candidate
-        searched = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(f"Could not find CelebA list_attr_celeba.csv. Searched: {searched}")
+        return resolve_dataset_root(root_dir, "celeba", ["list_attr_celeba.csv"])
 
     def _load_split_array(self) -> np.ndarray:
         split_path = self._data_dir / "list_eval_partition.csv"
