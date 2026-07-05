@@ -263,6 +263,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--channels_last", type=str_to_bool, nargs="?", const=True, default=False)
+    parser.add_argument(
+        "--cudnn_enabled",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Enable cuDNN for SimCLR training. SpLiCE scoring still starts with cuDNN disabled.",
+    )
     parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--resume", type=str, default="")
@@ -421,6 +429,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
     if args.amp and args.optimizer == "SAM":
         parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
+    if args.cudnn_benchmark and not args.cudnn_enabled:
+        parser.error("--cudnn_benchmark true requires --cudnn_enabled true.")
     if args.rank_eval_freq < 0:
         parser.error("--rank_eval_freq must be non-negative.")
     if args.batch_size > 256:
@@ -536,14 +546,14 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.enabled = False
 
 
 def configure_training_backend(args: argparse.Namespace) -> None:
     if torch.cuda.is_available():
-        cudnn.enabled = True
-        cudnn.benchmark = args.cudnn_benchmark
-        cudnn.deterministic = not args.cudnn_benchmark
+        cudnn.enabled = args.cudnn_enabled
+        cudnn.benchmark = args.cudnn_enabled and args.cudnn_benchmark
+        cudnn.deterministic = args.cudnn_enabled and not args.cudnn_benchmark
     print(
         "[INFO] Training backend: "
         f"cudnn_enabled={cudnn.enabled} cudnn_benchmark={cudnn.benchmark} "
@@ -623,7 +633,10 @@ def build_splice_concept_scorer(args: argparse.Namespace) -> SpliceConceptScorer
 
 
 def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
-    return linear_probe.main(build_linear_probe_args(args, ckpt_path), supcon_epoch=epoch)
+    try:
+        return linear_probe.main(build_linear_probe_args(args, ckpt_path), supcon_epoch=epoch)
+    finally:
+        configure_training_backend(args)
 
 
 def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argparse.Namespace:
@@ -717,6 +730,10 @@ def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_prob
 
 
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
+    if args.checkpoint_dir:
+        print(f"[INFO] Preserving checkpoints in explicitly configured directory: {args.checkpoint_dir}")
+        return
+
     save_folder = Path(args.save_folder)
     checkpoint_paths = sorted(save_folder.glob("*.pth")) + sorted(save_folder.glob("*.pth.tmp"))
 
