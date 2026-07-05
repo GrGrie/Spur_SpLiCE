@@ -28,6 +28,11 @@ def strong_blur_enabled(config: StrongAugmentationConfig) -> bool:
     )
 
 
+def default_blur_kernel_size(image_size: int) -> int:
+    kernel_size = max(3, int(round(image_size * 0.1)))
+    return kernel_size if kernel_size % 2 == 1 else kernel_size + 1
+
+
 def build_ssl_transform(
     image_size: int,
     crop_min: float,
@@ -90,7 +95,9 @@ def build_standard_and_strong_ssl_transforms(
         grayscale_p=strong_grayscale_p,
         normalize=normalize,
         blur_p=strong_blur_p,
-        blur_kernel_size=strong_config.splice_strong_blur_kernel_size or 23,
+        blur_kernel_size=(
+            strong_config.splice_strong_blur_kernel_size or default_blur_kernel_size(image_size)
+        ),
         blur_sigma=strong_config.splice_strong_blur_sigma or (0.1, 2.0),
     )
     return standard_transform, strong_transform

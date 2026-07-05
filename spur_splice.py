@@ -226,6 +226,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Spur_SpLiCE SimCLR SSL training")
     parser.add_argument("--print_freq", type=int, default=10)
     parser.add_argument("--save_freq", type=int, default=50)
+    parser.add_argument(
+        "--rank_eval_freq",
+        type=int,
+        default=100,
+        help="Compute full-dataset representation-rank metrics every N epochs; 0 disables them.",
+    )
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=1000)
@@ -255,6 +261,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trial", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=False)
+    parser.add_argument("--channels_last", type=str_to_bool, nargs="?", const=True, default=False)
+    parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
     parser.add_argument("--resume", type=str, default="")
 
@@ -262,7 +271,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--linear_eval_split", type=str, default="val", choices=["val", "test"])
     parser.add_argument("--linear_probe_mode", type=str, default="periodic", choices=["final", "periodic", "none"])
     parser.add_argument("--linear_probe_epochs", type=int, default=100)
-    parser.add_argument("--linear_probe_freq", type=int, default=None)
+    parser.add_argument(
+        "--linear_probe_freq",
+        type=int,
+        default=None,
+        help="Run periodic linear evaluation every N SSL epochs (default: 100, independent of save_freq).",
+    )
     parser.add_argument("--linear_learning_rate", type=float, default=1.0)
     parser.add_argument("--linear_lr_decay_epochs", type=str, default="60,75,90")
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
@@ -405,6 +419,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_strong_blur_sigma min must be <= max.")
     if args.dataset == "spur_cifar10" and args.model.endswith("_large"):
         parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
+    if args.amp and args.optimizer == "SAM":
+        parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
+    if args.rank_eval_freq < 0:
+        parser.error("--rank_eval_freq must be non-negative.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -426,7 +444,7 @@ def parse_args() -> argparse.Namespace:
     if args.linear_learning_rate is None:
         args.linear_learning_rate = 1.0
     if args.linear_probe_freq is None:
-        args.linear_probe_freq = args.save_freq if args.linear_probe_mode == "periodic" else 0
+        args.linear_probe_freq = 100 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
     args.model_name = format_run_name(args)
     args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
@@ -474,7 +492,7 @@ def format_strong_aug_name(args: argparse.Namespace) -> str:
         or args.splice_strong_blur_sigma is not None
     ):
         probability = 0.5 if args.splice_strong_blur_p is None else args.splice_strong_blur_p
-        kernel_size = 23 if args.splice_strong_blur_kernel_size is None else args.splice_strong_blur_kernel_size
+        kernel_size = "auto" if args.splice_strong_blur_kernel_size is None else args.splice_strong_blur_kernel_size
         sigma = args.splice_strong_blur_sigma or (0.1, 2.0)
         parts.append(f"blur{probability:g}k{kernel_size}s{sigma[0]:g}-{sigma[1]:g}")
     return "standardAug" if not parts else "_".join(parts)
@@ -518,7 +536,20 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.enabled = True
+
+
+def configure_training_backend(args: argparse.Namespace) -> None:
+    if torch.cuda.is_available():
+        cudnn.enabled = True
+        cudnn.benchmark = args.cudnn_benchmark
+        cudnn.deterministic = not args.cudnn_benchmark
+    print(
+        "[INFO] Training backend: "
+        f"cudnn_enabled={cudnn.enabled} cudnn_benchmark={cudnn.benchmark} "
+        f"amp={args.amp} channels_last={args.channels_last}",
+        flush=True,
+    )
 
 
 def seed_worker(worker_id: int) -> None:
@@ -634,13 +665,17 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
 
 def build_training_state(args: argparse.Namespace, device: torch.device):
     train_loader = build_ssl_loader(args)
+    configure_training_backend(args)
     model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim).to(device)
+    if args.channels_last and device.type == "cuda":
+        model = model.to(memory_format=torch.channels_last)
     if torch.cuda.is_available() and torch.cuda.device_count() > 1 and device.type == "cuda":
         model.encoder = torch.nn.DataParallel(model.encoder)
     criterion = SimCLRLoss(temperature=args.temp).to(device)
     optimizer = build_optimizer(args, model)
+    scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
     splice_regularizer = build_splice_regularizer(build_splice_config(args))
-    return train_loader, model, criterion, optimizer, splice_regularizer
+    return train_loader, model, criterion, optimizer, scaler, splice_regularizer
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:
@@ -706,12 +741,8 @@ def main() -> None:
         wandb_config["strong_aug"] = strong_aug_config(args)
         wandb_run = wandb.init(project=args.wandb_name, name=args.model_name, config=wandb_config, entity=args.entity)
 
-    train_loader, model, criterion, optimizer, splice_regularizer = build_training_state(args, device)
+    train_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(args, device)
     start_epoch = load_checkpoint(model, optimizer, args.resume, device) + 1 if args.resume else 1
-    if device.type == "cuda":
-        cudnn.benchmark = False
-        cudnn.enabled = False
-
     last_probe_epoch = 0
     best_probe_score = float("-inf")
     best_file = os.path.join(args.save_folder, "best.pth")
@@ -720,12 +751,25 @@ def main() -> None:
     for epoch in range(start_epoch, args.epochs + 1):
         adjust_learning_rate(args, optimizer, epoch)
         time1 = time.time()
-        train_metrics = train_one_epoch(train_loader, model, criterion, optimizer, epoch, args, splice_regularizer)
+        train_metrics = train_one_epoch(
+            train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
+        )
         time2 = time.time()
         print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
-        if epoch % args.print_freq == 0:
-            log_rank_metrics(model, train_loader, optimizer, train_metrics, epoch, args, wandb_run)
+        log_metrics = epoch % args.print_freq == 0
+        log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
+        if log_metrics or log_rank:
+            log_rank_metrics(
+                model,
+                train_loader,
+                optimizer,
+                train_metrics,
+                epoch,
+                args,
+                wandb_run,
+                compute_rank=log_rank,
+            )
 
         if epoch % args.save_freq == 0:
             save_checkpoint(model, optimizer, args, epoch, probe_file)

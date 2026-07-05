@@ -17,6 +17,8 @@ class SimCLRLoss(nn.Module):
 
     def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, float]:
         start = time.perf_counter()
+        # Keep the exponential/logarithm part of NT-Xent in FP32 when the encoder uses AMP.
+        features = features.float()
         if len(features.shape) < 3:
             raise ValueError("features must be shaped [batch_size, n_views, ...]")
         if len(features.shape) > 3:

@@ -58,7 +58,9 @@ def simclr_forward_loss(
     return loss, parts, bsz
 
 
-def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args, splice_regularizer) -> dict[str, float]:
+def train_one_epoch(
+    train_loader, model, criterion, optimizer, scaler, epoch: int, args, splice_regularizer
+) -> dict[str, float]:
     model.train()
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -73,10 +75,18 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
         image = data[0]
         image[0] = image[0].to(args.device, non_blocking=True)
         image[1] = image[1].to(args.device, non_blocking=True)
+        if args.channels_last and str(args.device).startswith("cuda"):
+            image[0] = image[0].contiguous(memory_format=torch.channels_last)
+            image[1] = image[1].contiguous(memory_format=torch.channels_last)
         splice_scores = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
-        loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
+        with torch.autocast(
+            device_type="cuda",
+            dtype=torch.float16,
+            enabled=args.amp and str(args.device).startswith("cuda"),
+        ):
+            loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
@@ -92,9 +102,10 @@ def train_one_epoch(train_loader, model, criterion, optimizer, epoch: int, args,
             optimizer.second_step()
             optimizer.step()
         else:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
         batch_time.update(time.time() - end)
         end = time.time()
@@ -131,6 +142,8 @@ def extract_normalized_train_features(model: SimCLRModel, train_loader, args) ->
         for data in train_loader:
             image = data[0]
             images = image[0].to(args.device, non_blocking=True)
+            if args.channels_last and str(args.device).startswith("cuda"):
+                images = images.contiguous(memory_format=torch.channels_last)
             embeddings = model.encoder(images)
             features.append(embeddings.cpu())
     features = F.normalize(torch.cat(features, dim=0), dim=1)
@@ -146,20 +159,26 @@ def log_rank_metrics(
     epoch: int,
     args,
     wandb_run,
+    compute_rank: bool = True,
 ) -> None:
-    train_features = extract_normalized_train_features(model, train_loader, args)
-    entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_features)
-    print(
-        "epoch {}, entropy {:.2f}, effective rank {}, and energy-based rank {}".format(
-            epoch, entropy, effective_rank, energy_based_rank
+    rank_metrics = {}
+    if compute_rank:
+        train_features = extract_normalized_train_features(model, train_loader, args)
+        entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_features)
+        print(
+            "epoch {}, entropy {:.2f}, effective rank {}, and energy-based rank {}".format(
+                epoch, entropy, effective_rank, energy_based_rank
+            )
         )
-    )
+        rank_metrics = {
+            "Entropy": entropy,
+            "Effective rank": effective_rank,
+            "Energy-based rank": energy_based_rank,
+        }
     if wandb_run is not None:
         wandb_run.log(
             {
-                "Entropy": entropy,
-                "Effective rank": effective_rank,
-                "Energy-based rank": energy_based_rank,
+                **rank_metrics,
                 "SSL train loss": train_metrics["loss"],
                 "SSL decor loss": train_metrics["decor_loss"],
                 "SSL entropy loss": train_metrics["entropy_loss"],
