@@ -666,9 +666,11 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
 def build_training_state(args: argparse.Namespace, device: torch.device):
     train_loader = build_ssl_loader(args)
     configure_training_backend(args)
-    model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim).to(device)
+    model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim)
     if args.channels_last and device.type == "cuda":
-        model = model.to(memory_format=torch.channels_last)
+        model = model.to(device, memory_format=torch.channels_last)
+    else:
+        model = model.to(device)
     if torch.cuda.is_available() and torch.cuda.device_count() > 1 and device.type == "cuda":
         model.encoder = torch.nn.DataParallel(model.encoder)
     criterion = SimCLRLoss(temperature=args.temp).to(device)
