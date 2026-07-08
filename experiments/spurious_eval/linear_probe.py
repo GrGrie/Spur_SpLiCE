@@ -278,6 +278,16 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
     avg_last_10_acc = float(np.mean(history.val_accuracy[-window:]))
     avg_last_10_wg_acc = float(np.mean(history.val_worst_group[-window:]))
     avg_last_10_bg_acc = float(np.mean(history.val_best_group[-window:]))
+    group_counts = val_results["group_counts"]
+    group_accuracies = val_results["group_accuracy"]
+    nonempty_group_ids = torch.where(group_counts > 0)[0]
+    if len(nonempty_group_ids):
+        worst_offset = torch.argmin(group_accuracies[nonempty_group_ids])
+        last_worst_group_id = int(nonempty_group_ids[worst_offset].item())
+        last_worst_group_count = int(group_counts[last_worst_group_id].item())
+    else:
+        last_worst_group_id = -1
+        last_worst_group_count = 0
     print(
         "Average of last 10 accuracies: {:.2f}, Average of last 10 worst-group accuracies: {:.2f}, Average of last 10 best-group accuracies: {:.2f}".format(
             avg_last_10_acc, avg_last_10_wg_acc, avg_last_10_bg_acc
@@ -311,6 +321,8 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         "Average over 10 last linear val acc": avg_last_10_acc,
         "Average over last 10 linear val worst-group acc": avg_last_10_wg_acc,
         "Average over last 10 linear val best-group acc": avg_last_10_bg_acc,
+        "Last linear val worst-group id": last_worst_group_id,
+        "Last linear val worst-group count": last_worst_group_count,
     }
     if wandb_run is not None:
         wandb_run.log(final_metrics, step=supcon_epoch)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -176,6 +177,12 @@ class SpurCIFAR10Dataset(WILDSDataset):
         test_spurious = self._make_spurious_values(test_labels, eval_spurious_correlation, spurious_seed + 2)
         spurious = np.concatenate([train_spurious, val_spurious, test_spurious])
         self._metadata_array = torch.stack((torch.LongTensor(spurious), self._y_array), dim=1)
+        metadata_digest = hashlib.sha256(self._metadata_array.numpy().tobytes()).hexdigest()[:16]
+        print(
+            f"[INFO] SpurCIFAR10 resolved root={self.root_dir} "
+            f"metadata_sha256={metadata_digest} spurious_seed={spurious_seed}",
+            flush=True,
+        )
         self._metadata_fields = ["line_color", "y"]
         self._metadata_map = {
             "line_color": [f"{class_name}_color" for class_name in CIFAR10_CLASSES],

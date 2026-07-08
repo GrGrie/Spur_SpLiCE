@@ -8,6 +8,9 @@ import random
 import time
 from pathlib import Path
 
+# Required by deterministic CUDA matrix multiplications; must be set before CUDA is initialized.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
@@ -261,14 +264,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trial", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=False)
-    parser.add_argument("--channels_last", type=str_to_bool, nargs="?", const=True, default=False)
+    parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=True)
+    parser.add_argument("--channels_last", type=str_to_bool, nargs="?", const=True, default=True)
     parser.add_argument(
         "--cudnn_enabled",
         type=str_to_bool,
         nargs="?",
         const=True,
-        default=False,
+        default=True,
         help="Enable cuDNN for SimCLR training. SpLiCE scoring still starts with cuDNN disabled.",
     )
     parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
@@ -283,7 +286,7 @@ def parse_args() -> argparse.Namespace:
         "--linear_probe_freq",
         type=int,
         default=None,
-        help="Run periodic linear evaluation every N SSL epochs (default: 100, independent of save_freq).",
+        help="Run periodic linear evaluation every N SSL epochs (default: 25, independent of save_freq).",
     )
     parser.add_argument("--linear_learning_rate", type=float, default=1.0)
     parser.add_argument("--linear_lr_decay_epochs", type=str, default="60,75,90")
@@ -431,6 +434,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
     if args.cudnn_benchmark and not args.cudnn_enabled:
         parser.error("--cudnn_benchmark true requires --cudnn_enabled true.")
+    if args.cudnn_benchmark:
+        parser.error("--cudnn_benchmark must remain false because training is reproducible by default.")
     if args.rank_eval_freq < 0:
         parser.error("--rank_eval_freq must be non-negative.")
     if args.batch_size > 256:
@@ -454,7 +459,7 @@ def parse_args() -> argparse.Namespace:
     if args.linear_learning_rate is None:
         args.linear_learning_rate = 1.0
     if args.linear_probe_freq is None:
-        args.linear_probe_freq = 100 if args.linear_probe_mode == "periodic" else 0
+        args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
     args.model_name = format_run_name(args)
     args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
@@ -478,7 +483,9 @@ def format_run_name(args: argparse.Namespace) -> str:
             splice_name = f"{splice_name}_{format_strong_aug_name(args)}"
     run_name = (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
-        f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}"
+        f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"
+        f"amp{int(args.amp)}_cl{int(args.channels_last)}_cudnn{int(args.cudnn_enabled)}_"
+        f"bench{int(args.cudnn_benchmark)}"
     )
     if args.use_splice and args.splice_mode == "augment":
         run_name = f"{run_name}_score{score_reduction}"
@@ -537,13 +544,13 @@ def write_run_config(args: argparse.Namespace) -> None:
         file.write("\n")
 
 
-def set_seed(seed: int) -> None:
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
+def set_seed(args: argparse.Namespace) -> None:
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.enabled = False
@@ -553,11 +560,11 @@ def configure_training_backend(args: argparse.Namespace) -> None:
     if torch.cuda.is_available():
         cudnn.enabled = args.cudnn_enabled
         cudnn.benchmark = args.cudnn_enabled and args.cudnn_benchmark
-        cudnn.deterministic = args.cudnn_enabled and not args.cudnn_benchmark
+        cudnn.deterministic = args.cudnn_enabled
     print(
         "[INFO] Training backend: "
         f"cudnn_enabled={cudnn.enabled} cudnn_benchmark={cudnn.benchmark} "
-        f"amp={args.amp} channels_last={args.channels_last}",
+        f"amp={args.amp} channels_last={args.channels_last} seeded_reproducibility=True",
         flush=True,
     )
 
@@ -748,7 +755,7 @@ def main() -> None:
     args = parse_args()
     print(args)
     print_strong_aug_config(args)
-    set_seed(args.seed)
+    set_seed(args)
     device = torch.device(args.device)
     args.device = str(device)
 
