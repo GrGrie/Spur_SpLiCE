@@ -1,5 +1,4 @@
 from torchvision.datasets import CIFAR100, CIFAR10, Food101
-from imagenetv2_pytorch import ImageNetValDataset
 import os
 import torch
 import torchvision
@@ -245,6 +244,8 @@ def load(dataset, preprocess, data_path, train=False):
         dataset_test = Food101(data_path, split="test", download=download, transform=preprocess)
 
     elif dataset == "ImageNetVal":
+        from imagenetv2_pytorch import ImageNetValDataset
+
         dataset_test = ImageNetValDataset(transform=preprocess, location=data_path)
 
         dataset_test.class_to_idx = {}

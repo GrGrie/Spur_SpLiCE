@@ -1,7 +1,10 @@
 import argparse
 import splice
 import torch
-import datasets
+try:
+    from . import datasets
+except ImportError:  # direct script execution
+    import datasets
 from torch.utils.data import DataLoader
 import pandas as pd
 import seaborn as sns
@@ -64,7 +67,7 @@ def concept_histogram(splicemodel, dataloader, class_indices, concepts, vocab, d
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-out_path', type=str)
-    parser.add_argument('-l1_penalty', type=float)
+    parser.add_argument('-l1_penalty', type=float, default=0.25)
     parser.add_argument('-device', type=str, default="cuda")
     parser.add_argument('-model', type=str, default="open_clip:ViT-B-32")
     parser.add_argument('-vocab', type=str, default="laion")

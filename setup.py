@@ -24,7 +24,7 @@ setup(
     description="",
     author="Alex Oesterling, Usha Bhalla",
     author_email="aoesterling@g.harvard.edu, usha_bhalla@g.harvard.edu",
-    py_modules=["splice"],
-    packages=find_packages(exclude=["experiments*", "data*"]),
+    py_modules=["spur_splice", "linear_probe", "waterbirds_linear_probe", "splice_cbm", "concept_distribution"],
+    packages=find_packages(exclude=["data*", "helpers*", "tests*"]),
     install_requires=_read_requirements(requirements_path),
 )

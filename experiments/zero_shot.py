@@ -4,7 +4,10 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import argparse
 import splice
-import datasets
+try:
+    from . import datasets
+except ImportError:  # direct script execution
+    import datasets
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -55,7 +58,7 @@ def find_closest(embedding, label_embeddings):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-l1_penalty', type=float)
+    parser.add_argument('-l1_penalty', type=float, default=0.25)
     parser.add_argument('-device', type=str, default="cuda")
     parser.add_argument('-model', type=str, default="open_clip:ViT-B-32")
     parser.add_argument('-vocab', type=str, default="laion")

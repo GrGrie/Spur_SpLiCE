@@ -14,6 +14,7 @@ class StrongAugmentationConfig:
     splice_strong_blur_p: float | None = None
     splice_strong_blur_kernel_size: int | None = None
     splice_strong_blur_sigma: tuple[float, float] | None = None
+    splice_strong_line_recolor: bool = False
 
 
 def strong_color_jitter_enabled(config: StrongAugmentationConfig) -> bool:

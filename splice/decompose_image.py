@@ -14,7 +14,7 @@ def main():
     parser.add_argument('-path', type=str)
     parser.add_argument('-out_path', type=str)
     parser.add_argument('--verbose', action="store_true")
-    parser.add_argument('-l1_penalty', type=float)
+    parser.add_argument('-l1_penalty', type=float, default=0.25)
     parser.add_argument('-device', type=str, default="cuda")
     parser.add_argument('-model', type=str, default="open_clip:ViT-B-32")
     parser.add_argument('-vocab', type=str, default="laion")
@@ -31,7 +31,12 @@ def main():
 
     _, indices = torch.sort(weights, descending=True)
 
-    outpath = args.out_path + os.path.split(args.path)[-1].split(".")[0] + "_weights.txt"
+    requested_output = Path(args.out_path)
+    if requested_output.suffix:
+        outpath = requested_output
+    else:
+        outpath = requested_output / f"{Path(args.path).stem}_weights.txt"
+    outpath.parent.mkdir(parents=True, exist_ok=True)
 
     with open(outpath, "w") as f:
 

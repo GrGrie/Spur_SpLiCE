@@ -51,15 +51,20 @@ SpLiCE is used here as a frozen interpretability and control module. It
 decomposes CLIP image embeddings into sparse, human-readable concept weights
 such as `water`, `lake`, `forest`, `tree`, or `grass`. The SimCLR model remains
 the trainable ResNet encoder; SpLiCE does not replace the SSL backbone. Instead,
-SpLiCE produces a scalar spurious-background score from a manual list of concept
-names or vocabulary indices passed with `--splice_concepts`.
+SpLiCE produces both a scalar routing score and a vector of the selected concept
+weights from names or vocabulary indices passed with `--splice_concepts`. The
+scalar is used only to decide which samples receive targeted augmentation. The
+vector is retained for regularization so mutually exclusive concepts such as
+`water` and `forest` are not collapsed into the same value.
 
 During training, SpLiCE affects downstream predictions only indirectly through
 the learned representation. In `augment`, high-score images can receive
-explicitly enabled stronger SSL augmentations, which can weaken easy visual shortcuts. In `corr_reg`, the
-SSL loop penalizes correlation between encoder features and the frozen SpLiCE
-concept score, encouraging the encoder to make those selected cues less
-linearly available to the downstream linear probe.
+explicitly enabled stronger SSL augmentations, which can weaken easy visual shortcuts. The first
+SimCLR view remains standard and the second becomes targeted, explicitly forming
+an invariance pair. In `corr_reg`, the SSL loop penalizes the full cross-correlation
+matrix between encoder features and frozen SpLiCE concept vectors after centering
+both within each target class. This targets within-class spurious variation without
+automatically suppressing signal merely because it is correlated with the label.
 
 The current implementation supports two interventions:
 
@@ -69,11 +74,12 @@ The current implementation supports two interventions:
   components explicitly enabled with `--splice_strong_*` flags. This is meant
   to support controlled augmentation ablations while preserving the normal
   SimCLR objective.
-- `corr_reg`: correlation regularization. Each SSL batch carries the frozen
-  SpLiCE score for every image. The training loop penalizes squared correlation
-  between ResNet encoder features and those scores, scaled by `--splice_weight`.
-  This encourages the learned representation to encode less information about
-  the selected background concepts.
+- `corr_reg`: conditional vector correlation regularization. Each SSL batch
+  carries one frozen weight per selected concept and image. The training loop
+  penalizes their normalized cross-correlation with ResNet features within
+target classes, scaled by `--splice_weight`.
+  This default objective uses target labels during SSL regularization; use
+  `--splice_conditional_on_target false` for a fully label-free ablation.
 
 The methods can be compared independently or together:
 
@@ -165,6 +171,9 @@ The helper writes:
   names for `--splice_concepts`.
 - `outputs/waterbirds_splice_concepts.indices.txt`: comma-separated vocabulary
   indices for `--splice_concepts`.
+- Optional `outputs/waterbirds_splice_concepts.per_image_top10.jsonl`: target,
+  spurious metadata, and top concepts per image. Enable it explicitly with
+  `--per_image_top_k 10`; the default is disabled.
 
 Example follow-up command:
 
@@ -177,8 +186,10 @@ python spur_splice.py \
   --splice_weight 0.1
 ```
 
-Before running `augment`, calibrate `--splice_score_threshold` for the exact
-concept list you plan to use:
+By default, `augment` automatically uses the 75th percentile of the training
+score distribution, so approximately 25% of samples receive the targeted second
+view. Change it with `--splice_score_quantile`, or provide a fixed
+`--splice_score_threshold`. To inspect the distribution manually:
 
 ```bash
 python tools/summarize_splice_scores.py \
@@ -208,7 +219,8 @@ Expected outcomes:
 Strong augmentation is now controlled as explicit deltas over the standard
 SimCLR transform. If `--splice_mode augment` is used without any
 `--splice_strong_*` arguments, high-score images still go through the standard
-SimCLR transform. Add only the components you want to ablate:
+SimCLR transform. SpurCIFAR10 line recoloring is an explicit oracle ablation,
+not part of the automatic default. Add only the components you want to ablate:
 
 ```bash
 # Strong crop only, using the old strong default min scale 0.08.
@@ -286,8 +298,9 @@ python spur_splice.py \
 
 Automatic discovery writes `outputs/<dataset>_splice_concepts.json`,
 `outputs/<dataset>_splice_concepts.concepts.txt`,
-`outputs/<dataset>_splice_concepts.indices.txt`, and
+`outputs/<dataset>_splice_concepts.indices.txt`,
 `outputs/<dataset>_splice_score_summary.json`.
+The per-image JSONL is opt-in through `--splice_per_image_top_k`.
 
 For `spur_cifar10`, each CIFAR-10 class is assigned one of ten fixed horizontal-line
 colors. Training images receive their class-associated color with probability `0.95`;
@@ -295,6 +308,31 @@ otherwise they receive one of the other nine colors uniformly. Validation and te
 correlation `0.1`, making line color independent of class. Worst-group accuracy is
 computed over the 100 `(class, line_color)` combinations. Use the CIFAR stem with
 `--model resnet18` rather than `resnet18_large`.
+Explicit line recoloring is deliberately disabled in the automatic pipeline,
+because it injects human knowledge of the shortcut. Enable the oracle upper-bound
+ablation explicitly with `--splice_strong_line_recolor true`.
+
+CelebA follows the SpurSSL/LateTVG protocol: `Blond_Hair` is the prediction
+target and `Male` is the spurious attribute used to form worst-case groups.
+
+## SpLiCE-CBM intervention baseline
+
+This baseline mirrors the intervention in the SpLiCE paper: train an L1 logistic
+probe on sparse SpLiCE weights, then evaluate both zeroed representation columns
+and zeroed probe coefficients.
+
+```bash
+python splice_cbm.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --intervention_concepts auto \
+  --use_wandb
+```
+
+The sparse matrices are cached without allocating a dense
+`num_images x vocabulary_size` array. `auto` is the default and applies the
+same metadata-conditioned concept ranking as SSL training; a manual concept
+list is retained only for diagnostic ablations.
 
 Recommended experiment order:
 
@@ -305,4 +343,7 @@ Recommended experiment order:
    `--splice_weight`.
 4. Run `augment_corr_reg` only after the individual methods are understood.
 5. Compare linear-probe worst-group accuracy, average accuracy, and logged
-   `SSL splice loss`.
+   `SSL splice loss`. The linear evaluation also logs a spurious-attribute
+   leakage probe by default; disable it with `--linear_spurious_probe false`.
+   For comparable target accuracy, lower spurious-probe accuracy indicates that
+   the shortcut is less linearly accessible in the frozen representation.

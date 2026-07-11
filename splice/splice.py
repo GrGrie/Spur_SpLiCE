@@ -2,8 +2,10 @@ import torch
 from .model import SPLICE
 import os
 import urllib
+from pathlib import Path
 
 GITHUB_HOST_LINK = "https://raw.githubusercontent.com/AI4LIFE-GROUP/SpLiCE/main/data/"
+LOCAL_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 
 SUPPORTED_MODELS = {
     "clip": [
@@ -43,6 +45,10 @@ def _download(url: str, root: str, subfolder: str):
     str
         A path to the desired file
     """
+    local_source = Path(url).expanduser()
+    if local_source.is_file():
+        return str(local_source)
+
     # normalize paths and ensure URL uses forward slashes (os.path.join may introduce backslashes on Windows)
     url = url.replace("\\", "/")
     root_subfolder = os.path.join(root, subfolder)
@@ -65,6 +71,13 @@ def _download(url: str, root: str, subfolder: str):
             output.write(buffer)
     return download_target
 
+
+def _resource_source(subfolder: str, filename: str) -> str:
+    bundled = LOCAL_DATA_ROOT / subfolder / filename
+    if bundled.is_file():
+        return str(bundled)
+    return f"{GITHUB_HOST_LINK}{subfolder}/{filename}"
+
 def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, pretrained: str = "laion2b_s34b_b79k", **kwargs):
     """load SpLiCE
 
@@ -83,6 +96,12 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         raise RuntimeError("Please define your CLIP backbone with the syntax \'[library]:[model]\'")
 
     library, model_name = name.split(":")
+    if library == "open_clip" and pretrained != "laion2b_s34b_b79k":
+        raise ValueError(
+            "The bundled OpenCLIP image mean is calibrated for pretrained='laion2b_s34b_b79k'. "
+            "Using another checkpoint would invalidate SpLiCE modality alignment; provide a calibrated "
+            "mean through manual SPLICE construction instead."
+        )
     if library in SUPPORTED_MODELS.keys():
         if model_name in SUPPORTED_MODELS[library]:
             if library == "clip":
@@ -105,7 +124,11 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         concepts = []
         vocab = []
 
-        vocab_path = _download(os.path.join(GITHUB_HOST_LINK, "vocab", vocabulary + ".txt"), download_root or os.path.expanduser("~/.cache/splice/"), "vocab")
+        vocab_path = _download(
+            _resource_source("vocab", vocabulary + ".txt"),
+            download_root or os.path.expanduser("~/.cache/splice/"),
+            "vocab",
+        )
 
         concept_root = download_root or os.path.expanduser("~/.cache/splice/")
         os.makedirs(os.path.join(concept_root, "embeddings"), exist_ok=True)
@@ -114,7 +137,13 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
             vocabulary_size_name = "full"
         else:
             vocabulary_size_name = vocabulary_size
-        concept_path = os.path.join(concept_root, f"embeddings/{name}_{vocabulary}_{vocabulary_size_name}_embeddings.pt")
+        cache_model_name = name.replace(":", "_").replace("/", "-").replace("\\", "-")
+        cache_pretrained_name = pretrained.replace(":", "_").replace("/", "-").replace("\\", "-")
+        concept_path = os.path.join(
+            concept_root,
+            "embeddings",
+            f"{cache_model_name}_{cache_pretrained_name}_{vocabulary}_{vocabulary_size_name}_embeddings.pt",
+        )
 
         if os.path.isfile(concept_path):
             concepts = torch.load(concept_path, map_location=torch.device(device))
@@ -139,7 +168,11 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
     
     
     model_path = model_name.replace("/","-")
-    mean_path = _download(os.path.join(GITHUB_HOST_LINK, "means", f"{library}_{model_path}_image.pt"), download_root or os.path.expanduser("~/.cache/splice/"), "means")
+    mean_path = _download(
+        _resource_source("means", f"{library}_{model_path}_image.pt"),
+        download_root or os.path.expanduser("~/.cache/splice/"),
+        "means",
+    )
     image_mean = torch.load(mean_path, map_location=torch.device(device))
     splice = SPLICE(
         image_mean=image_mean,
@@ -169,7 +202,11 @@ def get_vocabulary(name: str, vocabulary_size: int, download_root = None):
         _description_
     """
     if name in SUPPORTED_VOCAB:
-        vocab_path = _download(os.path.join(GITHUB_HOST_LINK, "vocab", name + ".txt"), download_root or os.path.expanduser("~/.cache/splice/"), "vocab")
+        vocab_path = _download(
+            _resource_source("vocab", name + ".txt"),
+            download_root or os.path.expanduser("~/.cache/splice/"),
+            "vocab",
+        )
 
         vocab = []
         with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:

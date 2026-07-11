@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -94,6 +95,15 @@ def validate_probability(value: float | None, option_name: str) -> None:
         raise argparse.ArgumentTypeError(f"{option_name} must be in the interval [0, 1].")
 
 
+def parse_splice_threshold(value: str) -> float | None:
+    if str(value).strip().lower() == "auto":
+        return None
+    threshold = float(value)
+    if threshold < 0:
+        raise argparse.ArgumentTypeError("--splice_score_threshold must be non-negative or 'auto'.")
+    return threshold
+
+
 def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
     out_dir = Path(args.splice_auto_out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -107,6 +117,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         split=args.splice_auto_split,
         out_path=str(discovery_path),
         top_k=args.splice_auto_top_k,
+        per_image_top_k=args.splice_per_image_top_k,
         target_metadata_index=None,
         spurious_metadata_index=None,
         batch_size=args.splice_batch_size,
@@ -179,6 +190,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         disable_cudnn=True,
         splice_model=args.splice_model,
         splice_pretrained=args.splice_pretrained,
+        splice_score_cache_dir=args.splice_score_cache_dir,
         splice_vocab=args.splice_vocab,
         splice_vocab_size=args.splice_vocab_size,
         splice_l1_penalty=args.splice_l1_penalty,
@@ -200,6 +212,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         num_workers=summary_args.num_workers,
         device=summary_args.device,
         pretrained=summary_args.splice_pretrained,
+        score_cache_dir=summary_args.splice_score_cache_dir,
     )
     scorer = SpliceConceptScorer(summary_config)
     dataset_spec = DATASET_REGISTRY[summary_args.dataset]
@@ -211,6 +224,15 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
     )
     thresholds = score_summary.parse_thresholds(summary_args.candidate_thresholds)
     summary = score_summary.summarize(scores, thresholds)
+    if args.splice_score_threshold is None:
+        args.splice_score_threshold = torch.quantile(
+            scores.float(),
+            torch.tensor(args.splice_score_quantile, dtype=torch.float32),
+        ).item()
+        print(
+            f"[INFO] Auto-calibrated SpLiCE augmentation threshold at q={args.splice_score_quantile:g}: "
+            f"{args.splice_score_threshold:.8f}"
+        )
     summary["split"] = summary_args.split
     summary["dataset"] = summary_args.dataset
     summary["splice_concepts"] = summary_args.splice_concepts
@@ -228,7 +250,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Spur_SpLiCE SimCLR SSL training")
     parser.add_argument("--print_freq", type=int, default=10)
-    parser.add_argument("--save_freq", type=int, default=50)
+    parser.add_argument("--save_freq", type=int, default=50, help="Checkpoint frequency when --keep_checkpoints is enabled.")
     parser.add_argument(
         "--rank_eval_freq",
         type=int,
@@ -276,6 +298,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
+    parser.add_argument(
+        "--keep_checkpoints",
+        action="store_true",
+        help="Persist epoch/last checkpoints. By default checkpoints are temporary and only support linear probing.",
+    )
     parser.add_argument("--resume", type=str, default="")
 
     parser.add_argument("--train_set_linear_layer", type=str, default="ds_train", choices=["train", "ds_train", "us_train", "balanced_train", "val"])
@@ -292,6 +319,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--linear_lr_decay_epochs", type=str, default="60,75,90")
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--linear_weight_decay", type=float, default=0.0)
+    parser.add_argument(
+        "--linear_spurious_probe",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Log an auxiliary linear probe for residual spurious-attribute predictability.",
+    )
 
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
@@ -302,9 +337,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_splice", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--splice_mode", type=str, default="none", choices=["none", "augment", "corr_reg", "augment_corr_reg"])
     parser.add_argument("--splice_concepts", type=str, default="")
-    parser.add_argument("--splice_score_threshold", type=float, default=0.01)
+    parser.add_argument(
+        "--splice_score_threshold",
+        type=parse_splice_threshold,
+        default=None,
+        help="Non-negative routing threshold or 'auto' (default), calibrated from --splice_score_quantile.",
+    )
+    parser.add_argument(
+        "--splice_score_quantile",
+        type=float,
+        default=0.75,
+        help="Training-score quantile used when --splice_score_threshold=auto.",
+    )
     parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
+    parser.add_argument(
+        "--splice_conditional_on_target",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Center features/concepts within target classes before correlation regularization.",
+    )
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
     parser.add_argument("--splice_vocab", type=str, default="laion")
     parser.add_argument("--splice_vocab_size", type=int, default=10000)
@@ -323,6 +377,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help="Number of concepts to discover when --splice_concepts is empty or auto.",
+    )
+    parser.add_argument(
+        "--splice_per_image_top_k",
+        type=int,
+        default=0,
+        help="Optional per-image concept JSONL audit size; disabled by default to avoid I/O overhead.",
     )
     parser.add_argument(
         "--splice_auto_split",
@@ -397,6 +457,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="GaussianBlur sigma as min,max. Accepts true, false, or min,max. True uses 0.1,2.0.",
     )
+    parser.add_argument(
+        "--splice_strong_line_recolor",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Oracle ablation for spur_cifar10: explicitly recolor the synthetic line (default: false).",
+    )
 
     args = parser.parse_args()
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
@@ -438,6 +506,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--cudnn_benchmark must remain false because training is reproducible by default.")
     if args.rank_eval_freq < 0:
         parser.error("--rank_eval_freq must be non-negative.")
+    if args.splice_auto_top_k <= 0:
+        parser.error("--splice_auto_top_k must be positive.")
+    if args.splice_per_image_top_k < 0:
+        parser.error("--splice_per_image_top_k must be non-negative.")
+    if not 0 <= args.splice_score_quantile <= 1:
+        parser.error("--splice_score_quantile must be in the interval [0, 1].")
+    if args.linear_probe_freq is not None and args.linear_probe_freq < 0:
+        parser.error("--linear_probe_freq must be non-negative.")
+    if args.keep_checkpoints and args.save_freq <= 0:
+        parser.error("--save_freq must be positive when --keep_checkpoints is enabled.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -476,18 +554,33 @@ def format_run_name(args: argparse.Namespace) -> str:
         splice_name = "nosplice"
     elif args.splice_mode == "augment":
         score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
-        splice_name = f"augment{args.splice_score_threshold:g}_{format_strong_aug_name(args)}"
+        threshold_name = (
+            f"q{args.splice_score_quantile:g}"
+            if args.splice_score_threshold is None
+            else f"{args.splice_score_threshold:g}"
+        )
+        splice_name = f"augment{threshold_name}_{format_strong_aug_name(args)}"
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
+        splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
         if args.splice_mode == "augment_corr_reg":
-            splice_name = f"{splice_name}_{format_strong_aug_name(args)}"
+            threshold_name = (
+                f"q{args.splice_score_quantile:g}"
+                if args.splice_score_threshold is None
+                else f"{args.splice_score_threshold:g}"
+            )
+            splice_name = f"{splice_name}_augment{threshold_name}_{format_strong_aug_name(args)}"
+    if args.use_splice:
+        concept_digest = hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:8]
+        splice_name = f"{splice_name}_concepts{concept_digest}"
     run_name = (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"
         f"amp{int(args.amp)}_cl{int(args.channels_last)}_cudnn{int(args.cudnn_enabled)}_"
         f"bench{int(args.cudnn_benchmark)}"
     )
-    if args.use_splice and args.splice_mode == "augment":
+    if args.use_splice and args.splice_mode in {"augment", "augment_corr_reg"}:
+        score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
         run_name = f"{run_name}_score{score_reduction}"
     return run_name
 
@@ -512,6 +605,8 @@ def format_strong_aug_name(args: argparse.Namespace) -> str:
         kernel_size = "auto" if args.splice_strong_blur_kernel_size is None else args.splice_strong_blur_kernel_size
         sigma = args.splice_strong_blur_sigma or (0.1, 2.0)
         parts.append(f"blur{probability:g}k{kernel_size}s{sigma[0]:g}-{sigma[1]:g}")
+    if args.dataset == "spur_cifar10" and args.splice_strong_line_recolor:
+        parts.append("lineRecolor")
     return "standardAug" if not parts else "_".join(parts)
 
 
@@ -524,6 +619,7 @@ def strong_aug_config(args: argparse.Namespace) -> dict[str, object]:
         "blur_p": args.splice_strong_blur_p,
         "blur_kernel_size": args.splice_strong_blur_kernel_size,
         "blur_sigma": args.splice_strong_blur_sigma,
+        "line_recolor": args.splice_strong_line_recolor if args.dataset == "spur_cifar10" else False,
         "run_name_fragment": format_strong_aug_name(args),
     }
 
@@ -600,6 +696,7 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_strong_blur_p=args.splice_strong_blur_p,
         splice_strong_blur_kernel_size=args.splice_strong_blur_kernel_size,
         splice_strong_blur_sigma=args.splice_strong_blur_sigma,
+        splice_strong_line_recolor=args.splice_strong_line_recolor,
     )
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
@@ -609,6 +706,7 @@ def build_ssl_loader(args: argparse.Namespace):
         concept_scorer=concept_scorer,
         splice_mode=args.splice_mode,
         splice_score_threshold=args.splice_score_threshold,
+        splice_score_quantile=args.splice_score_quantile,
         **loader_kwargs,
     )
 
@@ -629,6 +727,7 @@ def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
         score_reduction=args.splice_score_reduction,
         batch_size=args.splice_batch_size,
         num_workers=args.splice_num_workers,
+        conditional_on_target=args.splice_conditional_on_target,
         device=args.device,
     )
 
@@ -669,7 +768,7 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "num_workers": args.num_workers,
         "epochs": args.linear_probe_epochs,
         "learning_rate": args.linear_learning_rate,
-        "lr_decay_epochs": [60, 75, 90],
+        "lr_decay_epochs": args.linear_lr_decay_epochs,
         "lr_decay_rate": args.linear_lr_decay_rate,
         "weight_decay": args.linear_weight_decay,
         "momentum": 0.9,
@@ -679,6 +778,7 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "use_wandb": args.use_wandb,
         "wandb_name": args.wandb_name,
         "entity": args.entity,
+        "spurious_probe": args.linear_spurious_probe,
     }
     return argparse.Namespace(**probe_settings)
 
@@ -737,18 +837,10 @@ def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_prob
 
 
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
-    if args.checkpoint_dir:
-        print(f"[INFO] Preserving checkpoints in explicitly configured directory: {args.checkpoint_dir}")
-        return
-
-    save_folder = Path(args.save_folder)
-    checkpoint_paths = sorted(save_folder.glob("*.pth")) + sorted(save_folder.glob("*.pth.tmp"))
-
-    for checkpoint_path in checkpoint_paths:
-        checkpoint_path.unlink()
-
-    if checkpoint_paths:
-        print(f"[INFO] Removed {len(checkpoint_paths)} checkpoint file(s) from {save_folder}")
+    temporary_paths = [Path(args.save_folder) / "probe_tmp.pth", Path(args.save_folder) / "probe_tmp.pth.tmp"]
+    for temporary_path in temporary_paths:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def main() -> None:
@@ -770,8 +862,6 @@ def main() -> None:
     train_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(args, device)
     start_epoch = load_checkpoint(model, optimizer, args.resume, device) + 1 if args.resume else 1
     last_probe_epoch = 0
-    best_probe_score = float("-inf")
-    best_file = os.path.join(args.save_folder, "best.pth")
     probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
 
     for epoch in range(start_epoch, args.epochs + 1):
@@ -797,32 +887,35 @@ def main() -> None:
                 compute_rank=log_rank,
             )
 
-        if epoch % args.save_freq == 0:
+        should_probe = (
+            args.linear_probe_mode == "periodic"
+            and args.linear_probe_freq > 0
+            and epoch % args.linear_probe_freq == 0
+        )
+        if should_probe:
             save_checkpoint(model, optimizer, args, epoch, probe_file)
-            probe_metrics = maybe_run_periodic_probe(args, probe_file, epoch)
+            run_linear_probe(args, probe_file, epoch)
+            last_probe_epoch = epoch
+            if os.path.exists(probe_file):
+                os.remove(probe_file)
 
-            if probe_metrics is not None:
-                last_probe_epoch = epoch
-                probe_score = get_probe_score(probe_metrics)
+        if args.keep_checkpoints and epoch % args.save_freq == 0:
+            save_checkpoint(
+                model,
+                optimizer,
+                args,
+                epoch,
+                os.path.join(args.save_folder, f"epoch_{epoch}.pth"),
+            )
 
-                if probe_score > best_probe_score:
-                    best_probe_score = probe_score
-                    os.replace(probe_file, best_file)
-                    print(f"[INFO] New best checkpoint at epoch {epoch}: WG Acc.={best_probe_score:.4f}")
-                elif os.path.exists(probe_file):
-                    os.remove(probe_file)
-
-    save_checkpoint(model, optimizer, args, args.epochs, probe_file)
-    final_metrics = maybe_run_final_probe(args, probe_file, last_probe_epoch)
-
-    if final_metrics is not None:
-        final_score = get_probe_score(final_metrics)
-        if final_score > best_probe_score:
-            best_probe_score = final_score
-            os.replace(probe_file, best_file)
-            print(f"[INFO] New best final checkpoint: WG Acc.={best_probe_score:.4f}")
-        elif os.path.exists(probe_file):
+    if args.linear_probe_mode != "none" and last_probe_epoch != args.epochs:
+        save_checkpoint(model, optimizer, args, args.epochs, probe_file)
+        run_linear_probe(args, probe_file, args.epochs)
+        if os.path.exists(probe_file):
             os.remove(probe_file)
+
+    if args.keep_checkpoints:
+        save_checkpoint(model, optimizer, args, args.epochs, os.path.join(args.save_folder, "last.pth"))
 
     cleanup_default_checkpoints(args)
 

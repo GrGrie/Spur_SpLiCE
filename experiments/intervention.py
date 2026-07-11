@@ -1,10 +1,14 @@
 import splice
-from datasets import CelebA, WaterbirdDataset
+try:
+    from .datasets import CelebA, WaterbirdDataset
+    from .zero_shot import find_closest
+except ImportError:  # direct script execution
+    from datasets import CelebA, WaterbirdDataset
+    from zero_shot import find_closest
 import torch
 import time
 import argparse
 from torch.utils.data import DataLoader
-from zero_shot import find_closest
 from sklearn import linear_model
 import numpy as np
 
@@ -151,9 +155,9 @@ def intervene_celeba(splicemodel, preprocess, tokenizer, vocab, intervening_indi
         y2 = y2.to(args.device)
         with torch.no_grad():
             if X_full is None:
-                X_full = splicemodel.encode_image(X.cuda())
+                X_full = splicemodel.encode_image(X.to(args.device))
             else:
-                X_full = torch.cat((X_full, splicemodel.encode_image(X.cuda())))
+                X_full = torch.cat((X_full, splicemodel.encode_image(X.to(args.device))))
         if y_full1 is None:
             y_full1 = y1
         else:
@@ -204,9 +208,9 @@ def intervene_waterbirds(splicemodel, preprocess, tokenizer, vocab, intervening_
     for X, y1, y2 in train_loader:
         with torch.no_grad():
             if X_full is None:
-                X_full = splicemodel.encode_image(X.cuda())
+                X_full = splicemodel.encode_image(X.to(args.device))
             else:
-                X_full = torch.cat((X_full, splicemodel.encode_image(X.cuda())))
+                X_full = torch.cat((X_full, splicemodel.encode_image(X.to(args.device))))
         if y_full1 is None:
             y_full1 = y1
         else:
@@ -228,9 +232,9 @@ def intervene_waterbirds(splicemodel, preprocess, tokenizer, vocab, intervening_
     for X, y1, y2 in test_loader:
         with torch.no_grad():
             if X_full is None:
-                X_full = splicemodel.encode_image(X.cuda())
+                X_full = splicemodel.encode_image(X.to(args.device))
             else:
-                X_full = torch.cat((X_full, splicemodel.encode_image(X.cuda())))
+                X_full = torch.cat((X_full, splicemodel.encode_image(X.to(args.device))))
         if y_full1 is None:
             y_full1 = y1
         else:
@@ -268,7 +272,7 @@ def intervene_waterbirds(splicemodel, preprocess, tokenizer, vocab, intervening_
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-l1_penalty', type=float)
+    parser.add_argument('-l1_penalty', type=float, default=0.25)
     parser.add_argument('-device', type=str, default="cuda")
     parser.add_argument('-model', type=str, default="open_clip:ViT-B-32")
     parser.add_argument('-vocab', type=str, default="laion")
@@ -292,7 +296,8 @@ def main():
         print("Intervening Concepts: ", [vocab[i] for i in intervening_indices])
         intervene_celeba(splicemodel, preprocess, tokenizer, vocab, intervening_indices, args)
     elif args.dataset == "Waterbirds":
-        intervening_indices = [2118, 13929, 1281, 422, 4187, 5127, 3316, 11443, 14702, 13617, 4106, 3929, 6579, 5279, 4472, 381, 2483]
+        land_concepts = {"bamboo", "forest", "forests", "hiking", "rainforest"}
+        intervening_indices = [index for index, concept in enumerate(vocab) if concept in land_concepts]
         print("Intervening Concepts: ", [vocab[i] for i in intervening_indices])
         intervene_waterbirds(splicemodel, preprocess, tokenizer, vocab, intervening_indices, args)
 

@@ -14,7 +14,12 @@ from experiments.spurious_eval.datasets.augmentation import (
     build_standard_and_strong_ssl_transforms,
 )
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
+from experiments.spurious_eval.datasets.transforms import (
+    ConceptAwareSSLSubset,
+    ConceptAwareTwoCropTransform,
+    TwoCropTransform,
+    resolve_augmentation_threshold,
+)
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
     WILDSDataset,
@@ -67,38 +72,6 @@ def waterbirds_transforms(
         ]
     )
     return ssl_train_transform, strong_ssl_train_transform, linear_train_transform, eval_transform
-
-
-class ConceptAwareSSLSubset(torch.utils.data.Dataset):
-    """Wrap a WILDS subset and attach precomputed SpLiCE scores for SSL training."""
-
-    def __init__(self, subset: torch.utils.data.Dataset, scores: torch.Tensor, transform: ConceptAwareTwoCropTransform) -> None:
-        if len(subset) != len(scores):
-            raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} scores for {len(subset)} samples.")
-        self.subset = subset
-        self.scores = scores.float()
-        self.transform = transform
-        self.og_group_counts = getattr(subset, "og_group_counts", None)
-
-    def __len__(self) -> int:
-        return len(self.subset)
-
-    @property
-    def collate(self):
-        return getattr(self.subset, "collate", None)
-
-    @property
-    def metadata_array(self) -> torch.Tensor:
-        return self.subset.metadata_array
-
-    def __getitem__(self, idx: int):
-        image, label, metadata = self.subset[idx]
-        score = self.scores[idx]
-        views = self.transform(image, float(score.item()))
-        return views, label, metadata, score
-
-    def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
-        return self.subset.eval(y_pred, y_true, metadata)
 
 
 class WaterbirdsDataset(WILDSDataset):
@@ -206,7 +179,8 @@ def make_waterbirds_ssl_loader(
     num_workers: int | None = None,
     concept_scorer=None,
     splice_mode: str = "none",
-    splice_score_threshold: float = 0.0,
+    splice_score_threshold: float | None = None,
+    splice_score_quantile: float = 0.75,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
@@ -217,29 +191,29 @@ def make_waterbirds_ssl_loader(
         strong_config=config,
     )
     full_dataset = WaterbirdsDataset(config.root_dir)
-    if splice_mode in {"augment", "augment_corr_reg"}:
+    if splice_mode in {"augment", "corr_reg", "augment_corr_reg"}:
         if concept_scorer is None:
-            raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
+            raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(
-            score_subset, cache_key=dataset_score_cache_key("waterbirds", full_dataset, "train")
-        )
+        cache_key = dataset_score_cache_key("waterbirds", full_dataset, "train")
+        concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
+        scores = concept_scorer.reduce_selected_weights(concept_weights)
+        uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
+        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg"}
+        resolved_threshold = resolve_augmentation_threshold(
+            scores,
+            splice_score_threshold,
+            splice_score_quantile,
+        ) if uses_augmentation else float("inf")
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, strong_ssl_train_transform, splice_score_threshold),
-        )
-    elif splice_mode == "corr_reg":
-        if concept_scorer is None:
-            raise ValueError("SpLiCE correlation regularization requires a SpLiCE concept scorer.")
-        score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(
-            score_subset, cache_key=dataset_score_cache_key("waterbirds", full_dataset, "train")
-        )
-        train_dataset = ConceptAwareSSLSubset(
-            score_subset,
-            scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, ssl_train_transform, float("inf")),
+            ConceptAwareTwoCropTransform(
+                ssl_train_transform,
+                strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
+                resolved_threshold,
+            ),
+            concept_weights=concept_weights if uses_regularizer else None,
         )
     else:
         train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))

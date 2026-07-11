@@ -33,7 +33,8 @@ def simclr_forward_loss(
     model: SimCLRModel,
     criterion: SimCLRLoss,
     image,
-    splice_scores=None,
+    splice_concepts=None,
+    targets=None,
     splice_regularizer=None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
     bsz = image[0].size(0)
@@ -45,10 +46,13 @@ def simclr_forward_loss(
     loss, decor_loss, entropy_loss, _, _ = criterion(features)
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
-        repeated_scores = None
-        if splice_scores is not None:
-            repeated_scores = torch.cat([splice_scores, splice_scores], dim=0)
-        splice_loss = splice_regularizer(embeddings, repeated_scores)
+        repeated_concepts = None
+        repeated_targets = None
+        if splice_concepts is not None:
+            repeated_concepts = torch.cat([splice_concepts, splice_concepts], dim=0)
+        if targets is not None:
+            repeated_targets = torch.cat([targets, targets], dim=0)
+        splice_loss = splice_regularizer(embeddings, repeated_concepts, repeated_targets)
         loss = loss + splice_loss
     parts = {
         "decor": decor_loss,
@@ -78,7 +82,8 @@ def train_one_epoch(
         if args.channels_last and str(args.device).startswith("cuda"):
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
-        splice_scores = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
+        targets = data[1].to(args.device, non_blocking=True)
+        splice_concepts = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(
@@ -86,7 +91,14 @@ def train_one_epoch(
             dtype=torch.float16,
             enabled=args.amp and str(args.device).startswith("cuda"),
         ):
-            loss, parts, bsz = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
+            loss, parts, bsz = simclr_forward_loss(
+                model,
+                criterion,
+                image,
+                splice_concepts,
+                targets,
+                splice_regularizer,
+            )
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
@@ -96,7 +108,14 @@ def train_one_epoch(
             optimizer.zero_grad()
             loss.backward()
             optimizer.first_step()
-            loss, _, _ = simclr_forward_loss(model, criterion, image, splice_scores, splice_regularizer)
+            loss, _, _ = simclr_forward_loss(
+                model,
+                criterion,
+                image,
+                splice_concepts,
+                targets,
+                splice_regularizer,
+            )
             optimizer.zero_grad()
             loss.backward()
             optimizer.second_step()

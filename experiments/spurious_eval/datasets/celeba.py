@@ -15,7 +15,12 @@ from experiments.spurious_eval.datasets.augmentation import (
     build_standard_and_strong_ssl_transforms,
 )
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
+from experiments.spurious_eval.datasets.transforms import (
+    ConceptAwareSSLSubset,
+    ConceptAwareTwoCropTransform,
+    TwoCropTransform,
+    resolve_augmentation_threshold,
+)
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
     WILDSDataset,
@@ -70,38 +75,13 @@ def celeba_transforms(
     return ssl_train_transform, strong_ssl_train_transform, linear_train_transform, eval_transform
 
 
-class ConceptAwareSSLSubset(torch.utils.data.Dataset):
-    def __init__(self, subset: torch.utils.data.Dataset, scores: torch.Tensor, transform: ConceptAwareTwoCropTransform) -> None:
-        if len(subset) != len(scores):
-            raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} scores for {len(subset)} samples.")
-        self.subset = subset
-        self.scores = scores.float()
-        self.transform = transform
-        self.og_group_counts = getattr(subset, "og_group_counts", None)
-
-    def __len__(self) -> int:
-        return len(self.subset)
-
-    @property
-    def collate(self):
-        return getattr(self.subset, "collate", None)
-
-    @property
-    def metadata_array(self) -> torch.Tensor:
-        return self.subset.metadata_array
-
-    def __getitem__(self, idx: int):
-        image, label, metadata = self.subset[idx]
-        score = self.scores[idx]
-        views = self.transform(image, float(score.item()))
-        return views, label, metadata, score
-
-    def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
-        return self.subset.eval(y_pred, y_true, metadata)
-
-
 class CelebADataset(WILDSDataset):
-    """CelebA with Male as target and Blond_Hair as the spurious attribute."""
+    """CelebA with Blond_Hair as target and Male as the spurious attribute.
+
+    This matches the CelebA protocol used by SpurSSL, LateTVG, and the common
+    group-robustness benchmark: predict hair colour while measuring groups
+    formed by gender and the target label.
+    """
 
     _dataset_name = "celeba"
 
@@ -122,21 +102,23 @@ class CelebADataset(WILDSDataset):
 
         self.attrs = attrs.reset_index(drop=True)
         self._input_array = self.attrs["image_id"].astype(str).values
-        self._y_array = torch.LongTensor((self.attrs["Male"].astype(int).values == 1).astype(np.int64))
-        blond_hair = (self.attrs["Blond_Hair"].astype(int).values == 1).astype(np.int64)
+        self._y_array = torch.LongTensor(
+            (self.attrs["Blond_Hair"].astype(int).values == 1).astype(np.int64)
+        )
+        male = (self.attrs["Male"].astype(int).values == 1).astype(np.int64)
         self._y_size = 1
         self._n_classes = 2
-        self._metadata_array = torch.stack((torch.LongTensor(blond_hair), self._y_array), dim=1)
-        self._metadata_fields = ["hair_color", "y"]
+        self._metadata_array = torch.stack((torch.LongTensor(male), self._y_array), dim=1)
+        self._metadata_fields = ["gender", "y"]
         self._metadata_map = {
-            "hair_color": ["not_blond", "blond"],
-            "y": ["not_male", "male"],
+            "gender": ["female", "male"],
+            "y": ["not_blond", "blond"],
         }
         self._split_scheme = split_scheme
         if self._split_scheme != "official":
             raise ValueError(f"Split scheme {self._split_scheme} not recognized")
         self._split_array = self._load_split_array()
-        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["hair_color", "y"])
+        self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["gender", "y"])
         super().__init__(root_dir, split_scheme)
 
     @staticmethod
@@ -207,7 +189,8 @@ def make_celeba_ssl_loader(
     num_workers: int | None = None,
     concept_scorer=None,
     splice_mode: str = "none",
-    splice_score_threshold: float = 0.0,
+    splice_score_threshold: float | None = None,
+    splice_score_quantile: float = 0.75,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
@@ -218,29 +201,29 @@ def make_celeba_ssl_loader(
         strong_config=config,
     )
     full_dataset = CelebADataset(config.root_dir)
-    if splice_mode in {"augment", "augment_corr_reg"}:
+    if splice_mode in {"augment", "corr_reg", "augment_corr_reg"}:
         if concept_scorer is None:
-            raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
+            raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(
-            score_subset, cache_key=dataset_score_cache_key("celeba", full_dataset, "train")
-        )
+        cache_key = dataset_score_cache_key("celeba", full_dataset, "train")
+        concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
+        scores = concept_scorer.reduce_selected_weights(concept_weights)
+        uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
+        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg"}
+        resolved_threshold = resolve_augmentation_threshold(
+            scores,
+            splice_score_threshold,
+            splice_score_quantile,
+        ) if uses_augmentation else float("inf")
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, strong_ssl_train_transform, splice_score_threshold),
-        )
-    elif splice_mode == "corr_reg":
-        if concept_scorer is None:
-            raise ValueError("SpLiCE correlation regularization requires a SpLiCE concept scorer.")
-        score_subset = full_dataset.get_subset("train", transform=None)
-        scores = concept_scorer.score_dataset(
-            score_subset, cache_key=dataset_score_cache_key("celeba", full_dataset, "train")
-        )
-        train_dataset = ConceptAwareSSLSubset(
-            score_subset,
-            scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, ssl_train_transform, float("inf")),
+            ConceptAwareTwoCropTransform(
+                ssl_train_transform,
+                strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
+                resolved_threshold,
+            ),
+            concept_weights=concept_weights if uses_regularizer else None,
         )
     else:
         train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))

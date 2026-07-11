@@ -9,9 +9,10 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+from torch.utils.data import TensorDataset
 
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
-from experiments.spurious_eval.metrics import entropy_effective_rank
+from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
 from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
@@ -57,6 +58,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
     parser.add_argument("--entity", default="gsgrechkin-rptu")
+    parser.add_argument(
+        "--spurious_probe",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also measure how linearly predictable the spurious attribute remains.",
+    )
     args = parser.parse_args()
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
     return args
@@ -87,6 +94,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "use_wandb": False,
         "wandb_name": "Spur_SpLiCE",
         "entity": "gsgrechkin-rptu",
+        "spurious_probe": True,
     }
     for key, value in defaults.items():
         if not hasattr(args, key):
@@ -156,6 +164,56 @@ def consume_spurssl_head_rng(feature_dim: int, args: argparse.Namespace) -> None
         return
     else:
         raise ValueError(f"Unsupported SpurSSL head: {args.head}")
+
+
+def run_spurious_attribute_probe(
+    train_features: TensorDataset,
+    val_features: TensorDataset,
+    feature_dim: int,
+    args: argparse.Namespace,
+    device: torch.device,
+) -> dict[str, float]:
+    """Measure residual linear access to the spurious attribute."""
+
+    train_x, _, train_metadata = train_features.tensors
+    val_x, _, val_metadata = val_features.tensors
+    train_spurious = train_metadata[:, 0].long()
+    val_spurious = val_metadata[:, 0].long()
+    n_attributes = max(int(train_spurious.max().item()), int(val_spurious.max().item())) + 1
+    train_dataset = TensorDataset(train_x, train_spurious, train_metadata)
+    val_dataset = TensorDataset(val_x, val_spurious, val_metadata)
+    train_loader = make_feature_loader(train_dataset, args.batch_size, args.seed + 10_000, shuffle=True)
+    val_loader = make_feature_loader(val_dataset, args.batch_size, args.seed + 10_000, shuffle=False)
+
+    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=n_attributes).to(device)
+    criterion = torch.nn.CrossEntropyLoss().to(device)
+    optimizer = torch.optim.SGD(
+        classifier.parameters(),
+        lr=args.learning_rate,
+        momentum=args.momentum,
+        weight_decay=args.weight_decay,
+    )
+    accuracies = []
+    worst_group_accuracies = []
+    for epoch in range(1, args.epochs + 1):
+        adjust_learning_rate(args, optimizer, epoch)
+        train_one_epoch(train_loader, classifier, criterion, optimizer, device)
+        _, accuracy, predictions, labels, metadata = validate(val_loader, classifier, criterion, device)
+        # Reorder metadata so groups are (target, spurious label) for this auxiliary task.
+        auxiliary_metadata = torch.stack((metadata[:, 1], metadata[:, 0]), dim=1)
+        group_metrics = compute_group_metrics(predictions, labels, auxiliary_metadata)
+        accuracies.append(accuracy)
+        worst_group_accuracies.append(group_metrics.worst_group * 100)
+
+    window = min(10, len(accuracies))
+    return {
+        "Spurious probe last val acc": float(accuracies[-1]),
+        "Spurious probe average over last 10 val acc": float(np.mean(accuracies[-window:])),
+        "Spurious probe last val worst-group acc": float(worst_group_accuracies[-1]),
+        "Spurious probe average over last 10 val worst-group acc": float(
+            np.mean(worst_group_accuracies[-window:])
+        ),
+    }
 
 
 def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[str, float]:
@@ -319,11 +377,17 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         "Last linear val worst-group acc": last_wg_acc,
         "Last linear val best-group acc": last_bg_acc,
         "Average over 10 last linear val acc": avg_last_10_acc,
+        "Average over last 10 linear val acc": avg_last_10_acc,
         "Average over last 10 linear val worst-group acc": avg_last_10_wg_acc,
         "Average over last 10 linear val best-group acc": avg_last_10_bg_acc,
         "Last linear val worst-group id": last_worst_group_id,
         "Last linear val worst-group count": last_worst_group_count,
     }
+    if args.spurious_probe:
+        print("[INFO] Training auxiliary spurious-attribute leakage probe")
+        final_metrics.update(
+            run_spurious_attribute_probe(train_features, val_features, feature_dim, args, device)
+        )
     if wandb_run is not None:
         wandb_run.log(final_metrics, step=supcon_epoch)
         if created_wandb_run:

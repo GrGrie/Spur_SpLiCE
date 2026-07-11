@@ -32,7 +32,7 @@ class SPLICE(nn.Module):
         self.device = device
         self.clip = clip.to(self.device) if clip else None
         self.image_mean = image_mean.to(self.device)
-        self.text_mean = text_mean.to(self.device) if text_mean else None
+        self.text_mean = text_mean.to(self.device) if text_mean is not None else None
         self.dictionary = dictionary.to(self.device)
         self.l1_penalty = l1_penalty
         self.return_weights = return_weights
@@ -40,7 +40,7 @@ class SPLICE(nn.Module):
         self.decomp_text = decomp_text
 
         if solver not in ['skl', 'admm']:
-            return RuntimeError(f"Solver {solver} not supported, only \'skl\' or \'admm\'")
+            raise RuntimeError(f"Solver {solver} not supported, only \'skl\' or \'admm\'")
         self.solver = solver
 
         if self.solver == 'skl':
@@ -48,7 +48,14 @@ class SPLICE(nn.Module):
         if self.solver == 'admm': 
             self.rho = 5
             self.tol = 1e-6
-            self.admm = ADMM(rho=self.rho, l1_penalty=self.l1_penalty, tol=self.tol, max_iter=2000, device="cuda", verbose=False)
+            self.admm = ADMM(
+                rho=self.rho,
+                l1_penalty=self.l1_penalty,
+                tol=self.tol,
+                max_iter=2000,
+                device=self.device,
+                verbose=False,
+            )
 
     def decompose(self, embedding):
         """decompose Decomposes a dense CLIP embedding into a sparse weight vector

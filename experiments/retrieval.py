@@ -97,7 +97,7 @@ def retrieve(splicemodel, dataloader, args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-l1_penalty', type=float)
+    parser.add_argument('-l1_penalty', type=float, default=0.25)
     parser.add_argument('-device', type=str, default="cuda")
     parser.add_argument('-model', type=str, default="open_clip:ViT-B-32")
     parser.add_argument('-vocab', type=str, default="laion")

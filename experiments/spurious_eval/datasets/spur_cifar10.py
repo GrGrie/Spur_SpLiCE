@@ -15,7 +15,12 @@ from experiments.spurious_eval.datasets.augmentation import (
     build_standard_and_strong_ssl_transforms,
 )
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform, TwoCropTransform
+from experiments.spurious_eval.datasets.transforms import (
+    ConceptAwareSSLSubset,
+    ConceptAwareTwoCropTransform,
+    TwoCropTransform,
+    resolve_augmentation_threshold,
+)
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
     WILDSDataset,
@@ -54,6 +59,26 @@ LINE_COLORS = [
 ]
 
 
+class RecolorHorizontalLine:
+    """Break the synthetic class/line-colour shortcut in a counterfactual view."""
+
+    def __init__(self, line_width: int, colors=LINE_COLORS) -> None:
+        self.line_width = max(1, int(line_width))
+        self.colors = list(colors)
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        image = image.copy()
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
+        half_width = self.line_width // 2
+        center_y = height // 2
+        y0 = max(0, center_y - half_width)
+        y1 = min(height - 1, y0 + self.line_width - 1)
+        color_index = int(torch.randint(len(self.colors), size=(1,)).item())
+        draw.rectangle([0, y0, width - 1, y1], fill=self.colors[color_index])
+        return image
+
+
 @dataclass(frozen=True)
 class SpurCIFAR10Config(StrongAugmentationConfig):
     root_dir: str = "./datasets"
@@ -82,6 +107,10 @@ def spur_cifar10_transforms(
         normalize=normalize,
         strong_config=strong_config,
     )
+    if strong_config.splice_strong_line_recolor:
+        strong_ssl_train_transform = transforms.Compose(
+            [RecolorHorizontalLine(strong_config.line_width), strong_ssl_train_transform]
+        )
     linear_train_transform = transforms.Compose(
         [
             transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
@@ -98,36 +127,6 @@ def spur_cifar10_transforms(
         ]
     )
     return ssl_train_transform, strong_ssl_train_transform, linear_train_transform, eval_transform
-
-
-class ConceptAwareSSLSubset(torch.utils.data.Dataset):
-    def __init__(self, subset: torch.utils.data.Dataset, scores: torch.Tensor, transform: ConceptAwareTwoCropTransform) -> None:
-        if len(subset) != len(scores):
-            raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} scores for {len(subset)} samples.")
-        self.subset = subset
-        self.scores = scores.float()
-        self.transform = transform
-        self.og_group_counts = getattr(subset, "og_group_counts", None)
-
-    def __len__(self) -> int:
-        return len(self.subset)
-
-    @property
-    def collate(self):
-        return getattr(self.subset, "collate", None)
-
-    @property
-    def metadata_array(self) -> torch.Tensor:
-        return self.subset.metadata_array
-
-    def __getitem__(self, idx: int):
-        image, label, metadata = self.subset[idx]
-        score = self.scores[idx]
-        views = self.transform(image, float(score.item()))
-        return views, label, metadata, score
-
-    def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
-        return self.subset.eval(y_pred, y_true, metadata)
 
 
 class SpurCIFAR10Dataset(WILDSDataset):
@@ -285,7 +284,8 @@ def make_spur_cifar10_ssl_loader(
     num_workers: int | None = None,
     concept_scorer=None,
     splice_mode: str = "none",
-    splice_score_threshold: float = 0.0,
+    splice_score_threshold: float | None = None,
+    splice_score_quantile: float = 0.75,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
@@ -304,27 +304,29 @@ def make_spur_cifar10_ssl_loader(
         line_width=config.line_width,
         download=config.download,
     )
-    if splice_mode in {"augment", "augment_corr_reg"}:
+    if splice_mode in {"augment", "corr_reg", "augment_corr_reg"}:
         if concept_scorer is None:
-            raise ValueError("Concept-aware augmentation requires a SpLiCE concept scorer.")
+            raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
         cache_key = dataset_score_cache_key("spur_cifar10", full_dataset, "train")
-        scores = concept_scorer.score_dataset(score_subset, cache_key=cache_key)
+        concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
+        scores = concept_scorer.reduce_selected_weights(concept_weights)
+        uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
+        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg"}
+        resolved_threshold = resolve_augmentation_threshold(
+            scores,
+            splice_score_threshold,
+            splice_score_quantile,
+        ) if uses_augmentation else float("inf")
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
             scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, strong_ssl_train_transform, splice_score_threshold),
-        )
-    elif splice_mode == "corr_reg":
-        if concept_scorer is None:
-            raise ValueError("SpLiCE correlation regularization requires a SpLiCE concept scorer.")
-        score_subset = full_dataset.get_subset("train", transform=None)
-        cache_key = dataset_score_cache_key("spur_cifar10", full_dataset, "train")
-        scores = concept_scorer.score_dataset(score_subset, cache_key=cache_key)
-        train_dataset = ConceptAwareSSLSubset(
-            score_subset,
-            scores,
-            ConceptAwareTwoCropTransform(ssl_train_transform, ssl_train_transform, float("inf")),
+            ConceptAwareTwoCropTransform(
+                ssl_train_transform,
+                strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
+                resolved_threshold,
+            ),
+            concept_weights=concept_weights if uses_regularizer else None,
         )
     else:
         train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
