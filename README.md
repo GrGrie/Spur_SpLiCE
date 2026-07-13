@@ -40,6 +40,7 @@ pip install .
 - `linear_probe.py`: linear probing for a checkpoint and dataset selected by `--dataset`.
 - `splice_cbm.py`: sparse SpLiCE concept-bottleneck baseline with representation and probe-weight interventions.
 - `waterbirds_Augmentation_array.sbatch`: validation-only Waterbirds augmentation array with one shared automatic top-10 discovery pass.
+- `waterbirds_SpLiCE_hyperparameter_array.sbatch`: validation-only baseline/augmentation-quantile/correlation-weight sweep sharing one automatic top-10 discovery pass.
 - `splice/decompose_image.py`: SpLiCE decomposition for a single image.
 - `splice/decompose_data.py`: SpLiCE decomposition for a dataset or one class.
 
