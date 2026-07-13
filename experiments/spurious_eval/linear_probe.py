@@ -12,6 +12,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.data import TensorDataset
 
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
 from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
@@ -30,7 +31,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--train_set_linear_layer", default="ds_train", choices=["train", "val", "ds_train", "us_train", "balanced_train"])
-    parser.add_argument("--eval_split", default="val", choices=["val", "test"])
+    parser.add_argument(
+        "--eval_split",
+        default=None,
+        choices=["val", "test"],
+        help="Evaluation split. Defaults to val; test requires --final_test.",
+    )
+    parser.add_argument(
+        "--final_test",
+        action="store_true",
+        help="Evaluate a locked final configuration on test instead of the validation default.",
+    )
     parser.add_argument("--model", default="resnet18", choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet18_large", "resnet50_large"])
     parser.add_argument("--ckpt", default="", help="SpurSSL checkpoint containing encoder.* weights")
     parser.add_argument("--method", default="SimCLR", help="Accepted for SpurSSL command compatibility")
@@ -65,6 +76,10 @@ def parse_args() -> argparse.Namespace:
         help="Also measure how linearly predictable the spurious attribute remains.",
     )
     args = parser.parse_args()
+    try:
+        args.eval_split = resolve_evaluation_split(args.eval_split, args.final_test)
+    except ValueError as exc:
+        parser.error(str(exc))
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
     return args
 

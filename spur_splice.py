@@ -18,6 +18,7 @@ import torch.backends.cudnn as cudnn
 
 from experiments.spurious_eval import linear_probe
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
@@ -306,8 +307,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", type=str, default="")
 
     parser.add_argument("--train_set_linear_layer", type=str, default="ds_train", choices=["train", "ds_train", "us_train", "balanced_train", "val"])
-    parser.add_argument("--linear_eval_split", type=str, default="val", choices=["val", "test"])
-    parser.add_argument("--linear_probe_mode", type=str, default="periodic", choices=["final", "periodic", "none"])
+    parser.add_argument(
+        "--linear_eval_split",
+        type=str,
+        default=None,
+        choices=["val", "test"],
+        help="Linear-probe evaluation split. Defaults to val; test requires --final_test.",
+    )
+    parser.add_argument(
+        "--final_test",
+        action="store_true",
+        help="Evaluate a locked final configuration on test instead of the validation default.",
+    )
+    parser.add_argument(
+        "--linear_probe_mode",
+        type=str,
+        default=None,
+        choices=["final", "periodic", "none"],
+        help="Defaults to periodic on val. --final_test restricts evaluation to one final probe.",
+    )
     parser.add_argument("--linear_probe_epochs", type=int, default=100)
     parser.add_argument(
         "--linear_probe_freq",
@@ -467,6 +485,11 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    try:
+        args.linear_eval_split = resolve_evaluation_split(args.linear_eval_split, args.final_test)
+        args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
+    except ValueError as exc:
+        parser.error(str(exc))
     args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
     args.linear_lr_decay_epochs = [int(epoch.strip()) for epoch in args.linear_lr_decay_epochs.split(",") if epoch.strip()]
     if args.use_splice and args.splice_mode == "none":

@@ -9,6 +9,7 @@ import torch
 
 from experiments.spurious_eval.datasets.celeba import CelebADataset
 from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform
+from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import run_spurious_attribute_probe
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
 from splice.ssl_regularization import CorrelationSpliceRegularizer, SpliceConfig, score_cache_path
@@ -17,6 +18,19 @@ from tools.discover_splice_spurious_concepts import SparseConceptWeights, rank_c
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_evaluation_protocol_requires_explicit_final_test(self):
+        self.assertEqual(resolve_evaluation_split(None, final_test=False), "val")
+        self.assertEqual(resolve_evaluation_split(None, final_test=True), "test")
+        self.assertEqual(resolve_evaluation_split("test", final_test=True), "test")
+        with self.assertRaises(ValueError):
+            resolve_evaluation_split("test", final_test=False)
+        with self.assertRaises(ValueError):
+            resolve_evaluation_split("val", final_test=True)
+        self.assertEqual(resolve_probe_mode(None, final_test=False), "periodic")
+        self.assertEqual(resolve_probe_mode(None, final_test=True), "final")
+        with self.assertRaises(ValueError):
+            resolve_probe_mode("periodic", final_test=True)
+
     def test_celeba_matches_spurssl_target_and_confounder(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory) / "celeba"

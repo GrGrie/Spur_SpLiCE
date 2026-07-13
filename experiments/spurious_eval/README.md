@@ -38,6 +38,11 @@ The expected dataset layout is either `DATA_FOLDER/waterbirds/metadata.csv`,
 
 The root `spur_splice.py` is the SSL training entrypoint. Use `--splice_mode`
 to enable SpLiCE-guided augmentation, correlation regularization, or both.
+Development runs evaluate linear probes on `val` by default. The test split is
+guarded against accidental hyperparameter selection: use `--final_test` only
+after the configuration has been fixed from validation results. Development
+runs produce periodic validation curves every 25 SSL epochs; final-test runs
+perform one probe only at the final SSL epoch.
 
 ## SpLiCE-Guided Waterbirds Experiments
 
@@ -328,6 +333,9 @@ python splice_cbm.py \
   --intervention_concepts auto \
   --use_wandb
 ```
+
+SpLiCE-CBM also defaults to validation. Add `--final_test` only for the locked
+final evaluation.
 
 The sparse matrices are cached without allocating a dense
 `num_images x vocabulary_size` array. `auto` is the default and applies the

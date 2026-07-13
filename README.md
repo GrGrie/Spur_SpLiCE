@@ -39,6 +39,7 @@ pip install .
 - `spur_splice.py`: SSL training with optional linear probing. Enable SpLiCE regularization with `--use_splice` and `--splice_weight`.
 - `linear_probe.py`: linear probing for a checkpoint and dataset selected by `--dataset`.
 - `splice_cbm.py`: sparse SpLiCE concept-bottleneck baseline with representation and probe-weight interventions.
+- `waterbirds_Augmentation_array.sbatch`: validation-only Waterbirds augmentation array with one shared automatic top-10 discovery pass.
 - `splice/decompose_image.py`: SpLiCE decomposition for a single image.
 - `splice/decompose_data.py`: SpLiCE decomposition for a dataset or one class.
 
@@ -46,6 +47,10 @@ Automatic spurious-concept discovery can optionally write a per-image JSONL
 audit with `--splice_per_image_top_k 10`; it is disabled by default to avoid
 large files and extra I/O. SSL runs keep only temporary probe checkpoints by
 default; pass `--keep_checkpoints` if model files are needed.
+Linear evaluation uses `val` by default. A test-set run requires the explicit
+`--final_test` flag so development commands cannot accidentally select
+hyperparameters on test. Final-test SSL runs perform one linear probe only at
+the final SSL epoch; periodic every-25-epoch curves remain validation-only.
 
 ### Sample Concept Decomposition
 To get the concept decomposition of a single image (we include an example image 308175 from MSCOCO), run the `splice/decompose_image.py` script. The `-l1_penalty` argument can be used to control the sparsity of the decompositions.

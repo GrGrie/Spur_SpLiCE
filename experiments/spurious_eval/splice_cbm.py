@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 import splice
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.metrics import compute_group_metrics
 from splice.ssl_regularization import identity_collate, resolve_concept_indices
 
@@ -22,7 +23,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--train_split", default="train", choices=["train", "ds_train", "val"])
-    parser.add_argument("--eval_split", default="val", choices=["val", "test"])
+    parser.add_argument(
+        "--eval_split",
+        default=None,
+        choices=["val", "test"],
+        help="Evaluation split. Defaults to val; test requires --final_test.",
+    )
+    parser.add_argument(
+        "--final_test",
+        action="store_true",
+        help="Evaluate a locked final configuration on test instead of the validation default.",
+    )
     parser.add_argument(
         "--intervention_concepts",
         default="auto",
@@ -49,7 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
     parser.add_argument("--entity", default="gsgrechkin-rptu")
-    return parser.parse_args()
+    args = parser.parse_args()
+    try:
+        args.eval_split = resolve_evaluation_split(args.eval_split, args.final_test)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return args
 
 
 def cache_stem(args: argparse.Namespace, split: str, dataset_size: int) -> Path:
