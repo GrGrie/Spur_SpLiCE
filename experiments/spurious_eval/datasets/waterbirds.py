@@ -228,10 +228,33 @@ def make_waterbirds_ssl_loader(
     )
 
 
+def make_waterbirds_rank_loader(
+    config: WaterbirdsConfig,
+    batch_size: int,
+    num_workers: int | None = None,
+    **loader_kwargs,
+) -> torch.utils.data.DataLoader:
+    """Build an ordered, non-augmented train loader for diagnostics only."""
+
+    if num_workers is not None:
+        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
+    _, _, _, eval_transform = waterbirds_transforms(config.image_size)
+    full_dataset = WaterbirdsDataset(config.root_dir)
+    rank_dataset = full_dataset.get_subset("train", transform=eval_transform)
+    return get_eval_loader(
+        "standard",
+        rank_dataset,
+        batch_size=batch_size,
+        drop_last=False,
+        **loader_kwargs,
+    )
+
+
 WATERBIRDS_SPEC = {
     "dataset": WaterbirdsDataset,
     "config": WaterbirdsConfig,
     "ssl_loader": make_waterbirds_ssl_loader,
+    "rank_loader": make_waterbirds_rank_loader,
     "probe_loaders": make_waterbirds_loaders,
     "num_classes": 2,
     "spurious_metadata_index": 0,

@@ -154,17 +154,20 @@ def train_one_epoch(
     }
 
 
-def extract_normalized_train_features(model: SimCLRModel, train_loader, args) -> torch.Tensor:
+def extract_normalized_train_features(model: SimCLRModel, rank_loader, args) -> torch.Tensor:
+    was_training = model.training
     model.eval()
     features = []
-    with torch.no_grad():
-        for data in train_loader:
-            image = data[0]
-            images = image[0].to(args.device, non_blocking=True)
-            if args.channels_last and str(args.device).startswith("cuda"):
-                images = images.contiguous(memory_format=torch.channels_last)
-            embeddings = model.encoder(images)
-            features.append(embeddings.cpu())
+    try:
+        with torch.no_grad():
+            for data in rank_loader:
+                images = data[0].to(args.device, non_blocking=True)
+                if args.channels_last and str(args.device).startswith("cuda"):
+                    images = images.contiguous(memory_format=torch.channels_last)
+                embeddings = model.encoder(images)
+                features.append(embeddings.cpu())
+    finally:
+        model.train(was_training)
     features = F.normalize(torch.cat(features, dim=0), dim=1)
     print("Extracted features shape:", features.shape)
     return features
@@ -172,7 +175,7 @@ def extract_normalized_train_features(model: SimCLRModel, train_loader, args) ->
 
 def log_rank_metrics(
     model: SimCLRModel,
-    train_loader,
+    rank_loader,
     optimizer: torch.optim.Optimizer,
     train_metrics: dict[str, float],
     epoch: int,
@@ -182,7 +185,9 @@ def log_rank_metrics(
 ) -> None:
     rank_metrics = {}
     if compute_rank:
-        train_features = extract_normalized_train_features(model, train_loader, args)
+        if rank_loader is None:
+            raise ValueError("Rank metrics require a dedicated rank loader.")
+        train_features = extract_normalized_train_features(model, rank_loader, args)
         entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_features)
         print(
             "epoch {}, entropy {:.2f}, effective rank {}, and energy-based rank {}".format(

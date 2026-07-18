@@ -18,6 +18,8 @@ set -euo pipefail
 # Submit with: sbatch waterbirds_Augmentation_array.sbatch
 # Override one top-level value without editing the file, for example:
 # sbatch --export=ALL,SEED=0 waterbirds_Augmentation_array.sbatch
+# SpurCIFAR10 uses the same array with a dataset-specific model:
+# sbatch --job-name=SpurCIFAR10_SpLiCE_aug --export=ALL,DATASET=spur_cifar10,SEED=0 waterbirds_Augmentation_array.sbatch
 
 # ------------------------- paths and environment -------------------------
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
@@ -25,17 +27,28 @@ CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-./datasets}"
 
 # -------------------------- training protocol ----------------------------
-DATASET="waterbirds"
-MODEL="resnet18_large"
+DATASET="${DATASET:-waterbirds}"
+case "${DATASET}" in
+    waterbirds|celeba|CelebA|celebA)
+        MODEL="${MODEL:-resnet18_large}"
+        ;;
+    spur_cifar10)
+        MODEL="${MODEL:-resnet18}"
+        ;;
+    *)
+        echo "Unsupported DATASET=${DATASET}" >&2
+        exit 2
+        ;;
+esac
 SEED="${SEED:-2}"
-EPOCHS=1000
-BATCH_SIZE=256
-NUM_WORKERS=5
-LEARNING_RATE=0.01
-WEIGHT_DECAY="1e-4"
-TEMP=0.05
-PRINT_FREQ=25
-RANK_EVAL_FREQ=100
+EPOCHS="${EPOCHS:-1000}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+NUM_WORKERS="${NUM_WORKERS:-5}"
+LEARNING_RATE="${LEARNING_RATE:-0.01}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-1e-4}"
+TEMP="${TEMP:-0.05}"
+PRINT_FREQ="${PRINT_FREQ:-25}"
+RANK_EVAL_FREQ="${RANK_EVAL_FREQ:-100}"
 
 # ----------------------------- SpLiCE ------------------------------------
 SPLICE_MODE="augment"
@@ -49,19 +62,20 @@ SPLICE_MODEL="open_clip:ViT-B-32"
 SPLICE_PRETRAINED="laion2b_s34b_b79k"
 SPLICE_VOCAB="laion"
 SPLICE_VOCAB_SIZE=10000
-SPLICE_SCORE_CACHE_DIR="outputs/splice_score_cache"
+SPLICE_SCORE_CACHE_DIR="${SPLICE_SCORE_CACHE_DIR:-outputs/splice_score_cache}"
+SPLICE_STRONG_LINE_RECOLOR="${SPLICE_STRONG_LINE_RECOLOR:-false}"
 
 # --------------------------- linear probe -------------------------------
 # Development array: periodic curves are validation-only.
-LINEAR_TRAIN_SPLIT="ds_train"
-LINEAR_EVAL_SPLIT="val"
-LINEAR_PROBE_FREQ=25
-LINEAR_PROBE_EPOCHS=100
-LINEAR_SPURIOUS_PROBE=true
+LINEAR_TRAIN_SPLIT="${LINEAR_TRAIN_SPLIT:-ds_train}"
+LINEAR_EVAL_SPLIT="${LINEAR_EVAL_SPLIT:-val}"
+LINEAR_PROBE_FREQ="${LINEAR_PROBE_FREQ:-25}"
+LINEAR_PROBE_EPOCHS="${LINEAR_PROBE_EPOCHS:-100}"
+LINEAR_SPURIOUS_PROBE="${LINEAR_SPURIOUS_PROBE:-true}"
 
 # ------------------------------- W&B -------------------------------------
-WANDB_NAME="Spur_SpLiCE"
-WANDB_ENTITY="gsgrechkin-rptu"
+WANDB_NAME="${WANDB_NAME:-Spur_SpLiCE}"
+WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 
 # Each array task changes only the targeted augmentation delta.
 case "${SLURM_ARRAY_TASK_ID}" in
@@ -118,6 +132,8 @@ conda activate "${CONDA_ENV}"
 # output and selected-vector cache. The Slurm job id gives every submission a
 # fresh discovery directory, avoiding stale concept lists from older code.
 ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}"
+WANDB_GROUP="${WANDB_GROUP:-${DATASET}_augmentation_${ARRAY_JOB_ID}_seed${SEED}}"
+WANDB_TAGS="${WANDB_TAGS:-dataset_${DATASET},seed_${SEED},family_augmentation,task_${RUN_LABEL}}"
 AUTO_OUT_DIR="outputs/slurm_${ARRAY_JOB_ID}_${DATASET}_auto"
 DISCOVERY_JSON="${AUTO_OUT_DIR}/${DATASET}_splice_concepts.json"
 CONCEPTS_FILE="${AUTO_OUT_DIR}/${DATASET}_splice_concepts.concepts.txt"
@@ -169,6 +185,8 @@ python spur_splice.py \
     --use_wandb \
     --wandb_name "${WANDB_NAME}" \
     --entity "${WANDB_ENTITY}" \
+    --wandb_group "${WANDB_GROUP}" \
+    --wandb_tags "${WANDB_TAGS}" \
     --dataset "${DATASET}" \
     --data_folder "${DATA_FOLDER}" \
     --model "${MODEL}" \
@@ -200,6 +218,7 @@ python spur_splice.py \
     --splice_strong_color_jitter "${SPLICE_STRONG_COLOR_JITTER}" \
     --splice_strong_grayscale_p "${SPLICE_STRONG_GRAYSCALE_P}" \
     --splice_strong_blur_p "${SPLICE_STRONG_BLUR_P}" \
+    --splice_strong_line_recolor "${SPLICE_STRONG_LINE_RECOLOR}" \
     --train_set_linear_layer "${LINEAR_TRAIN_SPLIT}" \
     --linear_eval_split "${LINEAR_EVAL_SPLIT}" \
     --linear_probe_mode periodic \

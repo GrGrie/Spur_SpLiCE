@@ -20,6 +20,8 @@ set -euo pipefail
 #   tasks 1-4: automatic SpLiCE augmentation quantiles
 #   tasks 5-8: conditional vector-correlation weights
 # Submit with: sbatch waterbirds_SpLiCE_hyperparameter_array.sbatch
+# SpurCIFAR10 example:
+# sbatch --job-name=SpurCIFAR10_SpLiCE_sweep --export=ALL,DATASET=spur_cifar10,SEED=0 waterbirds_SpLiCE_hyperparameter_array.sbatch
 
 # ------------------------- paths and environment -------------------------
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
@@ -27,20 +29,31 @@ CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-./datasets}"
 
 # -------------------------- training protocol ----------------------------
-DATASET="waterbirds"
-MODEL="resnet18_large"
+DATASET="${DATASET:-waterbirds}"
+case "${DATASET}" in
+    waterbirds|celeba|CelebA|celebA)
+        MODEL="${MODEL:-resnet18_large}"
+        ;;
+    spur_cifar10)
+        MODEL="${MODEL:-resnet18}"
+        ;;
+    *)
+        echo "Unsupported DATASET=${DATASET}" >&2
+        exit 2
+        ;;
+esac
 SEED="${SEED:-2}"
-EPOCHS=1000
-BATCH_SIZE=256
-NUM_WORKERS=5
-LEARNING_RATE=0.01
-WEIGHT_DECAY="1e-4"
-TEMP=0.05
-PRINT_FREQ=25
+EPOCHS="${EPOCHS:-1000}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+NUM_WORKERS="${NUM_WORKERS:-5}"
+LEARNING_RATE="${LEARNING_RATE:-0.01}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-1e-4}"
+TEMP="${TEMP:-0.05}"
+PRINT_FREQ="${PRINT_FREQ:-25}"
 
 # Rank evaluation does not affect training and is disabled for this sweep to
 # save time. Re-enable it in the selected final runs if those graphs are used.
-RANK_EVAL_FREQ=0
+RANK_EVAL_FREQ="${RANK_EVAL_FREQ:-0}"
 
 # ----------------------------- SpLiCE ------------------------------------
 SPLICE_AUTO_TOP_K=10
@@ -52,21 +65,22 @@ SPLICE_MODEL="open_clip:ViT-B-32"
 SPLICE_PRETRAINED="laion2b_s34b_b79k"
 SPLICE_VOCAB="laion"
 SPLICE_VOCAB_SIZE=10000
-SPLICE_SCORE_CACHE_DIR="outputs/splice_score_cache"
+SPLICE_SCORE_CACHE_DIR="${SPLICE_SCORE_CACHE_DIR:-outputs/splice_score_cache}"
+SPLICE_STRONG_LINE_RECOLOR="${SPLICE_STRONG_LINE_RECOLOR:-false}"
 
 # --------------------------- linear probe -------------------------------
-LINEAR_TRAIN_SPLIT="ds_train"
-LINEAR_EVAL_SPLIT="val"
-LINEAR_PROBE_FREQ=25
-LINEAR_PROBE_EPOCHS=100
+LINEAR_TRAIN_SPLIT="${LINEAR_TRAIN_SPLIT:-ds_train}"
+LINEAR_EVAL_SPLIT="${LINEAR_EVAL_SPLIT:-val}"
+LINEAR_PROBE_FREQ="${LINEAR_PROBE_FREQ:-25}"
+LINEAR_PROBE_EPOCHS="${LINEAR_PROBE_EPOCHS:-100}"
 
 # The leakage probe approximately doubles probe time and is not needed to
 # choose q/lambda. Enable it again for the selected three-seed final runs.
-LINEAR_SPURIOUS_PROBE=false
+LINEAR_SPURIOUS_PROBE="${LINEAR_SPURIOUS_PROBE:-false}"
 
 # ------------------------------- W&B -------------------------------------
-WANDB_NAME="Spur_SpLiCE"
-WANDB_ENTITY="gsgrechkin-rptu"
+WANDB_NAME="${WANDB_NAME:-Spur_SpLiCE}"
+WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 
 # Quantiles are preferable to old absolute thresholds because they preserve a
 # stable routed fraction when the automatically selected concepts change.
@@ -131,6 +145,8 @@ conda activate "${CONDA_ENV}"
 # Discover one shared top-10 for the complete array. Other tasks wait on the
 # lock and reuse the selected-vector cache instead of repeating SpLiCE.
 ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}"
+WANDB_GROUP="${WANDB_GROUP:-${DATASET}_sweep_${ARRAY_JOB_ID}_seed${SEED}}"
+WANDB_TAGS="${WANDB_TAGS:-dataset_${DATASET},seed_${SEED},family_sweep,task_${RUN_LABEL}}"
 AUTO_OUT_DIR="outputs/slurm_${ARRAY_JOB_ID}_${DATASET}_sweep_auto"
 DISCOVERY_JSON="${AUTO_OUT_DIR}/${DATASET}_splice_concepts.json"
 CONCEPTS_FILE="${AUTO_OUT_DIR}/${DATASET}_splice_concepts.concepts.txt"
@@ -177,6 +193,8 @@ COMMON_ARGS=(
     --use_wandb
     --wandb_name "${WANDB_NAME}"
     --entity "${WANDB_ENTITY}"
+    --wandb_group "${WANDB_GROUP}"
+    --wandb_tags "${WANDB_TAGS}"
     --dataset "${DATASET}"
     --data_folder "${DATA_FOLDER}"
     --model "${MODEL}"
@@ -221,6 +239,7 @@ if [[ "${SPLICE_MODE}" == "augment" ]]; then
         --splice_strong_color_jitter true
         --splice_strong_grayscale_p true
         --splice_strong_blur_p true
+        --splice_strong_line_recolor "${SPLICE_STRONG_LINE_RECOLOR}"
     )
 elif [[ "${SPLICE_MODE}" == "corr_reg" ]]; then
     EXPERIMENT_ARGS+=(

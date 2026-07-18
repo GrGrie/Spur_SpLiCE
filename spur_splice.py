@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
+import platform
 import random
+import sys
 import time
 from pathlib import Path
 
@@ -349,6 +353,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
     parser.add_argument("--entity", default="gsgrechkin-rptu")
+    parser.add_argument("--wandb_group", default="")
+    parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
     parser.add_argument("--energy_threshold", type=float, default=0.9)
     parser.add_argument("--rank_threshold", type=float, default=0.1)
 
@@ -562,6 +568,7 @@ def parse_args() -> argparse.Namespace:
     if args.linear_probe_freq is None:
         args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
+    args.runtime_versions = runtime_versions()
     args.model_name = format_run_name(args)
     args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
     os.makedirs(args.save_folder, exist_ok=True)
@@ -663,6 +670,27 @@ def write_run_config(args: argparse.Namespace) -> None:
         file.write("\n")
 
 
+def runtime_versions() -> dict[str, str]:
+    versions = {
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
+    for distribution in [
+        "torch",
+        "torchvision",
+        "numpy",
+        "scipy",
+        "scikit-learn",
+        "open-clip-torch",
+        "wandb",
+    ]:
+        try:
+            versions[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            versions[distribution] = "not-installed"
+    return versions
+
+
 def set_seed(args: argparse.Namespace) -> None:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -673,6 +701,7 @@ def set_seed(args: argparse.Namespace) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.enabled = False
+    torch.use_deterministic_algorithms(True)
 
 
 def configure_training_backend(args: argparse.Namespace) -> None:
@@ -694,9 +723,9 @@ def seed_worker(worker_id: int) -> None:
     random.seed(worker_seed)
 
 
-def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
+def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool, seed: int | None = None) -> dict:
     loader_generator = torch.Generator()
-    loader_generator.manual_seed(args.seed)
+    loader_generator.manual_seed(args.seed if seed is None else seed)
     loader_kwargs = {
         "num_workers": args.num_workers,
         "pin_memory": True,
@@ -707,9 +736,9 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
     return loader_kwargs
 
 
-def build_ssl_loader(args: argparse.Namespace):
+def build_dataset_config(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
-    config = dataset_spec["config"](
+    return dataset_spec["config"](
         root_dir=args.data_folder,
         ssl_crop_min=args.ssl_crop_min,
         splice_strong_crop=args.splice_strong_crop,
@@ -721,6 +750,11 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_strong_blur_sigma=args.splice_strong_blur_sigma,
         splice_strong_line_recolor=args.splice_strong_line_recolor,
     )
+
+
+def build_ssl_loader(args: argparse.Namespace):
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
     return dataset_spec["ssl_loader"](
@@ -730,6 +764,20 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_mode=args.splice_mode,
         splice_score_threshold=args.splice_score_threshold,
         splice_score_quantile=args.splice_score_quantile,
+        **loader_kwargs,
+    )
+
+
+def build_rank_loader(args: argparse.Namespace):
+    """Build an observational loader that cannot advance the training sampler."""
+
+    if args.rank_eval_freq <= 0:
+        return None
+    dataset_spec = DATASET_REGISTRY[args.dataset]
+    loader_kwargs = make_dataloader_kwargs(args, shuffle=False, seed=args.seed + 1_000_000)
+    return dataset_spec["rank_loader"](
+        build_dataset_config(args),
+        args.batch_size,
         **loader_kwargs,
     )
 
@@ -761,11 +809,30 @@ def build_splice_concept_scorer(args: argparse.Namespace) -> SpliceConceptScorer
     return scorer
 
 
-def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
+@contextmanager
+def preserve_rng_state():
+    """Prevent observational probes from changing subsequent SSL randomness."""
+
+    torch_state = torch.get_rng_state()
+    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    numpy_state = np.random.get_state()
+    python_state = random.getstate()
     try:
-        return linear_probe.main(build_linear_probe_args(args, ckpt_path), supcon_epoch=epoch)
+        yield
     finally:
-        configure_training_backend(args)
+        torch.set_rng_state(torch_state)
+        if cuda_states is not None:
+            torch.cuda.set_rng_state_all(cuda_states)
+        np.random.set_state(numpy_state)
+        random.setstate(python_state)
+
+
+def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
+    with preserve_rng_state():
+        try:
+            return linear_probe.main(build_linear_probe_args(args, ckpt_path), supcon_epoch=epoch)
+        finally:
+            configure_training_backend(args)
 
 
 def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argparse.Namespace:
@@ -807,7 +874,10 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
 
 
 def build_training_state(args: argparse.Namespace, device: torch.device):
-    train_loader = build_ssl_loader(args)
+    with preserve_rng_state():
+        train_loader = build_ssl_loader(args)
+    with preserve_rng_state():
+        rank_loader = build_rank_loader(args)
     configure_training_backend(args)
     model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim)
     if args.channels_last and device.type == "cuda":
@@ -820,7 +890,23 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     optimizer = build_optimizer(args, model)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
     splice_regularizer = build_splice_regularizer(build_splice_config(args))
-    return train_loader, model, criterion, optimizer, scaler, splice_regularizer
+    return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
+
+
+def record_resolved_training_config(args: argparse.Namespace, train_loader, wandb_run) -> None:
+    """Persist values that are resolved only while constructing the dataset."""
+
+    transform = getattr(train_loader.dataset, "transform", None)
+    resolved_threshold = getattr(transform, "threshold", None)
+    args.splice_score_threshold_resolved = (
+        float(resolved_threshold) if resolved_threshold is not None else None
+    )
+    write_run_config(args)
+    if wandb_run is not None:
+        wandb_run.config.update(
+            {"splice_score_threshold_resolved": args.splice_score_threshold_resolved},
+            allow_val_change=True,
+        )
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:
@@ -876,14 +962,38 @@ def main() -> None:
 
     wandb_run = None
     if args.use_wandb:
-        import wandb
+        with preserve_rng_state():
+            import wandb
 
-        wandb_config = vars(args).copy()
-        wandb_config["strong_aug"] = strong_aug_config(args)
-        wandb_run = wandb.init(project=args.wandb_name, name=args.model_name, config=wandb_config, entity=args.entity)
+            wandb_config = vars(args).copy()
+            wandb_config["strong_aug"] = strong_aug_config(args)
+            wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
+            wandb_run = wandb.init(
+                project=args.wandb_name,
+                name=args.model_name,
+                config=wandb_config,
+                entity=args.entity,
+                group=args.wandb_group or None,
+                tags=wandb_tags or None,
+            )
 
-    train_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(args, device)
-    start_epoch = load_checkpoint(model, optimizer, args.resume, device) + 1 if args.resume else 1
+    train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(
+        args, device
+    )
+    record_resolved_training_config(args, train_loader, wandb_run)
+    start_epoch = (
+        load_checkpoint(
+            model,
+            optimizer,
+            args.resume,
+            device,
+            scaler=scaler,
+            loader_generator=train_loader.generator,
+        )
+        + 1
+        if args.resume
+        else 1
+    )
     last_probe_epoch = 0
     probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
 
@@ -899,16 +1009,17 @@ def main() -> None:
         log_metrics = epoch % args.print_freq == 0
         log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
         if log_metrics or log_rank:
-            log_rank_metrics(
-                model,
-                train_loader,
-                optimizer,
-                train_metrics,
-                epoch,
-                args,
-                wandb_run,
-                compute_rank=log_rank,
-            )
+            with preserve_rng_state():
+                log_rank_metrics(
+                    model,
+                    rank_loader,
+                    optimizer,
+                    train_metrics,
+                    epoch,
+                    args,
+                    wandb_run,
+                    compute_rank=log_rank,
+                )
 
         should_probe = (
             args.linear_probe_mode == "periodic"
@@ -916,7 +1027,15 @@ def main() -> None:
             and epoch % args.linear_probe_freq == 0
         )
         if should_probe:
-            save_checkpoint(model, optimizer, args, epoch, probe_file)
+            save_checkpoint(
+                model,
+                optimizer,
+                args,
+                epoch,
+                probe_file,
+                scaler=scaler,
+                loader_generator=train_loader.generator,
+            )
             run_linear_probe(args, probe_file, epoch)
             last_probe_epoch = epoch
             if os.path.exists(probe_file):
@@ -929,16 +1048,34 @@ def main() -> None:
                 args,
                 epoch,
                 os.path.join(args.save_folder, f"epoch_{epoch}.pth"),
+                scaler=scaler,
+                loader_generator=train_loader.generator,
             )
 
     if args.linear_probe_mode != "none" and last_probe_epoch != args.epochs:
-        save_checkpoint(model, optimizer, args, args.epochs, probe_file)
+        save_checkpoint(
+            model,
+            optimizer,
+            args,
+            args.epochs,
+            probe_file,
+            scaler=scaler,
+            loader_generator=train_loader.generator,
+        )
         run_linear_probe(args, probe_file, args.epochs)
         if os.path.exists(probe_file):
             os.remove(probe_file)
 
     if args.keep_checkpoints:
-        save_checkpoint(model, optimizer, args, args.epochs, os.path.join(args.save_folder, "last.pth"))
+        save_checkpoint(
+            model,
+            optimizer,
+            args,
+            args.epochs,
+            os.path.join(args.save_folder, "last.pth"),
+            scaler=scaler,
+            loader_generator=train_loader.generator,
+        )
 
     cleanup_default_checkpoints(args)
 

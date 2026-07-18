@@ -1,0 +1,827 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{placeins}
+\usepackage{amsmath,amssymb}
+
+\title{Automatic SpLiCE-Guided Mitigation of Spurious Correlations in Self-Supervised Representations}
+\author{Grigory Grechkin}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Project Summary}
+
+This project tests the hypothesis that concept-level information from a frozen
+vision--language model can identify and weaken shortcut information learned by a
+self-supervised encoder. SpLiCE is used to discover concepts associated with the
+known spurious attribute after conditioning on the target label. The resulting
+signal is then used in three distinct ways: (i) as an audit of dataset bias,
+(ii) as guidance for SimCLR training through targeted augmentation or a
+label-conditioned correlation regularizer, and (iii) as a direct sparse
+SpLiCE concept-bottleneck (CBM) intervention baseline. The trained SSL encoder
+remains a ResNet; the CLIP/SpLiCE model is frozen.
+
+The central empirical prediction is not merely an increase in average accuracy.
+If the intervention reduces shortcut reliance, worst-group (WG) validation and
+test accuracy should improve relative to a matched SimCLR baseline, while a
+probe trained to predict the spurious attribute should become less successful.
+All hyperparameter selection is performed on validation data and the test split
+is reserved for a final, preselected configuration.
+
+\section{Brief Description of SpLiCE}
+
+SpLiCE, Sparse Linear Concept Embeddings, decomposes dense CLIP image embeddings
+into sparse nonnegative weights over a vocabulary of human-interpretable text
+concepts. Instead of treating a CLIP image feature as an opaque vector, SpLiCE
+approximates it as a linear combination of text-concept embeddings. This makes
+it possible to assign each image a score for selected concepts, such as concepts
+related to the Waterbirds background. In this project SpLiCE is used as a frozen
+helper model, not as the SSL encoder being trained.
+
+The current configuration uses an \texttt{open\_clip:ViT-B-32} backbone with
+\texttt{laion2b\_s34b\_b79k} weights, the LAION vocabulary of size 10\,000, and
+an $\ell_1$ penalty of 0.25. SpLiCE returns a sparse nonnegative concept vector.
+After automatic dataset-level selection of ten coordinates, their full
+per-image vector is retained for regularization. A scalar maximum is used only
+for routing images to the strong-augmentation branch. The augmentation and
+correlation objectives are extensions developed in this project rather than
+methods claimed by the original SpLiCE paper; the sparse CBM intervention is
+the closest direct analogue of concept-space editing.
+
+\section{Implementation in This Repository}
+
+The original SpLiCE package is kept in \texttt{splice/}. The project-specific
+integration is implemented mainly in \texttt{spur\_splice.py},
+\texttt{splice/ssl\_regularization.py}, and the Waterbirds dataset utilities in
+\texttt{experiments/spurious\_eval/}. The entry point \texttt{spur\_splice.py}
+runs SimCLR training, checkpointing, optional periodic linear probing, and
+logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
+\texttt{none}, \texttt{augment}, \texttt{corr\_reg}, and
+\texttt{augment\_corr\_reg}.
+
+\subsection{Workflow}
+
+\begin{enumerate}
+
+    \item If a SpLiCE mode is enabled, the training split is decomposed once by
+    a frozen SpLiCE model. Concepts are ranked using target- and spurious-group
+    metadata, and the shared dataset-level top-10 is cached. For the current
+    Waterbirds runs this set is \texttt{bamboo, forests, whale, rainforest,
+    raven, forest, seascape, lake, snorkeling, pond}.
+
+    \item The Waterbirds SSL dataset wraps the usual WILDS-style subset with
+    the cached selected-concept vectors. Each item returns two SimCLR views,
+    the label, metadata, and a vector $c(x)\in\mathbb{R}^{10}_{\geq 0}$.
+
+    \item In \texttt{augment} mode, $r(x)=\max_k c_k(x)$ controls routing. The
+    threshold is a quantile computed on the training split, not a transferable
+    absolute score. A high-score image produces the pair
+    $[T_{\mathrm{std}}(x),T_{\mathrm{strong}}(x)]$; a low-score image produces
+    two standard views. This gives SimCLR an explicit invariance pair without
+    corrupting both views with the strong transform.
+
+    \item In \texttt{corr\_reg} mode, the loss penalizes the complete matrix of
+    correlations between SSL dimensions and the ten selected concepts. Both
+    representations are centred within each target class before correlations
+    are computed. This label-conditioned formulation avoids penalizing useful
+    target information merely because target and background are correlated in
+    the biased training split.
+
+    \item Linear probing is decoupled from checkpoint retention and is run every
+    25 SSL epochs during validation development. The target probe is trained on
+    the balanced \texttt{ds\_train} split and evaluated on \texttt{val}. An
+    optional second probe measures spurious-attribute leakage. A guarded
+    \texttt{--final\_test} mode performs one final test probe only after model
+    and hyperparameters have been fixed.
+\end{enumerate}
+
+\section{Supporting Tools}
+
+Utility scripts and caches were added to make the SpLiCE configuration reproducible.
+\texttt{tools/
+discover\_splice\_spurious\_concepts.py} decomposes images by
+metadata group and ranks concepts by how strongly they vary with the spurious
+attribute while penalizing class-label effects. This helps choose candidate
+background concepts. \texttt{tools/summarize\_splice\_scores.py} reports the
+distribution of selected concept scores. Array jobs now use one file lock and
+one discovery directory, so all tasks in a submission share exactly the same
+concept set and cached vectors. A sparse SpLiCE-CBM entry point and optional
+representation/probe interventions were also added. CelebA and SpurCIFAR10
+dataset handling, metadata logging, evaluation guards, and tests were updated
+as part of the same revision (commits \texttt{0198e3b}--\texttt{868092b}).
+
+\section{Experiment Plan}
+
+The development comparison uses seeds 0, 1, and 2. The augmentation sweep varies
+the train-score quantile $q$; the regularization sweep varies $\lambda$. The
+augmentation-component array keeps $q=0.75$ and changes only the strong
+transform. Runs are compared using the mean of the final ten periodic validation
+probes at SSL epoch 1000. Per-run peak epochs are not used for selection because
+the WG curves are noisy. The final test will use one predeclared configuration
+selected from aggregated validation results.
+
+\begin{table}[h]
+\centering
+\caption{Fixed experiment settings}
+\begin{tabularx}{\textwidth}{>{\bfseries}l X}
+\toprule
+Setting & Value \\
+\midrule
+Dataset & Waterbirds \\
+SSL method & SimCLR \\
+SSL encoder & \texttt{ResNet18-large} \\
+SpLiCE model & \texttt{open\_clip:ViT-B-32}, \texttt{laion2b\_s34b\_b79k} \\
+Vocabulary & \texttt{LAION}, size 10\,000 \\
+Selected Top-10 SpLiCE concepts & bamboo,forests,whale,rainforest,raven,forest,seascape,
+lake,snorkeling,pond \\
+SpLiCE routing & maximum over selected vector; train quantile $q$ \\
+Linear-probe train split & \texttt{ds\_train} (group-balanced) \\
+Batch size & 256 \\
+Learning rate & 0.01 \\
+Epochs & 1000 \\
+Weight decay & 1e-4 \\
+Temperature & 0.05 \\
+Linear probing & 100 epochs, every 25 SSL epochs \\
+Development evaluation split & validation \\
+Final evaluation split & test, only with \texttt{--final\_test} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Current Validation Results (Automatic Pipeline)}
+
+The W\&B project \texttt{gsgrechkin-rptu/Spur\_SpLiCE} was queried on
+18 July 2026. Starting with the first relevant submission on 13 July at
+19:11 UTC, 28 finished Waterbirds runs were matched to the two Slurm arrays.
+The grouping was reconstructed from creation time, Git commit, seed, SpLiCE
+mode, quantile or regularization weight, and strong-augmentation configuration.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Provenance groups for the current Waterbirds experiments.}
+\label{tab:current_provenance}
+\begin{tabularx}{\textwidth}{llllX}
+\toprule
+Array & Seed & Started (UTC) & Commit & W\&B run IDs \\
+\midrule
+Augmentation components & 2 & 13 Jul 19:11 & \texttt{272ee42} &
+\texttt{dbn4o7gb, 0ptqafom, 6zpr2zbw, euvfljc2, mw3q4416} \\
+Hyperparameter sweep & 2 & 14 Jul 09:08 & \texttt{868092b} &
+\texttt{nc89rx14, uxenqlkt, fvtol29m, 5b4cvrig, q3o1ifpy, 2u5awr5z, apjwtvyn, 492n5krr, a9j4enb4} \\
+Augmentation components & 0 & 15 Jul 19:41 & \texttt{868092b} &
+\texttt{0t9p97ag, wyolxkon, 87ry202v, ogz7t6r4, g77u3g1z} \\
+Hyperparameter sweep & 0 & 17 Jul 12:12 & \texttt{868092b} &
+\texttt{8cfxm2q2, si31b8ng, tpvleejg, 33ko4h4h, 7nz2e6o2, g4jel2bp, ftgmmifc, m6bgwc23, naet2tg6} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Hyperparameter Sweep}
+
+Table~\ref{tab:current_sweep} reports the W\&B summary fields
+\texttt{Average over last 10 linear val acc} and
+\texttt{Average over last 10 linear val worst-group acc}. Seed 1 has not yet
+been run under the revised protocol and is deliberately left as a TODO.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Current validation sweep. Values are average / worst-group accuracy (\%).}
+\label{tab:current_sweep}
+\begin{tabular}{llccc}
+\toprule
+Method & Hyperparameter & Seed 0 & Seed 1 & Seed 2 \\
+\midrule
+SimCLR & -- & 49.27 / 41.93 & \texttt{TODO} & 50.60 / 37.69 \\
+SpLiCE-AUG & $q=0.50$ & 49.83 / 42.96 & \texttt{TODO} & 53.64 / 46.96 \\
+SpLiCE-AUG & $q=0.75$ & 52.45 / 43.11 & \texttt{TODO} & 56.80 / 49.62 \\
+SpLiCE-AUG & $q=0.90$ & 53.52 / 47.25 & \texttt{TODO} & 53.02 / 41.99 \\
+SpLiCE-AUG & $q=0.95$ & 50.59 / 44.64 & \texttt{TODO} & 53.08 / 43.83 \\
+SpLiCE-REG & $\lambda=0.001$ & 55.50 / 53.13 & \texttt{TODO} & 52.31 / 41.07 \\
+SpLiCE-REG & $\lambda=0.01$ & 49.22 / 39.61 & \texttt{TODO} & 50.41 / 40.86 \\
+SpLiCE-REG & $\lambda=0.1$ & 47.52 / 39.70 & \texttt{TODO} & 53.71 / 43.64 \\
+SpLiCE-REG & $\lambda=1.0$ & 51.88 / 44.64 & \texttt{TODO} & 50.97 / 36.96 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Aggregate current sweep over the two available seeds. The standard
+deviation is the sample standard deviation; $\Delta$WG is relative to the
+matched two-seed baseline.}
+\label{tab:current_sweep_aggregate}
+\begin{tabular}{lcccc}
+\toprule
+Configuration & $n$ & Avg. Acc. & WG Acc. & $\Delta$WG \\
+\midrule
+SimCLR & 2 & $49.94\pm0.94$ & $39.81\pm3.00$ & -- \\
+SpLiCE-AUG $q=0.50$ & 2 & $51.73\pm2.69$ & $44.96\pm2.83$ & $+5.15$ \\
+SpLiCE-AUG $q=0.75$ & 2 & $54.62\pm3.07$ & $46.37\pm4.61$ & $+6.56$ \\
+SpLiCE-AUG $q=0.90$ & 2 & $53.27\pm0.35$ & $44.62\pm3.72$ & $+4.81$ \\
+SpLiCE-AUG $q=0.95$ & 2 & $51.83\pm1.76$ & $44.23\pm0.57$ & $+4.43$ \\
+SpLiCE-REG $\lambda=0.001$ & 2 & $53.91\pm2.26$ & $47.10\pm8.52$ & $+7.29$ \\
+SpLiCE-REG $\lambda=0.01$ & 2 & $49.81\pm0.84$ & $40.24\pm0.88$ & $+0.43$ \\
+SpLiCE-REG $\lambda=0.1$ & 2 & $50.62\pm4.38$ & $41.67\pm2.79$ & $+1.86$ \\
+SpLiCE-REG $\lambda=1.0$ & 2 & $51.43\pm0.65$ & $40.80\pm5.43$ & $+0.99$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All four augmentation quantiles improve WG accuracy in the two-seed mean, which
+is encouraging for the main hypothesis. The paired improvements are especially
+large for seed 2, however: for $q=0.75$ they are $+1.18$ and $+11.94$ points for
+seeds 0 and 2 respectively. Thus two seeds are not sufficient evidence of a
+stable effect. The largest mean WG gain is obtained by
+$\lambda=0.001$, but its WG standard deviation is also the largest. Among the
+augmentation settings, $q=0.90$ has the most consistent paired WG improvement
+($+5.33$ and $+4.30$), whereas $q=0.75$ has the best mean average and WG
+accuracy. Seed 1 and additional confirmation seeds must be completed before
+choosing between these candidates.
+
+\subsection{Strong-Augmentation Components}
+
+The component array is a separate ablation family: it enables periodic rank
+evaluation and the spurious leakage probe, while the hyperparameter sweep does
+not. It should be used to compare augmentation components within the family,
+not pooled with the sweep as exact replicates.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Current $q=0.75$ augmentation ablation. Values are average / WG
+validation accuracy (\%).}
+\label{tab:current_augmentations}
+\begin{tabular}{lccc}
+\toprule
+Strong transform & Seed 0 & Seed 1 & Seed 2 \\
+\midrule
+All components & 50.33 / 39.29 & \texttt{TODO} & 56.16 / 49.36 \\
+Crop only & 52.44 / 44.80 & \texttt{TODO} & 55.40 / 46.10 \\
+Color jitter only & 48.23 / 39.08 & \texttt{TODO} & 54.96 / 44.84 \\
+Grayscale only & 53.53 / 48.52 & \texttt{TODO} & 52.70 / 38.80 \\
+Gaussian blur only & 44.79 / 34.12 & \texttt{TODO} & 52.49 / 44.35 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across the two available seeds, crop is currently the strongest individual
+component ($45.45\pm0.92$ WG), while using all components gives
+$44.32\pm7.12$ WG. Grayscale reverses strongly between seeds and blur is the
+weakest mean setting. Consequently, the data do not support the earlier claim
+that all four augmentations are uniformly best; the interaction with seed is
+substantial and seed 1 is essential.
+
+The leakage probe remains above 91\% average validation accuracy for every
+component run (approximately 91.2--92.4\%). This does not yet support the
+stronger claim that the learned representation has stopped encoding the
+background. It is possible for target WG accuracy to improve while background
+information remains linearly accessible, so both metrics should continue to be
+reported.
+
+\subsection{Protocol Caveat and Reproducibility Repair}
+
+Rank evaluation was intended to be observational, but the current
+\texttt{extract\_normalized\_train\_features} function iterates the same shuffled,
+augmented training loader used by SSL. This can advance loader and worker random
+state and thereby change later training batches. W\&B provides a useful matched
+check: runs \texttt{tpvleejg} and \texttt{0t9p97ag} have the same seed, commit,
+model name, concepts, $q=0.75$, and augmentation policy. Their meaningful config
+differences are \texttt{rank\_eval\_freq=0} versus 100 and the additional leakage
+probe. Nevertheless their final-ten WG values are 43.11 and 39.29. This does not
+prove that rank evaluation caused the entire difference, but it demonstrates
+that the historical two families are not exchangeable replicates.
+
+The implementation has now been repaired for future runs. Rank diagnostics use
+a dedicated non-augmented, non-shuffled train loader with the deterministic
+evaluation transform and an independent generator. Periodic probes preserve
+Python, NumPy, CPU Torch, and CUDA RNG states. Persistent checkpoints save and
+restore those states, the SSL DataLoader generator, optimizer, and AMP scaler,
+so resumed jobs continue the same random sequence. Frozen SpLiCE/CLIP loading
+and W\&B initialization are also RNG-isolated so paired methods start from the
+same SSL initialization. The resolved numeric routing
+threshold is now written to \texttt{args.json} and W\&B as
+\texttt{splice\_score\_threshold\_resolved}. These changes make diagnostics
+observational, but they cannot retroactively repair the July 13--17 runs; the
+selected settings must be rerun with the repaired protocol.
+
+\subsection{Predeclared Final-Test Table}
+
+\begin{table}[ht]
+\centering
+\caption{Final Waterbirds test results. Do not fill until validation selection
+and protocol repair are complete.}
+\label{tab:final_test_todo}
+\begin{tabular}{lccc}
+\toprule
+Method & Selected hyperparameter & Avg. test acc. & WG test acc. \\
+\midrule
+SimCLR baseline & -- & \texttt{TODO} & \texttt{TODO} \\
+Automatic SpLiCE-AUG & $q=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
+Conditional SpLiCE-REG & $\lambda=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
+Combined AUG+REG & $q,\lambda=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
+Sparse SpLiCE-CBM intervention & intervention=\texttt{TODO} & \texttt{TODO} & \texttt{TODO} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\section{Preliminary Legacy Results (Scalar Control)}
+
+The following tables were produced with the implementation preceding commit
+\texttt{0198e3b}. They used manual absolute thresholds, a scalar correlation
+control, and a different evaluation protocol. They are retained for historical
+context and must not be pooled statistically with Tables~\ref{tab:current_sweep}
+and~\ref{tab:current_augmentations}.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.0cm}
+                  >{\centering\arraybackslash}p{1.5cm}
+                  >{\centering\arraybackslash}p{1.5cm}
+                  >{\centering\arraybackslash}p{2cm}
+                  >{\centering\arraybackslash}p{2cm}}
+\label{tab:results}\\
+\toprule
+Method & Threshold & Weight & Avg. Acc. & WG Acc. \\
+\toprule
+\endhead
+\multicolumn{5}{l}{\textbf{Seed 0}} \\
+\toprule
+Baseline SSL & -- & -- & 47.13 & 38.86 \\
+SpLiCE-AUG & \textbf{0.03} & -- & \textbf{56.32} & \textbf{52.66} \\
+SpLiCE-AUG & 0.05 & -- & 53.67 & 51.31 \\
+SpLiCE-AUG & 0.085 & -- & 51.27 & 46.75 \\
+SpLiCE-AUG & 0.1 & -- & 49.97 & 43.89 \\
+\midrule
+SpLiCE-REG & -- & 0.0001 & 49.77 & 42.99 \\
+SpLiCE-REG & -- & 0.0005 & 51.69 & 49.70 \\
+SpLiCE-REG & -- & 0.001 & 48.96 & 41.17 \\
+SpLiCE-REG & -- & 0.005 & 52.30 & 47.95 \\
+\toprule
+\multicolumn{5}{l}{\textbf{Seed 1}} \\
+\toprule
+Baseline SSL & -- & -- & 57.75 & 49.51 \\
+SpLiCE-AUG & \textbf{0.03} & -- & \textbf{58.12} & \textbf{52.46} \\
+SpLiCE-AUG & 0.05 & -- & 54.54 & 51.52 \\
+SpLiCE-AUG & 0.085 & -- & 54.75 & 49.02 \\
+SpLiCE-AUG & 0.1 & -- & 56.30 & 53.57 \\
+\midrule
+SpLiCE-REG & -- & 0.0001 & 48.22 & 41.07 \\
+SpLiCE-REG & -- & 0.0005 & 56.36 & 51.78 \\
+SpLiCE-REG & -- & 0.001 & 57.93 & 51.76 \\
+SpLiCE-REG & -- & 0.005 & 52.36 & 45.96 \\
+\toprule
+\multicolumn{5}{l}{\textbf{Seed 2}} \\
+\toprule
+Baseline SSL & -- & -- & 52.02 & 44.98 \\
+SpLiCE-AUG & 0.03 & -- & 55.47 & 49.12 \\
+SpLiCE-AUG & 0.05 & -- & 52.78 & 40.21 \\
+SpLiCE-AUG & \textbf{0.085} & -- & \textbf{55.40} & \textbf{50.46} \\
+SpLiCE-AUG & 0.1 & -- & 53.94 & 43.52 \\
+\midrule
+SpLiCE-REG & -- & 0.0001 & 50.90 & 40.53 \\
+SpLiCE-REG & -- & 0.0005 & 51.32 & 37.32 \\
+SpLiCE-REG & -- & 0.001 & 55.56 & 51.15 \\
+SpLiCE-REG & -- & 0.005 & 51.93 & 41.71 \\
+\bottomrule
+\end{longtable}
+
+Additional legacy augmentation-specific tests were used to identify which
+transformations might contribute to SpLiCE-guided SSL. Their ranking is
+seed-dependent: all components maximize average accuracy for seed 1, while
+grayscale gives the highest seed-1 WG accuracy and crop is strongest for seed 0.
+These exploratory results motivated the revised component array but do not
+establish a universally best augmentation policy.
+
+\begin{table}[ht]
+\centering
+\caption{Effect of individual augmentations on linear evaluation accuracy for \textit{waterbirds} dataset}
+\label{tab:individual_augmentations_waterbirds}
+\begin{tabular*}{0.75\textwidth}{@{\extracolsep{\fill}}lcc}
+\toprule
+Augmentation & Avg. Acc. & WG Acc. \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 0}} \\
+Crop & \textbf{56.08} & 49.01 \\
+Color jitter & 54.73 & 48.29 \\
+Grayscale & 51.56 & 47.20 \\
+Gaussian blur & 51.30 & 44.37 \\
+All aug. & 55.28 & \textbf{49.83} \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 1}} \\
+Crop & 53.86 & 49.97 \\
+Color jitter & 55.47 & 49.12 \\
+Grayscale & 57.27 & 55.98 \\
+Gaussian blur & 50.47 & 43.56 \\
+All aug. & 58.12 & 52.46 \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 2}} \\
+Crop & 54.12 & 39.54 \\
+Color jitter & 52.38 & 45.78 \\
+Gaussian blur & 53.85 & 45.91 \\
+Grayscale & 49.53 & 40.11 \\
+All aug. & 55.47 & 49.12 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\pagebreak
+A short overview of used augmenation parameters. For each experiment, only one augmentation was  replaced by its strong variant, while all remaining augmentations were kept identical to the standard SimCLR pipeline. The GaussianBlur experiment evaluates the effect of enabling the Gaussian blur transform rather than changing its internal parameters.
+
+\begin{table}[ht]
+\centering
+\caption{Strong augmentation variants evaluated in the SpLiCE experiments.}
+\label{tab:aug_settings}
+\begin{tabular}{lll}
+\toprule
+Augmentation & Standard SimCLR & Strong variant \\
+\midrule
+Crop & scale $(0.2,1.0)$ & scale $(0.08,1.0)$ \\
+ColorJitter & $(0.4,0.4,0.4,0.1),\;p=0.8$ &
+$(0.8,0.8,0.8,0.2),\;p=0.9$ \\
+RandomGrayscale & $p=0.2$ & $p=0.3$ \\
+GaussianBlur & disabled & enabled ($p=0.5,\;k=23,\;\sigma=(0.1,2.0)$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Effect of individual augmentations on linear evaluation accuracy for \textit{SpurCIFAR10} dataset}
+\label{tab:individual_augmentations_spurcifar10}
+\begin{tabular*}{0.75\textwidth}{@{\extracolsep{\fill}}lcc}
+\toprule
+Augmentation & Avg. Acc. & WG Acc. \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 0}} \\
+Crop & 62.06 & 30.35 \\
+Color jitter & 61.39 & 22.77 \\
+Grayscale & 62.06 & 26.58 \\
+Gaussian blur & 63.42 & 25.69 \\
+All aug. & 63.44 & 28.64 \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 1}} \\
+Crop & 63.09 & 32.55 \\
+Color jitter & 61.50 & 29.06 \\
+Grayscale & 62.85 & 31.54 \\
+Gaussian blur & 62.36 & 32.58 \\
+All aug. & 63.67 & 34.83 \\
+\midrule
+\multicolumn{3}{l}{\textbf{Seed 2}} \\
+Crop & 62.70 & 27.82 \\
+Color jitter & 62.69 & 37.80 \\
+Gaussian blur & 62.09 & 21.30 \\
+Grayscale & 62.62 & 20.86 \\
+All aug. & 63.23 & 27.79 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\FloatBarrier
+
+\section{SpLiCE Concept Scoring and Regularization Formulas}
+
+Let \(c_k(x)\) denote the SpLiCE weight of concept \(k\) for image \(x\).
+For Waterbirds, each image has a target label $ y \in \{0,1\}$
+and a spurious/background attribute $ s \in \{0,1\}. $
+For each concept \(k\), the discovery script first computes the mean SpLiCE concept weight inside each metadata group:
+\[
+\mu_k(s,y)
+=
+\mathbb{E}\left[c_k(x)\mid s(x)=s,\ y(x)=y\right].
+\]
+Thus, for the binary Waterbirds setting, each concept has four group means:
+\[
+\mu_k(0,0),\quad
+\mu_k(1,0),\quad
+\mu_k(0,1),\quad
+\mu_k(1,1).
+\]
+
+\subsection{Spurious Effect}
+
+The spurious effect measures how much concept \texttt{k} changes when the background \texttt{s} changes, while keeping the bird label \texttt{y} fixed:
+\[
+\Delta^{\mathrm{spur}}_k(y)
+=
+\mu_k(1,y)-\mu_k(0,y).
+\]
+The reported spurious value is the average absolute effect across target classes:
+\[
+\mathrm{Spurious}_k
+=
+\frac{1}{2}
+\left(
+\left|\mu_k(1,0)-\mu_k(0,0)\right|
++
+\left|\mu_k(1,1)-\mu_k(0,1)\right|
+\right).
+\]
+A high spurious value means that the concept is strongly related to spurious feature, which is a desirable behavior in our case.
+\subsection{Target Effect}
+
+The target effect measures how much concept \texttt{k} changes when the bird label \texttt{y} changes, while keeping the background \texttt{s} fixed:
+\[
+\Delta^{\mathrm{target}}_k(s)
+=
+\mu_k(s,1)-\mu_k(s,0).
+\]
+The reported target value is:
+\[
+\mathrm{Target}_k
+=
+\frac{1}{2}
+\left(
+\left|\mu_k(0,1)-\mu_k(0,0)\right|
++
+\left|\mu_k(1,1)-\mu_k(1,0)\right|
+\right).
+\]
+A high target value means that the concept is strongly related to the actual bird class, which is not desirable when searching for background-related concepts.
+
+\subsection{Instability}
+
+The instability term measures whether the \emph{magnitude} of the spurious
+effect is consistent across target classes. Define
+\[
+ a_k = \left|\mu_k(1,0)-\mu_k(0,0)\right|,
+\]
+\[
+ b_k = \left|\mu_k(1,1)-\mu_k(0,1)\right|.
+\]
+The script computes the standard deviation of these two values:
+\[
+\mathrm{Instability}_k
+=
+\sqrt{
+\frac{1}{2}
+\left[
+(a_k-\bar{d}_k)^2
++
+(b_k-\bar{d}_k)^2
+\right]
+},
+\]
+where
+\[
+\bar{d}_k
+=
+\frac{a_k+b_k}{2}.
+\]
+Low instability means that the concept behaves similarly for both bird classes. High instability means that the concept only behaves like a spurious concept for one target class.
+
+\subsection{Final Discovery Score}
+
+The final concept discovery score is computed as
+\[
+\mathrm{Score}_k
+=
+\mathrm{Spurious}_k
+-
+\lambda_y \mathrm{Target}_k
+-
+\lambda_{\mathrm{inst}} \mathrm{Instability}_k.
+\]
+Here, \(\lambda_y\) is controlled by \texttt{--label\_penalty}, and
+\(\lambda_{\mathrm{inst}}\) is controlled by \texttt{--instability\_penalty}.
+By default, both values are equal to \(1.0\), so the default formula is
+\[
+\mathrm{Score}_k
+=
+\mathrm{Spurious}_k
+-
+\mathrm{Target}_k
+-
+\mathrm{Instability}_k.
+\]
+Therefore, the script ranks concepts highly when they have a strong spurious effect, a weak target effect, and low instability.
+
+\subsection{Correlation Regularization Penalty}
+
+In the revised \texttt{corr\_reg} mode, SpLiCE retains the selected concept
+vector $c_i\in\mathbb{R}^{K}_{\geq0}$ for each training image, with $K=10$ in
+the current experiments. The SSL encoder produces
+\[
+h_i = f_{\theta}(x_i) \in \mathbb{R}^d.
+\]
+Because background and target are correlated in the biased training set, the
+default loss first centres embeddings and concept vectors separately within
+each target class $B_y=\{i:y_i=y\}$:
+\[
+\widetilde h_i=h_i-\frac{1}{|B_{y_i}|}\sum_{j\in B_{y_i}}h_j,
+\qquad
+\widetilde c_i=c_i-\frac{1}{|B_{y_i}|}\sum_{j\in B_{y_i}}c_j.
+\]
+It then computes every embedding--concept correlation
+\[
+R_{jk}=
+\frac{\sum_i \widetilde h_{ij}\widetilde c_{ik}}
+{\sqrt{\sum_i\widetilde h_{ij}^{2}}
+ \sqrt{\sum_i\widetilde c_{ik}^{2}}+\epsilon}.
+\]
+The revised vector-valued penalty is
+\[
+\mathcal{L}_{\mathrm{SpLiCE}}
+=
+\lambda_{\mathrm{SpLiCE}}
+\frac{1}{dK}
+\sum_{j=1}^{d}\sum_{k=1}^{K}R_{jk}^2.
+\]
+Here, \(\lambda_{\mathrm{SpLiCE}}\) is the regularization weight controlled by
+\texttt{--splice\_weight}. The full SSL training objective becomes
+\[
+\mathcal{L}
+=
+\mathcal{L}_{\mathrm{SimCLR}}
++
+\mathcal{L}_{\mathrm{SpLiCE}}.
+\]
+Thus the regularizer discourages any linear SSL feature from encoding any of
+the selected SpLiCE coordinates \emph{within a fixed target class}. It does not
+identify a one-to-one ``background neuron'', and because it uses target labels
+inside the SSL loss it must be described as label-conditioned rather than fully
+label-free.
+
+\subsection{Score Distribution in Concept Summarization}
+
+After concept discovery, we select a set of concepts \(C\), for example
+\[
+C =
+\{
+\texttt{bamboo},
+\texttt{forests},
+\texttt{whale},
+\texttt{rainforest},
+\texttt{raven},
+\texttt{forest},
+\texttt{seascape},
+\texttt{lake},
+\texttt{snorkeling},
+\texttt{pond}
+\}.
+\]
+For every image \(x_i\), the summarization script computes one scalar score
+\(r_i\) from the selected concept weights.
+
+If \texttt{--splice\_score\_reduction max} is used, then
+\[
+r_i
+=
+\max_{k \in C} c_k(x_i).
+\]
+The score distribution is the empirical distribution of these image-level
+scores:
+\[
+\{r_1,r_2,\ldots,r_n\}.
+\]
+The reported values such as the median, \(p75\), \(p90\), and \(p95\) are
+percentiles of this distribution.
+
+For a threshold \(\tau\), the script reports the number of images whose score is
+above the threshold:
+\[
+N_{\tau}
+=
+\sum_{i=1}^{n}
+\mathbf{1}[r_i \geq \tau],
+\]
+and the corresponding fraction:
+\[
+F_{\tau}
+=
+\frac{1}{n}
+\sum_{i=1}^{n}
+\mathbf{1}[r_i \geq \tau].
+\]
+This tells us how many training images will be treated as high SpLiCE-score
+examples. In the augmentation method, images with
+\[
+r_i \geq \tau
+\]
+receive the stronger augmentation transform.
+
+
+\section{Reproduction and Next Experiment Commands}
+
+\paragraph{1. Standalone concept discovery (optional audit).}
+The Slurm arrays perform this step automatically and share its output across
+tasks. The standalone command is useful for auditing the selected concepts:
+
+\begin{verbatim}
+python tools/discover_splice_spurious_concepts.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --split train \
+  --out_path outputs/waterbirds_splice_concepts.json \
+  --top_k 10
+\end{verbatim}
+
+In one run, the top-10 concepts were:
+\begin{verbatim}
+8305 bamboo      score=0.010589 spurious=0.016997 target=0.003204 instability=0.003204
+2908 forests     score=0.004767 spurious=0.006347 target=0.000822 instability=0.000758
+6265 whale       score=0.001928 spurious=0.002307 target=0.000189 instability=0.000189
+4730 rainforest  score=0.001892 spurious=0.003017 target=0.000565 instability=0.000560
+591  raven       score=0.001616 spurious=0.002540 target=0.000715 instability=0.000209
+9479 forest      score=0.001492 spurious=0.002912 target=0.000710 instability=0.000710
+4623 seascape    score=0.001484 spurious=0.002110 target=0.000313 instability=0.000313
+9411 lake        score=0.001310 spurious=0.001343 target=0.000017 instability=0.000017
+1158 snorkeling  score=0.001178 spurious=0.001433 target=0.000143 instability=0.000112
+8045 pond        score=0.001129 spurious=0.001685 target=0.000278 instability=0.000278
+\end{verbatim}
+
+Here, \texttt{spurious} measures how much the concept changes with the
+background attribute after conditioning on the bird label. \texttt{target}
+measures how much the same concept changes with the bird label after
+conditioning on the background. \texttt{instability} measures whether the
+spurious effect is inconsistent across target classes. The final
+\texttt{score} is the ranking value used by the script: high spurious effect is
+rewarded, while target-label effect and instability are penalized. Therefore,
+higher-score concepts are better candidates for representing the spurious
+background signal.
+
+\paragraph{2. Summarize selected concept scores.}
+After selecting candidate concepts, the next step is to check the distribution
+of their SpLiCE scores across the training split. This helps choose a threshold
+for the augmentation method.
+
+\begin{verbatim}
+python tools/summarize_splice_scores.py \
+  --data_folder ./datasets \
+  --split train \
+  --splice_concepts "bamboo,forests,whale,rainforest,raven,forest,seascape,lake,
+                     snorkeling,pond" \
+  --splice_score_reduction max \
+  --out_path outputs/waterbirds_splice_score_summary.json
+\end{verbatim}
+
+The output first resolves each concept to its vocabulary index, then reports the
+score distribution over all images in the split. The percentiles summarize how
+large the selected-concept score usually is, while the threshold counts show how
+many images would be treated as high-score examples for each candidate
+threshold. For example, in the shown run, threshold 0.085 selects 1007 training
+images, or about 21.0\% of the split.
+
+\paragraph{3. Complete the missing seed.}
+With the repaired rank-evaluation loader, complete seed 1 for both current
+arrays. Environment-variable names are case-sensitive: the scripts read
+\texttt{SEED}, not \texttt{seed}.
+
+\begin{verbatim}
+sbatch --export=ALL,SEED=1 --array=0-8 \
+  waterbirds_SpLiCE_hyperparameter_array.sbatch
+
+sbatch --export=ALL,SEED=1 --array=0-4 \
+  waterbirds_Augmentation_array.sbatch
+\end{verbatim}
+
+\paragraph{4. Confirm only the validation shortlist on additional seeds.}
+Array indices 0, 2, 3, and 5 correspond to baseline, AUG $q=0.75$, AUG
+$q=0.90$, and REG $\lambda=0.001$. After seed 1, these are the current
+shortlist for seeds 3 and 4:
+
+\begin{verbatim}
+sbatch --export=ALL,SEED=3 --array=0,2,3,5 \
+  waterbirds_SpLiCE_hyperparameter_array.sbatch
+sbatch --export=ALL,SEED=4 --array=0,2,3,5 \
+  waterbirds_SpLiCE_hyperparameter_array.sbatch
+\end{verbatim}
+
+\paragraph{5. Transfer the protocol to SpurCIFAR10.}
+The same arrays now accept \texttt{DATASET} as an exported variable and choose
+\texttt{resnet18} automatically for 32$\times$32 inputs. Dataset-level concept
+discovery and caches remain separate because the dataset name is included in
+their paths and fingerprints.
+
+\begin{verbatim}
+sbatch --job-name=SpurCIFAR10_SpLiCE_sweep \
+  --export=ALL,DATASET=spur_cifar10,SEED=0 \
+  waterbirds_SpLiCE_hyperparameter_array.sbatch
+
+sbatch --job-name=SpurCIFAR10_SpLiCE_aug \
+  --export=ALL,DATASET=spur_cifar10,SEED=0 \
+  waterbirds_Augmentation_array.sbatch
+\end{verbatim}
+
+The existing case statement fixes $q$ and $\lambda$ for each array index, so
+exporting \texttt{SPLICE\_SCORE\_QUANTILE} or \texttt{SPLICE\_WEIGHT} currently
+does not override them. Finer sweeps require new case entries or changing those
+assignments to environment-default form. The most useful controls after the
+replication seeds are: (i) global strong augmentation applied to a random or all
+images, to distinguish SpLiCE routing from augmentation strength; (ii) shuffled
+SpLiCE scores, to test whether semantic targeting matters; (iii) conditional
+versus unconditional REG; (iv) combined AUG+REG; and (v) sparse SpLiCE-CBM
+representation/probe interventions. Final test jobs should be launched only
+after this validation stage and must use the explicit \texttt{--final\_test}
+guard.
+
+\end{document}

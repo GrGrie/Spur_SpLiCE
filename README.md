@@ -39,8 +39,8 @@ pip install .
 - `spur_splice.py`: SSL training with optional linear probing. Enable SpLiCE regularization with `--use_splice` and `--splice_weight`.
 - `linear_probe.py`: linear probing for a checkpoint and dataset selected by `--dataset`.
 - `splice_cbm.py`: sparse SpLiCE concept-bottleneck baseline with representation and probe-weight interventions.
-- `waterbirds_Augmentation_array.sbatch`: validation-only Waterbirds augmentation array with one shared automatic top-10 discovery pass.
-- `waterbirds_SpLiCE_hyperparameter_array.sbatch`: validation-only baseline/augmentation-quantile/correlation-weight sweep sharing one automatic top-10 discovery pass.
+- `waterbirds_Augmentation_array.sbatch`: validation-only augmentation array with one shared automatic top-10 discovery pass; defaults to Waterbirds and accepts `DATASET=spur_cifar10`.
+- `waterbirds_SpLiCE_hyperparameter_array.sbatch`: validation-only baseline/augmentation-quantile/correlation-weight sweep; defaults to Waterbirds and accepts `DATASET=spur_cifar10`.
 - `splice/decompose_image.py`: SpLiCE decomposition for a single image.
 - `splice/decompose_data.py`: SpLiCE decomposition for a dataset or one class.
 
@@ -52,6 +52,29 @@ Linear evaluation uses `val` by default. A test-set run requires the explicit
 `--final_test` flag so development commands cannot accidentally select
 hyperparameters on test. Final-test SSL runs perform one linear probe only at
 the final SSL epoch; periodic every-25-epoch curves remain validation-only.
+Representation-rank diagnostics use a separate ordered train loader with the
+deterministic evaluation transform. They therefore do not consume the shuffled
+SSL loader or alter later training batches. Periodic probes preserve the Python,
+NumPy, CPU Torch, and CUDA RNG states. Persistent checkpoints additionally save
+those states, the SSL DataLoader generator, and the AMP scaler so `--resume`
+continues the same random sequence. Slurm submissions also assign one W&B group
+per array and tags for dataset, seed, family, and array task. Frozen SpLiCE/CLIP
+loading and W&B initialization are RNG-isolated as well, so matched baseline and
+SpLiCE runs start from the same SSL model initialization.
+
+The Slurm arrays default to Waterbirds. To run the same validation sweep on
+SpurCIFAR10, export the dataset; the scripts automatically select `resnet18` for
+32x32 images:
+
+```bash
+sbatch --job-name=SpurCIFAR10_SpLiCE_sweep \
+  --export=ALL,DATASET=spur_cifar10,SEED=0 \
+  waterbirds_SpLiCE_hyperparameter_array.sbatch
+
+sbatch --job-name=SpurCIFAR10_SpLiCE_aug \
+  --export=ALL,DATASET=spur_cifar10,SEED=0 \
+  waterbirds_Augmentation_array.sbatch
+```
 
 ### Sample Concept Decomposition
 To get the concept decomposition of a single image (we include an example image 308175 from MSCOCO), run the `splice/decompose_image.py` script. The `-l1_penalty` argument can be used to control the sparsity of the decompositions.
