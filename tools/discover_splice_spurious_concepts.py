@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,17 @@ from splice.ssl_regularization import (
     save_score_cache,
     score_cache_path,
 )
+
+
+def str_to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y"}:
+        return True
+    if normalized in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +80,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label_penalty", type=float, default=1.0)
     parser.add_argument("--instability_penalty", type=float, default=1.0)
     parser.add_argument("--use_abs_score", action="store_true")
+    parser.add_argument(
+        "--require_consistent_spurious_direction",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Keep only concepts whose signed spurious effect has the same direction in every target class.",
+    )
+    parser.add_argument(
+        "--deduplicate_concepts",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Automatically collapse simple lexical variants such as forest/forests.",
+    )
     return parser.parse_args()
 
 
@@ -323,6 +351,20 @@ def cache_discovered_scores(args, candidates: list[dict], weights: SparseConcept
     print("[INFO] Discovery scores are ready for training; no second SpLiCE image pass is needed.", flush=True)
 
 
+def concept_family_key(concept: str) -> str:
+    """Return a conservative lexical family key without a curated concept list."""
+
+    tokens = re.findall(r"[a-z0-9]+", concept.lower().replace("_", " ").replace("-", " "))
+    normalized = []
+    for token in tokens:
+        if len(token) > 4 and token.endswith("ies"):
+            token = f"{token[:-3]}y"
+        elif len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+            token = token[:-1]
+        normalized.append(token)
+    return " ".join(normalized)
+
+
 def rank_concepts(
     vocabulary: list[str],
     group_means: dict[tuple[int, int], torch.Tensor],
@@ -358,6 +400,12 @@ def rank_concepts(
         :, spurious_pairs[0], spurious_pairs[1], :
     ].mean(dim=1)
     spurious_effect = spurious_effect_by_target.mean(dim=0)
+    signed_spurious_effect_by_target = concept_means[:, -1, :] - concept_means[:, 0, :]
+    direction_epsilon = 1e-8
+    direction_consistent = (
+        (signed_spurious_effect_by_target > direction_epsilon).all(dim=0)
+        | (signed_spurious_effect_by_target < -direction_epsilon).all(dim=0)
+    )
 
     target_means_by_spurious = concept_means.permute(1, 0, 2)
     target_pairwise_differences = (
@@ -372,6 +420,8 @@ def rank_concepts(
     signed_score = spurious_effect - args.label_penalty * target_effect - args.instability_penalty * instability
     score = signed_score.abs() if args.use_abs_score else signed_score
     eligible = dataset_mean >= args.min_mean_weight
+    if getattr(args, "require_consistent_spurious_direction", False):
+        eligible = eligible & direction_consistent
 
     group_mean_payload = {}
     for (spurious_value, target_value), means in group_means.items():
@@ -382,9 +432,14 @@ def rank_concepts(
         group_mean_payload[key] = means
 
     candidates = []
+    seen_families: set[str] = set()
     for index in torch.argsort(score, descending=True).tolist():
         if not eligible[index] or score[index].item() <= 0:
             continue
+        family_key = concept_family_key(vocabulary[index])
+        if getattr(args, "deduplicate_concepts", False) and family_key in seen_families:
+            continue
+        seen_families.add(family_key)
         candidates.append(
             {
                 "index": index,
@@ -393,6 +448,14 @@ def rank_concepts(
                 "spurious_effect": round(spurious_effect[index].item(), 8),
                 "target_effect": round(target_effect[index].item(), 8),
                 "instability": round(instability[index].item(), 8),
+                "direction_consistent": bool(direction_consistent[index].item()),
+                "signed_spurious_effect_by_target": {
+                    metadata_names["target"].get(target_value, str(target_value)): round(
+                        signed_spurious_effect_by_target[target_idx, index].item(),
+                        8,
+                    )
+                    for target_idx, target_value in enumerate(target_list)
+                },
                 "spurious_effect_by_target": {
                     metadata_names["target"].get(target_value, str(target_value)): round(
                         spurious_effect_by_target[target_idx, index].item(),
@@ -445,6 +508,10 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
             "label_penalty": args.label_penalty,
             "instability_penalty": args.instability_penalty,
             "use_abs_score": args.use_abs_score,
+            "require_consistent_spurious_direction": bool(
+                getattr(args, "require_consistent_spurious_direction", False)
+            ),
+            "deduplicate_concepts": bool(getattr(args, "deduplicate_concepts", False)),
         },
         "concepts": candidates,
     }

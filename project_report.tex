@@ -8,15 +8,51 @@
 \usepackage{hyperref}
 \usepackage{placeins}
 \usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
 
-\title{Automatic SpLiCE-Guided Mitigation of Spurious Correlations in Self-Supervised Representations}
+\definecolor{navy}{HTML}{24466F}
+\definecolor{teal}{HTML}{2F7D68}
+\definecolor{lightblue}{HTML}{EEF4FA}
+\definecolor{lightgray}{HTML}{F4F5F7}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=navy,
+    urlcolor=teal,
+    citecolor=navy
+}
+\setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.15}
+
+\title{\textbf{Concept-Guided Mitigation of Spurious Correlations in Self-Supervised Representations}\\[0.4em]
+\large Progress report for supervisor meeting}
 \author{Grigory Grechkin}
-\date{\today}
+\date{21 July 2026}
 
 \begin{document}
 \maketitle
 
-\section{Project Summary}
+\begin{center}
+\fcolorbox{navy}{lightblue}{
+\begin{minipage}{0.91\textwidth}
+\textbf{Executive result.}
+I built a reproducible pipeline that uses a frozen, interpretable SpLiCE model
+to discover possible background concepts and to guide SimCLR training. The
+current post-repair experiments do \emph{not} show a reliable worst-group (WG)
+improvement over matched SimCLR. The strongest completed revised setting,
+correlation regularization with $\lambda=0.1$, reaches
+$48.49\pm4.37\%$ WG accuracy versus $48.04\pm2.82\%$ for SimCLR
+($+0.45$ points on average), but the paired seed effects are
+$+2.38,+6.27,-7.30$ points. This is therefore a diagnostic result, not evidence
+of a robust gain. The most promising next step is to improve concept selection
+and use the concepts to construct cross-background positive pairs directly
+inside the contrastive objective.
+\end{minipage}}
+\end{center}
+
+\section{Research Question and Current Answer}
 
 This project tests the hypothesis that concept-level information from a frozen
 vision--language model can identify and weaken shortcut information learned by a
@@ -35,6 +71,59 @@ probe trained to predict the spurious attribute should become less successful.
 All hyperparameter selection is performed on validation data and the test split
 is reserved for a final, preselected configuration.
 
+\begin{table}[ht]
+\centering
+\caption{At-a-glance status for the meeting.}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth} X}
+\toprule
+Question & Current answer \\
+\midrule
+What was built? & End-to-end concept discovery, cached SpLiCE scoring,
+concept-guided augmentation, conditional correlation regularization, periodic
+target and leakage probes, guarded test evaluation, and reproducible Slurm/W\&B
+experiment arrays. \\
+What is the main result? & The revised automatic methods have not yet produced
+a stable WG improvement across comparable seeds. REG $\lambda=0.1$ is the only
+completed setting above baseline in the three-seed mean, and only by 0.45 points. \\
+What did we learn? & The intervention effect is strongly seed-dependent; the
+small REG weight was effectively negligible; aggressive routed augmentation can
+make optimization harder; and the current automatic concept set is not purely
+background-specific. \\
+What should happen next? & Audit concept direction and specificity, add shuffled
+and random-routing controls, then test concept-conditioned cross-background
+contrastive positives before spending compute on more seeds or final test runs. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What Is Linear, and What Is Already Contrastive?}
+
+SpLiCE is \emph{not} the classifier trained in the main experiments. It is a
+post-hoc sparse coding method: a frozen CLIP image embedding is approximated by
+a nonnegative linear combination of frozen text-concept embeddings, with an
+$\ell_1$ penalty encouraging a short explanation \cite{bhalla2024splice}. The
+word ``linear'' therefore describes the concept decomposition, not the full
+vision system.
+
+The complete pipeline contains four different objects:
+\begin{enumerate}
+    \item \textbf{Frozen CLIP encoder:} a nonlinear vision transformer that
+    produces the dense embedding which SpLiCE explains.
+    \item \textbf{SpLiCE decomposition:} a sparse nonnegative linear
+    reconstruction of that embedding in a text-concept dictionary.
+    \item \textbf{Trainable SSL encoder:} a nonlinear ResNet18 trained from
+    scratch in this project.
+    \item \textbf{Linear probe:} a linear classifier trained only after SSL to
+    measure what information is linearly accessible in the representation.
+\end{enumerate}
+
+The main SSL loss is already contrastive: the implementation uses the SimCLR
+NT-Xent/InfoNCE objective on two augmented views of each image
+\cite{chen2020simclr}. Consequently, ``try a contrastive objective'' is not an
+alternative to the current setup. The useful question is whether to make the
+\emph{pair construction or weighting} concept-aware, or whether to add a
+better-scaled invariance objective to the existing contrastive loss.
+
 \section{Brief Description of SpLiCE}
 
 SpLiCE, Sparse Linear Concept Embeddings, decomposes dense CLIP image embeddings
@@ -42,8 +131,9 @@ into sparse nonnegative weights over a vocabulary of human-interpretable text
 concepts. Instead of treating a CLIP image feature as an opaque vector, SpLiCE
 approximates it as a linear combination of text-concept embeddings. This makes
 it possible to assign each image a score for selected concepts, such as concepts
-related to the Waterbirds background. In this project SpLiCE is used as a frozen
-helper model, not as the SSL encoder being trained.
+related to the Waterbirds background. In this project SpLiCE is a frozen helper
+model used for auditing and control, not the SSL encoder being trained and not a
+replacement for the ResNet classifier.
 
 The current configuration uses an \texttt{open\_clip:ViT-B-32} backbone with
 \texttt{laion2b\_s34b\_b79k} weights, the LAION vocabulary of size 10\,000, and
@@ -54,6 +144,35 @@ for routing images to the strong-augmentation branch. The augmentation and
 correlation objectives are extensions developed in this project rather than
 methods claimed by the original SpLiCE paper; the sparse CBM intervention is
 the closest direct analogue of concept-space editing.
+
+\section{Concrete Contributions Over the Last Weeks}
+
+\begin{table}[ht]
+\centering
+\caption{Implemented work and why it matters scientifically.}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.20\textwidth} X X}
+\toprule
+Workstream & Implementation & Scientific value \\
+\midrule
+Bias discovery & Dataset-level conditional ranking of SpLiCE concepts using
+target and background metadata; shared cached top-$K$ vectors. & Turns a vague
+idea (``find background concepts'') into a reproducible, inspectable signal. \\
+Training interventions & Concept-routed strong augmentation and a
+target-conditioned feature--concept correlation penalty. & Tests two distinct
+mechanisms: invariance through views and information removal through a loss. \\
+Evaluation & Periodic balanced linear probes, WG metrics, optional spurious
+attribute probe, and a final-test guard. & Separates average performance from
+minority-group robustness and reduces test-selection leakage. \\
+Reproducibility & Isolated diagnostic loaders, restored RNG states, deterministic
+paired runs, checkpoint state, W\&B tags/groups, and array-safe concept discovery. &
+Made it possible to discover that the initially positive result did not
+replicate under the repaired protocol. \\
+Baselines and scope & Sparse SpLiCE-CBM intervention, component ablations,
+Waterbirds/SpurCIFAR10/CelebA-compatible data paths, and tests. & Supports both
+mechanistic diagnosis and later transfer beyond one dataset. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \section{Implementation in This Repository}
 
@@ -72,7 +191,7 @@ logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
 
     \item If a SpLiCE mode is enabled, the training split is decomposed once by
     a frozen SpLiCE model. Concepts are ranked using target- and spurious-group
-    metadata, and the shared dataset-level top-10 is cached. For the current
+    metadata, and the shared dataset-level top-10 is cached. For example, for the
     Waterbirds runs this set is \texttt{bamboo, forests, whale, rainforest,
     raven, forest, seascape, lake, snorkeling, pond}.
 
@@ -81,8 +200,7 @@ logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
     the label, metadata, and a vector $c(x)\in\mathbb{R}^{10}_{\geq 0}$.
 
     \item In \texttt{augment} mode, $r(x)=\max_k c_k(x)$ controls routing. The
-    threshold is a quantile computed on the training split, not a transferable
-    absolute score. A high-score image produces the pair
+    threshold is a quantile computed on the training split. A high-score image produces the pair
     $[T_{\mathrm{std}}(x),T_{\mathrm{strong}}(x)]$; a low-score image produces
     two standard views. This gives SimCLR an explicit invariance pair without
     corrupting both views with the strong transform.
@@ -96,8 +214,7 @@ logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
 
     \item Linear probing is decoupled from checkpoint retention and is run every
     25 SSL epochs during validation development. The target probe is trained on
-    the balanced \texttt{ds\_train} split and evaluated on \texttt{val}. An
-    optional second probe measures spurious-attribute leakage. A guarded
+    the balanced \texttt{ds\_train} split and evaluated on \texttt{val}. A
     \texttt{--final\_test} mode performs one final test probe only after model
     and hyperparameters have been fixed.
 \end{enumerate}
@@ -110,22 +227,24 @@ discover\_splice\_spurious\_concepts.py} decomposes images by
 metadata group and ranks concepts by how strongly they vary with the spurious
 attribute while penalizing class-label effects. This helps choose candidate
 background concepts. \texttt{tools/summarize\_splice\_scores.py} reports the
-distribution of selected concept scores. Array jobs now use one file lock and
-one discovery directory, so all tasks in a submission share exactly the same
-concept set and cached vectors. A sparse SpLiCE-CBM entry point and optional
-representation/probe interventions were also added. CelebA and SpurCIFAR10
-dataset handling, metadata logging, evaluation guards, and tests were updated
-as part of the same revision (commits \texttt{0198e3b}--\texttt{868092b}).
+distribution of selected concept scores. A sparse SpLiCE-CBM entry point and optional
+representation/probe interventions were also added.
 
-\section{Experiment Plan}
+The implementation was repaired so that rank diagnostics and periodic probes
+do not advance the SSL data-loader random state. Seeds 1, 3, and 4 form the
+current comparable post-repair set; seeds 0 and 2 are retained only as
+historical descriptive points. This distinction is central to the interpretation
+below.
 
-The development comparison uses seeds 0, 1, and 2. The augmentation sweep varies
-the train-score quantile $q$; the regularization sweep varies $\lambda$. The
-augmentation-component array keeps $q=0.75$ and changes only the strong
-transform. Runs are compared using the mean of the final ten periodic validation
-probes at SSL epoch 1000. Per-run peak epochs are not used for selection because
-the WG curves are noisy. The final test will use one predeclared configuration
-selected from aggregated validation results.
+\section{Experimental Protocol}
+
+The primary revised comparison uses post-repair seeds 1, 3, and 4. The
+augmentation sweep varies the train-score quantile $q$; the regularization sweep
+varies $\lambda$. The augmentation-component array keeps $q=0.75$ and changes
+only the strong transform. Runs are compared using the mean of the final ten
+periodic validation probes at SSL epoch 1000; per-run peak epochs are not used
+for selection. Seeds 0 and 2 predate the reproducibility repair and are shown
+only to make the experimental history transparent.
 
 \begin{table}[h]
 \centering
@@ -155,336 +274,374 @@ Final evaluation split & test, only with \texttt{--final\_test} \\
 \end{tabularx}
 \end{table}
 
-\section{Current Validation Results (Automatic Pipeline)}
+\section{Current Validation Results}
 
-The W\&B project \texttt{gsgrechkin-rptu/Spur\_SpLiCE} was queried on
-18 July 2026. Starting with the first relevant submission on 13 July at
-19:11 UTC, 28 finished Waterbirds runs were matched to the two Slurm arrays.
-The grouping was reconstructed from creation time, Git commit, seed, SpLiCE
-mode, quantile or regularization weight, and strong-augmentation configuration.
+\subsection{Hyperparameter Sweep}
+
+Table~\ref{tab:current_sweep} reports the average and worst-group (WG)
+validation accuracy, averaged over the last ten linear-evaluation epochs.
 
 \begin{table}[ht]
 \centering
-\small
-\caption{Provenance groups for the current Waterbirds experiments.}
-\label{tab:current_provenance}
-\begin{tabularx}{\textwidth}{llllX}
+\scriptsize
+\caption{Current validation sweep. Seed columns show average / WG accuracy
+(\%). Seeds 0 and 2 (marked $\dagger$) predate the reproducibility repair and
+are excluded from the post-repair aggregate over seeds 1, 3, and 4.}
+\label{tab:current_sweep}
+\begin{tabularx}{\textwidth}{ll>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X}
 \toprule
-Array & Seed & Started (UTC) & Commit & W\&B run IDs \\
+Method & Parameter & S0$\dagger$ & S1 & S2$\dagger$ & S3 & S4 & Post-repair WG \\
 \midrule
-Augmentation components & 2 & 13 Jul 19:11 & \texttt{272ee42} &
-\texttt{dbn4o7gb, 0ptqafom, 6zpr2zbw, euvfljc2, mw3q4416} \\
-Hyperparameter sweep & 2 & 14 Jul 09:08 & \texttt{868092b} &
-\texttt{nc89rx14, uxenqlkt, fvtol29m, 5b4cvrig, q3o1ifpy, 2u5awr5z, apjwtvyn, 492n5krr, a9j4enb4} \\
-Augmentation components & 0 & 15 Jul 19:41 & \texttt{868092b} &
-\texttt{0t9p97ag, wyolxkon, 87ry202v, ogz7t6r4, g77u3g1z} \\
-Hyperparameter sweep & 0 & 17 Jul 12:12 & \texttt{868092b} &
-\texttt{8cfxm2q2, si31b8ng, tpvleejg, 33ko4h4h, 7nz2e6o2, g4jel2bp, ftgmmifc, m6bgwc23, naet2tg6} \\
+SimCLR & -- & 49.27/41.93 & 55.00/48.20 & 50.60/37.69 & 52.79/45.14 & 52.81/50.77 & $48.04\pm2.82$ \\
+SpLiCE-AUG & $q=0.50$ & 49.83/42.96 & 56.11/51.88 & 53.64/46.96 & 56.30/51.80 & 45.77/39.19 & $47.62\pm7.31$ \\
+SpLiCE-AUG & $q=0.75$ & 52.45/43.11 & 54.07/52.08 & 56.80/49.62 & 50.77/43.85 & 52.94/46.87 & $47.60\pm4.16$ \\
+SpLiCE-AUG & $q=0.90$ & 53.52/47.25 & 50.90/43.49 & 53.02/41.99 & 51.08/46.74 & 54.19/48.03 & $46.09\pm2.34$ \\
+SpLiCE-AUG & $q=0.95$ & 50.59/44.64 & 52.72/40.47 & 53.08/43.83 & 55.57/52.60 & 52.99/47.71 & $46.93\pm6.10$ \\
+SpLiCE-REG & $\lambda=0.001$ & 55.50/53.13 & 54.53/47.37 & 52.31/41.07 & 51.12/41.37 & 53.37/50.69 & $46.47\pm4.72$ \\
+SpLiCE-REG & $\lambda=0.01$ & 49.22/39.61 & 55.13/47.37 & 50.41/40.86 & 51.48/45.78 & 47.42/37.22 & $43.46\pm5.46$ \\
+SpLiCE-REG & $\lambda=0.1$ & 47.52/39.70 & 52.99/50.58 & 53.71/43.64 & 55.70/51.41 & 52.21/43.47 & $48.49\pm4.37$ \\
+SpLiCE-REG & $\lambda=1.0$ & 51.88/44.64 & 55.70/49.50 & 50.97/36.96 & 51.38/41.99 & 49.66/40.02 & $43.84\pm5.00$ \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{Hyperparameter Sweep}
-
-Table~\ref{tab:current_sweep} reports the W\&B summary fields
-\texttt{Average over last 10 linear val acc} and
-\texttt{Average over last 10 linear val worst-group acc}. Seed 1 has not yet
-been run under the revised protocol and is deliberately left as a TODO.
+\noindent\textit{All post-repair cells are final epoch-1000 summaries. W\&B was
+queried on 21 July 2026.}
 
 \begin{table}[ht]
 \centering
 \small
-\caption{Current validation sweep. Values are average / worst-group accuracy (\%).}
-\label{tab:current_sweep}
-\begin{tabular}{llccc}
+\caption{Decision view over comparable post-repair seeds 1, 3, and 4. The
+paired delta is computed against the baseline with the same seed.}
+\label{tab:decision_view}
+\begin{tabular}{lccc}
 \toprule
-Method & Hyperparameter & Seed 0 & Seed 1 & Seed 2 \\
+Configuration & WG mean $\pm$ SD & Mean paired $\Delta$WG & Seed deltas \\
 \midrule
-SimCLR & -- & 49.27 / 41.93 & \texttt{TODO} & 50.60 / 37.69 \\
-SpLiCE-AUG & $q=0.50$ & 49.83 / 42.96 & \texttt{TODO} & 53.64 / 46.96 \\
-SpLiCE-AUG & $q=0.75$ & 52.45 / 43.11 & \texttt{TODO} & 56.80 / 49.62 \\
-SpLiCE-AUG & $q=0.90$ & 53.52 / 47.25 & \texttt{TODO} & 53.02 / 41.99 \\
-SpLiCE-AUG & $q=0.95$ & 50.59 / 44.64 & \texttt{TODO} & 53.08 / 43.83 \\
-SpLiCE-REG & $\lambda=0.001$ & 55.50 / 53.13 & \texttt{TODO} & 52.31 / 41.07 \\
-SpLiCE-REG & $\lambda=0.01$ & 49.22 / 39.61 & \texttt{TODO} & 50.41 / 40.86 \\
-SpLiCE-REG & $\lambda=0.1$ & 47.52 / 39.70 & \texttt{TODO} & 53.71 / 43.64 \\
-SpLiCE-REG & $\lambda=1.0$ & 51.88 / 44.64 & \texttt{TODO} & 50.97 / 36.96 \\
+SimCLR & $48.04\pm2.82$ & -- & -- \\
+AUG $q=0.50$ & $47.62\pm7.31$ & $-0.41$ & $+3.68,+6.67,-11.58$ \\
+AUG $q=0.75$ & $47.60\pm4.16$ & $-0.43$ & $+3.89,-1.28,-3.90$ \\
+AUG $q=0.90$ & $46.09\pm2.34$ & $-1.95$ & $-4.71,+1.60,-2.74$ \\
+AUG $q=0.95$ & $46.93\pm6.10$ & $-1.11$ & $-7.72,+7.46,-3.06$ \\
+REG $\lambda=0.001$ & $46.47\pm4.72$ & $-1.56$ & $-0.83,-3.77,-0.09$ \\
+REG $\lambda=0.01$ & $43.46\pm5.46$ & $-4.58$ & $-0.83,+0.64,-13.55$ \\
+REG $\lambda=0.1$ & $48.49\pm4.37$ & $+0.45$ & $+2.38,+6.27,-7.30$ \\
+REG $\lambda=1.0$ & $43.84\pm5.00$ & $-4.20$ & $+1.31,-3.15,-10.75$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[ht]
+\begin{figure}[ht]
 \centering
-\small
-\caption{Aggregate current sweep over the two available seeds. The standard
-deviation is the sample standard deviation; $\Delta$WG is relative to the
-matched two-seed baseline.}
-\label{tab:current_sweep_aggregate}
-\begin{tabular}{lcccc}
-\toprule
-Configuration & $n$ & Avg. Acc. & WG Acc. & $\Delta$WG \\
-\midrule
-SimCLR & 2 & $49.94\pm0.94$ & $39.81\pm3.00$ & -- \\
-SpLiCE-AUG $q=0.50$ & 2 & $51.73\pm2.69$ & $44.96\pm2.83$ & $+5.15$ \\
-SpLiCE-AUG $q=0.75$ & 2 & $54.62\pm3.07$ & $46.37\pm4.61$ & $+6.56$ \\
-SpLiCE-AUG $q=0.90$ & 2 & $53.27\pm0.35$ & $44.62\pm3.72$ & $+4.81$ \\
-SpLiCE-AUG $q=0.95$ & 2 & $51.83\pm1.76$ & $44.23\pm0.57$ & $+4.43$ \\
-SpLiCE-REG $\lambda=0.001$ & 2 & $53.91\pm2.26$ & $47.10\pm8.52$ & $+7.29$ \\
-SpLiCE-REG $\lambda=0.01$ & 2 & $49.81\pm0.84$ & $40.24\pm0.88$ & $+0.43$ \\
-SpLiCE-REG $\lambda=0.1$ & 2 & $50.62\pm4.38$ & $41.67\pm2.79$ & $+1.86$ \\
-SpLiCE-REG $\lambda=1.0$ & 2 & $51.43\pm0.65$ & $40.80\pm5.43$ & $+0.99$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=\textwidth]{figures/current_postrepair_wg.png}
+\caption{No completed revised method reliably separates from the matched
+SimCLR baseline. Error bars are descriptive sample standard deviations, not
+confidence intervals; $n=3$ is too small for a strong statistical claim.}
+\label{fig:postrepair_wg}
+\end{figure}
 
-All four augmentation quantiles improve WG accuracy in the two-seed mean, which
-is encouraging for the main hypothesis. The paired improvements are especially
-large for seed 2, however: for $q=0.75$ they are $+1.18$ and $+11.94$ points for
-seeds 0 and 2 respectively. Thus two seeds are not sufficient evidence of a
-stable effect. The largest mean WG gain is obtained by
-$\lambda=0.001$, but its WG standard deviation is also the largest. Among the
-augmentation settings, $q=0.90$ has the most consistent paired WG improvement
-($+5.33$ and $+4.30$), whereas $q=0.75$ has the best mean average and WG
-accuracy. Seed 1 and additional confirmation seeds must be completed before
-choosing between these candidates.
+The completed larger REG weights resolve one open question: $\lambda=0.001$
+was indeed almost inactive (final SpLiCE loss near $7\times10^{-6}$), whereas
+$\lambda=0.1$ contributes about $6\times10^{-4}$ and can improve individual
+seeds. However, the seed-4 regression of $-7.30$ points means that the positive
+mean of $+0.45$ points is not a stable effect. At $\lambda=1.0$, the penalty is
+roughly $4\times10^{-3}$ and performance worsens overall, suggesting an
+intermediate useful scale but no robust setting yet.
+
+The earlier positive AUG result also does not replicate consistently. The most
+extreme case is $q=0.50$: it improves seeds 1 and 3 but collapses for seed 4.
+Its final seed-4 SSL loss is 0.109 versus 0.026 for the matched baseline,
+consistent with the stronger intervention making optimization harder. This is
+diagnostic evidence, not proof of the cause.
+
+\noindent\textbf{Current conclusion.} The evidence does not support claiming a
+reliable Waterbirds improvement from the present all-components AUG policy or
+correlation penalty. It does support the broader research program: the pipeline
+can discover interpretable proxies, expose failure modes, and test better ways
+to use those proxies. Final test evaluation should remain locked.
 
 \subsection{Strong-Augmentation Components}
 
-The component array is a separate ablation family: it enables periodic rank
-evaluation and the spurious leakage probe, while the hyperparameter sweep does
-not. It should be used to compare augmentation components within the family,
-not pooled with the sweep as exact replicates.
-
 \begin{table}[ht]
 \centering
-\small
+\scriptsize
 \caption{Current $q=0.75$ augmentation ablation. Values are average / WG
-validation accuracy (\%).}
+validation accuracy (\%). Seeds 0 and 2 predate the reproducibility repair.}
 \label{tab:current_augmentations}
-\begin{tabular}{lccc}
+\begin{tabularx}{\textwidth}{l>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X}
 \toprule
-Strong transform & Seed 0 & Seed 1 & Seed 2 \\
+Strong transform & S0$\dagger$ & S1 & S2$\dagger$ & S3 & S4 & Post-repair WG \\
 \midrule
-All components & 50.33 / 39.29 & \texttt{TODO} & 56.16 / 49.36 \\
-Crop only & 52.44 / 44.80 & \texttt{TODO} & 55.40 / 46.10 \\
-Color jitter only & 48.23 / 39.08 & \texttt{TODO} & 54.96 / 44.84 \\
-Grayscale only & 53.53 / 48.52 & \texttt{TODO} & 52.70 / 38.80 \\
-Gaussian blur only & 44.79 / 34.12 & \texttt{TODO} & 52.49 / 44.35 \\
+All components & 50.33/39.29 & 54.07/52.08 & 56.16/49.36 & 50.77/43.85 & 52.94/46.87 & $47.60\pm4.16$ \\
+Crop only & 52.44/44.80 & 53.72/45.03 & 55.40/46.10 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
+Color jitter only & 48.23/39.08 & 57.80/45.19 & 54.96/44.84 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
+Grayscale only & 53.53/48.52 & 51.66/46.99 & 52.70/38.80 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
+Gaussian blur only & 44.79/34.12 & 51.13/48.91 & 52.49/44.35 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-Across the two available seeds, crop is currently the strongest individual
-component ($45.45\pm0.92$ WG), while using all components gives
-$44.32\pm7.12$ WG. Grayscale reverses strongly between seeds and blur is the
-weakest mean setting. Consequently, the data do not support the earlier claim
-that all four augmentations are uniformly best; the interaction with seed is
-substantial and seed 1 is essential.
+Only the all-components setting has three comparable post-repair seeds, and it
+does not beat the matched baseline. The apparent stability of crop in the
+mixed-protocol rows cannot yet be treated as confirmation; crop, color jitter,
+grayscale, and blur still require post-repair seeds 3 and 4. Seed 1 illustrates
+why average accuracy alone is insufficient: color jitter has 57.80\% average
+accuracy but only 45.19\% WG accuracy.
 
-The leakage probe remains above 91\% average validation accuracy for every
-component run (approximately 91.2--92.4\%). This does not yet support the
+The leakage probe remains high for every component run (90.40--92.49\%
+average validation accuracy for seed 1). This does not yet support the
 stronger claim that the learned representation has stopped encoding the
 background. It is possible for target WG accuracy to improve while background
 information remains linearly accessible, so both metrics should continue to be
 reported.
 
-\subsection{Protocol Caveat and Reproducibility Repair}
-
-Rank evaluation was intended to be observational, but the current
-\texttt{extract\_normalized\_train\_features} function iterates the same shuffled,
-augmented training loader used by SSL. This can advance loader and worker random
-state and thereby change later training batches. W\&B provides a useful matched
-check: runs \texttt{tpvleejg} and \texttt{0t9p97ag} have the same seed, commit,
-model name, concepts, $q=0.75$, and augmentation policy. Their meaningful config
-differences are \texttt{rank\_eval\_freq=0} versus 100 and the additional leakage
-probe. Nevertheless their final-ten WG values are 43.11 and 39.29. This does not
-prove that rank evaluation caused the entire difference, but it demonstrates
-that the historical two families are not exchangeable replicates.
-
-The implementation has now been repaired for future runs. Rank diagnostics use
-a dedicated non-augmented, non-shuffled train loader with the deterministic
-evaluation transform and an independent generator. Periodic probes preserve
-Python, NumPy, CPU Torch, and CUDA RNG states. Persistent checkpoints save and
-restore those states, the SSL DataLoader generator, optimizer, and AMP scaler,
-so resumed jobs continue the same random sequence. Frozen SpLiCE/CLIP loading
-and W\&B initialization are also RNG-isolated so paired methods start from the
-same SSL initialization. The resolved numeric routing
-threshold is now written to \texttt{args.json} and W\&B as
-\texttt{splice\_score\_threshold\_resolved}. These changes make diagnostics
-observational, but they cannot retroactively repair the July 13--17 runs; the
-selected settings must be rerun with the repaired protocol.
-
-\subsection{Predeclared Final-Test Table}
-
-\begin{table}[ht]
-\centering
-\caption{Final Waterbirds test results. Do not fill until validation selection
-and protocol repair are complete.}
-\label{tab:final_test_todo}
-\begin{tabular}{lccc}
-\toprule
-Method & Selected hyperparameter & Avg. test acc. & WG test acc. \\
-\midrule
-SimCLR baseline & -- & \texttt{TODO} & \texttt{TODO} \\
-Automatic SpLiCE-AUG & $q=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
-Conditional SpLiCE-REG & $\lambda=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
-Combined AUG+REG & $q,\lambda=\texttt{TODO}$ & \texttt{TODO} & \texttt{TODO} \\
-Sparse SpLiCE-CBM intervention & intervention=\texttt{TODO} & \texttt{TODO} & \texttt{TODO} \\
-\bottomrule
-\end{tabular}
-\end{table}
+The repaired diagnostic path is also supported by a direct reproducibility
+check: the all-components $q=0.75$ run in this ablation and the independently
+submitted $q=0.75$ hyperparameter run produced exactly the same seed-1 result,
+54.0701\% average and 52.0850\% WG accuracy, despite diagnostics being enabled
+only in the former. Seeds 1, 3, and 4 were all run from commit
+\texttt{e1fa215} after the repair; seeds 0 and 2 remain descriptive historical
+points only.
 
 \FloatBarrier
 
-\section{Preliminary Legacy Results (Scalar Control)}
+\section{Recommended Research Roadmap}
 
-The following tables were produced with the implementation preceding commit
-\texttt{0198e3b}. They used manual absolute thresholds, a scalar correlation
-control, and a different evaluation protocol. They are retained for historical
-context and must not be pooled statistically with Tables~\ref{tab:current_sweep}
-and~\ref{tab:current_augmentations}.
+\subsection{Priority 0: Freeze the Current Evidence}
 
-\begin{longtable}{>{\raggedright\arraybackslash}p{3.0cm}
-                  >{\centering\arraybackslash}p{1.5cm}
-                  >{\centering\arraybackslash}p{1.5cm}
-                  >{\centering\arraybackslash}p{2cm}
-                  >{\centering\arraybackslash}p{2cm}}
-\label{tab:results}\\
-\toprule
-Method & Threshold & Weight & Avg. Acc. & WG Acc. \\
-\toprule
-\endhead
-\multicolumn{5}{l}{\textbf{Seed 0}} \\
-\toprule
-Baseline SSL & -- & -- & 47.13 & 38.86 \\
-SpLiCE-AUG & \textbf{0.03} & -- & \textbf{56.32} & \textbf{52.66} \\
-SpLiCE-AUG & 0.05 & -- & 53.67 & 51.31 \\
-SpLiCE-AUG & 0.085 & -- & 51.27 & 46.75 \\
-SpLiCE-AUG & 0.1 & -- & 49.97 & 43.89 \\
-\midrule
-SpLiCE-REG & -- & 0.0001 & 49.77 & 42.99 \\
-SpLiCE-REG & -- & 0.0005 & 51.69 & 49.70 \\
-SpLiCE-REG & -- & 0.001 & 48.96 & 41.17 \\
-SpLiCE-REG & -- & 0.005 & 52.30 & 47.95 \\
-\toprule
-\multicolumn{5}{l}{\textbf{Seed 1}} \\
-\toprule
-Baseline SSL & -- & -- & 57.75 & 49.51 \\
-SpLiCE-AUG & \textbf{0.03} & -- & \textbf{58.12} & \textbf{52.46} \\
-SpLiCE-AUG & 0.05 & -- & 54.54 & 51.52 \\
-SpLiCE-AUG & 0.085 & -- & 54.75 & 49.02 \\
-SpLiCE-AUG & 0.1 & -- & 56.30 & 53.57 \\
-\midrule
-SpLiCE-REG & -- & 0.0001 & 48.22 & 41.07 \\
-SpLiCE-REG & -- & 0.0005 & 56.36 & 51.78 \\
-SpLiCE-REG & -- & 0.001 & 57.93 & 51.76 \\
-SpLiCE-REG & -- & 0.005 & 52.36 & 45.96 \\
-\toprule
-\multicolumn{5}{l}{\textbf{Seed 2}} \\
-\toprule
-Baseline SSL & -- & -- & 52.02 & 44.98 \\
-SpLiCE-AUG & 0.03 & -- & 55.47 & 49.12 \\
-SpLiCE-AUG & 0.05 & -- & 52.78 & 40.21 \\
-SpLiCE-AUG & \textbf{0.085} & -- & \textbf{55.40} & \textbf{50.46} \\
-SpLiCE-AUG & 0.1 & -- & 53.94 & 43.52 \\
-\midrule
-SpLiCE-REG & -- & 0.0001 & 50.90 & 40.53 \\
-SpLiCE-REG & -- & 0.0005 & 51.32 & 37.32 \\
-SpLiCE-REG & -- & 0.001 & 55.56 & 51.15 \\
-SpLiCE-REG & -- & 0.005 & 51.93 & 41.71 \\
-\bottomrule
-\end{longtable}
+The $q=0.95$ runs and the larger REG weights are now complete. Archive the W\&B
+run IDs and this result table, and do not launch final-test jobs. The completed
+sweep is sufficient to stop broad sweeps of the current formulation; more seeds
+should be reserved for a method that first passes the controls below.
 
-Additional legacy augmentation-specific tests were used to identify which
-transformations might contribute to SpLiCE-guided SSL. Their ranking is
-seed-dependent: all components maximize average accuracy for seed 1, while
-grayscale gives the highest seed-1 WG accuracy and crop is strongest for seed 0.
-These exploratory results motivated the revised component array but do not
-establish a universally best augmentation policy.
+\subsection{Priority 1: Validate the SpLiCE Signal Before Changing the Loss}
+
+The selected set contains plausible background concepts (\texttt{forest},
+\texttt{lake}, \texttt{pond}) but also ambiguous or target-related concepts
+(\texttt{raven}, \texttt{whale}, \texttt{snorkeling}). Moreover, the current
+discovery score uses absolute background differences. It penalizes differences
+in \emph{magnitude} across target classes but does not explicitly reject a
+concept whose signed background effect reverses between bird classes. This is a
+high-value methodological check.
+
+Run the following inexpensive ablations before designing a more complex model:
+\begin{enumerate}
+    \item compare top-$K\in\{3,5,10,20\}$ and merge near-duplicate vocabulary
+    items such as \texttt{forest}/\texttt{forests};
+    \item require consistent signed background direction across target classes,
+    or rank concepts by a small cross-validated background probe conditioned on
+    target;
+    \item compare the automatic list with a curated background-only list;
+    \item add random routing and shuffled SpLiCE-score controls at the same
+    routed fraction. A gain over standard SimCLR but not over these controls
+    would be an augmentation-strength effect, not evidence for semantic routing.
+\end{enumerate}
+
+\subsection{Priority 2: Make the Contrastive Objective Concept-Aware}
+
+The preferred new method is a \textbf{concept-conditioned contrastive
+objective}. SimCLR currently treats only two views of the same image as a
+positive pair. Use SpLiCE to construct additional hard positives: images with
+the same target label but different background-concept profiles. Their
+representations should be pulled together, while images from different target
+classes remain negatives. This directly encodes the desired geometry---same
+bird class, different background---instead of hoping that a generic strong
+augmentation removes the correct feature. It is closely related to supervised
+contrastive learning \cite{khosla2020supcon}, but with positive selection
+conditioned on concept dissimilarity.
+
+A minimal objective is
+\[
+\mathcal L = \mathcal L_{\mathrm{SimCLR}}
++ \alpha\,\mathcal L_{\mathrm{cross\mbox{-}background\ positive}},
+\]
+where the additional positive for image $i$ has the same $y$ but low cosine
+similarity between SpLiCE vectors $c_i$ and $c_j$. Start with
+$\alpha\in\{0.05,0.1,0.25\}$ and report both target WG accuracy and spurious
+probe accuracy. This method uses target labels during pretraining and must be
+described as label-conditioned or weakly supervised, just like the current REG
+objective.
+
+If a strictly label-free claim is required, a weaker alternative is to create a
+counterfactual second view of the \emph{same} image using background-specific
+masks or generation, and keep the ordinary same-image InfoNCE pair. Another
+label-free direction is learning-speed-aware sampling, which has been proposed
+for robust SSL under spurious correlations \cite{zhu2023lassl}.
+
+\subsection{Priority 3: Compare Better Invariance Losses}
+
+The current squared Pearson-correlation penalty only removes linear dependence
+and its scale depends strongly on averaging over all feature--concept pairs.
+Three controlled alternatives are worth testing:
+\begin{enumerate}
+    \item \textbf{Normalized cross-covariance/HSIC penalty:} whiten or
+    variance-normalize $h$ and $c$ before penalizing dependence; tune by the
+    observed ratio $\mathcal L_{\mathrm{concept}}/\mathcal L_{\mathrm{SSL}}$
+    rather than raw $\lambda$.
+    \item \textbf{Conditional adversarial removal:} train a small head to
+    predict the SpLiCE vector or background attribute from $h$ and reverse its
+    gradient, conditioned on target. This can remove nonlinear leakage but is
+    less stable and needs a careful adversary-capacity sweep.
+    \item \textbf{Late-layer intervention:} apply the dependence penalty or
+    pruning only to later encoder blocks. Prior robust-SSL work reports that
+    targeted feature-space interventions can outperform generic resampling or
+    view changes \cite{hamidieh2024views}.
+\end{enumerate}
+
+\subsection{Experiment Matrix and Stop Rules}
 
 \begin{table}[ht]
 \centering
-\caption{Effect of individual augmentations on linear evaluation accuracy for \textit{waterbirds} dataset}
-\label{tab:individual_augmentations_waterbirds}
-\begin{tabular*}{0.75\textwidth}{@{\extracolsep{\fill}}lcc}
+\small
+\caption{Prioritized experiments after the current runs finish.}
+\begin{tabularx}{\textwidth}{p{0.25\textwidth}p{0.33\textwidth}X}
 \toprule
-Augmentation & Avg. Acc. & WG Acc. \\
+Experiment & Question answered & Continue only if \\
 \midrule
-\multicolumn{3}{l}{\textbf{Seed 0}} \\
-Crop & \textbf{56.08} & 49.01 \\
-Color jitter & 54.73 & 48.29 \\
-Grayscale & 51.56 & 47.20 \\
-Gaussian blur & 51.30 & 44.37 \\
-All aug. & 55.28 & \textbf{49.83} \\
-\midrule
-\multicolumn{3}{l}{\textbf{Seed 1}} \\
-Crop & 53.86 & 49.97 \\
-Color jitter & 55.47 & 49.12 \\
-Grayscale & 57.27 & 55.98 \\
-Gaussian blur & 50.47 & 43.56 \\
-All aug. & 58.12 & 52.46 \\
-\midrule
-\multicolumn{3}{l}{\textbf{Seed 2}} \\
-Crop & 54.12 & 39.54 \\
-Color jitter & 52.38 & 45.78 \\
-Gaussian blur & 53.85 & 45.91 \\
-Grayscale & 49.53 & 40.11 \\
-All aug. & 55.47 & 49.12 \\
+Shuffled/random routing & Does SpLiCE semantics matter beyond stronger
+augmentation? & Semantic routing beats both controls in paired WG. \\
+Signed concept selection and top-$K$ & Is the proxy specific and stable? & The
+list is qualitatively background-related and target-conditioned background
+prediction improves. \\
+Single augmentation components, seeds 3/4 & Is one transformation safer than
+the all-components policy? & At least two post-repair seeds improve WG without
+large average-accuracy loss. \\
+Concept-conditioned positives & Does direct cross-background alignment improve
+the geometry? & Mean paired WG improves, seed signs are mostly consistent, and
+spurious leakage decreases. \\
+Adversarial or normalized dependence loss & Is linear correlation too weak? &
+Leakage falls without representation collapse or target-WG regression. \\
+Transfer to SpurCIFAR10/CelebA & Does the method generalize? & Waterbirds first
+passes the controls with a frozen hyperparameter rule. \\
 \bottomrule
-\end{tabular*}
+\end{tabularx}
 \end{table}
 
-\pagebreak
-A short overview of used augmenation parameters. For each experiment, only one augmentation was  replaced by its strong variant, while all remaining augmentations were kept identical to the standard SimCLR pipeline. The GaussianBlur experiment evaluates the effect of enabling the Gaussian blur transform rather than changing its internal parameters.
+\section{Claim to Make at the Meeting}
+
+The defensible message is: \emph{I implemented and repaired a complete
+concept-guided robust-SSL evaluation pipeline. The initial positive result did
+not survive the stricter paired-seed protocol, which revealed strong seed
+sensitivity and weaknesses in concept selection and loss scaling. The project
+has therefore progressed from a proof-of-concept to a falsifiable research
+program. The next high-information experiment is not ``more of the same'', but
+to verify that the semantic routing signal matters and then place that signal
+directly into contrastive pair construction.}
+
+\section{Limitations}
+
+There are only three comparable post-repair seeds, and no revised configuration
+has been evaluated on the held-out test split. Waterbirds metadata are used both
+for concept discovery and for
+label-conditioned regularization, so the current method is not fully
+self-supervised. The leakage probe is linear and cannot rule out nonlinear
+background information. Finally, W\&B final-ten averages summarize noisy
+training curves but are not confidence intervals.
+
+\FloatBarrier
+\appendix
+
+\section{Preliminary Legacy Results (Scalar Control)}
+
+``Legacy'' denotes a materially different experimental definition, not merely
+an earlier software revision. Table~\ref{tab:legacy_protocol} states the main
+differences. In particular, the old and current scores should not be read as a
+before/after benchmark of the same method.
 
 \begin{table}[ht]
 \centering
-\caption{Strong augmentation variants evaluated in the SpLiCE experiments.}
-\label{tab:aug_settings}
-\begin{tabular}{lll}
+\small
+\caption{Why the legacy and revised experiments answer different questions.}
+\label{tab:legacy_protocol}
+\begin{tabularx}{\textwidth}{lXX}
 \toprule
-Augmentation & Standard SimCLR & Strong variant \\
+Aspect & Legacy protocol & Revised protocol \\
 \midrule
-Crop & scale $(0.2,1.0)$ & scale $(0.08,1.0)$ \\
-ColorJitter & $(0.4,0.4,0.4,0.1),\;p=0.8$ &
-$(0.8,0.8,0.8,0.2),\;p=0.9$ \\
-RandomGrayscale & $p=0.2$ & $p=0.3$ \\
-GaussianBlur & disabled & enabled ($p=0.5,\;k=23,\;\sigma=(0.1,2.0)$) \\
+Concept selection & Manually named concepts & Top concepts selected automatically from training metadata \\
+AUG routing & Fixed absolute threshold $\tau$ & Training-score quantile $q$, robust to score scale \\
+AUG views & Two strong views & Standard view paired with a strong view \\
+REG objective & One global scalar correlation & Target-conditioned feature--concept correlation matrix \\
+Model selection & Test results observed during exploration & Validation-only selection; final test held back \\
+Diagnostics & Shared training-loader random state & Isolated deterministic loader and preserved RNG state \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The legacy numbers can be higher without showing that the revised design is
+worse. First, repeatedly observing the test split while trying configurations
+introduces selection bias: the best observed test result is likely to include
+favourable noise. Second, two strong views and a manually chosen absolute
+threshold define a more aggressive, dataset-specific intervention than the
+current method. Third, the revised REG objective removes a full conditional
+correlation structure rather than optimizing the earlier scalar proxy. The
+revision is intended to make the hypothesis test reproducible, target-aware,
+and transferable; it is not guaranteed to increase accuracy. A fair performance
+comparison requires selecting each method on validation data and evaluating it
+once on an untouched test split.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Compact summary of the legacy scalar-control sweep over three seeds
+(mean $\pm$ sample standard deviation, \%).}
+\label{tab:results}
+\begin{tabular}{llcc}
+\toprule
+Method & Parameter & Average accuracy & WG accuracy \\
+\midrule
+Baseline SSL & -- & $52.30\pm5.32$ & $44.45\pm5.34$ \\
+SpLiCE-AUG & $\tau=0.03$ & $56.64\pm1.35$ & $51.41\pm1.99$ \\
+SpLiCE-AUG & $\tau=0.05$ & $53.66\pm0.88$ & $47.68\pm6.47$ \\
+SpLiCE-AUG & $\tau=0.085$ & $53.81\pm2.22$ & $48.74\pm1.87$ \\
+SpLiCE-AUG & $\tau=0.10$ & $53.40\pm3.20$ & $46.99\pm5.70$ \\
+SpLiCE-REG & $\lambda=0.0001$ & $49.63\pm1.35$ & $41.53\pm1.29$ \\
+SpLiCE-REG & $\lambda=0.0005$ & $53.12\pm2.81$ & $46.27\pm7.82$ \\
+SpLiCE-REG & $\lambda=0.001$ & $54.15\pm4.65$ & $48.03\pm5.95$ \\
+SpLiCE-REG & $\lambda=0.005$ & $52.20\pm0.23$ & $45.21\pm3.19$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+The strongest legacy result is SpLiCE-AUG with $\tau=0.03$, improving mean WG
+accuracy from 44.45\% to 51.41\%. This is useful evidence that concept-guided
+augmentation can help, but it remains exploratory evidence under the legacy
+protocol rather than a confirmatory estimate for the revised method.
+
 \begin{table}[ht]
 \centering
-\caption{Effect of individual augmentations on linear evaluation accuracy for \textit{SpurCIFAR10} dataset}
-\label{tab:individual_augmentations_spurcifar10}
-\begin{tabular*}{0.75\textwidth}{@{\extracolsep{\fill}}lcc}
+\small
+\caption{Legacy component ablations, summarized over three seeds. Only WG
+accuracy is shown because it is the primary robustness metric.}
+\label{tab:legacy_augmentation_components}
+\begin{tabular}{llc}
 \toprule
-Augmentation & Avg. Acc. & WG Acc. \\
+Dataset & Strong component & WG mean $\pm$ std. \\
 \midrule
-\multicolumn{3}{l}{\textbf{Seed 0}} \\
-Crop & 62.06 & 30.35 \\
-Color jitter & 61.39 & 22.77 \\
-Grayscale & 62.06 & 26.58 \\
-Gaussian blur & 63.42 & 25.69 \\
-All aug. & 63.44 & 28.64 \\
+Waterbirds & Crop & $46.17\pm5.76$ \\
+Waterbirds & Color jitter & $47.73\pm1.74$ \\
+Waterbirds & Grayscale & $47.76\pm7.95$ \\
+Waterbirds & Gaussian blur & $44.61\pm1.19$ \\
+Waterbirds & All components & $50.47\pm1.76$ \\
 \midrule
-\multicolumn{3}{l}{\textbf{Seed 1}} \\
-Crop & 63.09 & 32.55 \\
-Color jitter & 61.50 & 29.06 \\
-Grayscale & 62.85 & 31.54 \\
-Gaussian blur & 62.36 & 32.58 \\
-All aug. & 63.67 & 34.83 \\
-\midrule
-\multicolumn{3}{l}{\textbf{Seed 2}} \\
-Crop & 62.70 & 27.82 \\
-Color jitter & 62.69 & 37.80 \\
-Gaussian blur & 62.09 & 21.30 \\
-Grayscale & 62.62 & 20.86 \\
-All aug. & 63.23 & 27.79 \\
+SpurCIFAR10 & Crop & $30.24\pm2.37$ \\
+SpurCIFAR10 & Color jitter & $29.88\pm7.55$ \\
+SpurCIFAR10 & Grayscale & $26.33\pm5.34$ \\
+SpurCIFAR10 & Gaussian blur & $26.52\pm5.69$ \\
+SpurCIFAR10 & All components & $30.42\pm3.84$ \\
 \bottomrule
-\end{tabular*}
+\end{tabular}
 \end{table}
+
+These component runs used the strong variants crop scale $(0.08,1.0)$, color
+jitter $(0.8,0.8,0.8,0.2)$ with probability 0.9, grayscale probability 0.3,
+and Gaussian blur probability 0.5. Their seed dependence motivated the current
+component sweep; they do not identify one universally best transform.
 
 \FloatBarrier
 
@@ -605,6 +762,12 @@ By default, both values are equal to \(1.0\), so the default formula is
 \]
 Therefore, the script ranks concepts highly when they have a strong spurious effect, a weak target effect, and low instability.
 
+\paragraph{Important discovery caveat.}
+Because the pairwise effects above use absolute differences, two target classes
+can have equally large but oppositely signed background effects and still receive
+zero instability penalty. A direction-consistency term should therefore be
+tested before treating the selected top-$K$ as a reliable background proxy.
+
 \subsection{Correlation Regularization Penalty}
 
 In the revised \texttt{corr\_reg} mode, SpLiCE retains the selected concept
@@ -713,8 +876,7 @@ receive the stronger augmentation transform.
 \section{Reproduction and Next Experiment Commands}
 
 \paragraph{1. Standalone concept discovery (optional audit).}
-The Slurm arrays perform this step automatically and share its output across
-tasks. The standalone command is useful for auditing the selected concepts:
+The following standalone command is useful for auditing the selected concepts:
 
 \begin{verbatim}
 python tools/discover_splice_spurious_concepts.py \
@@ -771,32 +933,7 @@ many images would be treated as high-score examples for each candidate
 threshold. For example, in the shown run, threshold 0.085 selects 1007 training
 images, or about 21.0\% of the split.
 
-\paragraph{3. Complete the missing seed.}
-With the repaired rank-evaluation loader, complete seed 1 for both current
-arrays. Environment-variable names are case-sensitive: the scripts read
-\texttt{SEED}, not \texttt{seed}.
-
-\begin{verbatim}
-sbatch --export=ALL,SEED=1 --array=0-8 \
-  waterbirds_SpLiCE_hyperparameter_array.sbatch
-
-sbatch --export=ALL,SEED=1 --array=0-4 \
-  waterbirds_Augmentation_array.sbatch
-\end{verbatim}
-
-\paragraph{4. Confirm only the validation shortlist on additional seeds.}
-Array indices 0, 2, 3, and 5 correspond to baseline, AUG $q=0.75$, AUG
-$q=0.90$, and REG $\lambda=0.001$. After seed 1, these are the current
-shortlist for seeds 3 and 4:
-
-\begin{verbatim}
-sbatch --export=ALL,SEED=3 --array=0,2,3,5 \
-  waterbirds_SpLiCE_hyperparameter_array.sbatch
-sbatch --export=ALL,SEED=4 --array=0,2,3,5 \
-  waterbirds_SpLiCE_hyperparameter_array.sbatch
-\end{verbatim}
-
-\paragraph{5. Transfer the protocol to SpurCIFAR10.}
+\paragraph{3. Transfer the protocol to SpurCIFAR10.}
 The same arrays now accept \texttt{DATASET} as an exported variable and choose
 \texttt{resnet18} automatically for 32$\times$32 inputs. Dataset-level concept
 discovery and caches remain separate because the dataset name is included in
@@ -823,5 +960,39 @@ versus unconditional REG; (iv) combined AUG+REG; and (v) sparse SpLiCE-CBM
 representation/probe interventions. Final test jobs should be launched only
 after this validation stage and must use the explicit \texttt{--final\_test}
 guard.
+
+\begin{thebibliography}{9}
+
+\bibitem{bhalla2024splice}
+U. Bhalla, A. Oesterling, S. Srinivas, F. P. Calmon, and H. Lakkaraju.
+\newblock Interpreting CLIP with Sparse Linear Concept Embeddings (SpLiCE).
+\newblock \emph{NeurIPS}, 2024. \url{https://arxiv.org/abs/2402.10376}.
+
+\bibitem{chen2020simclr}
+T. Chen, S. Kornblith, M. Norouzi, and G. Hinton.
+\newblock A Simple Framework for Contrastive Learning of Visual Representations.
+\newblock \emph{ICML}, 2020.
+\url{https://proceedings.mlr.press/v119/chen20j.html}.
+
+\bibitem{khosla2020supcon}
+P. Khosla et al.
+\newblock Supervised Contrastive Learning.
+\newblock \emph{NeurIPS}, 2020.
+\url{https://proceedings.neurips.cc/paper/2020/hash/d89a66c7c80a29b1bdbab0f2a1a94af8-Abstract.html}.
+
+\bibitem{hamidieh2024views}
+K. Hamidieh, H. Zhang, S. Sankaranarayanan, and M. Ghassemi.
+\newblock Views Can Be Deceiving: Improved SSL Through Feature Space Augmentation.
+\newblock \emph{ICLR}, 2024.
+\url{https://proceedings.iclr.cc/paper_files/paper/2024/file/9c7900fac04a701cbed83256b76dbaa3-Paper-Conference.pdf}.
+
+\bibitem{zhu2023lassl}
+W. Zhu, S. Liu, C. Fernandez-Granda, and N. Razavian.
+\newblock Making Self-supervised Learning Robust to Spurious Correlation via
+Learning-speed Aware Sampling.
+\newblock NeurIPS 2023 Workshop on Self-Supervised Learning.
+\url{https://arxiv.org/abs/2311.16361}.
+
+\end{thebibliography}
 
 \end{document}

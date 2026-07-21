@@ -8,7 +8,10 @@ import scipy.sparse as sparse
 import torch
 
 from experiments.spurious_eval.datasets.celeba import CelebADataset
-from experiments.spurious_eval.datasets.transforms import ConceptAwareTwoCropTransform
+from experiments.spurious_eval.datasets.transforms import (
+    ConceptAwareTwoCropTransform,
+    build_augmentation_routing,
+)
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import run_spurious_attribute_probe
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
@@ -56,6 +59,21 @@ class SplicePipelineTests(unittest.TestCase):
         transform = ConceptAwareTwoCropTransform(lambda _: "standard", lambda _: "strong", threshold=0.5)
         self.assertEqual(transform(object(), 0.7), ["standard", "strong"])
         self.assertEqual(transform(object(), 0.2), ["standard", "standard"])
+
+    def test_routing_controls_match_the_semantic_augmentation_budget(self):
+        scores = torch.tensor([0.0, 1.0, 2.0, 3.0])
+        semantic, semantic_threshold, _ = build_augmentation_routing(scores, None, 0.5, "semantic", seed=7)
+        shuffled, shuffled_threshold, _ = build_augmentation_routing(scores, None, 0.5, "shuffled", seed=7)
+        random, random_threshold, _ = build_augmentation_routing(scores, None, 0.5, "random", seed=7)
+        all_scores, all_threshold, _ = build_augmentation_routing(scores, None, 0.5, "all", seed=7)
+
+        semantic_count = int((semantic >= semantic_threshold).sum())
+        self.assertEqual(int((shuffled >= shuffled_threshold).sum()), semantic_count)
+        self.assertEqual(int((random >= random_threshold).sum()), semantic_count)
+        self.assertEqual(int((all_scores >= all_threshold).sum()), len(scores))
+        torch.testing.assert_close(torch.sort(shuffled).values, torch.sort(scores).values)
+        repeated, _, _ = build_augmentation_routing(scores, None, 0.5, "random", seed=7)
+        torch.testing.assert_close(random, repeated)
 
     def test_conditional_regularizer_ignores_target_only_signal(self):
         targets = torch.tensor([0, 0, 1, 1])
@@ -115,6 +133,62 @@ class SplicePipelineTests(unittest.TestCase):
             args,
         )
         self.assertEqual([candidate["concept"] for candidate in candidates], ["spurious"])
+
+    def test_discovery_requires_a_consistent_signed_spurious_effect(self):
+        group_means = {
+            (0, 0): torch.tensor([0.0, 0.0]),
+            (1, 0): torch.tensor([1.0, 1.0]),
+            (0, 1): torch.tensor([0.0, 1.0]),
+            (1, 1): torch.tensor([1.0, 0.0]),
+        }
+        args = argparse.Namespace(
+            label_penalty=0.0,
+            instability_penalty=0.0,
+            use_abs_score=False,
+            min_mean_weight=0.0,
+            top_k=2,
+            require_consistent_spurious_direction=True,
+            deduplicate_concepts=False,
+        )
+        candidates = rank_concepts(
+            ["consistent", "reverses"],
+            group_means,
+            {key: 1 for key in group_means},
+            torch.tensor([0.5, 0.5]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 1]),
+            {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
+            args,
+        )
+        self.assertEqual([candidate["concept"] for candidate in candidates], ["consistent"])
+
+    def test_discovery_deduplicates_plural_concept_variants(self):
+        group_means = {
+            (0, 0): torch.tensor([0.0, 0.0, 0.0]),
+            (1, 0): torch.tensor([3.0, 2.0, 1.0]),
+            (0, 1): torch.tensor([0.0, 0.0, 0.0]),
+            (1, 1): torch.tensor([3.0, 2.0, 1.0]),
+        }
+        args = argparse.Namespace(
+            label_penalty=0.0,
+            instability_penalty=0.0,
+            use_abs_score=False,
+            min_mean_weight=0.0,
+            top_k=2,
+            require_consistent_spurious_direction=True,
+            deduplicate_concepts=True,
+        )
+        candidates = rank_concepts(
+            ["forests", "forest", "lake"],
+            group_means,
+            {key: 1 for key in group_means},
+            torch.tensor([1.5, 1.0, 0.5]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 1]),
+            {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
+            args,
+        )
+        self.assertEqual([candidate["concept"] for candidate in candidates], ["forests", "lake"])
 
     def test_cache_fingerprint_separates_vectors_and_scalar_reductions(self):
         config_mean = SpliceConfig(concepts="1,2", score_reduction="mean", pretrained="a")

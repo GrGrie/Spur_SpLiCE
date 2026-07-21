@@ -19,7 +19,7 @@ from experiments.spurious_eval.datasets.transforms import (
     ConceptAwareSSLSubset,
     ConceptAwareTwoCropTransform,
     TwoCropTransform,
-    resolve_augmentation_threshold,
+    build_augmentation_routing,
 )
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -286,6 +286,8 @@ def make_spur_cifar10_ssl_loader(
     splice_mode: str = "none",
     splice_score_threshold: float | None = None,
     splice_score_quantile: float = 0.75,
+    splice_routing_mode: str = "semantic",
+    splice_routing_seed: int = 0,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
@@ -313,20 +315,27 @@ def make_spur_cifar10_ssl_loader(
         scores = concept_scorer.reduce_selected_weights(concept_weights)
         uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
         uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg"}
-        resolved_threshold = resolve_augmentation_threshold(
-            scores,
-            splice_score_threshold,
-            splice_score_quantile,
-        ) if uses_augmentation else float("inf")
+        if uses_augmentation:
+            routing_scores, resolved_threshold, semantic_threshold = build_augmentation_routing(
+                scores,
+                splice_score_threshold,
+                splice_score_quantile,
+                mode=splice_routing_mode,
+                seed=splice_routing_seed,
+            )
+        else:
+            routing_scores, resolved_threshold, semantic_threshold = scores, float("inf"), None
         train_dataset = ConceptAwareSSLSubset(
             score_subset,
-            scores,
+            routing_scores,
             ConceptAwareTwoCropTransform(
                 ssl_train_transform,
                 strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
                 resolved_threshold,
             ),
             concept_weights=concept_weights if uses_regularizer else None,
+            routing_mode=splice_routing_mode if uses_augmentation else "disabled",
+            semantic_threshold=semantic_threshold,
         )
     else:
         train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))

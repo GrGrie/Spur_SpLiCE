@@ -15,6 +15,53 @@ def resolve_augmentation_threshold(
     return resolved
 
 
+def build_augmentation_routing(
+    scores: torch.Tensor,
+    threshold: float | None,
+    quantile: float,
+    mode: str = "semantic",
+    seed: int = 0,
+) -> tuple[torch.Tensor, float, float]:
+    """Build an augmentation-routing control with an explicit matched budget.
+
+    ``semantic`` routes by the original SpLiCE score. ``shuffled`` permutes the
+    scores across examples, while ``random`` samples exactly as many routed
+    examples as the semantic policy. ``all`` is the intentionally unmatched
+    upper-bound control that routes every example.
+    """
+
+    if mode not in {"semantic", "shuffled", "random", "all"}:
+        raise ValueError(f"Unknown SpLiCE routing mode: {mode!r}")
+    scores = scores.detach().float().cpu()
+    semantic_threshold = resolve_augmentation_threshold(scores, threshold, quantile)
+    semantic_count = int((scores >= semantic_threshold).sum().item())
+    generator = torch.Generator().manual_seed(int(seed))
+
+    if mode == "semantic":
+        routing_scores = scores.clone()
+        routing_threshold = semantic_threshold
+    elif mode == "shuffled":
+        routing_scores = scores[torch.randperm(scores.numel(), generator=generator)]
+        routing_threshold = semantic_threshold
+    elif mode == "random":
+        routing_scores = torch.zeros_like(scores)
+        selected = torch.randperm(scores.numel(), generator=generator)[:semantic_count]
+        routing_scores[selected] = 1.0
+        routing_threshold = 0.5
+    else:
+        routing_scores = torch.ones_like(scores)
+        routing_threshold = 0.5
+
+    routed_count = int((routing_scores >= routing_threshold).sum().item())
+    routed_fraction = routed_count / max(scores.numel(), 1)
+    print(
+        "[INFO] SpLiCE augmentation routing: "
+        f"mode={mode} routed={routed_count}/{scores.numel()} ({routed_fraction:.2%}) "
+        f"semantic_threshold={semantic_threshold:.8f} routing_threshold={routing_threshold:.8f}"
+    )
+    return routing_scores, routing_threshold, semantic_threshold
+
+
 class TwoCropTransform:
     """Create two independently augmented views of the same image."""
 
@@ -47,7 +94,15 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
     returned to the SSL loop instead of the lossy scalar score.
     """
 
-    def __init__(self, subset, scores: torch.Tensor, transform, concept_weights: torch.Tensor | None = None) -> None:
+    def __init__(
+        self,
+        subset,
+        scores: torch.Tensor,
+        transform,
+        concept_weights: torch.Tensor | None = None,
+        routing_mode: str = "semantic",
+        semantic_threshold: float | None = None,
+    ) -> None:
         if len(subset) != len(scores):
             raise ValueError(f"Expected one SpLiCE score per sample, got {len(scores)} for {len(subset)} samples.")
         if concept_weights is not None and len(subset) != len(concept_weights):
@@ -58,6 +113,10 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
         self.scores = scores.float()
         self.concept_weights = concept_weights.float() if concept_weights is not None else None
         self.transform = transform
+        self.routing_mode = routing_mode
+        self.semantic_threshold = semantic_threshold
+        self.routed_count = int((self.scores >= self.transform.threshold).sum().item())
+        self.routed_fraction = self.routed_count / max(len(self.scores), 1)
         self.og_group_counts = getattr(subset, "og_group_counts", None)
 
     def __len__(self) -> int:

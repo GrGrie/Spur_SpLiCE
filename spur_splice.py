@@ -139,6 +139,8 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         label_penalty=args.splice_auto_label_penalty,
         instability_penalty=args.splice_auto_instability_penalty,
         use_abs_score=args.splice_auto_use_abs_score,
+        require_consistent_spurious_direction=args.splice_auto_require_consistent_direction,
+        deduplicate_concepts=args.splice_auto_deduplicate_concepts,
     )
     print(
         "[INFO] Auto-discovering SpLiCE concepts: "
@@ -373,6 +375,13 @@ def parse_args() -> argparse.Namespace:
         default=0.75,
         help="Training-score quantile used when --splice_score_threshold=auto.",
     )
+    parser.add_argument(
+        "--splice_routing_mode",
+        type=str,
+        default="semantic",
+        choices=["semantic", "shuffled", "random", "all"],
+        help="Which samples receive the targeted second-view augmentation.",
+    )
     parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
@@ -399,7 +408,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--splice_auto_top_k",
         type=int,
-        default=10,
+        default=5,
         help="Number of concepts to discover when --splice_concepts is empty or auto.",
     )
     parser.add_argument(
@@ -431,6 +440,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_auto_label_penalty", type=float, default=1.0)
     parser.add_argument("--splice_auto_instability_penalty", type=float, default=1.0)
     parser.add_argument("--splice_auto_use_abs_score", action="store_true")
+    parser.add_argument(
+        "--splice_auto_require_consistent_direction",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Require the signed background effect to agree across target classes during automatic discovery.",
+    )
+    parser.add_argument(
+        "--splice_auto_deduplicate_concepts",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Automatically collapse lexical concept variants such as forest/forests.",
+    )
     parser.add_argument(
         "--splice_strong_crop",
         type=lambda value: parse_optional_float_or_bool(value, 0.08, "--splice_strong_crop"),
@@ -569,6 +594,29 @@ def parse_args() -> argparse.Namespace:
         args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
     args.runtime_versions = runtime_versions()
+    args.splice_concept_fingerprint = (
+        hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:12]
+        if args.use_splice
+        else ""
+    )
+    discovery_fingerprint_payload = {
+        "split": args.splice_auto_split,
+        "top_k": args.splice_auto_top_k,
+        "min_mean_weight": args.splice_auto_min_mean_weight,
+        "label_penalty": args.splice_auto_label_penalty,
+        "instability_penalty": args.splice_auto_instability_penalty,
+        "use_abs_score": args.splice_auto_use_abs_score,
+        "require_consistent_direction": args.splice_auto_require_consistent_direction,
+        "deduplicate_concepts": args.splice_auto_deduplicate_concepts,
+        "model": args.splice_model,
+        "pretrained": args.splice_pretrained,
+        "vocab": args.splice_vocab,
+        "vocab_size": args.splice_vocab_size,
+        "l1_penalty": args.splice_l1_penalty,
+    }
+    args.splice_discovery_fingerprint = hashlib.sha256(
+        json.dumps(discovery_fingerprint_payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
     args.model_name = format_run_name(args)
     args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
     os.makedirs(args.save_folder, exist_ok=True)
@@ -589,7 +637,7 @@ def format_run_name(args: argparse.Namespace) -> str:
             if args.splice_score_threshold is None
             else f"{args.splice_score_threshold:g}"
         )
-        splice_name = f"augment{threshold_name}_{format_strong_aug_name(args)}"
+        splice_name = f"augment{threshold_name}_route{args.splice_routing_mode}_{format_strong_aug_name(args)}"
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
         splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
@@ -599,7 +647,10 @@ def format_run_name(args: argparse.Namespace) -> str:
                 if args.splice_score_threshold is None
                 else f"{args.splice_score_threshold:g}"
             )
-            splice_name = f"{splice_name}_augment{threshold_name}_{format_strong_aug_name(args)}"
+            splice_name = (
+                f"{splice_name}_augment{threshold_name}_route{args.splice_routing_mode}_"
+                f"{format_strong_aug_name(args)}"
+            )
     if args.use_splice:
         concept_digest = hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:8]
         splice_name = f"{splice_name}_concepts{concept_digest}"
@@ -764,6 +815,8 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_mode=args.splice_mode,
         splice_score_threshold=args.splice_score_threshold,
         splice_score_quantile=args.splice_score_quantile,
+        splice_routing_mode=args.splice_routing_mode,
+        splice_routing_seed=args.seed,
         **loader_kwargs,
     )
 
@@ -901,10 +954,19 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
     args.splice_score_threshold_resolved = (
         float(resolved_threshold) if resolved_threshold is not None else None
     )
+    dataset = train_loader.dataset
+    args.splice_semantic_threshold_resolved = getattr(dataset, "semantic_threshold", None)
+    args.splice_routed_count = getattr(dataset, "routed_count", None)
+    args.splice_routed_fraction = getattr(dataset, "routed_fraction", None)
     write_run_config(args)
     if wandb_run is not None:
         wandb_run.config.update(
-            {"splice_score_threshold_resolved": args.splice_score_threshold_resolved},
+            {
+                "splice_score_threshold_resolved": args.splice_score_threshold_resolved,
+                "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
+                "splice_routed_count": args.splice_routed_count,
+                "splice_routed_fraction": args.splice_routed_fraction,
+            },
             allow_val_change=True,
         )
 
