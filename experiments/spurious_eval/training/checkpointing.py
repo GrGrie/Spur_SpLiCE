@@ -6,6 +6,8 @@ import random
 import numpy as np
 import torch
 
+from splice.layer_localized import LayerLocalizedScrubber
+
 
 def save_checkpoint(
     model: torch.nn.Module,
@@ -93,6 +95,15 @@ def load_encoder_checkpoint(encoder: torch.nn.Module, checkpoint_path: str) -> N
             encoder_state[key[len("encoder.") :]] = value
     if not encoder_state:
         raise ValueError(f"No encoder.* weights found in checkpoint: {checkpoint_path}")
+    localized_readouts = {
+        key.removeprefix("localized_scrubber.readout_"): value
+        for key, value in encoder_state.items()
+        if key.startswith("localized_scrubber.readout_")
+    }
+    if localized_readouts:
+        max_concepts = next(iter(localized_readouts.values())).shape[0]
+        stage_dims = {stage: int(value.shape[1]) for stage, value in localized_readouts.items()}
+        encoder.localized_scrubber = LayerLocalizedScrubber(stage_dims, max_concepts)
     missing, unexpected = encoder.load_state_dict(encoder_state, strict=False)
     unexpected = [key for key in unexpected if not key.startswith("fc_reduce.")]
     if unexpected:

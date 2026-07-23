@@ -79,7 +79,7 @@ def save_score_cache(scores: torch.Tensor, path: Path) -> None:
 
 
 def splice_mode_uses_scores(mode: str) -> bool:
-    return mode in {"augment", "corr_reg", "augment_corr_reg"}
+    return mode in {"augment", "corr_reg", "augment_corr_reg", "localized"}
 
 
 def splice_mode_uses_regularizer(mode: str) -> bool:

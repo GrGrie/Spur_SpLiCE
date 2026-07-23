@@ -14,7 +14,16 @@ from experiments.spurious_eval.datasets.transforms import (
 )
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
+from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
+from splice.layer_localized import (
+    LayerLocalizedScrubber,
+    LocalizedProbeConfig,
+    estimate_leakage,
+    orthogonalize_against_target,
+    target_conditioned_residuals,
+    update_localized_scrubber,
+)
 from splice.ssl_regularization import CorrelationSpliceRegularizer, SpliceConfig, score_cache_path
 from splice.model import SPLICE
 from spur_splice import resolve_epoch_schedule
@@ -22,6 +31,95 @@ from scripts.tools.discover_splice_spurious_concepts import SparseConceptWeights
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_localized_scrubber_removes_only_fitted_direction(self):
+        scrubber = LayerLocalizedScrubber({"layer1": 3}, max_concepts=2)
+        rank = scrubber.update_stage(
+            "layer1",
+            torch.tensor([[1.0, 0.0, 0.0]]),
+            [0],
+            alpha=1.0,
+            projector_ridge=1e-6,
+        )
+        activations = torch.tensor([[2.0, 3.0, 4.0]])
+        scrubbed = scrubber.apply("layer1", activations)
+        self.assertEqual(rank, 1)
+        self.assertLess(abs(float(scrubbed[0, 0])), 1e-4)
+        torch.testing.assert_close(scrubbed[0, 1:], activations[0, 1:])
+
+    def test_target_conditioning_and_orthogonalization_preserve_target_axis(self):
+        values = np.asarray([[0.0], [2.0], [10.0], [12.0]], dtype=np.float32)
+        targets = np.asarray([0, 0, 1, 1])
+        train_residuals, eval_residuals = target_conditioned_residuals(
+            values,
+            values,
+            targets,
+            targets,
+        )
+        np.testing.assert_allclose(train_residuals[[0, 2]], np.asarray([[-1.0], [-1.0]]))
+        np.testing.assert_allclose(eval_residuals, train_residuals)
+        protected = orthogonalize_against_target(
+            torch.tensor([[1.0, 2.0]]),
+            torch.tensor([[1.0, 0.0]]),
+            ridge=1e-6,
+        )
+        self.assertLess(abs(float(protected[0, 0])), 1e-4)
+        self.assertAlmostEqual(float(protected[0, 1]), 2.0)
+
+    def test_permutation_corrected_leakage_detects_linear_concept(self):
+        rng = np.random.default_rng(3)
+        features = rng.normal(size=(200, 4)).astype(np.float32)
+        concepts = (features[:, :1] * 2.0 + 0.01 * rng.normal(size=(200, 1))).astype(np.float32)
+        targets = np.asarray([0, 1] * 100)
+        leakage, coefficients, _ = estimate_leakage(
+            features,
+            concepts,
+            targets,
+            np.arange(150),
+            np.arange(150, 200),
+            ridge=0.1,
+            shuffle_repeats=3,
+            rng=np.random.default_rng(7),
+        )
+        self.assertGreater(float(leakage[0]), 0.8)
+        self.assertEqual(coefficients.shape, (1, 4))
+
+    def test_localized_probe_update_runs_end_to_end_and_writes_diagnostics(self):
+        images = torch.randn(12, 3, 32, 32)
+        targets = torch.tensor([0, 1] * 6)
+        metadata = torch.stack((targets, targets), dim=1)
+        loader = torch.utils.data.DataLoader(
+            torch.utils.data.TensorDataset(images, targets, metadata),
+            batch_size=4,
+            shuffle=False,
+        )
+        concepts = images.mean(dim=(1, 2, 3), keepdim=False).unsqueeze(1)
+        model = SimCLRModel("resnet18", feat_dim=8)
+        model.enable_localized_scrubber(max_concepts=1)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            diagnostics = Path(temporary_directory) / "localized.jsonl"
+            metrics = update_localized_scrubber(
+                model,
+                loader,
+                concepts,
+                ["brightness"],
+                epoch=10,
+                device=torch.device("cpu"),
+                max_samples=10,
+                config=LocalizedProbeConfig(
+                    leakage_threshold=-100.0,
+                    leakage_max=100.0,
+                    stability=1,
+                    shuffle_repeats=1,
+                    holdout_fraction=0.3,
+                    seed=4,
+                ),
+                diagnostics_path=diagnostics,
+            )
+            self.assertTrue(diagnostics.is_file())
+            self.assertEqual(len(diagnostics.read_text(encoding="utf-8").splitlines()), 1)
+        self.assertEqual(metrics["localized/onset_count"], 1.0)
+        self.assertTrue(model.encoder.localized_scrubber.onsets)
+
     def test_automatic_lr_schedules_scale_with_training_length(self):
         self.assertEqual(resolve_epoch_schedule("auto", 1000, (0.70, 0.80, 0.90)), [700, 800, 900])
         self.assertEqual(resolve_epoch_schedule("auto", 500, (0.70, 0.80, 0.90)), [350, 400, 450])

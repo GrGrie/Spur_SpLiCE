@@ -9,7 +9,13 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
-from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
+from experiments.spurious_eval.models.resnet import build_resnet_encoder
+from experiments.spurious_eval.models.simclr import SimCLRModel
+from experiments.spurious_eval.training.checkpointing import (
+    load_checkpoint,
+    load_encoder_checkpoint,
+    save_checkpoint,
+)
 from experiments.spurious_eval.training.ssl_loop import extract_normalized_train_features
 from spur_splice import make_dataloader_kwargs, preserve_rng_state
 
@@ -36,6 +42,29 @@ class FakeScaler:
 
 
 class ReproducibilityTests(unittest.TestCase):
+    def test_linear_probe_reload_preserves_localized_encoder_scrubber(self):
+        model = SimCLRModel("resnet18", feat_dim=8)
+        model.enable_localized_scrubber(max_concepts=1)
+        model.encoder.localized_scrubber.update_stage(
+            "layer4",
+            torch.tensor([[1.0] + [0.0] * 511]),
+            [0],
+            alpha=0.5,
+            projector_ridge=1e-4,
+        )
+        model.eval()
+        images = torch.randn(2, 3, 32, 32)
+        expected = model.encoder(images)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checkpoint_path = Path(temporary_directory) / "localized.pth"
+            torch.save({"model": model.state_dict()}, checkpoint_path)
+            encoder, _ = build_resnet_encoder("resnet18")
+            load_encoder_checkpoint(encoder, str(checkpoint_path))
+            encoder.eval()
+            actual = encoder(images)
+        self.assertIsNotNone(encoder.localized_scrubber)
+        torch.testing.assert_close(actual, expected)
+
     def test_every_dataset_has_a_dedicated_rank_loader(self):
         for dataset_name, spec in DATASET_REGISTRY.items():
             with self.subTest(dataset=dataset_name):

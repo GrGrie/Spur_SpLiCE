@@ -60,6 +60,24 @@ Use `-Epochs 500` only for triage. The runner scales the learning-rate
 milestones to `350,400,450` and tags the W&B run `protocol_short_e500`, because
 it is not directly comparable with the report's 1,000-epoch results.
 
+## Layer-localized SpLiCE comparison (500 epochs)
+
+The dedicated runner launches a matched baseline and localized run:
+
+```powershell
+.\scripts\Run-LayerLocalized500.ps1 `
+  -Variant both -Seeds 0,1,2 `
+  -DataFolder "D:\Datasets\waterbirds"
+```
+
+Use `-DryRun` to print both commands without starting training. On Slurm,
+array task 0 is the baseline and task 1 is the localized method:
+
+```bash
+sbatch --array=0-1 --export=ALL,DATA_FOLDER=/path/to/datasets,SEED=0 \
+  scripts/waterbirds_layer_localized_500.sbatch
+```
+
 ## Logging and recovery
 
 - GPU utilization and power are not limited. The scripts do not stop training

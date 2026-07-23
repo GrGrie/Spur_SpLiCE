@@ -40,6 +40,10 @@ with `--data_folder` or `-DataFolder`.
 - `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
 - `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
 - `scripts/*.sbatch` — Slurm arrays for cluster runs.
+- `scripts/run_layer_localized_500.py` — matched 500-epoch baseline/localized launcher.
+- `scripts/Run-LayerLocalized500.ps1` and
+  `scripts/waterbirds_layer_localized_500.sbatch` — dedicated Windows and
+  Slurm launchers.
 
 ## Training length and learning-rate schedules
 
@@ -64,6 +68,14 @@ python spur_splice.py \
 
 Shortened 500-epoch runs are operationally supported, but they are not directly
 comparable with the existing epoch-1000 report tables.
+
+## Automatic layer-localized scrubbing
+
+`--splice_mode localized` periodically measures permutation-corrected,
+target-conditioned SpLiCE concept leakage at each ResNet stage. After an onset
+is stable across checkpoints, a target-protected low-rank soft projector is
+installed only at that stage. See `docs/LAYER_LOCALIZED_SPLICE.md` for the
+algorithm, diagnostics, launch commands, and paper ablations.
 
 ## Experiment families
 

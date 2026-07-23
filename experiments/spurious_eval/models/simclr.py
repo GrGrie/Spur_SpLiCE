@@ -27,6 +27,39 @@ class SimCLRModel(nn.Module):
         else:
             raise ValueError(f"Unsupported SimCLR projection head '{head}'. Use linear, mlp, or identity.")
 
+    def enable_localized_scrubber(self, max_concepts: int) -> None:
+        self.encoder.enable_localized_scrubber(max_concepts, projection_dim=self._projection_dim())
+
+    def _projection_dim(self) -> int:
+        if isinstance(self.head, nn.Identity):
+            return self.feature_dim
+        if isinstance(self.head, nn.Linear):
+            return self.head.out_features
+        return self.head[-1].out_features
+
+    def _encoder_scrubber(self):
+        encoder = self.encoder.module if isinstance(self.encoder, nn.DataParallel) else self.encoder
+        return getattr(encoder, "localized_scrubber", None)
+
+    def project(self, features: torch.Tensor) -> torch.Tensor:
+        projections = self.head(features)
+        scrubber = self._encoder_scrubber()
+        if scrubber is not None:
+            projections = scrubber.apply("projection", projections)
+        return F.normalize(projections, dim=1)
+
+    def forward_with_intermediates(
+        self,
+        x: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        features, intermediates = self.encoder(x, return_intermediates=True)
+        projections = self.head(features)
+        scrubber = self._encoder_scrubber()
+        if scrubber is not None:
+            projections = scrubber.apply("projection", projections)
+        intermediates["projection"] = projections
+        return features, intermediates
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.encoder(x)
-        return F.normalize(self.head(features), dim=1)
+        return self.project(features)

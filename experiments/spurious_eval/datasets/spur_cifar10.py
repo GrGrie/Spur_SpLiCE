@@ -306,7 +306,7 @@ def make_spur_cifar10_ssl_loader(
         line_width=config.line_width,
         download=config.download,
     )
-    if splice_mode in {"augment", "corr_reg", "augment_corr_reg"}:
+    if splice_mode in {"augment", "corr_reg", "augment_corr_reg", "localized"}:
         if concept_scorer is None:
             raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
         score_subset = full_dataset.get_subset("train", transform=None)
@@ -314,7 +314,7 @@ def make_spur_cifar10_ssl_loader(
         concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
         scores = concept_scorer.reduce_selected_weights(concept_weights)
         uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
-        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg"}
+        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg", "localized"}
         if uses_augmentation:
             routing_scores, resolved_threshold, semantic_threshold = build_augmentation_routing(
                 scores,

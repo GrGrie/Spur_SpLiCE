@@ -40,7 +40,7 @@ def simclr_forward_loss(
     bsz = image[0].size(0)
     images = torch.cat([image[0], image[1]], dim=0)
     embeddings = model.encoder(images)
-    projections = F.normalize(model.head(embeddings), dim=1)
+    projections = model.project(embeddings)
     f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
     features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
     loss, decor_loss, entropy_loss, _, _ = criterion(features)

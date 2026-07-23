@@ -28,6 +28,7 @@ from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
+from splice.layer_localized import LocalizedProbeConfig, update_localized_scrubber
 from splice.ssl_regularization import (
     SpliceConceptScorer,
     SpliceConfig,
@@ -273,7 +274,7 @@ def parse_args() -> argparse.Namespace:
         "--lr_decay_epochs",
         type=str,
         default="auto",
-        help="Comma-separated SSL LR milestones, or 'auto' for 70%, 80%, and 90% of --epochs.",
+        help="Comma-separated SSL LR milestones, or 'auto' for 70%%, 80%%, and 90%% of --epochs.",
     )
     parser.add_argument("--lr_decay_rate", type=float, default=0.1)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
@@ -349,7 +350,7 @@ def parse_args() -> argparse.Namespace:
         "--linear_lr_decay_epochs",
         type=str,
         default="auto",
-        help="Comma-separated probe LR milestones, or 'auto' for 60%, 75%, and 90% of probe epochs.",
+        help="Comma-separated probe LR milestones, or 'auto' for 60%%, 75%%, and 90%% of probe epochs.",
     )
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--linear_weight_decay", type=float, default=0.0)
@@ -376,7 +377,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank_threshold", type=float, default=0.1)
 
     parser.add_argument("--use_splice", type=str_to_bool, nargs="?", const=True, default=False)
-    parser.add_argument("--splice_mode", type=str, default="none", choices=["none", "augment", "corr_reg", "augment_corr_reg"])
+    parser.add_argument(
+        "--splice_mode",
+        type=str,
+        default="none",
+        choices=["none", "augment", "corr_reg", "augment_corr_reg", "localized"],
+    )
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
         "--splice_score_threshold",
@@ -406,6 +412,44 @@ def parse_args() -> argparse.Namespace:
         const=True,
         default=True,
         help="Center features/concepts within target classes before correlation regularization.",
+    )
+    parser.add_argument(
+        "--localized_probe_freq",
+        type=int,
+        default=10,
+        help="Refit layer-wise leakage probes and projectors every N epochs.",
+    )
+    parser.add_argument(
+        "--localized_start_epoch",
+        type=int,
+        default=10,
+        help="First epoch eligible for a layer-wise leakage probe.",
+    )
+    parser.add_argument(
+        "--localized_probe_samples",
+        type=int,
+        default=2048,
+        help="Maximum ordered training samples cached for each layer-wise probe update.",
+    )
+    parser.add_argument("--localized_probe_ridge", type=float, default=1.0)
+    parser.add_argument("--localized_leakage_threshold", type=float, default=0.05)
+    parser.add_argument("--localized_leakage_max", type=float, default=0.50)
+    parser.add_argument(
+        "--localized_stability",
+        type=int,
+        default=2,
+        help="Consecutive probe checkpoints above threshold required to lock an onset.",
+    )
+    parser.add_argument("--localized_shuffle_repeats", type=int, default=3)
+    parser.add_argument("--localized_holdout_fraction", type=float, default=0.25)
+    parser.add_argument("--localized_projector_ridge", type=float, default=1e-4)
+    parser.add_argument(
+        "--localized_protect_target",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="Orthogonalize concept directions against a layer-wise target probe.",
     )
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
     parser.add_argument("--splice_vocab", type=str, default="laion")
@@ -558,6 +602,25 @@ def parse_args() -> argparse.Namespace:
         auto_discover_splice_concepts(args)
     if args.splice_mode in {"corr_reg", "augment_corr_reg"} and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
+    if args.splice_mode == "localized":
+        if args.localized_probe_freq <= 0:
+            parser.error("--localized_probe_freq must be positive in localized mode.")
+        if args.localized_start_epoch <= 0:
+            parser.error("--localized_start_epoch must be positive.")
+        if args.localized_probe_samples < 4:
+            parser.error("--localized_probe_samples must be at least 4.")
+        if args.localized_probe_ridge < 0:
+            parser.error("--localized_probe_ridge must be non-negative.")
+        if args.localized_stability <= 0:
+            parser.error("--localized_stability must be positive.")
+        if args.localized_shuffle_repeats <= 0:
+            parser.error("--localized_shuffle_repeats must be positive.")
+        if not 0 < args.localized_holdout_fraction < 1:
+            parser.error("--localized_holdout_fraction must be in the interval (0, 1).")
+        if args.localized_projector_ridge <= 0:
+            parser.error("--localized_projector_ridge must be positive.")
+        if args.localized_leakage_max <= args.localized_leakage_threshold:
+            parser.error("--localized_leakage_max must be greater than --localized_leakage_threshold.")
     if not 0 < args.ssl_crop_min <= 1:
         parser.error("--ssl-crop-min must be in the interval (0, 1].")
     if args.splice_strong_crop is not None and not 0 < args.splice_strong_crop <= 1:
@@ -689,6 +752,11 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
     prefix = f"{dataset}_S{args.seed:g}"
     if not args.use_splice:
         return f"{prefix}_Baseline"
+    if args.splice_mode == "localized":
+        return (
+            f"{prefix}_Localized_t{args.localized_leakage_threshold:g}_"
+            f"s{args.localized_stability}"
+        )
     if args.splice_mode in {"augment", "augment_corr_reg"}:
         augmentations = []
         if args.splice_strong_crop is not None:
@@ -718,6 +786,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
     """Return a short, deterministic checkpoint directory name safe for Windows paths."""
     if not args.use_splice:
         experiment = "base"
+    elif args.splice_mode == "localized":
+        experiment = "localized"
     elif args.splice_mode == "augment":
         experiment = f"aug-{args.splice_routing_mode}"
     elif args.splice_mode == "augment_corr_reg":
@@ -764,6 +834,11 @@ def format_run_name(args: argparse.Namespace) -> str:
         optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
     if not args.use_splice:
         splice_name = "nosplice"
+    elif args.splice_mode == "localized":
+        splice_name = (
+            f"localized_t{args.localized_leakage_threshold:g}_"
+            f"stable{args.localized_stability}_freq{args.localized_probe_freq}"
+        )
     elif args.splice_mode == "augment":
         score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
         threshold_name = (
@@ -942,7 +1017,7 @@ def build_ssl_loader(args: argparse.Namespace):
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
-    return dataset_spec["ssl_loader"](
+    loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
         concept_scorer=concept_scorer,
@@ -953,12 +1028,17 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_routing_seed=args.seed,
         **loader_kwargs,
     )
+    if concept_scorer is not None:
+        loader.dataset.splice_concept_names = [
+            concept_scorer.vocabulary[index] for index in concept_scorer.concept_indices
+        ]
+    return loader
 
 
 def build_rank_loader(args: argparse.Namespace):
     """Build an observational loader that cannot advance the training sampler."""
 
-    if args.rank_eval_freq <= 0:
+    if args.rank_eval_freq <= 0 and args.splice_mode != "localized":
         return None
     dataset_spec = DATASET_REGISTRY[args.dataset]
     loader_kwargs = make_dataloader_kwargs(args, shuffle=False, seed=args.seed + 1_000_000)
@@ -1067,6 +1147,11 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
     model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim)
+    if args.splice_mode == "localized":
+        concept_weights = getattr(train_loader.dataset, "concept_weights", None)
+        if concept_weights is None or concept_weights.ndim != 2:
+            raise ValueError("Localized mode requires a matrix of cached SpLiCE concept weights.")
+        model.enable_localized_scrubber(int(concept_weights.shape[1]))
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
     else:
@@ -1148,6 +1233,54 @@ def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
             temporary_path.unlink()
 
 
+def maybe_update_layer_localized(
+    args: argparse.Namespace,
+    model: SimCLRModel,
+    train_loader,
+    rank_loader,
+    epoch: int,
+    wandb_run,
+) -> None:
+    if args.splice_mode != "localized":
+        return
+    if epoch < args.localized_start_epoch or epoch % args.localized_probe_freq != 0:
+        return
+    if rank_loader is None:
+        raise ValueError("Localized mode requires the ordered rank loader.")
+    concept_weights = getattr(train_loader.dataset, "concept_weights", None)
+    if concept_weights is None:
+        raise ValueError("Localized mode requires cached concept weights on the SSL dataset.")
+    concept_names = list(getattr(train_loader.dataset, "splice_concept_names", []))
+    if len(concept_names) != concept_weights.shape[1]:
+        concept_names = [f"concept_{index}" for index in range(concept_weights.shape[1])]
+    config = LocalizedProbeConfig(
+        ridge=args.localized_probe_ridge,
+        leakage_threshold=args.localized_leakage_threshold,
+        leakage_max=args.localized_leakage_max,
+        stability=args.localized_stability,
+        shuffle_repeats=args.localized_shuffle_repeats,
+        holdout_fraction=args.localized_holdout_fraction,
+        projector_ridge=args.localized_projector_ridge,
+        protect_target=args.localized_protect_target,
+        seed=args.seed,
+    )
+    with preserve_rng_state():
+        metrics = update_localized_scrubber(
+            model,
+            rank_loader,
+            concept_weights,
+            concept_names,
+            epoch,
+            torch.device(args.device),
+            min(args.localized_probe_samples, len(rank_loader.dataset)),
+            config,
+            Path(args.save_folder) / "localized_leakage.jsonl",
+            channels_last=args.channels_last,
+        )
+    if wandb_run is not None:
+        wandb_run.log(metrics, step=epoch)
+
+
 def main() -> None:
     args = parse_args()
     print(args)
@@ -1198,6 +1331,14 @@ def main() -> None:
         time1 = time.time()
         train_metrics = train_one_epoch(
             train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
+        )
+        maybe_update_layer_localized(
+            args,
+            model,
+            train_loader,
+            rank_loader,
+            epoch,
+            wandb_run,
         )
         time2 = time.time()
         print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))

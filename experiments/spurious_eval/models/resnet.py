@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from splice.layer_localized import LayerLocalizedScrubber
+
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -57,6 +59,7 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, block: type[nn.Module], num_blocks: list[int], large_input: bool = False) -> None:
         super().__init__()
+        self.block_expansion = int(block.expansion)
         self.in_planes = 64
         if large_input:
             self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -72,6 +75,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc_reduce = nn.Linear(512, 128) if not large_input else None
+        self.localized_scrubber: LayerLocalizedScrubber | None = None
         self._init_weights()
 
     def _make_layer(self, block: type[nn.Module], planes: int, blocks: int, stride: int) -> nn.Sequential:
@@ -90,16 +94,67 @@ class ResNet(nn.Module):
                 nn.init.constant_(module.weight, 1)
                 nn.init.constant_(module.bias, 0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    @property
+    def stage_dims(self) -> dict[str, int]:
+        return {
+            "stem": 64,
+            "layer1": 64 * self.block_expansion,
+            "layer2": 128 * self.block_expansion,
+            "layer3": 256 * self.block_expansion,
+            "layer4": 512 * self.block_expansion,
+            "encoder": 512 * self.block_expansion,
+        }
+
+    def enable_localized_scrubber(self, max_concepts: int, projection_dim: int | None = None) -> None:
+        stage_dims = self.stage_dims
+        if projection_dim is not None:
+            stage_dims["projection"] = int(projection_dim)
+        self.localized_scrubber = LayerLocalizedScrubber(stage_dims, max_concepts)
+
+    def _scrub(self, stage: str, x: torch.Tensor) -> torch.Tensor:
+        if self.localized_scrubber is None:
+            return x
+        return self.localized_scrubber.apply(stage, x)
+
+    @staticmethod
+    def _pooled(x: torch.Tensor) -> torch.Tensor:
+        return torch.flatten(F.adaptive_avg_pool2d(x, (1, 1)), 1)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_intermediates: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        intermediates = {}
         x = self.relu(self.bn1(self.conv1(x)))
         if self.maxpool is not None:
             x = self.maxpool(x)
+        x = self._scrub("stem", x)
+        if return_intermediates:
+            intermediates["stem"] = self._pooled(x)
         x = self.layer1(x)
+        x = self._scrub("layer1", x)
+        if return_intermediates:
+            intermediates["layer1"] = self._pooled(x)
         x = self.layer2(x)
+        x = self._scrub("layer2", x)
+        if return_intermediates:
+            intermediates["layer2"] = self._pooled(x)
         x = self.layer3(x)
+        x = self._scrub("layer3", x)
+        if return_intermediates:
+            intermediates["layer3"] = self._pooled(x)
         x = self.layer4(x)
+        x = self._scrub("layer4", x)
+        if return_intermediates:
+            intermediates["layer4"] = self._pooled(x)
         x = self.avgpool(x)
-        return torch.flatten(x, 1)
+        x = torch.flatten(x, 1)
+        x = self._scrub("encoder", x)
+        if return_intermediates:
+            intermediates["encoder"] = x
+            return x, intermediates
+        return x
 
 
 MODEL_SPECS = {
