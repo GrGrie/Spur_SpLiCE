@@ -273,7 +273,7 @@ def parse_args() -> argparse.Namespace:
         "--lr_decay_epochs",
         type=str,
         default="auto",
-        help="Comma-separated SSL LR milestones, or 'auto' for 70%, 80%, and 90% of --epochs.",
+        help="Comma-separated SSL LR milestones, or 'auto' for 70%%, 80%%, and 90%% of --epochs.",
     )
     parser.add_argument("--lr_decay_rate", type=float, default=0.1)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
@@ -349,7 +349,7 @@ def parse_args() -> argparse.Namespace:
         "--linear_lr_decay_epochs",
         type=str,
         default="auto",
-        help="Comma-separated probe LR milestones, or 'auto' for 60%, 75%, and 90% of probe epochs.",
+        help="Comma-separated probe LR milestones, or 'auto' for 60%%, 75%%, and 90%% of probe epochs.",
     )
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--linear_weight_decay", type=float, default=0.0)
@@ -376,7 +376,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank_threshold", type=float, default=0.1)
 
     parser.add_argument("--use_splice", type=str_to_bool, nargs="?", const=True, default=False)
-    parser.add_argument("--splice_mode", type=str, default="none", choices=["none", "augment", "corr_reg", "augment_corr_reg"])
+    parser.add_argument(
+        "--splice_mode",
+        type=str,
+        default="none",
+        choices=["none", "augment", "corr_reg", "augment_corr_reg", "counterfactual"],
+    )
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
         "--splice_score_threshold",
@@ -399,6 +404,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
+    parser.add_argument(
+        "--splice_intervention",
+        type=str,
+        default="class_median",
+        choices=["original", "zero_out", "class_median", "matched_swap", "shuffled_swap"],
+        help="Concept edit used to construct residual-preserving CLIP teacher targets.",
+    )
+    parser.add_argument(
+        "--splice_intervention_strength",
+        type=float,
+        default=1.0,
+        help="Alpha in normalize(z + alpha * D_S(c'_S-c_S)); valid range is [0, 2].",
+    )
     parser.add_argument(
         "--splice_conditional_on_target",
         type=str_to_bool,
@@ -556,8 +574,10 @@ def parse_args() -> argparse.Namespace:
         args.splice_concepts = "auto"
     if args.use_splice and args.splice_concepts.strip().lower() == "auto":
         auto_discover_splice_concepts(args)
-    if args.splice_mode in {"corr_reg", "augment_corr_reg"} and args.splice_weight <= 0:
-        parser.error("--splice_weight must be positive for SpLiCE correlation regularization modes.")
+    if args.splice_mode in {"corr_reg", "augment_corr_reg", "counterfactual"} and args.splice_weight <= 0:
+        parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
+    if not 0 <= args.splice_intervention_strength <= 2:
+        parser.error("--splice_intervention_strength must be in the interval [0, 2].")
     if not 0 < args.ssl_crop_min <= 1:
         parser.error("--ssl-crop-min must be in the interval (0, 1].")
     if args.splice_strong_crop is not None and not 0 < args.splice_strong_crop <= 1:
@@ -710,6 +730,11 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         if args.splice_mode == "augment_corr_reg":
             return f"{prefix}_{augmentation}{route}_Corr{args.splice_weight:g}"
         return f"{prefix}_{augmentation}{route}"
+    if args.splice_mode == "counterfactual":
+        return (
+            f"{prefix}_CF-{args.splice_intervention}"
+            f"-A{args.splice_intervention_strength:g}-W{args.splice_weight:g}"
+        )
     conditional = "Y" if args.splice_conditional_on_target else ""
     return f"{prefix}_Corr{args.splice_weight:g}{conditional}"
 
@@ -722,6 +747,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = f"aug-{args.splice_routing_mode}"
     elif args.splice_mode == "augment_corr_reg":
         experiment = f"augcorr-{args.splice_routing_mode}"
+    elif args.splice_mode == "counterfactual":
+        experiment = f"cf-{args.splice_intervention}"
     else:
         experiment = "corr"
 
@@ -772,6 +799,11 @@ def format_run_name(args: argparse.Namespace) -> str:
             else f"{args.splice_score_threshold:g}"
         )
         splice_name = f"augment{threshold_name}_route{args.splice_routing_mode}_{format_strong_aug_name(args)}"
+    elif args.splice_mode == "counterfactual":
+        splice_name = (
+            f"counterfactual_{args.splice_intervention}_"
+            f"a{args.splice_intervention_strength:g}_w{args.splice_weight:g}"
+        )
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
         splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
@@ -986,6 +1018,9 @@ def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
         batch_size=args.splice_batch_size,
         num_workers=args.splice_num_workers,
         conditional_on_target=args.splice_conditional_on_target,
+        intervention=args.splice_intervention,
+        intervention_strength=args.splice_intervention_strength,
+        intervention_seed=args.seed,
         device=args.device,
     )
 
@@ -1066,7 +1101,19 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
-    model = SimCLRModel(name=args.model, head=args.head, feat_dim=args.feat_dim)
+    clip_alignment_dim = (
+        getattr(train_loader.dataset, "control_dim", None)
+        if args.splice_mode == "counterfactual"
+        else None
+    )
+    if args.splice_mode == "counterfactual" and clip_alignment_dim is None:
+        raise ValueError("Counterfactual SpLiCE targets must expose their CLIP embedding dimension.")
+    model = SimCLRModel(
+        name=args.model,
+        head=args.head,
+        feat_dim=args.feat_dim,
+        clip_alignment_dim=clip_alignment_dim,
+    )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
     else:

@@ -112,6 +112,11 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
         self.subset = subset
         self.scores = scores.float()
         self.concept_weights = concept_weights.float() if concept_weights is not None else None
+        self.control_dim = (
+            int(self.concept_weights.shape[1])
+            if self.concept_weights is not None and self.concept_weights.ndim == 2
+            else None
+        )
         self.transform = transform
         self.routing_mode = routing_mode
         self.semantic_threshold = semantic_threshold

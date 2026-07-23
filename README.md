@@ -99,6 +99,38 @@ sbatch --array=0-8 --export=ALL,DATASET=waterbirds,SEED=4 \
   scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 ```
 
+### Counterfactual concept distillation
+
+The new primary method keeps the original frozen CLIP embedding residual and
+edits only the discovered SpLiCE concept contributions:
+
+`z_cf = normalize(z + alpha * D_S * (c'_S - c_S))`.
+
+The resulting embedding is a cached, stop-gradient target for a separate MLP
+head on the SimCLR encoder. The ordinary SimCLR projection head is unchanged.
+
+```powershell
+python spur_splice.py `
+  --dataset waterbirds `
+  --data_folder "D:\Datasets\waterbirds" `
+  --epochs 1 `
+  --linear_probe_epochs 1 `
+  --rank_eval_freq 0 `
+  --splice_mode counterfactual `
+  --splice_concepts "bamboo,forest,hiking,rainforest,raven" `
+  --splice_intervention class_median `
+  --splice_intervention_strength 1.0 `
+  --splice_weight 0.1
+```
+
+Available interventions are `original` (ordinary CLIP distillation control),
+`zero_out`, `class_median` (recommended primary variant), `matched_swap`, and
+`shuffled_swap` (negative control). `matched_swap` uses a donor with the same
+class and a different spurious attribute, selected by nearest residual/core
+CLIP representation. Targets and CLIP embeddings are cached under
+`--splice_score_cache_dir`; the first run therefore performs a one-time
+precomputation before SSL training starts.
+
 ## Reproducibility and evaluation
 
 - Matched seeds use the same SSL initialization.

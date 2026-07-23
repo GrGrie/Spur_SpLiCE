@@ -10,7 +10,13 @@ from experiments.spurious_eval.models.resnet import build_resnet_encoder
 class SimCLRModel(nn.Module):
     """SpurSSL-compatible encoder plus normalized projection head."""
 
-    def __init__(self, name: str = "resnet18_large", head: str = "mlp", feat_dim: int = 128) -> None:
+    def __init__(
+        self,
+        name: str = "resnet18_large",
+        head: str = "mlp",
+        feat_dim: int = 128,
+        clip_alignment_dim: int | None = None,
+    ) -> None:
         super().__init__()
         self.encoder, dim_in = build_resnet_encoder(name)
         self.feature_dim = dim_in
@@ -26,6 +32,13 @@ class SimCLRModel(nn.Module):
             self.head = nn.Identity()
         else:
             raise ValueError(f"Unsupported SimCLR projection head '{head}'. Use linear, mlp, or identity.")
+        self.clip_alignment_head = None
+        if clip_alignment_dim is not None:
+            self.clip_alignment_head = nn.Sequential(
+                nn.Linear(dim_in, dim_in),
+                nn.ReLU(inplace=True),
+                nn.Linear(dim_in, clip_alignment_dim),
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.encoder(x)

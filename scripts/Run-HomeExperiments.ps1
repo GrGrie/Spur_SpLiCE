@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("routing", "augmentation", "sweep")]
+    [ValidateSet("routing", "augmentation", "sweep", "counterfactual")]
     [string]$Family = "routing",
     [int[]]$Seeds = @(4),
     [int[]]$Tasks = @(1, 2),
@@ -13,6 +13,8 @@ param(
     [int]$NumWorkers = 4,
     [int]$GpuIndex = 0,
     [int]$CheckpointFrequency = 25,
+    [double]$CounterfactualWeight = 0.1,
+    [double]$InterventionStrength = 1.0,
     [string]$WandbProject = "Spur_SpLiCE",
     [string]$WandbEntity = "gsgrechkin-rptu",
     [switch]$NoWandb,
@@ -29,11 +31,16 @@ if ($Epochs -lt 1) { throw "Epochs must be positive." }
 if ($BatchSize -lt 1) { throw "BatchSize must be positive." }
 if ($NumWorkers -lt 0) { throw "NumWorkers cannot be negative." }
 if ($CheckpointFrequency -lt 1) { throw "CheckpointFrequency must be positive." }
+if ($CounterfactualWeight -le 0) { throw "CounterfactualWeight must be positive." }
+if ($InterventionStrength -lt 0 -or $InterventionStrength -gt 2) {
+    throw "InterventionStrength must be in [0, 2]."
+}
 
 $validTasks = switch ($Family) {
     "routing"      { 0..4 }
     "augmentation" { 0..4 }
     "sweep"        { 0..8 }
+    "counterfactual" { 0..5 }
 }
 foreach ($task in $Tasks) {
     if ($task -notin $validTasks) {
@@ -68,7 +75,7 @@ if (-not $needsSplice) {
     }
 }
 
-$topK = if ($Family -eq "routing") { 5 } else { 10 }
+$topK = if ($Family -in @("routing", "counterfactual")) { 5 } else { 10 }
 $discoveryJson = Join-Path $familyAutoDirectory "${Dataset}_splice_concepts.json"
 $conceptsFile = Join-Path $familyAutoDirectory "${Dataset}_splice_concepts.concepts.txt"
 try {
@@ -92,7 +99,7 @@ try {
             "--splice_l1_penalty", "0.25",
             "--splice_score_cache_dir", $cacheDirectory
         )
-        if ($Family -eq "routing") {
+        if ($Family -in @("routing", "counterfactual")) {
             $discoveryArguments += @(
                 "--require_consistent_spurious_direction", "true",
                 "--deduplicate_concepts", "true"
@@ -167,6 +174,22 @@ try {
                     "--splice_score_quantile", "0.75",
                     "--splice_routing_mode", "semantic"
                 )
+            } elseif ($Family -eq "counterfactual") {
+                switch ($task) {
+                    0 { $runLabel = "baseline" }
+                    1 { $runLabel = "original_clip"; $spliceMode = "counterfactual"; $intervention = "original" }
+                    2 { $runLabel = "class_median"; $spliceMode = "counterfactual"; $intervention = "class_median" }
+                    3 { $runLabel = "matched_swap"; $spliceMode = "counterfactual"; $intervention = "matched_swap" }
+                    4 { $runLabel = "shuffled_swap"; $spliceMode = "counterfactual"; $intervention = "shuffled_swap" }
+                    5 { $runLabel = "zero_out"; $spliceMode = "counterfactual"; $intervention = "zero_out" }
+                }
+                if ($spliceMode -eq "counterfactual") {
+                    $experimentArguments += @(
+                        "--splice_weight", [string]$CounterfactualWeight,
+                        "--splice_intervention", $intervention,
+                        "--splice_intervention_strength", [string]$InterventionStrength
+                    )
+                }
             } else {
                 switch ($task) {
                     0 { $runLabel = "baseline" }
@@ -204,6 +227,7 @@ try {
             }
 
             $protocolTag = if ($Epochs -eq 1000) { "protocol_e1000" } else { "protocol_short_e${Epochs}" }
+            $linearSpuriousProbe = if ($Family -eq "counterfactual") { "true" } else { "false" }
             $wandbGroup = "${Dataset}_${Family}_home_seed${seed}"
             $wandbTags = "dataset_${Dataset},seed_${seed},family_${Family},task_${runLabel},machine_home_rtx5080,$protocolTag"
             $datasetLabel = if ($Dataset -eq "waterbirds") { "Waterbirds" } else { "SpurCIFAR10" }
@@ -239,6 +263,16 @@ try {
                         8 { "${datasetLabel}_S${seed}_Corr1.0" }
                     }
                 }
+                "counterfactual" {
+                    switch ($task) {
+                        0 { "${datasetLabel}_S${seed}_Baseline" }
+                        1 { "${datasetLabel}_S${seed}_OriginalCLIP" }
+                        2 { "${datasetLabel}_S${seed}_CFMedian" }
+                        3 { "${datasetLabel}_S${seed}_CFMatched" }
+                        4 { "${datasetLabel}_S${seed}_CFShuffled" }
+                        5 { "${datasetLabel}_S${seed}_CFZeroOut" }
+                    }
+                }
             }
             $arguments = @(
                 "spur_splice.py",
@@ -261,7 +295,7 @@ try {
                 "--linear_probe_freq", "25",
                 "--linear_probe_epochs", "100",
                 "--linear_lr_decay_epochs", "auto",
-                "--linear_spurious_probe", "false",
+                "--linear_spurious_probe", $linearSpuriousProbe,
                 "--amp", "true",
                 "--channels_last", "true",
                 "--cudnn_enabled", "true",

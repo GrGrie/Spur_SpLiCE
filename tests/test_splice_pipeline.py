@@ -15,7 +15,14 @@ from experiments.spurious_eval.datasets.transforms import (
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
-from splice.ssl_regularization import CorrelationSpliceRegularizer, SpliceConfig, score_cache_path
+from splice.ssl_regularization import (
+    CorrelationSpliceRegularizer,
+    CounterfactualSpliceDistillation,
+    SpliceConfig,
+    edit_spurious_concept_weights,
+    residual_preserving_intervention,
+    score_cache_path,
+)
 from splice.model import SPLICE
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.discover_splice_spurious_concepts import SparseConceptWeights, rank_concepts
@@ -109,6 +116,44 @@ class SplicePipelineTests(unittest.TestCase):
         loss.backward()
         self.assertGreater(float(loss), 0.15)
         self.assertGreater(float(embeddings.grad.norm()), 0.0)
+
+    def test_residual_preserving_intervention_changes_only_selected_direction_before_normalization(self):
+        embeddings = torch.tensor([[0.6, 0.8, 0.0]])
+        weights = torch.tensor([[0.2]])
+        edited = torch.tensor([[0.0]])
+        directions = torch.tensor([[1.0, 0.0, 0.0]])
+        actual = residual_preserving_intervention(embeddings, weights, edited, directions, strength=0.5)
+        expected = torch.nn.functional.normalize(torch.tensor([[0.5, 0.8, 0.0]]), dim=1)
+        torch.testing.assert_close(actual, expected)
+
+    def test_counterfactual_edits_include_median_and_matched_controls(self):
+        weights = torch.tensor([[0.0], [2.0], [10.0], [12.0]])
+        embeddings = torch.tensor(
+            [[0.0, 1.0, 0.0], [2.0, 0.0, 1.0], [10.0, 0.9, 0.1], [12.0, 0.1, 0.9]]
+        )
+        directions = torch.tensor([[1.0, 0.0, 0.0]])
+        targets = torch.zeros(4, dtype=torch.long)
+        spurious = torch.tensor([0, 0, 1, 1])
+        median = edit_spurious_concept_weights(
+            "class_median", weights, embeddings, directions, targets, spurious
+        )
+        torch.testing.assert_close(median, torch.full_like(weights, 2.0))
+        matched = edit_spurious_concept_weights(
+            "matched_swap", weights, embeddings, directions, targets, spurious
+        )
+        torch.testing.assert_close(matched, torch.tensor([[10.0], [12.0], [0.0], [2.0]]))
+        zeroed = edit_spurious_concept_weights(
+            "zero_out", weights, embeddings, directions, targets, spurious
+        )
+        torch.testing.assert_close(zeroed, torch.zeros_like(weights))
+
+    def test_counterfactual_distillation_stops_teacher_gradients(self):
+        predictions = torch.tensor([[1.0, 0.0], [0.0, 1.0]], requires_grad=True)
+        teacher = torch.tensor([[0.0, 1.0], [0.0, 1.0]], requires_grad=True)
+        loss = CounterfactualSpliceDistillation(0.5)(predictions, teacher)
+        loss.backward()
+        self.assertGreater(float(predictions.grad.norm()), 0.0)
+        self.assertIsNone(teacher.grad)
 
     def test_sparse_discovery_storage_selects_concepts_without_dense_vocab(self):
         weights = SparseConceptWeights(

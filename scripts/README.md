@@ -54,6 +54,14 @@ To launch only selected experiments:
 .\scripts\Run-HomeExperiments.ps1 `
   -Family sweep -Seeds 4 -Tasks 7 `
   -DataFolder "D:\Datasets\waterbirds"
+
+# Counterfactual distillation:
+# 0 baseline, 1 original CLIP, 2 class median, 3 matched swap,
+# 4 shuffled-swap control, 5 zero-out sanity check
+.\scripts\Run-HomeExperiments.ps1 `
+  -Family counterfactual -Seeds 0 -Tasks 0,1,2,3,4,5 `
+  -Epochs 1 -CounterfactualWeight 0.1 -InterventionStrength 1.0 `
+  -DataFolder "D:\Datasets\waterbirds" -NoWandb
 ```
 
 Use `-Epochs 500` only for triage. The runner scales the learning-rate
