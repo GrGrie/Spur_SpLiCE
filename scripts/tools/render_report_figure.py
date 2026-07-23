@@ -70,7 +70,7 @@ def main() -> None:
         y += 98
 
     draw.text((x0, 1040), "Final epoch-1000 summaries; seeds 1, 3, and 4.", fill="#526075", font=tick_font)
-    out = Path(__file__).resolve().parents[1] / "figures" / "current_postrepair_wg.png"
+    out = Path(__file__).resolve().parents[2] / "figures" / "current_postrepair_wg.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     image.save(out, optimize=True)
     print(out)

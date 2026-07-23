@@ -35,8 +35,8 @@ from splice.ssl_regularization import (
     dataset_score_cache_key,
     splice_mode_uses_scores,
 )
-from tools import discover_splice_spurious_concepts as concept_discovery
-from tools import summarize_splice_scores as score_summary
+from scripts.tools import discover_splice_spurious_concepts as concept_discovery
+from scripts.tools import summarize_splice_scores as score_summary
 
 
 def str_to_bool(value) -> bool:
@@ -269,7 +269,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=1000)
 
     parser.add_argument("--learning_rate", type=float, default=0.01)
-    parser.add_argument("--lr_decay_epochs", type=str, default="700,800,900")
+    parser.add_argument(
+        "--lr_decay_epochs",
+        type=str,
+        default="auto",
+        help="Comma-separated SSL LR milestones, or 'auto' for 70%, 80%, and 90% of --epochs.",
+    )
     parser.add_argument("--lr_decay_rate", type=float, default=0.1)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--momentum", type=float, default=0.9)
@@ -340,7 +345,12 @@ def parse_args() -> argparse.Namespace:
         help="Run periodic linear evaluation every N SSL epochs (default: 25, independent of save_freq).",
     )
     parser.add_argument("--linear_learning_rate", type=float, default=1.0)
-    parser.add_argument("--linear_lr_decay_epochs", type=str, default="60,75,90")
+    parser.add_argument(
+        "--linear_lr_decay_epochs",
+        type=str,
+        default="auto",
+        help="Comma-separated probe LR milestones, or 'auto' for 60%, 75%, and 90% of probe epochs.",
+    )
     parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--linear_weight_decay", type=float, default=0.0)
     parser.add_argument(
@@ -354,6 +364,11 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
+    parser.add_argument(
+        "--wandb_run_name",
+        default="",
+        help="Optional concise W&B display name. Checkpoint directories retain the full reproducibility name.",
+    )
     parser.add_argument("--entity", default="gsgrechkin-rptu")
     parser.add_argument("--wandb_group", default="")
     parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
@@ -521,8 +536,19 @@ def parse_args() -> argparse.Namespace:
         args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
     except ValueError as exc:
         parser.error(str(exc))
-    args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
-    args.linear_lr_decay_epochs = [int(epoch.strip()) for epoch in args.linear_lr_decay_epochs.split(",") if epoch.strip()]
+    if args.epochs <= 0:
+        parser.error("--epochs must be positive.")
+    if args.linear_probe_epochs <= 0:
+        parser.error("--linear_probe_epochs must be positive.")
+    try:
+        args.lr_decay_epochs = resolve_epoch_schedule(args.lr_decay_epochs, args.epochs, (0.70, 0.80, 0.90))
+        args.linear_lr_decay_epochs = resolve_epoch_schedule(
+            args.linear_lr_decay_epochs,
+            args.linear_probe_epochs,
+            (0.60, 0.75, 0.90),
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.use_splice and args.splice_mode == "none":
         args.splice_mode = "corr_reg"
     args.use_splice = args.splice_mode != "none"
@@ -618,10 +644,71 @@ def parse_args() -> argparse.Namespace:
         json.dumps(discovery_fingerprint_payload, sort_keys=True).encode("utf-8")
     ).hexdigest()[:12]
     args.model_name = format_run_name(args)
+    args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
     args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
     os.makedirs(args.save_folder, exist_ok=True)
     write_run_config(args)
     return args
+
+
+def resolve_epoch_schedule(value: str, total_epochs: int, fractions: tuple[float, ...]) -> list[int]:
+    """Resolve explicit milestones or scale an automatic schedule to a run length."""
+    normalized = str(value).strip().lower()
+    if normalized == "auto":
+        milestones = sorted(
+            {
+                int(round(total_epochs * fraction))
+                for fraction in fractions
+                if 0 < int(round(total_epochs * fraction)) < total_epochs
+            }
+        )
+    else:
+        try:
+            milestones = [int(epoch.strip()) for epoch in normalized.split(",") if epoch.strip()]
+        except ValueError as exc:
+            raise ValueError("LR milestones must be comma-separated integers or 'auto'.") from exc
+    if any(epoch <= 0 or epoch >= total_epochs for epoch in milestones):
+        raise ValueError(f"LR milestones must be between 1 and {total_epochs - 1}; got {milestones}.")
+    if milestones != sorted(set(milestones)):
+        raise ValueError(f"LR milestones must be unique and increasing; got {milestones}.")
+    return milestones
+
+
+def format_wandb_run_name(args: argparse.Namespace) -> str:
+    """Return a short human-facing name; full details remain in W&B config and checkpoint paths."""
+    dataset = {
+        "waterbirds": "Waterbirds",
+        "spur_cifar10": "SpurCIFAR10",
+        "celeba": "CelebA",
+        "celebA": "CelebA",
+        "CelebA": "CelebA",
+    }.get(args.dataset, args.dataset)
+    prefix = f"{dataset}_S{args.seed:g}"
+    if not args.use_splice:
+        return f"{prefix}_Baseline"
+    if args.splice_mode in {"augment", "augment_corr_reg"}:
+        augmentations = []
+        if args.splice_strong_crop is not None:
+            augmentations.append("Crop")
+        if args.splice_strong_color_jitter is not None or args.splice_strong_color_jitter_p is not None:
+            augmentations.append("ColorJitter")
+        if args.splice_strong_grayscale_p is not None:
+            augmentations.append("Grayscale")
+        if (
+            args.splice_strong_blur_p is not None
+            or args.splice_strong_blur_kernel_size is not None
+            or args.splice_strong_blur_sigma is not None
+        ):
+            augmentations.append("Blur")
+        if args.dataset == "spur_cifar10" and args.splice_strong_line_recolor:
+            augmentations.append("LineRecolor")
+        augmentation = "All" if len(augmentations) >= 4 else "+".join(augmentations) or "StandardAug"
+        route = "" if args.splice_routing_mode == "semantic" else f"_{args.splice_routing_mode.title()}"
+        if args.splice_mode == "augment_corr_reg":
+            return f"{prefix}_{augmentation}{route}_Corr{args.splice_weight:g}"
+        return f"{prefix}_{augmentation}{route}"
+    conditional = "Y" if args.splice_conditional_on_target else ""
+    return f"{prefix}_Corr{args.splice_weight:g}{conditional}"
 
 
 def format_run_name(args: argparse.Namespace) -> str:
@@ -1032,7 +1119,7 @@ def main() -> None:
             wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
             wandb_run = wandb.init(
                 project=args.wandb_name,
-                name=args.model_name,
+                name=args.wandb_run_name,
                 config=wandb_config,
                 entity=args.entity,
                 group=args.wandb_group or None,

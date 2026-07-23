@@ -147,7 +147,7 @@ def save_decomposition_cache(args, split: str, matrix, labels, metadata) -> None
 
 
 def automatically_discover_interventions(args, train_subset):
-    from tools import discover_splice_spurious_concepts as discovery
+    from scripts.tools import discover_splice_spurious_concepts as discovery
 
     discovery_path = Path(args.auto_out_dir) / f"{args.dataset}_splice_concepts.json"
     concepts_path = discovery_path.with_suffix(".concepts.txt")
@@ -352,7 +352,7 @@ def main(args: argparse.Namespace | None = None) -> dict[str, object]:
     if args.use_wandb:
         import wandb
 
-        run = wandb.init(project=args.wandb_name, entity=args.entity, config=vars(args), name=f"splice_cbm_{args.dataset}")
+        run = wandb.init(project=args.wandb_name, entity=args.entity, config=vars(args), name=f"{args.dataset}_CBM")
         run.log(
             {
                 "SpLiCE-CBM average accuracy": baseline["average_accuracy"] * 100,

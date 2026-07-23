@@ -19,9 +19,9 @@ set -euo pipefail
 #   task 0:    SimCLR baseline
 #   tasks 1-4: automatic SpLiCE augmentation quantiles
 #   tasks 5-8: conditional vector-correlation weights
-# Submit with: sbatch waterbirds_SpLiCE_hyperparameter_array.sbatch
+# Submit with: sbatch scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 # SpurCIFAR10 example:
-# sbatch --job-name=SpurCIFAR10_SpLiCE_sweep --export=ALL,DATASET=spur_cifar10,SEED=0 waterbirds_SpLiCE_hyperparameter_array.sbatch
+# sbatch --job-name=SpurCIFAR10_SpLiCE_sweep --export=ALL,DATASET=spur_cifar10,SEED=0 scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 
 # ------------------------- paths and environment -------------------------
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
@@ -33,9 +33,11 @@ DATASET="${DATASET:-waterbirds}"
 case "${DATASET}" in
     waterbirds|celeba|CelebA|celebA)
         MODEL="${MODEL:-resnet18_large}"
+        WANDB_DATASET_LABEL="$([[ "${DATASET}" == "waterbirds" ]] && echo Waterbirds || echo CelebA)"
         ;;
     spur_cifar10)
         MODEL="${MODEL:-resnet18}"
+        WANDB_DATASET_LABEL="SpurCIFAR10"
         ;;
     *)
         echo "Unsupported DATASET=${DATASET}" >&2
@@ -86,46 +88,46 @@ WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 # stable routed fraction when the automatically selected concepts change.
 case "${SLURM_ARRAY_TASK_ID}" in
     0)
-        RUN_LABEL="baseline"
+        RUN_LABEL="Baseline"
         SPLICE_MODE="none"
         ;;
     1)
-        RUN_LABEL="augment_q50"
+        RUN_LABEL="Q50"
         SPLICE_MODE="augment"
         SPLICE_SCORE_QUANTILE=0.50
         ;;
     2)
-        RUN_LABEL="augment_q75"
+        RUN_LABEL="Q75"
         SPLICE_MODE="augment"
         SPLICE_SCORE_QUANTILE=0.75
         ;;
     3)
-        RUN_LABEL="augment_q90"
+        RUN_LABEL="Q90"
         SPLICE_MODE="augment"
         SPLICE_SCORE_QUANTILE=0.90
         ;;
     4)
-        RUN_LABEL="augment_q95"
+        RUN_LABEL="Q95"
         SPLICE_MODE="augment"
         SPLICE_SCORE_QUANTILE=0.95
         ;;
     5)
-        RUN_LABEL="corr_w0.001"
+        RUN_LABEL="Corr0.001"
         SPLICE_MODE="corr_reg"
         SPLICE_WEIGHT=0.001
         ;;
     6)
-        RUN_LABEL="corr_w0.01"
+        RUN_LABEL="Corr0.01"
         SPLICE_MODE="corr_reg"
         SPLICE_WEIGHT=0.01
         ;;
     7)
-        RUN_LABEL="corr_w0.1"
+        RUN_LABEL="Corr0.1"
         SPLICE_MODE="corr_reg"
         SPLICE_WEIGHT=0.1
         ;;
     8)
-        RUN_LABEL="corr_w1.0"
+        RUN_LABEL="Corr1.0"
         SPLICE_MODE="corr_reg"
         SPLICE_WEIGHT=1.0
         ;;
@@ -163,7 +165,7 @@ exec 9>"${DISCOVERY_LOCK}"
 flock 9
 if [[ ! -s "${CONCEPTS_FILE}" ]]; then
     echo "[SpLiCE] Discovering the shared automatic top-${SPLICE_AUTO_TOP_K} concept set..."
-    python tools/discover_splice_spurious_concepts.py \
+    python scripts/tools/discover_splice_spurious_concepts.py \
         --dataset "${DATASET}" \
         --data_folder "${DATA_FOLDER}" \
         --split train \
@@ -192,6 +194,7 @@ SPLICE_CONCEPTS="$(tr -d '\r\n' < "${CONCEPTS_FILE}")"
 COMMON_ARGS=(
     --use_wandb
     --wandb_name "${WANDB_NAME}"
+    --wandb_run_name "${WANDB_DATASET_LABEL}_S${SEED}_${RUN_LABEL}"
     --entity "${WANDB_ENTITY}"
     --wandb_group "${WANDB_GROUP}"
     --wandb_tags "${WANDB_TAGS}"

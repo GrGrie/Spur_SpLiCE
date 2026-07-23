@@ -25,6 +25,7 @@ CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-./datasets}"
 DATASET="${DATASET:-waterbirds}"
 MODEL="${MODEL:-resnet18_large}"
+WANDB_DATASET_LABEL="$([[ "${DATASET}" == "waterbirds" ]] && echo Waterbirds || echo "${DATASET}")"
 SEED="${SEED:-1}"
 EPOCHS="${EPOCHS:-1000}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
@@ -58,11 +59,11 @@ WANDB_NAME="${WANDB_NAME:-Spur_SpLiCE}"
 WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 
 case "${SLURM_ARRAY_TASK_ID}" in
-    0) RUN_LABEL="baseline"; SPLICE_MODE="none"; ROUTING_MODE="semantic" ;;
-    1) RUN_LABEL="top5_semantic_q75"; SPLICE_MODE="augment"; ROUTING_MODE="semantic" ;;
-    2) RUN_LABEL="top5_shuffled_q75"; SPLICE_MODE="augment"; ROUTING_MODE="shuffled" ;;
-    3) RUN_LABEL="top5_random_q75"; SPLICE_MODE="augment"; ROUTING_MODE="random" ;;
-    4) RUN_LABEL="top5_all"; SPLICE_MODE="augment"; ROUTING_MODE="all" ;;
+    0) RUN_LABEL="Baseline"; SPLICE_MODE="none"; ROUTING_MODE="semantic" ;;
+    1) RUN_LABEL="Semantic"; SPLICE_MODE="augment"; ROUTING_MODE="semantic" ;;
+    2) RUN_LABEL="Shuffled"; SPLICE_MODE="augment"; ROUTING_MODE="shuffled" ;;
+    3) RUN_LABEL="Random"; SPLICE_MODE="augment"; ROUTING_MODE="random" ;;
+    4) RUN_LABEL="AugmentAll"; SPLICE_MODE="augment"; ROUTING_MODE="all" ;;
     *) echo "Unknown SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}" >&2; exit 2 ;;
 esac
 
@@ -89,7 +90,7 @@ fi
 exec 9>"${DISCOVERY_LOCK}"
 flock 9
 if [[ ! -s "${CONCEPTS_FILE}" ]]; then
-    python tools/discover_splice_spurious_concepts.py \
+    python scripts/tools/discover_splice_spurious_concepts.py \
         --dataset "${DATASET}" \
         --data_folder "${DATA_FOLDER}" \
         --split train \
@@ -120,6 +121,7 @@ SPLICE_CONCEPTS="$(tr -d '\r\n' < "${CONCEPTS_FILE}")"
 COMMON_ARGS=(
     --use_wandb
     --wandb_name "${WANDB_NAME}"
+    --wandb_run_name "${WANDB_DATASET_LABEL}_S${SEED}_${RUN_LABEL}"
     --entity "${WANDB_ENTITY}"
     --wandb_group "${WANDB_GROUP}"
     --wandb_tags "${WANDB_TAGS}"

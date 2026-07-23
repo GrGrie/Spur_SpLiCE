@@ -8,20 +8,13 @@ GITHUB_HOST_LINK = "https://raw.githubusercontent.com/AI4LIFE-GROUP/SpLiCE/main/
 LOCAL_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 
 SUPPORTED_MODELS = {
-    "clip": [
-        "ViT-B/32",
-        "ViT-B/16",
-        "RN50"
-    ],
     "open_clip": [
         "ViT-B-32"
     ]
 }
 
 SUPPORTED_VOCAB = [
-    "laion",
-    "laion_bigrams",
-    "mscoco"
+    "laion"
 ]
 
 def available_models():

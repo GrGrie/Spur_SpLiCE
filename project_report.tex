@@ -29,7 +29,7 @@
 \title{\textbf{Concept-Guided Mitigation of Spurious Correlations in Self-Supervised Representations}\\[0.4em]
 \large Progress report for supervisor meeting}
 \author{Grigory Grechkin}
-\date{21 July 2026}
+\date{22 July 2026}
 
 \begin{document}
 \maketitle
@@ -41,14 +41,17 @@
 I built a reproducible pipeline that uses a frozen, interpretable SpLiCE model
 to discover possible background concepts and to guide SimCLR training. The
 current post-repair experiments do \emph{not} show a reliable worst-group (WG)
-improvement over matched SimCLR. The strongest completed revised setting,
+improvement over matched SimCLR. The strongest completed broad-sweep setting,
 correlation regularization with $\lambda=0.1$, reaches
 $48.49\pm4.37\%$ WG accuracy versus $48.04\pm2.82\%$ for SimCLR
 ($+0.45$ points on average), but the paired seed effects are
 $+2.38,+6.27,-7.30$ points. This is therefore a diagnostic result, not evidence
-of a robust gain. The most promising next step is to improve concept selection
-and use the concepts to construct cross-background positive pairs directly
-inside the contrastive objective.
+of a robust gain. I have now implemented the higher-information follow-up:
+automatic direction-consistent top-5 discovery plus matched semantic,
+shuffled, random, and augment-all routing controls. The first two completed
+paired seeds do not show semantic routing beating shuffled routing; the
+remaining control runs are still in progress. This result should be completed
+before moving to cross-background positive pairs inside the contrastive objective.
 \end{minipage}}
 \end{center}
 
@@ -81,17 +84,18 @@ Question & Current answer \\
 What was built? & End-to-end concept discovery, cached SpLiCE scoring,
 concept-guided augmentation, conditional correlation regularization, periodic
 target and leakage probes, guarded test evaluation, and reproducible Slurm/W\&B
-experiment arrays. \\
+experiment arrays. The newest array includes matched semantic, shuffled,
+random, and augment-all controls. \\
 What is the main result? & The revised automatic methods have not yet produced
 a stable WG improvement across comparable seeds. REG $\lambda=0.1$ is the only
 completed setting above baseline in the three-seed mean, and only by 0.45 points. \\
 What did we learn? & The intervention effect is strongly seed-dependent; the
 small REG weight was effectively negligible; aggressive routed augmentation can
-make optimization harder; and the current automatic concept set is not purely
-background-specific. \\
-What should happen next? & Audit concept direction and specificity, add shuffled
-and random-routing controls, then test concept-conditioned cross-background
-contrastive positives before spending compute on more seeds or final test runs. \\
+make optimization harder; and reducing the list to five direction-consistent
+concepts has not yet made semantic routing outperform its shuffled control. \\
+What should happen next? & Finish the running routing controls and apply the
+predefined stop rule. Only if semantic routing beats both matched controls
+should concept-conditioned cross-background positives be the next training change. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -138,8 +142,11 @@ replacement for the ResNet classifier.
 The current configuration uses an \texttt{open\_clip:ViT-B-32} backbone with
 \texttt{laion2b\_s34b\_b79k} weights, the LAION vocabulary of size 10\,000, and
 an $\ell_1$ penalty of 0.25. SpLiCE returns a sparse nonnegative concept vector.
-After automatic dataset-level selection of ten coordinates, their full
-per-image vector is retained for regularization. A scalar maximum is used only
+The broad sweep used ten automatically selected coordinates. The new routing
+control series automatically selects five coordinates, requires the signed
+background effect to agree across target classes, and removes simple lexical
+duplicates without a manually curated list. The full per-image vector is retained
+for regularization. A scalar maximum is used only
 for routing images to the strong-augmentation branch. The augmentation and
 correlation objectives are extensions developed in this project rather than
 methods claimed by the original SpLiCE paper; the sparse CBM intervention is
@@ -155,10 +162,12 @@ the closest direct analogue of concept-space editing.
 Workstream & Implementation & Scientific value \\
 \midrule
 Bias discovery & Dataset-level conditional ranking of SpLiCE concepts using
-target and background metadata; shared cached top-$K$ vectors. & Turns a vague
+target and background metadata; shared cached top-$K$ vectors; automatic signed
+direction filtering and lexical deduplication. & Turns a vague
 idea (``find background concepts'') into a reproducible, inspectable signal. \\
 Training interventions & Concept-routed strong augmentation and a
-target-conditioned feature--concept correlation penalty. & Tests two distinct
+target-conditioned feature--concept correlation penalty, with semantic,
+shuffled, matched-random, and augment-all routing modes. & Tests two distinct
 mechanisms: invariance through views and information removal through a loss. \\
 Evaluation & Periodic balanced linear probes, WG metrics, optional spurious
 attribute probe, and a final-test guard. & Separates average performance from
@@ -191,22 +200,26 @@ logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
 
     \item If a SpLiCE mode is enabled, the training split is decomposed once by
     a frozen SpLiCE model. Concepts are ranked using target- and spurious-group
-    metadata, and the shared dataset-level top-10 is cached. For example, for the
-    Waterbirds runs this set is \texttt{bamboo, forests, whale, rainforest,
-    raven, forest, seascape, lake, snorkeling, pond}.
+    metadata, and the shared dataset-level top-$K$ is cached. The broad sweep
+    used top-10: \texttt{bamboo, forests, whale, rainforest, raven, forest,
+    seascape, lake, snorkeling, pond}. The new routing controls use the automatic
+    direction-consistent, deduplicated top-5:
+    \texttt{bamboo, forests, whale, rainforest, raven}.
 
     \item The Waterbirds SSL dataset wraps the usual WILDS-style subset with
     the cached selected-concept vectors. Each item returns two SimCLR views,
-    the label, metadata, and a vector $c(x)\in\mathbb{R}^{10}_{\geq 0}$.
+    the label, metadata, and a vector $c(x)\in\mathbb{R}^{K}_{\geq 0}$.
 
     \item In \texttt{augment} mode, $r(x)=\max_k c_k(x)$ controls routing. The
-    threshold is a quantile computed on the training split. A high-score image produces the pair
+    threshold is a quantile computed on the training split. The semantic,
+    shuffled, and matched-random controls route exactly 1,199 of 4,795 training
+    images (25.01\%); the augment-all control routes all 4,795. A high-score image produces the pair
     $[T_{\mathrm{std}}(x),T_{\mathrm{strong}}(x)]$; a low-score image produces
     two standard views. This gives SimCLR an explicit invariance pair without
     corrupting both views with the strong transform.
 
     \item In \texttt{corr\_reg} mode, the loss penalizes the complete matrix of
-    correlations between SSL dimensions and the ten selected concepts. Both
+    correlations between SSL dimensions and the selected concepts. Both
     representations are centred within each target class before correlations
     are computed. This label-conditioned formulation avoids penalizing useful
     target information merely because target and background are correlated in
@@ -222,11 +235,10 @@ logging. SpLiCE is enabled through \texttt{--splice\_mode}, with supported modes
 \section{Supporting Tools}
 
 Utility scripts and caches were added to make the SpLiCE configuration reproducible.
-\texttt{tools/
-discover\_splice\_spurious\_concepts.py} decomposes images by
+\texttt{scripts/tools/discover\_splice\_spurious\_concepts.py} decomposes images by
 metadata group and ranks concepts by how strongly they vary with the spurious
 attribute while penalizing class-label effects. This helps choose candidate
-background concepts. \texttt{tools/summarize\_splice\_scores.py} reports the
+background concepts. \texttt{scripts/tools/summarize\_splice\_scores.py} reports the
 distribution of selected concept scores. A sparse SpLiCE-CBM entry point and optional
 representation/probe interventions were also added.
 
@@ -241,7 +253,9 @@ below.
 The primary revised comparison uses post-repair seeds 1, 3, and 4. The
 augmentation sweep varies the train-score quantile $q$; the regularization sweep
 varies $\lambda$. The augmentation-component array keeps $q=0.75$ and changes
-only the strong transform. Runs are compared using the mean of the final ten
+only the strong transform. The subsequent routing-control array fixes $q=0.75$
+and automatic $K=5$, changing only which images receive the same strong
+second-view transform. Runs are compared using the mean of the final ten
 periodic validation probes at SSL epoch 1000; per-run peak epochs are not used
 for selection. Seeds 0 and 2 predate the reproducibility repair and are shown
 only to make the experimental history transparent.
@@ -260,6 +274,7 @@ SpLiCE model & \texttt{open\_clip:ViT-B-32}, \texttt{laion2b\_s34b\_b79k} \\
 Vocabulary & \texttt{LAION}, size 10\,000 \\
 Selected Top-10 SpLiCE concepts & bamboo,forests,whale,rainforest,raven,forest,seascape,
 lake,snorkeling,pond \\
+Routing-control Top-5 concepts & bamboo,forests,whale,rainforest,raven \\
 SpLiCE routing & maximum over selected vector; train quantile $q$ \\
 Linear-probe train split & \texttt{ds\_train} (group-balanced) \\
 Batch size & 256 \\
@@ -363,6 +378,54 @@ correlation penalty. It does support the broader research program: the pipeline
 can discover interpretable proxies, expose failure modes, and test better ways
 to use those proxies. Final test evaluation should remain locked.
 
+\subsection{Automatic Top-5 Routing Controls (In Progress)}
+
+The next experiment asks whether the \emph{semantic assignment} produced by
+SpLiCE matters, rather than merely applying an additional augmentation to a
+quarter of the training set. Concept selection is fully automatic: it keeps
+five concepts, rejects simple lexical duplicates, and requires the signed
+background effect to have the same direction in both target classes. No
+manually curated concept list is used. Semantic, shuffled, and random routing
+all augment exactly 1,199 of 4,795 images; only the deliberately unmatched
+\texttt{all} control augments the entire training set.
+
+\begin{table}[ht]
+\centering
+\scriptsize
+\caption{Top-5 routing controls. Values are average / WG validation accuracy
+(\%). Unmarked cells are final epoch-1000 averages over the last ten probes.
+Cells marked $^{*}$ are temporary snapshots from running jobs and are not used
+for model selection or aggregate claims.}
+\label{tab:routing_controls}
+\begin{tabularx}{\textwidth}{l>{\centering\arraybackslash}X
+>{\centering\arraybackslash}X>{\centering\arraybackslash}Xl}
+\toprule
+Routing policy & Seed 1 & Seed 3 & Seed 4 & Status at snapshot \\
+\midrule
+Matched SimCLR baseline & 55.00/48.20 & 52.79/45.14 & 52.81/50.77 & final \\
+Semantic top-5 & 52.28/46.45 & 55.75/48.12 & 51.31/47.71$^{*}$ & S1/S3 final; S4 E175 \\
+Shuffled scores & 55.08/48.09 & 52.65/48.44 & 53.15/42.11$^{*}$ & S1/S3 final; S4 E175 \\
+Matched random & 54.05/43.68 & 52.78/44.78$^{*}$ & 55.50/46.02$^{*}$ & S1 final; S3 E200; S4 E175 \\
+Augment all & 53.32/48.35$^{*}$ & 49.98/46.40$^{*}$ & 56.18/46.02$^{*}$ & S1 E650; S3 E100; S4 E75 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The two completed semantic--shuffled pairs already provide an important
+diagnostic. Semantic routing trails shuffled routing by 1.65 WG points on seed
+1 and by 0.32 points on seed 3. Relative to matched SimCLR, semantic routing is
+$-1.75$ points on seed 1 and $+2.98$ on seed 3; shuffled routing is $-0.11$ and
+$+3.30$. Thus the current completed evidence does not show that the semantic
+image assignment is responsible for the gain. On the only completed random
+control (seed 1), semantic routing is 2.76 points better than random, but both
+semantic and random remain below the matched baseline. The running cells are
+reported only for transparency because early-epoch WG values are not reliable
+predictors of the final-ten epoch-1000 result.
+
+\noindent\textit{W\&B snapshot queried on 22 July 2026 at approximately
+07:24 UTC. Five of twelve routing-control runs were final at the snapshot; the
+remaining jobs were still active.}
+
 \subsection{Strong-Augmentation Components}
 
 \begin{table}[ht]
@@ -379,10 +442,10 @@ validation accuracy (\%). Seeds 0 and 2 predate the reproducibility repair.}
 Strong transform & S0$\dagger$ & S1 & S2$\dagger$ & S3 & S4 & Post-repair WG \\
 \midrule
 All components & 50.33/39.29 & 54.07/52.08 & 56.16/49.36 & 50.77/43.85 & 52.94/46.87 & $47.60\pm4.16$ \\
-Crop only & 52.44/44.80 & 53.72/45.03 & 55.40/46.10 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
-Color jitter only & 48.23/39.08 & 57.80/45.19 & 54.96/44.84 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
-Grayscale only & 53.53/48.52 & 51.66/46.99 & 52.70/38.80 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
-Gaussian blur only & 44.79/34.12 & 51.13/48.91 & 52.49/44.35 & \texttt{TODO} & \texttt{TODO} & -- ($n=1$) \\
+Crop only & 52.44/44.80 & 53.72/45.03 & 55.40/46.10 & not run & not run & -- ($n=1$) \\
+Color jitter only & 48.23/39.08 & 57.80/45.19 & 54.96/44.84 & not run & not run & -- ($n=1$) \\
+Grayscale only & 53.53/48.52 & 51.66/46.99 & 52.70/38.80 & not run & not run & -- ($n=1$) \\
+Gaussian blur only & 44.79/34.12 & 51.13/48.91 & 52.49/44.35 & not run & not run & -- ($n=1$) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -420,28 +483,18 @@ run IDs and this result table, and do not launch final-test jobs. The completed
 sweep is sufficient to stop broad sweeps of the current formulation; more seeds
 should be reserved for a method that first passes the controls below.
 
-\subsection{Priority 1: Validate the SpLiCE Signal Before Changing the Loss}
+\subsection{Priority 1: Complete the SpLiCE Signal Validation}
 
-The selected set contains plausible background concepts (\texttt{forest},
-\texttt{lake}, \texttt{pond}) but also ambiguous or target-related concepts
-(\texttt{raven}, \texttt{whale}, \texttt{snorkeling}). Moreover, the current
-discovery score uses absolute background differences. It penalizes differences
-in \emph{magnitude} across target classes but does not explicitly reject a
-concept whose signed background effect reverses between bird classes. This is a
-high-value methodological check.
-
-Run the following inexpensive ablations before designing a more complex model:
-\begin{enumerate}
-    \item compare top-$K\in\{3,5,10,20\}$ and merge near-duplicate vocabulary
-    items such as \texttt{forest}/\texttt{forests};
-    \item require consistent signed background direction across target classes,
-    or rank concepts by a small cross-validated background probe conditioned on
-    target;
-    \item compare the automatic list with a curated background-only list;
-    \item add random routing and shuffled SpLiCE-score controls at the same
-    routed fraction. A gain over standard SimCLR but not over these controls
-    would be an augmentation-strength effect, not evidence for semantic routing.
-\end{enumerate}
+The direction-consistency, automatic deduplication, top-5 selection, and
+matched routing controls are now implemented. The selected list remains
+partly ambiguous (notably \texttt{raven} and \texttt{whale}), but it contains
+no manual intervention. The immediate task is to let all twelve control runs
+finish and evaluate the predefined comparison: semantic routing must beat both
+shuffled and matched-random routing in paired WG accuracy. The first two
+completed semantic--shuffled pairs do not meet that criterion. If this remains
+true after seeds 1, 3, and 4 complete, the claim should be that strong
+augmentation sometimes helps but the current SpLiCE semantic assignment has
+not been validated. No final-test job should be launched in that case.
 
 \subsection{Priority 2: Make the Contrastive Objective Concept-Aware}
 
@@ -499,16 +552,14 @@ Three controlled alternatives are worth testing:
 \begin{table}[ht]
 \centering
 \small
-\caption{Prioritized experiments after the current runs finish.}
+\caption{Prioritized experiments after the routing controls finish.}
 \begin{tabularx}{\textwidth}{p{0.25\textwidth}p{0.33\textwidth}X}
 \toprule
 Experiment & Question answered & Continue only if \\
 \midrule
-Shuffled/random routing & Does SpLiCE semantics matter beyond stronger
-augmentation? & Semantic routing beats both controls in paired WG. \\
-Signed concept selection and top-$K$ & Is the proxy specific and stable? & The
-list is qualitatively background-related and target-conditioned background
-prediction improves. \\
+Top-5 semantic/shuffled/random/all routing (running) & Does SpLiCE semantics
+matter beyond stronger augmentation? & Semantic routing beats both matched
+controls in paired WG on at least two seeds and in the three-seed mean. \\
 Single augmentation components, seeds 3/4 & Is one transformation safer than
 the all-components policy? & At least two post-repair seeds improve WG without
 large average-accuracy loss. \\
@@ -528,15 +579,19 @@ passes the controls with a frozen hyperparameter rule. \\
 The defensible message is: \emph{I implemented and repaired a complete
 concept-guided robust-SSL evaluation pipeline. The initial positive result did
 not survive the stricter paired-seed protocol, which revealed strong seed
-sensitivity and weaknesses in concept selection and loss scaling. The project
-has therefore progressed from a proof-of-concept to a falsifiable research
-program. The next high-information experiment is not ``more of the same'', but
-to verify that the semantic routing signal matters and then place that signal
-directly into contrastive pair construction.}
+sensitivity and weaknesses in concept selection and loss scaling. I then
+implemented automatic direction-consistent top-5 discovery and causal routing
+controls with matched augmentation budgets. In the first two completed paired
+seeds, semantic routing does not beat shuffled routing, while the remaining
+runs are still in progress. The project has therefore progressed from a
+proof-of-concept to a falsifiable test of whether the SpLiCE semantic assignment
+itself is useful; only a positive control result would justify placing that
+signal directly into contrastive pair construction.}
 
 \section{Limitations}
 
-There are only three comparable post-repair seeds, and no revised configuration
+There are only three comparable post-repair seeds, and the new control matrix
+is incomplete. No revised configuration
 has been evaluated on the held-out test split. Waterbirds metadata are used both
 for concept discovery and for
 label-conditioned regularization, so the current method is not fully
@@ -762,17 +817,24 @@ By default, both values are equal to \(1.0\), so the default formula is
 \]
 Therefore, the script ranks concepts highly when they have a strong spurious effect, a weak target effect, and low instability.
 
-\paragraph{Important discovery caveat.}
-Because the pairwise effects above use absolute differences, two target classes
-can have equally large but oppositely signed background effects and still receive
-zero instability penalty. A direction-consistency term should therefore be
-tested before treating the selected top-$K$ as a reliable background proxy.
+\paragraph{Direction-consistency filter used in the new controls.}
+Because the pairwise ranking effects above use absolute differences, two target
+classes could previously have equally large but oppositely signed background
+effects and still receive zero instability penalty. The new discovery path
+therefore additionally computes, for binary background values,
+\[
+d_{k,y}=\mu_{1,y,k}-\mu_{0,y,k},
+\]
+and keeps concept $k$ only if all $d_{k,y}$ are strictly positive or all are
+strictly negative. Simple singular/plural vocabulary variants are then grouped
+automatically before selecting top-$K$ with $K=5$. This is an eligibility filter rather
+than another additive loss term.
 
 \subsection{Correlation Regularization Penalty}
 
 In the revised \texttt{corr\_reg} mode, SpLiCE retains the selected concept
 vector $c_i\in\mathbb{R}^{K}_{\geq0}$ for each training image, with $K=10$ in
-the current experiments. The SSL encoder produces
+the broad sweep and $K=5$ in the routing controls. The SSL encoder produces
 \[
 h_i = f_{\theta}(x_i) \in \mathbb{R}^d.
 \]
@@ -879,15 +941,18 @@ receive the stronger augmentation transform.
 The following standalone command is useful for auditing the selected concepts:
 
 \begin{verbatim}
-python tools/discover_splice_spurious_concepts.py \
+python scripts/tools/discover_splice_spurious_concepts.py \
   --dataset waterbirds \
   --data_folder ./datasets \
   --split train \
   --out_path outputs/waterbirds_splice_concepts.json \
-  --top_k 10
+  --top_k 5 \
+  --require_consistent_spurious_direction true \
+  --deduplicate_concepts true
 \end{verbatim}
 
-In one run, the top-10 concepts were:
+For reference, the earlier broad-sweep top-10 concepts were; the new automatic
+top-5 is the first five entries after direction filtering and deduplication:
 \begin{verbatim}
 8305 bamboo      score=0.010589 spurious=0.016997 target=0.003204 instability=0.003204
 2908 forests     score=0.004767 spurious=0.006347 target=0.000822 instability=0.000758
@@ -911,17 +976,30 @@ rewarded, while target-label effect and instability are penalized. Therefore,
 higher-score concepts are better candidates for representing the spurious
 background signal.
 
-\paragraph{2. Summarize selected concept scores.}
+\paragraph{2. Matched routing-control array.}
+The current validation experiment uses seeds 1, 3, and 4. Array tasks 1--4 are
+semantic, shuffled, matched-random, and augment-all routing respectively; task
+0 is an optional repeated baseline.
+
+\begin{verbatim}
+sbatch --array=1-4 --export=ALL,SEED=1 \
+  scripts/waterbirds_SpLiCE_routing_controls_array.sbatch
+sbatch --array=1-4 --export=ALL,SEED=3 \
+  scripts/waterbirds_SpLiCE_routing_controls_array.sbatch
+sbatch --array=1-4 --export=ALL,SEED=4 \
+  scripts/waterbirds_SpLiCE_routing_controls_array.sbatch
+\end{verbatim}
+
+\paragraph{3. Summarize selected concept scores.}
 After selecting candidate concepts, the next step is to check the distribution
 of their SpLiCE scores across the training split. This helps choose a threshold
 for the augmentation method.
 
 \begin{verbatim}
-python tools/summarize_splice_scores.py \
+python scripts/tools/summarize_splice_scores.py \
   --data_folder ./datasets \
   --split train \
-  --splice_concepts "bamboo,forests,whale,rainforest,raven,forest,seascape,lake,
-                     snorkeling,pond" \
+  --splice_concepts "bamboo,forests,whale,rainforest,raven" \
   --splice_score_reduction max \
   --out_path outputs/waterbirds_splice_score_summary.json
 \end{verbatim}
@@ -930,10 +1008,11 @@ The output first resolves each concept to its vocabulary index, then reports the
 score distribution over all images in the split. The percentiles summarize how
 large the selected-concept score usually is, while the threshold counts show how
 many images would be treated as high-score examples for each candidate
-threshold. For example, in the shown run, threshold 0.085 selects 1007 training
-images, or about 21.0\% of the split.
+threshold. In the current top-5 control series, the resolved $q=0.75$ threshold
+is approximately 0.032804 and selects 1,199 training images, or 25.01\% of the
+split.
 
-\paragraph{3. Transfer the protocol to SpurCIFAR10.}
+\paragraph{4. Transfer the protocol to SpurCIFAR10.}
 The same arrays now accept \texttt{DATASET} as an exported variable and choose
 \texttt{resnet18} automatically for 32$\times$32 inputs. Dataset-level concept
 discovery and caches remain separate because the dataset name is included in
@@ -942,24 +1021,21 @@ their paths and fingerprints.
 \begin{verbatim}
 sbatch --job-name=SpurCIFAR10_SpLiCE_sweep \
   --export=ALL,DATASET=spur_cifar10,SEED=0 \
-  waterbirds_SpLiCE_hyperparameter_array.sbatch
+  scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 
 sbatch --job-name=SpurCIFAR10_SpLiCE_aug \
   --export=ALL,DATASET=spur_cifar10,SEED=0 \
-  waterbirds_Augmentation_array.sbatch
+  scripts/waterbirds_Augmentation_array.sbatch
 \end{verbatim}
 
 The existing case statement fixes $q$ and $\lambda$ for each array index, so
 exporting \texttt{SPLICE\_SCORE\_QUANTILE} or \texttt{SPLICE\_WEIGHT} currently
 does not override them. Finer sweeps require new case entries or changing those
-assignments to environment-default form. The most useful controls after the
-replication seeds are: (i) global strong augmentation applied to a random or all
-images, to distinguish SpLiCE routing from augmentation strength; (ii) shuffled
-SpLiCE scores, to test whether semantic targeting matters; (iii) conditional
-versus unconditional REG; (iv) combined AUG+REG; and (v) sparse SpLiCE-CBM
-representation/probe interventions. Final test jobs should be launched only
-after this validation stage and must use the explicit \texttt{--final\_test}
-guard.
+assignments to environment-default form. The random, all-image, and shuffled
+routing controls are now running on Waterbirds. Transfer should wait until
+their result determines whether the semantic SpLiCE assignment adds value.
+Final test jobs should be launched only after this validation stage and must
+use the explicit \texttt{--final\_test} guard.
 
 \begin{thebibliography}{9}
 

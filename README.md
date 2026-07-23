@@ -1,293 +1,115 @@
-# SpLiCE
-### Sparse Linear Concept Embeddings
----
-Codebase for the paper 
-["Interpreting CLIP with Sparse Linear Concept Embeddings (SpLiCE)" by U. Bhalla*, A. Oesterling*, S. Srinivas, F. P. Calmon^, H. Lakkaraju^](https://arxiv.org/abs/2402.10376).
+# Spur SpLiCE
 
-## Table of Contents
- * [Approach](#approach)
- * [Installation](#installation)
- * [Examples](#examples)
-     * [Sample Concept Decomposition](#sample-concept-decomposition)
-     * [Class/Dataset Concept Distributions](#classdataset-concept-distributions)
-     * [Class/Dataset Concept Decomposition](#classdataset-concept-decomposition)
- * [API](#api)
- * [API Examples](#api-examples)
-     * [Loading a SpLiCE model](#loading-a-splice-model)
-     * [Decomposing and recomposition an image](#decomposing-and-recomposing-an-image)
-     * [Mapping sparse weights to text vocabulary](#mapping-sparse-weights-to-text-vocabulary)
-     * [Implementing your own VLM backbone or vocabulary](#implementing-your-own-vlm-backbone-or-vocabulary)
-## Approach 
-SpLiCE decomposes dense CLIP embeddings into **sparse, nonnegative combinations of human-interpretable, semantic concepts** that can be used for post-hoc concept based explanations, concept bottleneck models, dataset bias and spurious correlation detection, and distribution shift monitoring. 
-![SpLiCE](splice.png)
+Spur SpLiCE studies whether sparse, language-aligned concepts from a frozen
+OpenCLIP/SpLiCE model can identify and mitigate spurious correlations during
+SimCLR training. The current experiments focus on Waterbirds and SpurCIFAR10.
 
-## Installation
+The repository contains the training pipeline used by `project_report.tex`,
+automatic concept discovery, routed-augmentation controls, correlation
+regularization, reproducible checkpoint/resume support, and guarded validation
+versus final-test evaluation.
 
-To install SpLiCE as a package, run the following:
+## Environment
 
-```
-git clone git@github.com:AI4LIFE-GROUP/SpLiCE.git
-cd SpLiCE
-pip install .
-```
-
-
-## Examples
-
-### Main Entrypoints
-
-- `spur_splice.py`: SSL training with optional linear probing. Enable SpLiCE regularization with `--use_splice` and `--splice_weight`.
-- `linear_probe.py`: linear probing for a checkpoint and dataset selected by `--dataset`.
-- `splice_cbm.py`: sparse SpLiCE concept-bottleneck baseline with representation and probe-weight interventions.
-- `waterbirds_Augmentation_array.sbatch`: validation-only augmentation array with one shared automatic top-10 discovery pass; defaults to Waterbirds and accepts `DATASET=spur_cifar10`.
-- `waterbirds_SpLiCE_hyperparameter_array.sbatch`: validation-only baseline/augmentation-quantile/correlation-weight sweep; defaults to Waterbirds and accepts `DATASET=spur_cifar10`.
-- `splice/decompose_image.py`: SpLiCE decomposition for a single image.
-- `splice/decompose_data.py`: SpLiCE decomposition for a dataset or one class.
-
-Automatic spurious-concept discovery can optionally write a per-image JSONL
-audit with `--splice_per_image_top_k 10`; it is disabled by default to avoid
-large files and extra I/O. SSL runs keep only temporary probe checkpoints by
-default; pass `--keep_checkpoints` if model files are needed.
-Linear evaluation uses `val` by default. A test-set run requires the explicit
-`--final_test` flag so development commands cannot accidentally select
-hyperparameters on test. Final-test SSL runs perform one linear probe only at
-the final SSL epoch; periodic every-25-epoch curves remain validation-only.
-Representation-rank diagnostics use a separate ordered train loader with the
-deterministic evaluation transform. They therefore do not consume the shuffled
-SSL loader or alter later training batches. Periodic probes preserve the Python,
-NumPy, CPU Torch, and CUDA RNG states. Persistent checkpoints additionally save
-those states, the SSL DataLoader generator, and the AMP scaler so `--resume`
-continues the same random sequence. Slurm submissions also assign one W&B group
-per array and tags for dataset, seed, family, and array task. Frozen SpLiCE/CLIP
-loading and W&B initialization are RNG-isolated as well, so matched baseline and
-SpLiCE runs start from the same SSL model initialization.
-
-The Slurm arrays default to Waterbirds. To run the same validation sweep on
-SpurCIFAR10, export the dataset; the scripts automatically select `resnet18` for
-32x32 images:
+The cluster and home machine can use the same Conda environment:
 
 ```bash
-sbatch --job-name=SpurCIFAR10_SpLiCE_sweep \
-  --export=ALL,DATASET=spur_cifar10,SEED=0 \
-  waterbirds_SpLiCE_hyperparameter_array.sbatch
-
-sbatch --job-name=SpurCIFAR10_SpLiCE_aug \
-  --export=ALL,DATASET=spur_cifar10,SEED=0 \
-  waterbirds_Augmentation_array.sbatch
+conda activate grgrie-train
+pip install -e .
 ```
 
-### Sample Concept Decomposition
-To get the concept decomposition of a single image (we include an example image 308175 from MSCOCO), run the `splice/decompose_image.py` script. The `-l1_penalty` argument can be used to control the sparsity of the decompositions.
+RTX 50-series cards require a current Blackwell-capable PyTorch/CUDA build and
+an up-to-date NVIDIA driver. A Windows setup and smoke test are also available:
+
+```powershell
+.\scripts\Setup-HomeTraining.ps1
+.\scripts\Test-HomeTraining.ps1 -DataFolder "D:\Datasets\waterbirds"
+```
+
+Dataset directories are intentionally excluded from Git. Pass their location
+with `--data_folder` or `-DataFolder`.
+
+## Main entry points
+
+- `spur_splice.py` — SimCLR training and periodic/final linear probing.
+- `linear_probe.py` — standalone target/spurious linear probing.
+- `splice_cbm.py` — sparse concept-bottleneck baseline.
+- `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
+- `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
+- `scripts/tools/render_report_figure.py` — report figure generation.
+- `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
+- `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
+- `scripts/*.sbatch` — Slurm arrays for cluster runs.
+
+## Training length and learning-rate schedules
+
+Both SSL and linear-probe milestone schedules accept either explicit epochs or
+`auto`. Automatic schedules scale with the requested training length:
+
+- SSL: 70%, 80%, and 90% of `--epochs`;
+- linear probe: 60%, 75%, and 90% of `--linear_probe_epochs`.
+
+Thus 1,000 SSL epochs resolve to `700,800,900`, while 500 resolve to
+`350,400,450`.
 
 ```bash
-python splice/decompose_image.py -path 000000308175.jpg -out_path image308175_decomp.txt -l1_penalty 0.25 --verbose
-```
-![example_mscoco_image](000000308175.jpg)
-
-The following will be printed to the specified out path:
-```
-Concept Decomposition of 000000308175.jpg:
-        motorbike       0.093
-        police          0.0824
-        britain         0.0814
-        cops            0.0471
-        enforcement     0.027
-        officers        0.0174
-        lime            0.0111
-        passed          0.0068
-        policeman       0.0036
-Decomposition L0 Norm:      9.0
-CLIP, SpLiCE Cosine Sim:    0.5363
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --epochs 1000 \
+  --lr_decay_epochs auto \
+  --linear_lr_decay_epochs auto \
+  --splice_mode none
 ```
 
-### Class/Dataset Concept Distributions
-To generate a concept distribution for a given class, run the script `concept_distribution.py`, which generates a bar plot of the concepts given by `splice/decompose_data.py`. The number of concepts to be plotted can be controlled with the `-plot_topk` argument. An example distribution of the top 10 concepts from the 'jack-o-lantern' class from ImageNetVal is given below.
+Shortened 500-epoch runs are operationally supported, but they are not directly
+comparable with the existing epoch-1000 report tables.
 
+## Experiment families
+
+### Routing controls
+
+Tasks are baseline, semantic, shuffled, matched-random, and augment-all:
+
+```powershell
+.\scripts\Run-HomeExperiments.ps1 `
+  -Family routing -Seeds 4 -Tasks 1,2 `
+  -DataFolder "D:\Datasets\waterbirds"
+```
+
+### Strong-augmentation components
+
+Tasks `0..4` are All, Crop, ColorJitter, Grayscale, and Blur.
+
+```powershell
+.\scripts\Run-HomeExperiments.ps1 `
+  -Family augmentation -Seeds 3,4 -Tasks 1,2,3,4 `
+  -DataFolder "D:\Datasets\waterbirds"
+```
+
+### Hyperparameter sweep
+
+Tasks `0..8` are baseline, augmentation quantiles
+`.50/.75/.90/.95`, and correlation weights `.001/.01/.1/1.0`.
+
+Cluster example:
 
 ```bash
-python concept_distribution.py -dataset ImageNetVal -out_folder imagenet_jackolantern_decomp --verbose -l1_penalty 0.3 -class_label 607 -device "cuda"
-```
-![jackolantern_concept_distribution](imagenetval_class_607_decomposition.jpg)
-
-
-### Class/Dataset Concept Decomposition
-To decompose an entire dataset, run the `splice/decompose_data.py` script. An example decomposition for CIFAR-10 is shown below.  
-
-```bash
-python splice/decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 --verbose
-```
-```
-Concept Decomposition:
-        frog        0.0042
-        deer        0.004
-        cat         0.0036
-        aircraft    0.0034
-        banner      0.0032
-        horse       0.003
-        truck       0.003
-        lorry       0.0022
-        icon        0.0022
-        hatchback   0.0019
-        insignia    0.0018
-        dog         0.0016
-        ...
-Average Decomposition L0 Norm:      3.3622
-Average CLIP, SpLiCE Cosine Sim:    0.4345
-```
-*Note that the poor image quality of CIFAR results in unintuitive tokens that are related to image size/quality: {icon, insignia, banner}. This is observed for other datasets with highly downsampled images but not for images of ImageNet like quality (200x200).*
-
-This can also be done for a single class with the `-class_label` tag. Here, we show the "deer" class of CIFAR-10:
-
-```bash
-python splice/decompose_data.py -dataset CIFAR10 -out_path cifar10_decomp.txt -l1_penalty 0.35 -class_label 4 --verbose
+sbatch --array=0-8 --export=ALL,DATASET=waterbirds,SEED=4 \
+  scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 ```
 
-```
-Concept Decomposition:
-        deer        0.0397
-        elk         0.0111
-        fawn        0.008
-        banner      0.0059
-        buck        0.0056
-        moose       0.0055
-        foal        0.0041
-        reindeer    0.0033
-        ...
-Average Decomposition L0 Norm:          3.246
-Average CLIP, SpLiCE Cosine Sim:        0.4484
-```
+## Reproducibility and evaluation
 
+- Matched seeds use the same SSL initialization.
+- Frozen SpLiCE/OpenCLIP loading, W&B initialization, and periodic probes are
+  RNG-isolated.
+- Persistent checkpoints contain Python, NumPy, CPU/CUDA Torch, DataLoader, and
+  AMP scaler state.
+- Development runs evaluate on validation.
+- Test evaluation requires the explicit `--final_test` flag.
+- W&B display names are concise; complete parameters and runtime versions
+  remain in W&B config and detailed checkpoint directory names.
 
-## API
-
-To integrate SpLiCE in your own codebase, the `splice` module has the following functions:
-
-1.  `splice.load(name, vocabulary, vocabulary_size, device, download_root=None, **kwargs) -> splicemodel nn.Module`:
-
-    Returns the SpLiCE model for a supported CLIP backbone (e.g. `"open_clip:ViT-B-32"`) and concept vocabulary (e.g. `"laion"`). Note the syntax for CLIP backbone is `"[library]:[model]"`. The download root can be specified if desired, and arguments such as `return_weights` and `l1_penalty` are passed to the SpLiCE model configuration. Specifying `vocabulary_size = k` will result in decompositions over only the last k concepts in the concept set (assuming the set is sorted from least to most important). 
-
-    * Use `splice.available_models()` to view supported CLIP backbones that can be directly loaded and used with SpLiCE. Note that additional models can easily be added as explained below.
-    * `splice.get_tokenizer(name)` and `splice.get_preprocess(name)` return the associated tokenizer and image preprocessing transform for supported clip backbones. 
-
-    * `splice.get_vocabulary(vocabulary_name)` returns a list of strings associated with a supported vocabulary.
-
-2.  `splice.decompose_image(image, splicemodel, device) -> weights Tensor, l0_norm float, cosine_sim float`:
-
-    Returns the splicemodel's sparse concept decomposition of the input image. Also returns the additional metrics of the l0 norm of the decomposition and the cosine similarity between the splice embedding and the original dense clip embedding. 
-
-3.  `splice.decompose_classes(dataloader, target_label, splicemodel, device) -> weights Tensor, l0_norm float, cosine_sim float`:
-
-    Returns the splicemodel's average sparse concept decomposition of all images in the dataloader with label `target_label`. Also returns the additional metrics of the average l0 norm of the decompositions and the aveerage cosine similarity between the splice embeddings and the original dense clip embeddings. 
-
-4.  `splice.decompose_dataset(dataloader, splicemodel, device) -> weights Tensor, l0_norm float, cosine_sim float`:
-
-    Returns the splicemodel's average sparse concept decomposition of all images in the dataloader. Also returns the additional metrics of the average l0 norm of the decompositions and the aveerage cosine similarity between the splice embeddings and the original dense clip embeddings. 
-
-Currently, SpLiCE supports the following models,
-
-| Library   | Model    |
-|-----------|----------|
-| clip      | ViT-B/32 |
-| clip      | ViT-B/16 |
-| clip      | RN50     |
-| open_clip | ViT-B-32 |
-
-and the following vocabularies:
-
-| Vocabulary    | Description                                                                                                                                       |
-|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| laion         | ~33000 of the most frequent tokens present in the LAION-400m dataset. We recommend you use the top 10000 (vocab_size=10000) for the best results. |
-| mscoco        | ~12000 of the most frequent tokens present in the MSCOCO dataset.                                                                                 |
-| laion_bigrams | 10000 of the most frequent tokens present in the LAION-400m dataset and 5000 of the most frequent bigrams present in the LAION-400m dataset.      |
-
-
-A SpLiCE model has the following functions:
-1. `encode_image(image)`:
-
-    Returns the concept decomposition of the preprocessed input image batch if `return_weights` is set to `True`, otherwise it returns the interpretable dense SpLiCE embedding (z_hat) that can be used as a replacement for the original dense CLIP embeddings (z). 
-
-2. `decompose(dense_embedding) -> sparse_embedding`:
-
-    Takes in batch of dense CLIP embeddings and outputs the sparse weight vector representations of the semantic decompositions.
-
-3. `recompose_image(weights) -> dense_embedding`:
-
-    Takes in a batch of sparse decompositions of embeddings and outputs dense reconstructions. 
-
-4. `intervene_image(image, intervention_indices) -> dense embedding`
-
-    Decomposes the preprocessed input image batch and suppresses any weights on concepts specified by the intervention_indices. Returns the recomposed dense embeddings after intervention. 
-
-5. `forward(image, text)`
-
-    Runs the forward pass through the splicemodels image and text encoders and returns the corresponding dense or sparse representations depending on model initialization. 
-
-
-## API Examples
-
-### Loading a SpLiCE model
-Here is a basic example of loading a SpLiCE model from our supported CLIP backbones and vocabularies. We set our `l1_penalty` here to control the sparsity of the decompositions in downstream use cases.
-
-```python
-import splice
-
-splicemodel = splice.load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=10000, l1_penalty=0.25, device="cuda")
-```
-
-### Decomposing and recomposing an image
-Here is a toy example of how to use a model initialized with `return_weights=True`, to decompose and recompose an image with `encode_image` and `recompose_image`.
-
-```python
-import splice
-
-splicemodel = splice.load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=10000, l1_penalty=0.25, return_weights=True, device="cuda")
-preprocess = splice.get_preprocess("open_clip:ViT-B-32")
-
-image = preprocess(Image.open("00000308175.jpg")).unsqueeze(0).to("cuda")
-
-sparse_weights = splicemodel.encode_image(image)         # shape = [1, 10000], l0 norm = 9
-reconstruction = splicemodel.recompose_image(sparse_weights)   # shape = [1, 512]
-```
-
-### Mapping sparse weights to text vocabulary
-The sparse weights can be mapped back to text using the `splice.get_vocabulary` function. For example, the following lines will print the semantic decomposition of the image shown above in the example "Sample Concept Decomposition".
-
-```python
-import splice
-
-splicemodel = splice.load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=10000, l1_penalty=0.15, return_weights=True, device="cuda")
-preprocess = splice.get_preprocess("open_clip:ViT-B-32")
-vocabulary = splice.get_vocabulary("laion", 10000) 
-
-image = preprocess(Image.open("00000308175.jpg")).unsqueeze(0).to("cuda")
-
-sparse_weights = splicemodel.encode_image(image)         # shape = [1, 10000], l0 norm = 9
-reconstruction = splicemodel.recompose_image(sparse_weights)   # shape = [1, 512]  
-
-sparse_weights = sparse_weights.squeeze()
-
-for weight_idx in torch.sort(sparse_weights, descending=True)[1]:
-    print(f"{vocabulary[weight_idx]}: {sparse_weights[weight_idx]}")
-```
-
-### Implementing your own VLM backbone or vocabulary
-If you want to construct your own splice model built on your own VLM backbone or vocabulary, you can directly construct your own splice model. All you need to provide is a module that implements `encode_image`, and `encode_text`, an estimated `image_mean` over that module, and a `dictionary` of text embeddings.
-
-```python
-import splice
-
-vlm_backbone = VLMBackbone()
-image_mean = torch.load('path/to/image_mean.pt')
-vocab_path = 'path/to/vocab.txt'
-
-## Compute embedded dictionary, mean-center and normalize
-concepts = []
-with open(vocab_path, "r") as f:
-    lines = f.readlines()
-    for line in lines:
-        concepts.append(vlm_backbone.encode_text(line))
-concepts = torch.nn.functional.normalize(torch.stack(concepts), dim=1)
-concepts = torch.nn.functional.normalize(concepts-torch.mean(concepts, dim=0), dim=1)
-
-splicemodel = splice.SPLICE(image_mean, concepts, clip=vlm_backbone, device="cuda")
-```
+See `experiments/spurious_eval/README.md` for implementation-level details and
+`scripts/README.md` for Windows launch/recovery instructions.

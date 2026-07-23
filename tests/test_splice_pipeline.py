@@ -13,14 +13,24 @@ from experiments.spurious_eval.datasets.transforms import (
     build_augmentation_routing,
 )
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
-from experiments.spurious_eval.linear_probe import run_spurious_attribute_probe
+from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
 from splice.ssl_regularization import CorrelationSpliceRegularizer, SpliceConfig, score_cache_path
 from splice.model import SPLICE
-from tools.discover_splice_spurious_concepts import SparseConceptWeights, rank_concepts
+from spur_splice import resolve_epoch_schedule
+from scripts.tools.discover_splice_spurious_concepts import SparseConceptWeights, rank_concepts
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_automatic_lr_schedules_scale_with_training_length(self):
+        self.assertEqual(resolve_epoch_schedule("auto", 1000, (0.70, 0.80, 0.90)), [700, 800, 900])
+        self.assertEqual(resolve_epoch_schedule("auto", 500, (0.70, 0.80, 0.90)), [350, 400, 450])
+        self.assertEqual(resolve_epoch_schedule("auto", 100, (0.60, 0.75, 0.90)), [60, 75, 90])
+        self.assertEqual(resolve_epoch_schedule("auto", 1, (0.70, 0.80, 0.90)), [])
+        self.assertEqual(resolve_lr_decay_epochs("auto", 50), [30, 38, 45])
+        with self.assertRaises(ValueError):
+            resolve_epoch_schedule("350,350,450", 500, (0.70, 0.80, 0.90))
+
     def test_evaluation_protocol_requires_explicit_final_test(self):
         self.assertEqual(resolve_evaluation_split(None, final_test=False), "val")
         self.assertEqual(resolve_evaluation_split(None, final_test=True), "test")

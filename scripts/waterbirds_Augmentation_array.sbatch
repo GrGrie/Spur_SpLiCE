@@ -15,11 +15,11 @@
 
 set -euo pipefail
 
-# Submit with: sbatch waterbirds_Augmentation_array.sbatch
+# Submit with: sbatch scripts/waterbirds_Augmentation_array.sbatch
 # Override one top-level value without editing the file, for example:
-# sbatch --export=ALL,SEED=0 waterbirds_Augmentation_array.sbatch
+# sbatch --export=ALL,SEED=0 scripts/waterbirds_Augmentation_array.sbatch
 # SpurCIFAR10 uses the same array with a dataset-specific model:
-# sbatch --job-name=SpurCIFAR10_SpLiCE_aug --export=ALL,DATASET=spur_cifar10,SEED=0 waterbirds_Augmentation_array.sbatch
+# sbatch --job-name=SpurCIFAR10_SpLiCE_aug --export=ALL,DATASET=spur_cifar10,SEED=0 scripts/waterbirds_Augmentation_array.sbatch
 
 # ------------------------- paths and environment -------------------------
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
@@ -31,9 +31,11 @@ DATASET="${DATASET:-waterbirds}"
 case "${DATASET}" in
     waterbirds|celeba|CelebA|celebA)
         MODEL="${MODEL:-resnet18_large}"
+        WANDB_DATASET_LABEL="$([[ "${DATASET}" == "waterbirds" ]] && echo Waterbirds || echo CelebA)"
         ;;
     spur_cifar10)
         MODEL="${MODEL:-resnet18}"
+        WANDB_DATASET_LABEL="SpurCIFAR10"
         ;;
     *)
         echo "Unsupported DATASET=${DATASET}" >&2
@@ -80,35 +82,35 @@ WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 # Each array task changes only the targeted augmentation delta.
 case "${SLURM_ARRAY_TASK_ID}" in
     0)
-        RUN_LABEL="all"
+        RUN_LABEL="All"
         SPLICE_STRONG_CROP=true
         SPLICE_STRONG_COLOR_JITTER=true
         SPLICE_STRONG_GRAYSCALE_P=true
         SPLICE_STRONG_BLUR_P=true
         ;;
     1)
-        RUN_LABEL="crop"
+        RUN_LABEL="Crop"
         SPLICE_STRONG_CROP=true
         SPLICE_STRONG_COLOR_JITTER=false
         SPLICE_STRONG_GRAYSCALE_P=false
         SPLICE_STRONG_BLUR_P=false
         ;;
     2)
-        RUN_LABEL="color_jitter"
+        RUN_LABEL="ColorJitter"
         SPLICE_STRONG_CROP=false
         SPLICE_STRONG_COLOR_JITTER=true
         SPLICE_STRONG_GRAYSCALE_P=false
         SPLICE_STRONG_BLUR_P=false
         ;;
     3)
-        RUN_LABEL="grayscale"
+        RUN_LABEL="Grayscale"
         SPLICE_STRONG_CROP=false
         SPLICE_STRONG_COLOR_JITTER=false
         SPLICE_STRONG_GRAYSCALE_P=true
         SPLICE_STRONG_BLUR_P=false
         ;;
     4)
-        RUN_LABEL="blur"
+        RUN_LABEL="Blur"
         SPLICE_STRONG_CROP=false
         SPLICE_STRONG_COLOR_JITTER=false
         SPLICE_STRONG_GRAYSCALE_P=false
@@ -150,7 +152,7 @@ exec 9>"${DISCOVERY_LOCK}"
 flock 9
 if [[ ! -s "${CONCEPTS_FILE}" ]]; then
     echo "[SpLiCE] Discovering the shared automatic top-${SPLICE_AUTO_TOP_K} concept set..."
-    python tools/discover_splice_spurious_concepts.py \
+    python scripts/tools/discover_splice_spurious_concepts.py \
         --dataset "${DATASET}" \
         --data_folder "${DATA_FOLDER}" \
         --split train \
@@ -184,6 +186,7 @@ echo "Started: $(date --iso-8601=seconds)"
 python spur_splice.py \
     --use_wandb \
     --wandb_name "${WANDB_NAME}" \
+    --wandb_run_name "${WANDB_DATASET_LABEL}_S${SEED}_${RUN_LABEL}" \
     --entity "${WANDB_ENTITY}" \
     --wandb_group "${WANDB_GROUP}" \
     --wandb_tags "${WANDB_TAGS}" \

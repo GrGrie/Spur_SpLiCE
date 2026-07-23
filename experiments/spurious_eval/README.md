@@ -129,7 +129,7 @@ recording exact indices. The selected SpLiCE concepts are printed at startup.
 To discover a candidate concept list automatically, run the standalone helper:
 
 ```bash
-python tools/discover_splice_spurious_concepts.py \
+python scripts/tools/discover_splice_spurious_concepts.py \
   --dataset waterbirds \
   --data_folder ./datasets \
   --split train \
@@ -160,7 +160,7 @@ new binary spurious-correlation dataset is registered in `DATASET_REGISTRY`, you
 can override those columns explicitly:
 
 ```bash
-python tools/discover_splice_spurious_concepts.py \
+python scripts/tools/discover_splice_spurious_concepts.py \
   --dataset celeba \
   --data_folder ./datasets \
   --split train \
@@ -197,7 +197,7 @@ view. Change it with `--splice_score_quantile`, or provide a fixed
 `--splice_score_threshold`. To inspect the distribution manually:
 
 ```bash
-python tools/summarize_splice_scores.py \
+python scripts/tools/summarize_splice_scores.py \
   --data_folder ./datasets \
   --split train \
   --splice_concepts "water,lake,forest,tree,grass" \

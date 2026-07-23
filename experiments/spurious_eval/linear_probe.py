@@ -26,6 +26,25 @@ class ProbeHistory:
     val_best_group: list[float]
 
 
+def resolve_lr_decay_epochs(value: str | list[int], total_epochs: int) -> list[int]:
+    if not isinstance(value, str):
+        return list(value)
+    if value.strip().lower() == "auto":
+        return sorted(
+            {
+                int(round(total_epochs * fraction))
+                for fraction in (0.60, 0.75, 0.90)
+                if 0 < int(round(total_epochs * fraction)) < total_epochs
+            }
+        )
+    milestones = [int(epoch.strip()) for epoch in value.split(",") if epoch.strip()]
+    if milestones != sorted(set(milestones)):
+        raise ValueError(f"LR milestones must be unique and increasing; got {milestones}.")
+    if any(epoch <= 0 or epoch >= total_epochs for epoch in milestones):
+        raise ValueError(f"LR milestones must be between 1 and {total_epochs - 1}; got {milestones}.")
+    return milestones
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Linear probing on spurious-correlation datasets")
     parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
@@ -59,7 +78,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_workers", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=1.0)
-    parser.add_argument("--lr_decay_epochs", default="60,75,90")
+    parser.add_argument("--lr_decay_epochs", default="auto")
     parser.add_argument("--lr_decay_rate", type=float, default=0.2)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--momentum", type=float, default=0.9)
@@ -80,7 +99,10 @@ def parse_args() -> argparse.Namespace:
         args.eval_split = resolve_evaluation_split(args.eval_split, args.final_test)
     except ValueError as exc:
         parser.error(str(exc))
-    args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
+    try:
+        args.lr_decay_epochs = resolve_lr_decay_epochs(args.lr_decay_epochs, args.epochs)
+    except ValueError as exc:
+        parser.error(str(exc))
     return args
 
 
@@ -99,7 +121,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "num_workers": 32,
         "epochs": 100,
         "learning_rate": 1.0,
-        "lr_decay_epochs": [60, 75, 90],
+        "lr_decay_epochs": "auto",
         "lr_decay_rate": 0.2,
         "weight_decay": 0.0,
         "momentum": 0.9,
@@ -114,8 +136,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
     for key, value in defaults.items():
         if not hasattr(args, key):
             setattr(args, key, value)
-    if isinstance(args.lr_decay_epochs, str):
-        args.lr_decay_epochs = [int(epoch.strip()) for epoch in args.lr_decay_epochs.split(",") if epoch.strip()]
+    args.lr_decay_epochs = resolve_lr_decay_epochs(args.lr_decay_epochs, args.epochs)
     return args
 
 
@@ -297,7 +318,7 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
                 project=args.wandb_name,
                 entity=args.entity,
                 config=vars(args),
-                name=f"linear_{args.dataset}_{args.model}_{args.seed}",
+                name=f"{args.dataset}_S{args.seed}_Probe",
             )
             created_wandb_run = True
 
