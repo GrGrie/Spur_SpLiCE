@@ -645,7 +645,10 @@ def parse_args() -> argparse.Namespace:
     ).hexdigest()[:12]
     args.model_name = format_run_name(args)
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
-    args.save_folder = str(Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.model_name)
+    args.storage_name = format_storage_name(args)
+    args.save_folder = str(
+        Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.storage_name
+    )
     os.makedirs(args.save_folder, exist_ok=True)
     write_run_config(args)
     return args
@@ -675,7 +678,7 @@ def resolve_epoch_schedule(value: str, total_epochs: int, fractions: tuple[float
 
 
 def format_wandb_run_name(args: argparse.Namespace) -> str:
-    """Return a short human-facing name; full details remain in W&B config and checkpoint paths."""
+    """Return a short human-facing name; full details remain in W&B config and args.json."""
     dataset = {
         "waterbirds": "Waterbirds",
         "spur_cifar10": "SpurCIFAR10",
@@ -709,6 +712,50 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         return f"{prefix}_{augmentation}{route}"
     conditional = "Y" if args.splice_conditional_on_target else ""
     return f"{prefix}_Corr{args.splice_weight:g}{conditional}"
+
+
+def format_storage_name(args: argparse.Namespace) -> str:
+    """Return a short, deterministic checkpoint directory name safe for Windows paths."""
+    if not args.use_splice:
+        experiment = "base"
+    elif args.splice_mode == "augment":
+        experiment = f"aug-{args.splice_routing_mode}"
+    elif args.splice_mode == "augment_corr_reg":
+        experiment = f"augcorr-{args.splice_routing_mode}"
+    else:
+        experiment = "corr"
+
+    excluded_from_fingerprint = {
+        "checkpoint_dir",
+        "data_folder",
+        "resume",
+        "runtime_versions",
+        "save_folder",
+        "storage_name",
+        "use_wandb",
+        "wandb_group",
+        "wandb_name",
+        "wandb_notes",
+        "wandb_run_name",
+        "wandb_tags",
+    }
+    fingerprint_payload = {
+        key: value
+        for key, value in vars(args).items()
+        if key not in excluded_from_fingerprint
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:10]
+
+    def path_token(value: object) -> str:
+        token = "".join(character if character.isalnum() else "-" for character in str(value))
+        return token.strip("-") or "run"
+
+    return (
+        f"{path_token(args.dataset)}_s{path_token(f'{args.seed:g}')}_"
+        f"{path_token(experiment)}_e{args.epochs}_{fingerprint}"
+    )
 
 
 def format_run_name(args: argparse.Namespace) -> str:
