@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=20:00:00
+#SBATCH --time=12:00:00
 #SBATCH --job-name=Waterbirds_SpLiCE_controls
 #SBATCH --array=0-4
 #SBATCH --mem=40G
@@ -10,8 +10,8 @@
 #SBATCH --gres=gpu:v100:1
 #SBATCH --partition=informatik-mind
 #SBATCH --gpu_cmode=shared
-#SBATCH --output=slurm-%x_%A_%a.out
-#SBATCH --error=slurm-%x_%A_%a.err
+#SBATCH --output=./output/%x_%A_%a.out
+#SBATCH --error=./output/%x_%A_%a.err
 
 set -euo pipefail
 
