@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("routing", "augmentation", "sweep", "counterfactual")]
+    [ValidateSet("routing", "augmentation", "sweep", "synthesis")]
     [string]$Family = "routing",
     [int[]]$Seeds = @(4),
     [int[]]$Tasks = @(1, 2),
@@ -8,12 +8,12 @@ param(
     [string]$Dataset = "waterbirds",
     [string]$DataFolder = ".\datasets",
     [string]$PythonExe = "",
-    [int]$Epochs = 1000,
+    [int]$Epochs = 500,
     [int]$BatchSize = 256,
     [int]$NumWorkers = 4,
     [int]$GpuIndex = 0,
     [int]$CheckpointFrequency = 25,
-    [double]$CounterfactualWeight = 0.1,
+    [double]$DistillationWeight = 0.1,
     [double]$InterventionStrength = 1.0,
     [string]$WandbProject = "Spur_SpLiCE",
     [string]$WandbEntity = "gsgrechkin-rptu",
@@ -31,7 +31,7 @@ if ($Epochs -lt 1) { throw "Epochs must be positive." }
 if ($BatchSize -lt 1) { throw "BatchSize must be positive." }
 if ($NumWorkers -lt 0) { throw "NumWorkers cannot be negative." }
 if ($CheckpointFrequency -lt 1) { throw "CheckpointFrequency must be positive." }
-if ($CounterfactualWeight -le 0) { throw "CounterfactualWeight must be positive." }
+if ($DistillationWeight -le 0) { throw "DistillationWeight must be positive." }
 if ($InterventionStrength -lt 0 -or $InterventionStrength -gt 2) {
     throw "InterventionStrength must be in [0, 2]."
 }
@@ -40,7 +40,7 @@ $validTasks = switch ($Family) {
     "routing"      { 0..4 }
     "augmentation" { 0..4 }
     "sweep"        { 0..8 }
-    "counterfactual" { 0..5 }
+    "synthesis" { 0..7 }
 }
 foreach ($task in $Tasks) {
     if ($task -notin $validTasks) {
@@ -64,7 +64,8 @@ New-Item -ItemType Directory -Force -Path $logsDirectory, $cacheDirectory, $fami
 if ($Epochs -ne 1000) {
     Write-Warning (
         "This is a shortened $Epochs-epoch protocol. LR milestones will automatically scale to 70%, 80%, and 90%. " +
-        "It is useful for triage but is not directly comparable with the report's 1000-epoch tables."
+        "Every run in one comparison must use the same budget; $Epochs-epoch results are not directly " +
+        "comparable with the report's 1000-epoch legacy tables."
     )
 }
 
@@ -75,7 +76,7 @@ if (-not $needsSplice) {
     }
 }
 
-$topK = if ($Family -in @("routing", "counterfactual")) { 5 } else { 10 }
+$topK = if ($Family -in @("routing", "synthesis")) { 5 } else { 10 }
 $discoveryJson = Join-Path $familyAutoDirectory "${Dataset}_splice_concepts.json"
 $conceptsFile = Join-Path $familyAutoDirectory "${Dataset}_splice_concepts.concepts.txt"
 try {
@@ -99,7 +100,7 @@ try {
             "--splice_l1_penalty", "0.25",
             "--splice_score_cache_dir", $cacheDirectory
         )
-        if ($Family -in @("routing", "counterfactual")) {
+        if ($Family -in @("routing", "synthesis")) {
             $discoveryArguments += @(
                 "--require_consistent_spurious_direction", "true",
                 "--deduplicate_concepts", "true"
@@ -174,18 +175,20 @@ try {
                     "--splice_score_quantile", "0.75",
                     "--splice_routing_mode", "semantic"
                 )
-            } elseif ($Family -eq "counterfactual") {
+            } elseif ($Family -eq "synthesis") {
                 switch ($task) {
                     0 { $runLabel = "baseline" }
-                    1 { $runLabel = "original_clip"; $spliceMode = "counterfactual"; $intervention = "original" }
-                    2 { $runLabel = "class_median"; $spliceMode = "counterfactual"; $intervention = "class_median" }
-                    3 { $runLabel = "matched_swap"; $spliceMode = "counterfactual"; $intervention = "matched_swap" }
-                    4 { $runLabel = "shuffled_swap"; $spliceMode = "counterfactual"; $intervention = "shuffled_swap" }
-                    5 { $runLabel = "zero_out"; $spliceMode = "counterfactual"; $intervention = "zero_out" }
+                    1 { $runLabel = "original_clip"; $spliceMode = "synthesis_distill"; $intervention = "original" }
+                    2 { $runLabel = "class_neutralize"; $spliceMode = "synthesis_distill"; $intervention = "class_neutralize" }
+                    3 { $runLabel = "random_coords"; $spliceMode = "synthesis_distill"; $intervention = "random_coords" }
+                    4 { $runLabel = "shuffled_donor"; $spliceMode = "synthesis_distill"; $intervention = "shuffled_donor" }
+                    5 { $runLabel = "same_class_random"; $spliceMode = "synthesis_distill"; $intervention = "same_class_random_donor" }
+                    6 { $runLabel = "zero_out"; $spliceMode = "synthesis_distill"; $intervention = "zero_out" }
+                    7 { $runLabel = "oracle_core_swap"; $spliceMode = "synthesis_distill"; $intervention = "core_matched_swap" }
                 }
-                if ($spliceMode -eq "counterfactual") {
+                if ($spliceMode -eq "synthesis_distill") {
                     $experimentArguments += @(
-                        "--splice_weight", [string]$CounterfactualWeight,
+                        "--splice_weight", [string]$DistillationWeight,
                         "--splice_intervention", $intervention,
                         "--splice_intervention_strength", [string]$InterventionStrength
                     )
@@ -226,54 +229,56 @@ try {
                 continue
             }
 
-            $protocolTag = if ($Epochs -eq 1000) { "protocol_e1000" } else { "protocol_short_e${Epochs}" }
-            $linearSpuriousProbe = if ($Family -eq "counterfactual") { "true" } else { "false" }
-            $wandbGroup = "${Dataset}_${Family}_home_seed${seed}"
-            $wandbTags = "dataset_${Dataset},seed_${seed},family_${Family},task_${runLabel},machine_home_rtx5080,$protocolTag"
+            $protocolTag = "protocol_e${Epochs}"
+            $linearSpuriousProbe = if ($Family -eq "synthesis") { "true" } else { "false" }
+            $wandbGroup = "${Dataset}_${Family}_e${Epochs}_seed${seed}"
             $datasetLabel = if ($Dataset -eq "waterbirds") { "Waterbirds" } else { "SpurCIFAR10" }
-            $wandbRunName = switch ($Family) {
+
+            # Short task label; the full reproducibility name stays in the checkpoint directory and args.json.
+            $taskLabel = switch ($Family) {
                 "routing" {
                     switch ($task) {
-                        0 { "${datasetLabel}_S${seed}_Baseline" }
-                        1 { "${datasetLabel}_S${seed}_Semantic" }
-                        2 { "${datasetLabel}_S${seed}_Shuffled" }
-                        3 { "${datasetLabel}_S${seed}_Random" }
-                        4 { "${datasetLabel}_S${seed}_AugmentAll" }
+                        0 { "Baseline" } 1 { "Semantic" } 2 { "Shuffled" }
+                        3 { "Random" }   4 { "AugmentAll" }
                     }
                 }
                 "augmentation" {
                     switch ($task) {
-                        0 { "${datasetLabel}_S${seed}_All" }
-                        1 { "${datasetLabel}_S${seed}_Crop" }
-                        2 { "${datasetLabel}_S${seed}_ColorJitter" }
-                        3 { "${datasetLabel}_S${seed}_Grayscale" }
-                        4 { "${datasetLabel}_S${seed}_Blur" }
+                        0 { "AugAll" }     1 { "Crop" } 2 { "ColorJitter" }
+                        3 { "Grayscale" }  4 { "Blur" }
                     }
                 }
                 "sweep" {
                     switch ($task) {
-                        0 { "${datasetLabel}_S${seed}_Baseline" }
-                        1 { "${datasetLabel}_S${seed}_Q50" }
-                        2 { "${datasetLabel}_S${seed}_Q75" }
-                        3 { "${datasetLabel}_S${seed}_Q90" }
-                        4 { "${datasetLabel}_S${seed}_Q95" }
-                        5 { "${datasetLabel}_S${seed}_Corr0.001" }
-                        6 { "${datasetLabel}_S${seed}_Corr0.01" }
-                        7 { "${datasetLabel}_S${seed}_Corr0.1" }
-                        8 { "${datasetLabel}_S${seed}_Corr1.0" }
+                        0 { "Baseline" }  1 { "Q50" }      2 { "Q75" }      3 { "Q90" }  4 { "Q95" }
+                        5 { "Corr0.001" } 6 { "Corr0.01" } 7 { "Corr0.1" }  8 { "Corr1.0" }
                     }
                 }
-                "counterfactual" {
+                "synthesis" {
                     switch ($task) {
-                        0 { "${datasetLabel}_S${seed}_Baseline" }
-                        1 { "${datasetLabel}_S${seed}_OriginalCLIP" }
-                        2 { "${datasetLabel}_S${seed}_CFMedian" }
-                        3 { "${datasetLabel}_S${seed}_CFMatched" }
-                        4 { "${datasetLabel}_S${seed}_CFShuffled" }
-                        5 { "${datasetLabel}_S${seed}_CFZeroOut" }
+                        0 { "Baseline" }      1 { "OrigCLIP" }      2 { "SynNeutralize" }
+                        3 { "SynRandCoords" } 4 { "SynShuffDonor" } 5 { "SynSameClass" }
+                        6 { "SynZeroOut" }    7 { "SynOracleSwap" }
                     }
                 }
             }
+
+            # Invariant culture keeps decimal points out of locale-dependent comma form.
+            $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+            $weightText = $DistillationWeight.ToString($invariant)
+            $strengthText = $InterventionStrength.ToString($invariant)
+
+            $hyperTag = ""
+            if ($spliceMode -eq "synthesis_distill") {
+                # Alpha is inert for the unedited-teacher control, so it is omitted there.
+                $hyperTag = if ($task -eq 1) { "_w${weightText}" } else { "_w${weightText}a${strengthText}" }
+                $wandbTags = "dataset_${Dataset},seed_${seed},family_${Family},task_${runLabel}," +
+                    "machine_home_rtx5080,${protocolTag},lambda_${weightText},alpha_${strengthText}"
+            } else {
+                $wandbTags = "dataset_${Dataset},seed_${seed},family_${Family},task_${runLabel}," +
+                    "machine_home_rtx5080,${protocolTag}"
+            }
+            $wandbRunName = "${datasetLabel}_S${seed}_${taskLabel}${hyperTag}_e${Epochs}"
             $arguments = @(
                 "spur_splice.py",
                 "--dataset", $Dataset,

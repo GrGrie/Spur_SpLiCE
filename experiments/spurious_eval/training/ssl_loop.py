@@ -53,10 +53,10 @@ def simclr_forward_loss(
         if targets is not None:
             repeated_targets = torch.cat([targets, targets], dim=0)
         regularized_embeddings = embeddings
-        if getattr(splice_regularizer, "requires_clip_alignment", False):
-            if model.clip_alignment_head is None:
-                raise ValueError("Counterfactual SpLiCE mode requires a CLIP alignment head.")
-            regularized_embeddings = model.clip_alignment_head(embeddings)
+        if getattr(splice_regularizer, "requires_clip_distillation", False):
+            if model.clip_distillation_head is None:
+                raise ValueError("SpLiCE synthesis distillation requires a g_clip head.")
+            regularized_embeddings = model.clip_distillation_head(embeddings)
         splice_loss = splice_regularizer(regularized_embeddings, repeated_concepts, repeated_targets)
         loss = loss + splice_loss
     parts = {

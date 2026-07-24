@@ -56,8 +56,9 @@ SpLiCE is used here as a frozen interpretability and control module. It
 decomposes CLIP image embeddings into sparse, human-readable concept weights
 such as `water`, `lake`, `forest`, `tree`, or `grass`. The SimCLR model remains
 the trainable ResNet encoder; SpLiCE does not replace the SSL backbone. Instead,
-SpLiCE produces both a scalar routing score and a vector of the selected concept
-weights from names or vocabulary indices passed with `--splice_concepts`. The
+SpLiCE produces a scalar routing score, a vector of selected concept weights,
+and, in synthesis mode, a frozen CLIP target from names or vocabulary indices
+passed with `--splice_concepts`. The
 scalar is used only to decide which samples receive targeted augmentation. The
 vector is retained for regularization so mutually exclusive concepts such as
 `water` and `forest` are not collapsed into the same value.
@@ -71,7 +72,7 @@ matrix between encoder features and frozen SpLiCE concept vectors after centerin
 both within each target class. This targets within-class spurious variation without
 automatically suppressing signal merely because it is correlated with the label.
 
-The current implementation supports two interventions:
+The current implementation supports three interventions:
 
 - `augment`: concept-aware augmentation. Before SSL training starts, SpLiCE
   scores every Waterbirds training image. Images whose selected concept score is
@@ -85,6 +86,11 @@ The current implementation supports two interventions:
 target classes, scaled by `--splice_weight`.
   This default objective uses target labels during SSL regularization; use
   `--splice_conditional_on_target false` for a fully label-free ablation.
+- `synthesis_distill`: residual-preserving SpLiCE synthesis followed by
+  stop-gradient cosine distillation. Selected sparse coordinates are edited,
+  recomposed as `normalize(z + alpha * (c'_S - c_S) @ D_S)`, and cached as
+  frozen CLIP targets. A separate `g_clip` head predicts these targets while
+  the ordinary SimCLR head continues to optimize NT-Xent.
 
 The methods can be compared independently or together:
 
@@ -119,6 +125,16 @@ python spur_splice.py \
   --splice_mode augment_corr_reg \
   --splice_concepts "water,lake,forest,tree,grass" \
   --splice_score_threshold 0.01 \
+  --splice_weight 0.1
+
+# Option D: synthesize edited CLIP targets and distill through g_clip
+python spur_splice.py \
+  --dataset waterbirds \
+  --data_folder ./datasets \
+  --splice_mode synthesis_distill \
+  --splice_concepts "water,lake,forest,tree,grass" \
+  --splice_intervention class_neutralize \
+  --splice_intervention_strength 1.0 \
   --splice_weight 0.1
 ```
 

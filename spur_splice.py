@@ -380,7 +380,7 @@ def parse_args() -> argparse.Namespace:
         "--splice_mode",
         type=str,
         default="none",
-        choices=["none", "augment", "corr_reg", "augment_corr_reg", "counterfactual"],
+        choices=["none", "augment", "corr_reg", "augment_corr_reg", "synthesis_distill"],
     )
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
@@ -407,9 +407,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--splice_intervention",
         type=str,
-        default="class_median",
-        choices=["original", "zero_out", "class_median", "matched_swap", "shuffled_swap"],
-        help="Concept edit used to construct residual-preserving CLIP teacher targets.",
+        default="class_neutralize",
+        choices=[
+            "original",
+            "zero_out",
+            "class_neutralize",
+            "core_matched_swap",
+            "shuffled_donor",
+            "same_class_random_donor",
+            "random_coords",
+        ],
+        help="Sparse-code edit used to synthesize residual-preserving CLIP distillation targets.",
     )
     parser.add_argument(
         "--splice_intervention_strength",
@@ -574,7 +582,7 @@ def parse_args() -> argparse.Namespace:
         args.splice_concepts = "auto"
     if args.use_splice and args.splice_concepts.strip().lower() == "auto":
         auto_discover_splice_concepts(args)
-    if args.splice_mode in {"corr_reg", "augment_corr_reg", "counterfactual"} and args.splice_weight <= 0:
+    if args.splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"} and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
     if not 0 <= args.splice_intervention_strength <= 2:
         parser.error("--splice_intervention_strength must be in the interval [0, 2].")
@@ -707,8 +715,9 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         "CelebA": "CelebA",
     }.get(args.dataset, args.dataset)
     prefix = f"{dataset}_S{args.seed:g}"
+    suffix = f"_e{args.epochs}"
     if not args.use_splice:
-        return f"{prefix}_Baseline"
+        return f"{prefix}_Baseline{suffix}"
     if args.splice_mode in {"augment", "augment_corr_reg"}:
         augmentations = []
         if args.splice_strong_crop is not None:
@@ -728,15 +737,28 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         augmentation = "All" if len(augmentations) >= 4 else "+".join(augmentations) or "StandardAug"
         route = "" if args.splice_routing_mode == "semantic" else f"_{args.splice_routing_mode.title()}"
         if args.splice_mode == "augment_corr_reg":
-            return f"{prefix}_{augmentation}{route}_Corr{args.splice_weight:g}"
-        return f"{prefix}_{augmentation}{route}"
-    if args.splice_mode == "counterfactual":
-        return (
-            f"{prefix}_CF-{args.splice_intervention}"
-            f"-A{args.splice_intervention_strength:g}-W{args.splice_weight:g}"
+            return f"{prefix}_{augmentation}{route}_Corr{args.splice_weight:g}{suffix}"
+        return f"{prefix}_{augmentation}{route}{suffix}"
+    if args.splice_mode == "synthesis_distill":
+        intervention_labels = {
+            "original": "OrigCLIP",
+            "class_neutralize": "SynNeutralize",
+            "zero_out": "SynZeroOut",
+            "core_matched_swap": "SynOracleSwap",
+            "shuffled_donor": "SynShuffDonor",
+            "same_class_random_donor": "SynSameClass",
+            "random_coords": "SynRandCoords",
+        }
+        label = intervention_labels.get(args.splice_intervention, args.splice_intervention)
+        # Alpha only scales an actual edit, so it is inert for the unedited-teacher control.
+        hyper = (
+            f"_w{args.splice_weight:g}"
+            if args.splice_intervention == "original"
+            else f"_w{args.splice_weight:g}a{args.splice_intervention_strength:g}"
         )
+        return f"{prefix}_{label}{hyper}{suffix}"
     conditional = "Y" if args.splice_conditional_on_target else ""
-    return f"{prefix}_Corr{args.splice_weight:g}{conditional}"
+    return f"{prefix}_Corr{args.splice_weight:g}{conditional}{suffix}"
 
 
 def format_storage_name(args: argparse.Namespace) -> str:
@@ -747,8 +769,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = f"aug-{args.splice_routing_mode}"
     elif args.splice_mode == "augment_corr_reg":
         experiment = f"augcorr-{args.splice_routing_mode}"
-    elif args.splice_mode == "counterfactual":
-        experiment = f"cf-{args.splice_intervention}"
+    elif args.splice_mode == "synthesis_distill":
+        experiment = f"syn-{args.splice_intervention}"
     else:
         experiment = "corr"
 
@@ -799,9 +821,9 @@ def format_run_name(args: argparse.Namespace) -> str:
             else f"{args.splice_score_threshold:g}"
         )
         splice_name = f"augment{threshold_name}_route{args.splice_routing_mode}_{format_strong_aug_name(args)}"
-    elif args.splice_mode == "counterfactual":
+    elif args.splice_mode == "synthesis_distill":
         splice_name = (
-            f"counterfactual_{args.splice_intervention}_"
+            f"synthesis_distill_{args.splice_intervention}_"
             f"a{args.splice_intervention_strength:g}_w{args.splice_weight:g}"
         )
     else:
@@ -1101,18 +1123,18 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
-    clip_alignment_dim = (
+    clip_distillation_dim = (
         getattr(train_loader.dataset, "control_dim", None)
-        if args.splice_mode == "counterfactual"
+        if args.splice_mode == "synthesis_distill"
         else None
     )
-    if args.splice_mode == "counterfactual" and clip_alignment_dim is None:
-        raise ValueError("Counterfactual SpLiCE targets must expose their CLIP embedding dimension.")
+    if args.splice_mode == "synthesis_distill" and clip_distillation_dim is None:
+        raise ValueError("SpLiCE synthesis targets must expose their CLIP embedding dimension.")
     model = SimCLRModel(
         name=args.model,
         head=args.head,
         feat_dim=args.feat_dim,
-        clip_alignment_dim=clip_alignment_dim,
+        clip_distillation_dim=clip_distillation_dim,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)

@@ -99,15 +99,17 @@ sbatch --array=0-8 --export=ALL,DATASET=waterbirds,SEED=4 \
   scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
 ```
 
-### Counterfactual concept distillation
+### SpLiCE synthesis and distillation
 
-The new primary method keeps the original frozen CLIP embedding residual and
-edits only the discovered SpLiCE concept contributions:
+The proposed method edits only selected SpLiCE sparse-code coordinates and
+keeps the frozen CLIP residual:
 
-`z_cf = normalize(z + alpha * D_S * (c'_S - c_S))`.
+`z_cf = normalize(z + alpha * (c'_S - c_S) @ D_S)`.
 
-The resulting embedding is a cached, stop-gradient target for a separate MLP
-head on the SimCLR encoder. The ordinary SimCLR projection head is unchanged.
+The synthesized embedding is cached and used as a stop-gradient cosine target
+for a separate `g_clip` MLP on the SimCLR encoder. The ordinary SimCLR
+projection head remains responsible for NT-Xent, so both objectives share the
+ResNet encoder without forcing the two target spaces through one head.
 
 ```powershell
 python spur_splice.py `
@@ -116,18 +118,18 @@ python spur_splice.py `
   --epochs 1 `
   --linear_probe_epochs 1 `
   --rank_eval_freq 0 `
-  --splice_mode counterfactual `
+  --splice_mode synthesis_distill `
   --splice_concepts "bamboo,forest,hiking,rainforest,raven" `
-  --splice_intervention class_median `
+  --splice_intervention class_neutralize `
   --splice_intervention_strength 1.0 `
   --splice_weight 0.1
 ```
 
-Available interventions are `original` (ordinary CLIP distillation control),
-`zero_out`, `class_median` (recommended primary variant), `matched_swap`, and
-`shuffled_swap` (negative control). `matched_swap` uses a donor with the same
+Available interventions are `original`, `class_neutralize` (primary),
+`random_coords`, `shuffled_donor`, `same_class_random_donor`, `zero_out`, and
+`core_matched_swap` (metadata-oracle). The oracle uses a donor with the same
 class and a different spurious attribute, selected by nearest residual/core
-CLIP representation. Targets and CLIP embeddings are cached under
+CLIP representation. Synthesized targets and CLIP embeddings are cached under
 `--splice_score_cache_dir`; the first run therefore performs a one-time
 precomputation before SSL training starts.
 

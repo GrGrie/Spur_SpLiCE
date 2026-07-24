@@ -32,7 +32,7 @@ class SpliceConfig:
     batch_size: int = 128
     num_workers: int = 0
     conditional_on_target: bool = True
-    intervention: str = "class_median"
+    intervention: str = "class_neutralize"
     intervention_strength: float = 1.0
     intervention_seed: int = 0
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -56,7 +56,7 @@ def score_cache_path(
     artifact: str = "scores",
 ) -> Path:
     fingerprint = {
-        "cache_version": 2,
+        "cache_version": 3,
         "artifact": artifact,
         "dataset": cache_key,
         "dataset_size": dataset_size,
@@ -65,11 +65,13 @@ def score_cache_path(
         "vocab": config.vocab,
         "vocab_size": config.vocab_size,
         "l1_penalty": config.l1_penalty,
-        "concept_indices": sorted(concept_indices),
+        # Column order is semantically significant for cached weight matrices:
+        # it must remain aligned with the corresponding dictionary directions.
+        "concept_indices": [int(index) for index in concept_indices],
     }
     if artifact == "scores":
         fingerprint["score_reduction"] = config.score_reduction
-    if artifact == "teacher_targets":
+    if artifact == "synthesis_targets":
         fingerprint.update(
             {
                 "intervention": config.intervention,
@@ -91,11 +93,11 @@ def save_score_cache(scores: torch.Tensor, path: Path) -> None:
 
 
 def splice_mode_uses_scores(mode: str) -> bool:
-    return mode in {"augment", "corr_reg", "augment_corr_reg", "counterfactual"}
+    return mode in {"augment", "corr_reg", "augment_corr_reg", "synthesis_distill"}
 
 
 def splice_mode_uses_regularizer(mode: str) -> bool:
-    return mode in {"corr_reg", "augment_corr_reg", "counterfactual"}
+    return mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"}
 
 
 def residual_preserving_intervention(
@@ -126,7 +128,7 @@ def edit_spurious_concept_weights(
     spurious_values: torch.Tensor,
     seed: int = 0,
 ) -> torch.Tensor:
-    """Construct auditable concept edits for counterfactual teacher targets."""
+    """Construct auditable sparse-code edits for synthesized CLIP targets."""
 
     weights = concept_weights.detach().float().cpu()
     targets = targets.detach().long().cpu().view(-1)
@@ -135,14 +137,14 @@ def edit_spurious_concept_weights(
         return weights.clone()
     if intervention == "zero_out":
         return torch.zeros_like(weights)
-    if intervention == "class_median":
+    if intervention in {"class_neutralize", "random_coords"}:
         edited = weights.clone()
         for target in torch.unique(targets):
             mask = targets == target
             edited[mask] = weights[mask].median(dim=0).values
         return edited
-    if intervention not in {"matched_swap", "shuffled_swap"}:
-        raise ValueError(f"Unsupported SpLiCE counterfactual intervention: {intervention!r}")
+    if intervention not in {"core_matched_swap", "shuffled_donor", "same_class_random_donor"}:
+        raise ValueError(f"Unsupported SpLiCE synthesis intervention: {intervention!r}")
 
     embeddings = clip_embeddings.detach().float().cpu()
     directions = concept_directions.detach().float().cpu()
@@ -151,12 +153,25 @@ def edit_spurious_concept_weights(
     generator = torch.Generator().manual_seed(int(seed))
     for target in torch.unique(targets):
         target_mask = targets == target
+        if intervention == "same_class_random_donor":
+            target_indices = torch.where(target_mask)[0]
+            if target_indices.numel() < 2:
+                continue
+            donor_offsets = torch.randint(
+                1,
+                target_indices.numel(),
+                (target_indices.numel(),),
+                generator=generator,
+            )
+            donor_positions = (torch.arange(target_indices.numel()) + donor_offsets) % target_indices.numel()
+            edited[target_indices] = weights[target_indices[donor_positions]]
+            continue
         for spurious_value in torch.unique(spurious_values[target_mask]):
             source_indices = torch.where(target_mask & (spurious_values == spurious_value))[0]
             donor_indices = torch.where(target_mask & (spurious_values != spurious_value))[0]
             if source_indices.numel() == 0 or donor_indices.numel() == 0:
                 continue
-            if intervention == "shuffled_swap":
+            if intervention == "shuffled_donor":
                 sampled = torch.randint(
                     donor_indices.numel(),
                     (source_indices.numel(),),
@@ -171,6 +186,26 @@ def edit_spurious_concept_weights(
                 chosen = torch.cat(chosen_chunks)
             edited[source_indices] = weights[chosen]
     return edited
+
+
+def random_dictionary_indices(
+    vocabulary_size: int,
+    excluded_indices: Sequence[int],
+    count: int,
+    seed: int,
+) -> list[int]:
+    """Select deterministic non-spurious coordinates for a matched control."""
+
+    excluded = set(int(index) for index in excluded_indices)
+    candidates = torch.tensor(
+        [index for index in range(vocabulary_size) if index not in excluded],
+        dtype=torch.long,
+    )
+    if candidates.numel() < count:
+        raise ValueError("Not enough non-selected SpLiCE coordinates for the random-coordinate control.")
+    generator = torch.Generator().manual_seed(int(seed))
+    chosen = candidates[torch.randperm(candidates.numel(), generator=generator)[:count]]
+    return [int(index) for index in chosen.tolist()]
 
 
 def identity_collate(batch):
@@ -247,17 +282,28 @@ class SpliceConceptScorer:
         return self.score_weights(weights).detach().cpu()
 
     @torch.no_grad()
-    def concept_weights_images(self, images) -> torch.Tensor:
+    def concept_weights_images(
+        self,
+        images,
+        concept_indices: Sequence[int] | None = None,
+    ) -> torch.Tensor:
         batch = torch.stack([self.preprocess(image) for image in images], dim=0).to(self.device)
         weights = self.model.encode_image(batch)
-        return self.select_weights(weights).detach().cpu()
+        indices = self.concept_indices if concept_indices is None else list(concept_indices)
+        return weights[:, indices].detach().cpu()
 
     @torch.no_grad()
-    def _score_cache_path(self, dataset, cache_key: str, artifact: str = "scores") -> Path:
+    def _score_cache_path(
+        self,
+        dataset,
+        cache_key: str,
+        artifact: str = "scores",
+        concept_indices: Sequence[int] | None = None,
+    ) -> Path:
         return score_cache_path(
             self.config,
             len(dataset),
-            self.concept_indices,
+            self.concept_indices if concept_indices is None else concept_indices,
             cache_key,
             artifact=artifact,
         )
@@ -268,6 +314,8 @@ class SpliceConceptScorer:
         batch_size: int | None = None,
         num_workers: int | None = None,
         cache_key: str | None = None,
+        concept_indices: Sequence[int] | None = None,
+        artifact: str = "concept_weights",
     ) -> torch.Tensor:
         """Return an ``[n_images, n_selected_concepts]`` weight matrix.
 
@@ -276,10 +324,15 @@ class SpliceConceptScorer:
         otherwise become indistinguishable.
         """
 
-        cache_path = self._score_cache_path(dataset, cache_key, "concept_weights") if cache_key else None
+        indices = self.concept_indices if concept_indices is None else list(concept_indices)
+        cache_path = (
+            self._score_cache_path(dataset, cache_key, artifact, concept_indices=indices)
+            if cache_key
+            else None
+        )
         if cache_path is not None and cache_path.is_file():
             weights = torch.load(cache_path, map_location="cpu", weights_only=True)
-            expected_shape = (len(dataset), len(self.concept_indices))
+            expected_shape = (len(dataset), len(indices))
             if isinstance(weights, torch.Tensor) and tuple(weights.shape) == expected_shape:
                 print(f"[INFO] Loaded cached SpLiCE concept weights {expected_shape} from {cache_path}", flush=True)
                 return weights.float()
@@ -303,7 +356,7 @@ class SpliceConceptScorer:
         selected_weights = []
         for batch_index, batch in enumerate(loader, start=1):
             images = [item[0] for item in batch]
-            selected_weights.append(self.concept_weights_images(images))
+            selected_weights.append(self.concept_weights_images(images, indices))
             if batch_index == 1 or batch_index % report_every == 0 or batch_index == total_batches:
                 elapsed = time.monotonic() - started_at
                 print(
@@ -350,29 +403,42 @@ class SpliceConceptScorer:
             save_score_cache(result, cache_path)
         return result
 
-    def counterfactual_targets_dataset(
+    def synthesis_targets_dataset(
         self,
         dataset,
         cache_key: str | None = None,
         spurious_metadata_index: int = 0,
     ) -> torch.Tensor:
-        """Build stop-gradient CLIP targets with only selected concepts edited."""
+        """Synthesize stop-gradient CLIP targets by editing selected sparse coordinates."""
 
-        cache_path = self._score_cache_path(dataset, cache_key, "teacher_targets") if cache_key else None
+        cache_path = self._score_cache_path(dataset, cache_key, "synthesis_targets") if cache_key else None
         if cache_path is not None and cache_path.is_file():
             targets = torch.load(cache_path, map_location="cpu", weights_only=True)
             if isinstance(targets, torch.Tensor) and targets.ndim == 2 and len(targets) == len(dataset):
                 return targets.float()
-            print(f"[WARNING] Ignoring invalid counterfactual target cache at {cache_path}", flush=True)
+            print(f"[WARNING] Ignoring invalid synthesis-target cache at {cache_path}", flush=True)
 
-        concept_weights = self.concept_weights_dataset(dataset, cache_key=cache_key)
         clip_embeddings = self.clip_embeddings_dataset(dataset, cache_key=cache_key)
         labels = torch.as_tensor(dataset.y_array).long().view(-1)
         metadata = torch.as_tensor(dataset.metadata_array)
         if metadata.ndim != 2 or not 0 <= spurious_metadata_index < metadata.shape[1]:
-            raise ValueError("Counterfactual SpLiCE requires a valid spurious metadata column.")
+            raise ValueError("SpLiCE synthesis requires a valid spurious metadata column.")
         spurious_values = metadata[:, spurious_metadata_index].long()
-        concept_directions = self.model.dictionary[self.concept_indices].detach().float().cpu()
+        edit_indices = self.concept_indices
+        if self.config.intervention == "random_coords":
+            edit_indices = random_dictionary_indices(
+                len(self.model.dictionary),
+                self.concept_indices,
+                count=len(self.concept_indices),
+                seed=self.config.intervention_seed,
+            )
+        concept_weights = self.concept_weights_dataset(
+            dataset,
+            cache_key=cache_key,
+            concept_indices=edit_indices,
+            artifact="concept_weights" if edit_indices == self.concept_indices else "random_concept_weights",
+        )
+        concept_directions = self.model.dictionary[edit_indices].detach().float().cpu()
         edited_weights = edit_spurious_concept_weights(
             self.config.intervention,
             concept_weights,
@@ -422,7 +488,7 @@ class SpliceConceptScorer:
 
 class CorrelationSpliceRegularizer:
     enabled = True
-    requires_clip_alignment = False
+    requires_clip_distillation = False
 
     def __init__(self, weight: float, conditional_on_target: bool = True) -> None:
         self.weight = weight
@@ -484,7 +550,7 @@ class DisabledSpliceRegularizer:
     """No-op placeholder for future SpLiCE regularization/intervention work."""
 
     enabled = False
-    requires_clip_alignment = False
+    requires_clip_distillation = False
 
     def __call__(
         self,
@@ -495,11 +561,11 @@ class DisabledSpliceRegularizer:
         return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
 
 
-class CounterfactualSpliceDistillation:
-    """Cosine distillation from a frozen residual-preserving SpLiCE target."""
+class SpliceSynthesisDistillation:
+    """Stop-gradient cosine distillation from a synthesized CLIP target."""
 
     enabled = True
-    requires_clip_alignment = True
+    requires_clip_distillation = True
 
     def __init__(self, weight: float) -> None:
         self.weight = weight
@@ -512,10 +578,10 @@ class CounterfactualSpliceDistillation:
     ) -> torch.Tensor:
         del targets
         if teacher_targets is None:
-            raise ValueError("Counterfactual SpLiCE distillation requires one teacher target per view.")
+            raise ValueError("SpLiCE synthesis distillation requires one teacher target per view.")
         if embeddings.shape != teacher_targets.shape:
             raise ValueError(
-                "Aligned SSL features and SpLiCE teacher targets must have the same shape, got "
+                "g_clip predictions and synthesized CLIP targets must have the same shape, got "
                 f"{tuple(embeddings.shape)} and {tuple(teacher_targets.shape)}."
             )
         teacher_targets = teacher_targets.to(device=embeddings.device, dtype=embeddings.dtype).detach()
@@ -525,8 +591,8 @@ class CounterfactualSpliceDistillation:
 def build_splice_regularizer(config: SpliceConfig):
     if not config.use_splice or not splice_mode_uses_regularizer(config.mode):
         return DisabledSpliceRegularizer()
-    if config.mode == "counterfactual":
-        return CounterfactualSpliceDistillation(config.splice_weight)
+    if config.mode == "synthesis_distill":
+        return SpliceSynthesisDistillation(config.splice_weight)
     return CorrelationSpliceRegularizer(
         config.splice_weight,
         conditional_on_target=config.conditional_on_target,

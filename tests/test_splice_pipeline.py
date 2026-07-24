@@ -14,12 +14,15 @@ from experiments.spurious_eval.datasets.transforms import (
 )
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
+from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
+from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
 from splice.ssl_regularization import (
     CorrelationSpliceRegularizer,
-    CounterfactualSpliceDistillation,
+    SpliceSynthesisDistillation,
     SpliceConfig,
     edit_spurious_concept_weights,
+    random_dictionary_indices,
     residual_preserving_intervention,
     score_cache_path,
 )
@@ -126,7 +129,7 @@ class SplicePipelineTests(unittest.TestCase):
         expected = torch.nn.functional.normalize(torch.tensor([[0.5, 0.8, 0.0]]), dim=1)
         torch.testing.assert_close(actual, expected)
 
-    def test_counterfactual_edits_include_median_and_matched_controls(self):
+    def test_synthesis_edits_include_neutralize_swap_and_donor_controls(self):
         weights = torch.tensor([[0.0], [2.0], [10.0], [12.0]])
         embeddings = torch.tensor(
             [[0.0, 1.0, 0.0], [2.0, 0.0, 1.0], [10.0, 0.9, 0.1], [12.0, 0.1, 0.9]]
@@ -134,26 +137,61 @@ class SplicePipelineTests(unittest.TestCase):
         directions = torch.tensor([[1.0, 0.0, 0.0]])
         targets = torch.zeros(4, dtype=torch.long)
         spurious = torch.tensor([0, 0, 1, 1])
-        median = edit_spurious_concept_weights(
-            "class_median", weights, embeddings, directions, targets, spurious
+        neutralized = edit_spurious_concept_weights(
+            "class_neutralize", weights, embeddings, directions, targets, spurious
         )
-        torch.testing.assert_close(median, torch.full_like(weights, 2.0))
+        torch.testing.assert_close(neutralized, torch.full_like(weights, 2.0))
         matched = edit_spurious_concept_weights(
-            "matched_swap", weights, embeddings, directions, targets, spurious
+            "core_matched_swap", weights, embeddings, directions, targets, spurious
         )
         torch.testing.assert_close(matched, torch.tensor([[10.0], [12.0], [0.0], [2.0]]))
+        same_class = edit_spurious_concept_weights(
+            "same_class_random_donor", weights, embeddings, directions, targets, spurious, seed=3
+        )
+        self.assertTrue(torch.all(same_class != weights))
         zeroed = edit_spurious_concept_weights(
             "zero_out", weights, embeddings, directions, targets, spurious
         )
         torch.testing.assert_close(zeroed, torch.zeros_like(weights))
 
-    def test_counterfactual_distillation_stops_teacher_gradients(self):
+    def test_random_coordinate_control_excludes_selected_coordinates(self):
+        indices = random_dictionary_indices(5, [1, 3], count=2, seed=7)
+        self.assertEqual(len(indices), 2)
+        self.assertTrue(set(indices).isdisjoint({1, 3}))
+
+    def test_synthesis_distillation_stops_teacher_gradients(self):
         predictions = torch.tensor([[1.0, 0.0], [0.0, 1.0]], requires_grad=True)
         teacher = torch.tensor([[0.0, 1.0], [0.0, 1.0]], requires_grad=True)
-        loss = CounterfactualSpliceDistillation(0.5)(predictions, teacher)
+        loss = SpliceSynthesisDistillation(0.5)(predictions, teacher)
         loss.backward()
         self.assertGreater(float(predictions.grad.norm()), 0.0)
         self.assertIsNone(teacher.grad)
+
+    def test_synthesis_mode_trains_simclr_and_clip_distillation_heads(self):
+        class TinyTwoHead(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Linear(2, 3, bias=False)
+                self.head = torch.nn.Linear(3, 2, bias=False)
+                self.clip_distillation_head = torch.nn.Linear(3, 2, bias=False)
+
+        model = TinyTwoHead()
+        images = [
+            torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
+            torch.tensor([[0.8, 0.2], [0.2, 0.8]]),
+        ]
+        teacher = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        loss, _, _ = simclr_forward_loss(
+            model,
+            SimCLRLoss(temperature=0.1),
+            images,
+            teacher,
+            torch.tensor([0, 1]),
+            SpliceSynthesisDistillation(0.5),
+        )
+        loss.backward()
+        self.assertGreater(float(model.head.weight.grad.norm()), 0.0)
+        self.assertGreater(float(model.clip_distillation_head.weight.grad.norm()), 0.0)
 
     def test_sparse_discovery_storage_selects_concepts_without_dense_vocab(self):
         weights = SparseConceptWeights(
@@ -250,9 +288,11 @@ class SplicePipelineTests(unittest.TestCase):
         config_max = SpliceConfig(concepts="1,2", score_reduction="max", pretrained="a")
         vector_mean = score_cache_path(config_mean, 4, [1, 2], "dataset", artifact="concept_weights")
         vector_max = score_cache_path(config_max, 4, [1, 2], "dataset", artifact="concept_weights")
+        vector_reordered = score_cache_path(config_mean, 4, [2, 1], "dataset", artifact="concept_weights")
         score_mean = score_cache_path(config_mean, 4, [1, 2], "dataset", artifact="scores")
         score_max = score_cache_path(config_max, 4, [1, 2], "dataset", artifact="scores")
         self.assertEqual(vector_mean, vector_max)
+        self.assertNotEqual(vector_mean, vector_reordered)
         self.assertNotEqual(score_mean, score_max)
 
     def test_splice_cpu_solver_returns_nonnegative_sparse_weights(self):

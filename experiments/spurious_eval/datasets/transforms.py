@@ -90,8 +90,9 @@ class ConceptAwareSSLSubset(torch.utils.data.Dataset):
     """Attach cached SpLiCE controls to a WILDS-style SSL subset.
 
     ``scores`` decide whether the second view receives the targeted transform.
-    When ``concept_weights`` are provided, the full selected concept vector is
-    returned to the SSL loop instead of the lossy scalar score.
+    When ``concept_weights`` are provided, the attached vector is returned to
+    the SSL loop instead of the lossy scalar score. Depending on the mode, this
+    vector is either a selected SpLiCE code or a synthesized CLIP teacher target.
     """
 
     def __init__(
