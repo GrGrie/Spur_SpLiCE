@@ -1,0 +1,487 @@
+\documentclass{article}
+\usepackage{iclr2026_conference,times}
+
+% Optional math commands from the official ICLR template.
+\IfFileExists{math_commands.tex}{\input{math_commands.tex}}{}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+
+\title{Concept-Guided Mitigation of Spurious Correlations\\
+in Self-Supervised Representations}
+
+% Keep the submission anonymous. Replace this block only for the camera-ready version.
+\author{Anonymous Authors}
+
+% \iclrfinalcopy % Uncomment only for the camera-ready version.
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Self-supervised visual encoders can exploit spurious correlations even when
+class labels are absent from their standard pretraining objective. We study
+whether sparse, language-aligned concepts extracted by a frozen
+vision--language model can identify nuisance structure and guide the training
+of a separate self-supervised encoder. Our pipeline decomposes frozen CLIP
+embeddings with SpLiCE, automatically ranks concepts associated with a known
+spurious attribute conditional on the target label, and injects the resulting
+signal into SimCLR through either routed augmentation or class-conditional
+correlation regularization. On Waterbirds, neither intervention yields a
+reliable worst-group improvement over matched SimCLR. The strongest
+broad-sweep configuration improves mean worst-group validation accuracy by
+only $0.45$ points, with paired seed effects of $+2.38$, $+6.27$, and $-7.30$.
+More decisively, Top-5 semantic routing underperforms a matched shuffled-routing
+control on all three paired seeds by $1.64$, $0.32$, and $3.77$ points,
+respectively. This result isolates a failure of the current scalar routing
+interface, rather than establishing that concept representations are
+intrinsically uninformative. Motivated by this distinction, we formalize
+concept-conditioned contrastive positives as the next hypothesis: same-class
+examples with dissimilar nuisance-concept profiles are treated as additional
+positives, directly encoding the desired cross-background invariance. The
+study provides a reproducible empirical diagnosis and a controlled transition
+from concept-based sample routing to concept-conditioned representation
+geometry.
+\end{abstract}
+
+\section{Introduction}
+Self-supervised learning (SSL) can learn transferable visual representations without target labels, but the resulting encoder may still exploit nuisance attributes that correlate with downstream labels. This creates a failure mode analogous to spurious correlation in supervised learning: average accuracy can remain high while performance on minority or conflict groups deteriorates.
+
+We study whether an interpretable frozen vision--language model can expose such nuisance structure and convert it into a useful training signal for a separate SSL encoder. Our approach uses Sparse Linear Concept Embeddings (SpLiCE) \citep{bhalla2024splice} to approximate frozen CLIP image embeddings as sparse nonnegative combinations of text-concept embeddings. We automatically rank concepts according to their association with the known spurious attribute after conditioning on the target label. The resulting concept vectors are then used to (i) audit dataset bias, (ii) route selected images to a stronger SimCLR augmentation branch, or (iii) penalize class-conditional correlations between SSL features and selected concept coordinates.
+
+The central empirical question is not whether SpLiCE produces plausible concept
+names, but whether its per-image concept geometry induces useful invariances in
+an independent encoder. We therefore compare semantic routing against matched
+shuffled, random, and augment-all controls and evaluate worst-group (WG)
+accuracy with paired seeds. The evidence is negative for the two implemented
+interfaces: neither routed augmentation nor coordinate-wise correlation
+regularization reliably improves WG accuracy, and semantic routing performs
+worse than shuffled routing on each of three paired seeds. This controlled
+failure localizes the current bottleneck. Reducing a concept vector to a scalar
+augmentation decision discards the relational information needed to express
+the desired invariance: examples with the same target semantics but different
+nuisance content should be close in representation space.
+
+This diagnosis motivates a distinct research hypothesis:
+\emph{concept-conditioned contrastive positives}. Rather than using SpLiCE to
+decide which individual images receive stronger augmentation, we use
+dissimilarity between concept vectors to construct cross-image positive
+relations. This formulation modifies the geometry optimized by contrastive
+learning directly and admits matched shuffled-concept, random-positive, and
+metadata-oracle controls.
+
+Our current contributions are:
+\begin{itemize}
+    \item an end-to-end pipeline that connects frozen SpLiCE concept discovery to the training of a separate SimCLR encoder;
+    \item a target-conditioned concept-ranking procedure and a vector-valued correlation regularizer operating on per-image SpLiCE coordinates;
+    \item a three-seed matched control showing that Top-5 semantic routing
+    underperforms shuffled routing, isolating a failure of the current
+    concept-to-augmentation interface;
+    \item a reproducible protocol with RNG-isolated matched runs, cached decomposition scores, periodic probes, and explicit validation/test separation;
+    \item an empirical diagnosis showing that plausible concept detection is
+    insufficient for robust improvement under the two simple interventions
+    studied here; and
+    \item a falsifiable formulation that uses concept dissimilarity
+    to mine same-class, cross-background positives, together with controls that
+    distinguish semantic conditioning from the generic effect of adding
+    positive pairs.
+\end{itemize}
+
+\section{Related Work}
+\paragraph{Sparse concept decompositions.}
+SpLiCE decomposes dense CLIP embeddings into sparse, nonnegative combinations of language-aligned concept embeddings and has been proposed for interpretation, concept bottlenecks, bias discovery, and representation editing \citep{bhalla2024splice}. In contrast, we freeze SpLiCE and use it as an external auditor and controller while training a separate ResNet encoder from scratch.
+
+\paragraph{Robust self-supervised learning.}
+Prior work has shown that SSL representations can encode and exploit spurious features, and has proposed feature-space augmentation or training-dynamics-based interventions \citep{hamidieh2024views,zhu2023lassl}. Our setting differs in the source of the intervention signal: rather than using the SSL encoder's internals or learning speed, we use human-readable nuisance coordinates extracted by a frozen vision--language model.
+
+\paragraph{Concept discovery for spurious mitigation.}
+Concept discovery has also been used to rebalance supervised classifier training. CoBalT, for example, learns dataset-specific object-centric latent concepts and uses them for concept-balanced sampling \citep{arefin2024cobalt}. Our objective is different: we investigate whether language-aligned concepts can directly shape the pretraining of a separate SSL representation rather than only the training distribution of a supervised classifier.
+
+\section{Problem Setting}
+Let each image $x_i$ have a target label $y_i$ and a spurious attribute $a_i$. The SSL encoder $f_\theta$ is trained with the SimCLR NT-Xent objective on two augmented views of each image \citep{chen2020simclr}. Target and spurious labels are not prediction targets of the SSL encoder, but the current concept-discovery and conditional-regularization variants use metadata during development. We therefore describe the method as \emph{metadata-assisted SSL}.
+
+The main evaluation criterion is worst-group accuracy over groups defined by $(y,a)$. Hyperparameters are selected on validation data, and the test split is reserved for a final preselected configuration. A successful intervention should improve WG accuracy relative to a matched SimCLR baseline. A spurious-attribute probe is used as a diagnostic of linearly accessible nuisance information, but high probe accuracy alone is not treated as proof that the downstream classifier causally relies on the nuisance attribute.
+
+\section{Method}
+\subsection{Frozen SpLiCE decomposition}
+A frozen CLIP encoder maps an image to a dense embedding. SpLiCE approximates this embedding using a sparse nonnegative vector over a vocabulary of text concepts. We use \texttt{open\_clip:ViT-B-32} with \texttt{laion2b\_s34b\_b79k} weights, the top 10,000 LAION vocabulary entries, and an $\ell_1$ penalty of $0.25$. The decomposition is computed once for the training split and cached.
+
+For image $x_i$, let $c_i\in\mathbb{R}_{\geq0}^{K}$ denote the selected concept coordinates. The broad sweep uses ten concepts:
+\begin{center}
+\small\texttt{bamboo, forests, whale, rainforest, raven, forest, seascape, lake, snorkeling, pond}.
+\end{center}
+The routing-control series uses an automatically deduplicated and direction-consistent top five:
+\begin{center}
+\small\texttt{bamboo, forests, whale, rainforest, raven}.
+\end{center}
+
+\subsection{Automatic nuisance-concept ranking}
+For concept $k$, target $y$, and spurious value $a$, let $\mu_{a,y,k}$ be the mean SpLiCE weight in that group. For binary attributes, we compute a target-conditioned spurious effect
+\begin{equation}
+S_k = \frac{1}{|\mathcal{Y}|}\sum_{y\in\mathcal{Y}}\left|\mu_{1,y,k}-\mu_{0,y,k}\right|,
+\end{equation}
+a spurious-conditioned target effect
+\begin{equation}
+T_k = \frac{1}{|\mathcal{A}|}\sum_{a\in\mathcal{A}}\left|\mu_{a,1,k}-\mu_{a,0,k}\right|,
+\end{equation}
+and an instability term that penalizes disagreement in the magnitude of the spurious effect across target classes. With unit coefficients, the ranking score is
+\begin{equation}
+\mathrm{Score}_k = S_k-T_k-I_k.
+\end{equation}
+The revised control series additionally requires the signed effect $d_{k,y}=\mu_{1,y,k}-\mu_{0,y,k}$ to have the same direction for every target class and removes simple lexical duplicates before selecting the top $K$ concepts.
+
+\subsection{Concept-routed augmentation}
+For routing, the selected vector is reduced to
+\begin{equation}
+r(x_i)=\max_k c_{ik}.
+\end{equation}
+A threshold is set by a training-set quantile $q$. Images above the threshold produce one standard and one strong view,
+\begin{equation}
+\left[T_{\mathrm{std}}(x),T_{\mathrm{strong}}(x)\right],
+\end{equation}
+whereas images below the threshold produce two standard views. At $q=0.75$, semantic, shuffled, and matched-random policies each route exactly 1,199 of 4,795 training images (25.01\%). The augment-all control routes every image.
+
+\subsection{Conditional correlation regularization}
+The SSL encoder produces $h_i=f_\theta(x_i)\in\mathbb{R}^{d}$. Because target and spurious attributes are correlated in the biased training set, embeddings and concept vectors are centered separately within each target class:
+\begin{equation}
+\widetilde h_i=h_i-\frac{1}{|B_{y_i}|}\sum_{j\in B_{y_i}}h_j,
+\qquad
+\widetilde c_i=c_i-\frac{1}{|B_{y_i}|}\sum_{j\in B_{y_i}}c_j.
+\end{equation}
+The feature--concept correlation matrix is
+\begin{equation}
+R_{jk}=\frac{\sum_i\widetilde h_{ij}\widetilde c_{ik}}
+{\sqrt{\sum_i\widetilde h_{ij}^{2}}\sqrt{\sum_i\widetilde c_{ik}^{2}}+\epsilon},
+\end{equation}
+and the regularized objective is
+\begin{equation}
+\mathcal{L}=\mathcal{L}_{\mathrm{SimCLR}}+
+\lambda\frac{1}{dK}\sum_{j=1}^{d}\sum_{k=1}^{K}R_{jk}^{2}.
+\end{equation}
+This penalty discourages linear accessibility of each selected concept coordinate within a fixed target class, but does not guarantee removal of nonlinear or distributed nuisance information.
+
+\subsection{Concept-conditioned contrastive positives}
+\label{sec:concept_positives}
+The routing intervention above compresses $c_i$ to a single score and uses that
+score only to select an augmentation policy. Our control results motivate a
+different interface between SpLiCE and the SSL objective: preserve the
+vector-valued relation between examples and use it to select additional
+positives. We present this objective as a falsifiable hypothesis; it is not
+included among the methods evaluated in the current results.
+
+Let
+$\bar c_i=c_i/\max(\lVert c_i\rVert_2,\epsilon_c)$ be the normalized vector of
+selected nuisance-concept coordinates, and define concept dissimilarity
+\begin{equation}
+d_c(i,j)=1-\bar c_i^\top\bar c_j.
+\end{equation}
+For anchor $i$, we restrict candidates to examples with the same target label
+and select the $m$ most concept-dissimilar examples,
+\begin{equation}
+\mathcal{P}^{\mathrm{cc}}_i
+=
+\operatorname{TopM}_{j\neq i:\,y_j=y_i}
+d_c(i,j).
+\label{eq:cc_positive_set}
+\end{equation}
+This rule operationalizes the intended invariance: preserve target semantics
+while varying the concept profile associated with the background. In the
+minimal implementation, candidates are drawn from the current minibatch and
+the cached SpLiCE vectors are detached from gradient computation. Anchors
+without a valid same-class candidate are omitted from
+$\mathcal{L}_{\mathrm{cc}}$.
+
+Let $z_i$ denote the normalized SimCLR projection of an augmented view of
+$x_i$. We add a multi-positive contrastive term over the mined positives,
+\begin{equation}
+\mathcal{L}_{\mathrm{cc}}
+=
+-\frac{1}{|B|}
+\sum_{i\in B}
+\frac{1}{|\mathcal{P}^{\mathrm{cc}}_i|}
+\sum_{p\in\mathcal{P}^{\mathrm{cc}}_i}
+\log
+\frac{\exp(z_i^\top z_p/\tau_{\mathrm{cc}})}
+{\sum_{a\in B\setminus\{i\}}\exp(z_i^\top z_a/\tau_{\mathrm{cc}})},
+\end{equation}
+and optimize
+\begin{equation}
+\mathcal{L}
+=
+\mathcal{L}_{\mathrm{SimCLR}}+\alpha\mathcal{L}_{\mathrm{cc}}.
+\label{eq:cc_objective}
+\end{equation}
+Because candidate positives are restricted using $y$, this formulation is
+metadata-assisted rather than fully self-supervised.
+
+Three controls are necessary for attribution. A \emph{within-class shuffled}
+control permutes concept vectors inside each target class before mining,
+preserving the positive count and label structure while destroying the
+semantic assignment. A \emph{random same-class} control measures the benefit
+of adding cross-image positives without concept conditioning. Finally, an
+\emph{oracle cross-background} control uses the known spurious attribute only
+for diagnosis and estimates whether the objective can help when positive
+selection is correct. Together, these controls distinguish failures of concept
+discovery from failures of the contrastive intervention.
+
+\section{Experimental Setup}
+\subsection{Dataset and evaluation}
+We evaluate on Waterbirds. A ResNet18-large encoder is trained with SimCLR for 1,000 epochs. A linear target probe is trained on the group-balanced \texttt{ds\_train} split and evaluated on validation data every 25 SSL epochs. Run summaries use the mean of the final ten probe evaluations. Seeds 0 and 2 predate a reproducibility repair and are reported for transparency but excluded from post-repair aggregates; comparable aggregates use seeds 1, 3, and 4.
+
+\begin{table}[t]
+\caption{Fixed experimental settings.}
+\label{tab:settings}
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Setting & Value \\
+\midrule
+Dataset & Waterbirds \\
+SSL method & SimCLR \\
+SSL encoder & ResNet18-large \\
+Batch size & 256 \\
+Learning rate & 0.01 \\
+Weight decay & $10^{-4}$ \\
+Temperature & 0.05 \\
+SSL epochs & 1,000 \\
+Probe epochs & 100 every 25 SSL epochs \\
+Development split & Validation \\
+Final split & Test with explicit guard only \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reproducibility controls}
+Matched baseline and SpLiCE runs start from the same SSL model initialization. Frozen CLIP/SpLiCE loading, W\&B initialization, and periodic probes are RNG-isolated. Persistent checkpoints store Python, NumPy, CPU Torch, CUDA, DataLoader-generator, and AMP-scaler states. Validation and final-test entry points are separated so that development runs cannot accidentally select on the test set.
+
+\section{Results}
+\subsection{Hyperparameter sweep}
+Table~\ref{tab:decision} summarizes the comparable post-repair seeds. The only completed configuration with a positive mean paired delta is correlation regularization with $\lambda=0.1$, but its improvement is $0.45$ points and is not consistent across seeds. Larger regularization worsens performance, while the smallest weight is effectively inactive. Routed augmentation is similarly unstable: $q=0.50$ improves two seeds but collapses on the third.
+
+\begin{table}[t]
+\caption{Worst-group validation accuracy over comparable post-repair seeds. Deltas are paired against matched SimCLR with the same seed.}
+\label{tab:decision}
+\centering
+\scriptsize
+\begin{tabular}{lccc}
+\toprule
+Configuration & WG mean $\pm$ SD & Mean $\Delta$WG & Paired seed deltas \\
+\midrule
+SimCLR & $48.04\pm2.82$ & -- & -- \\
+AUG $q=0.50$ & $47.62\pm7.31$ & $-0.41$ & $+3.68,+6.67,-11.58$ \\
+AUG $q=0.75$ & $47.60\pm4.16$ & $-0.43$ & $+3.89,-1.28,-3.90$ \\
+AUG $q=0.90$ & $46.09\pm2.34$ & $-1.95$ & $-4.71,+1.60,-2.74$ \\
+AUG $q=0.95$ & $46.93\pm6.10$ & $-1.11$ & $-7.72,+7.46,-3.06$ \\
+REG $\lambda=0.001$ & $46.47\pm4.72$ & $-1.56$ & $-0.83,-3.77,-0.09$ \\
+REG $\lambda=0.01$ & $43.46\pm5.46$ & $-4.58$ & $-0.83,+0.64,-13.55$ \\
+REG $\lambda=0.1$ & $48.49\pm4.37$ & $+0.45$ & $+2.38,+6.27,-7.30$ \\
+REG $\lambda=1.0$ & $43.84\pm5.00$ & $-4.20$ & $+1.31,-3.15,-10.75$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+If the figure file is available, Figure~\ref{fig:postrepair} visualizes the same result. Error bars are descriptive sample standard deviations rather than confidence intervals.
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/current_postrepair_wg.png}{%
+  \includegraphics[width=0.9\linewidth]{figures/current_postrepair_wg.png}%
+}{%
+  \fbox{\parbox[c][3.0cm][c]{0.86\linewidth}{\centering Placeholder: copy \\ \texttt{figures/current\_postrepair\_wg.png} into the project.}}%
+}
+\caption{No completed revised method reliably separates from matched SimCLR. Values summarize seeds 1, 3, and 4 at epoch 1,000.}
+\label{fig:postrepair}
+\end{figure}
+
+The final SpLiCE penalty for $\lambda=0.001$ is approximately $7\times10^{-6}$, confirming that this setting is nearly inactive. At $\lambda=0.1$ it contributes roughly $6\times10^{-4}$ and can improve individual seeds. At $\lambda=1.0$ it reaches approximately $4\times10^{-3}$ and degrades performance overall. For augmentation at $q=0.50$, the failed seed has a final SSL loss of $0.109$ compared with $0.026$ for the matched baseline, consistent with optimization becoming more difficult under an aggressive intervention.
+
+\subsection{Semantic routing controls}
+The routing-control experiment tests whether the per-image semantic assignment
+produced by SpLiCE matters, rather than merely applying an extra augmentation
+to one quarter of the dataset. The semantic--shuffled comparison is now
+complete for seeds 1, 3, and 4. Semantic routing obtains
+$44.49\pm4.92\%$ WG accuracy, compared with $46.40\pm3.24\%$ for shuffled
+routing. More importantly, the paired semantic-minus-shuffled differences are
+$-1.64$, $-0.32$, and $-3.77$ points, yielding a mean paired difference of
+$-1.91$ points with the same sign on every observed seed. On seed 4, semantic
+routing also reduces average accuracy from $50.04\%$ to $47.81\%$.
+
+The seed-4 pair was trained on the same home RTX 5080 under identical software
+and routed exactly 1,199 images in both conditions. Its within-pair comparison
+is therefore insulated from the hardware change relative to the existing
+seed-4 baseline. The three-seed sample remains too small for a strong
+inferential claim, but the current Top-5 scalar semantic router fails its
+matched shuffled control on every observed seed. This conclusion is
+deliberately narrower than claiming that the selected concept vectors contain
+no useful nuisance information.
+
+\begin{table}[t]
+\caption{Final WG validation accuracy (\%) for the completed Top-5
+semantic--shuffled routing comparison. The paired delta is semantic minus
+shuffled. The seed-4 SimCLR reference was trained on different hardware and is
+not used to attribute the routing effect.}
+\label{tab:routing}
+\centering
+\scriptsize
+\begin{tabular}{lccccc}
+\toprule
+Routing policy & Seed 1 & Seed 3 & Seed 4 & Mean $\pm$ SD & Paired $\Delta$ \\
+\midrule
+SimCLR reference & 48.20 & 45.14 & 50.77 & $48.04\pm2.82$ & -- \\
+Semantic Top-5 & 46.45 & 48.12 & 38.89 & $44.49\pm4.92$ & $-1.91$ \\
+Shuffled scores & 48.09 & 48.44 & 42.66 & $46.40\pm3.24$ & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Strong-augmentation components}
+Only the all-components configuration has three comparable post-repair seeds, and it does not outperform baseline. Single-component crop, color-jitter, grayscale, and Gaussian-blur results currently have only one comparable seed each and therefore cannot support a stability claim. Spurious-attribute probe accuracy remains high across these runs (approximately 90.40--92.49\% average validation accuracy for seed 1), so the current augmentation policy does not provide evidence that background information has ceased to be linearly accessible.
+
+\section{Discussion}
+\paragraph{What the negative control establishes.}
+The experiments expose a distinction between \emph{detecting} nuisance
+concepts and \emph{using} them to induce invariance. SpLiCE produces
+human-readable coordinates associated with the Waterbirds background, but a
+large scalar concept score is not a prescription for how an individual image
+should be transformed. Strong generic transforms may preserve the nuisance,
+damage the foreground, or make instance discrimination unnecessarily
+difficult. The all-negative semantic-minus-shuffled paired differences provide
+direct evidence against the specific routing interface: for a fixed
+augmentation budget, the semantic assignment is not better than destroying
+that assignment. The experiment does not, however, test whether pairwise
+relations between the concept vectors are useful.
+
+\paragraph{Why the next hypothesis is relational.}
+Spurious robustness is fundamentally a statement about representation
+geometry. Examples that share target semantics should remain close even when
+their nuisance attributes differ. Neither implemented intervention expresses
+this relation directly. Routing acts independently on each example after
+reducing $c_i$ to $\max_k c_{ik}$, while correlation regularization suppresses
+marginal linear dependence without specifying which examples should align.
+Concept-conditioned positives in Section~\ref{sec:concept_positives} retain the
+vector-valued concept relation and place it inside the contrastive objective.
+This is a substantive change in mechanism, not another hyperparameterization
+of routed augmentation.
+
+\paragraph{Evaluation protocol for the proposed objective.}
+The proposed objective should not be credited to concept conditioning merely
+because it outperforms SimCLR. It must outperform a random same-class positive
+baseline and a within-class shuffled-concept control under matched positive
+counts and initializations. The oracle cross-background condition provides a
+separate diagnostic: if the oracle fails, the contrastive intervention is
+mis-specified; if the oracle succeeds but semantic mining fails, concept
+discovery or its distance metric is the bottleneck. Only a semantic advantage
+over both non-semantic controls, accompanied by improved WG accuracy and
+reduced spurious-probe accuracy across paired seeds, would support the stronger
+claim that SpLiCE contributes useful training geometry.
+
+\section{Limitations}
+The present study is restricted to Waterbirds, and three post-repair seeds are
+insufficient for strong statistical claims. Although the semantic--shuffled
+comparison is complete, the random and augment-all routing controls remain
+partial. The seed-4 semantic--shuffled pair shares hardware and software, but
+the existing seed-4 SimCLR baseline was trained on the cluster; causal
+interpretation should therefore prioritize the within-pair routing comparison.
+Concept discovery uses target and spurious metadata, correlation
+regularization uses target labels for conditional centering, and the proposed
+positive-mining rule restricts candidates by target label. These variants are
+metadata-assisted rather than group-agnostic SSL. Selected concepts such as
+\texttt{whale} and \texttt{raven} may be imperfect proxies for background
+structure, and cosine distance over a small selected vocabulary may not capture
+all nuisance variation. Finally, linear leakage probes measure accessibility
+rather than causal use, and no revised method has yet been evaluated on the
+held-out test set.
+
+\section{Conclusion}
+We presented a reproducible framework for connecting frozen SpLiCE concepts to
+the training and evaluation of a separate self-supervised encoder. On
+Waterbirds, neither concept-routed augmentation nor target-conditioned
+correlation regularization yields a reliable WG improvement over matched
+SimCLR. The completed three-seed control is more diagnostic: semantic Top-5
+routing underperforms shuffled routing on every paired seed. This negative
+result rules out the current scalar routing mechanism, but not the broader
+hypothesis that concept geometry can guide robust representation learning. It
+therefore redirects the investigation from concept-conditioned augmentation to
+concept-conditioned contrastive relations. A decisive evaluation must mine
+same-class, cross-background positives from vector-valued SpLiCE profiles and
+compare them against shuffled-concept, random-positive, and oracle controls.
+
+\bibliography{spur_splice_references}
+\bibliographystyle{iclr2026_conference}
+
+\appendix
+\section{Full Validation Sweep}
+\begin{table}[h]
+\caption{Current validation sweep. Seed columns show average/WG accuracy (\%). Seeds 0 and 2 predate the reproducibility repair and are excluded from the post-repair aggregate.}
+\label{tab:fullsweep}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccc}
+\toprule
+Method & Parameter & S0$\dagger$ & S1 & S2$\dagger$ & S3 & S4 & Post-repair WG \\
+\midrule
+SimCLR & -- & 49.27/41.93 & 55.00/48.20 & 50.60/37.69 & 52.79/45.14 & 52.81/50.77 & $48.04\pm2.82$ \\
+SpLiCE-AUG & $q=0.50$ & 49.83/42.96 & 56.11/51.88 & 53.64/46.96 & 56.30/51.80 & 45.77/39.19 & $47.62\pm7.31$ \\
+SpLiCE-AUG & $q=0.75$ & 52.45/43.11 & 54.07/52.08 & 56.80/49.62 & 50.77/43.85 & 52.94/46.87 & $47.60\pm4.16$ \\
+SpLiCE-AUG & $q=0.90$ & 53.52/47.25 & 50.90/43.49 & 53.02/41.99 & 51.08/46.74 & 54.19/48.03 & $46.09\pm2.34$ \\
+SpLiCE-AUG & $q=0.95$ & 50.59/44.64 & 52.72/40.47 & 53.08/43.83 & 55.57/52.60 & 52.99/47.71 & $46.93\pm6.10$ \\
+SpLiCE-REG & $\lambda=0.001$ & 55.50/53.13 & 54.53/47.37 & 52.31/41.07 & 51.12/41.37 & 53.37/50.69 & $46.47\pm4.72$ \\
+SpLiCE-REG & $\lambda=0.01$ & 49.22/39.61 & 55.13/47.37 & 50.41/40.86 & 51.48/45.78 & 47.42/37.22 & $43.46\pm5.46$ \\
+SpLiCE-REG & $\lambda=0.1$ & 47.52/39.70 & 52.99/50.58 & 53.71/43.64 & 55.70/51.41 & 52.21/43.47 & $48.49\pm4.37$ \\
+SpLiCE-REG & $\lambda=1.0$ & 51.88/44.64 & 55.70/49.50 & 50.97/36.96 & 51.38/41.99 & 49.66/40.02 & $43.84\pm5.00$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\section{Augmentation Ablation Snapshot}
+\begin{table}[h]
+\caption{Current $q=0.75$ augmentation ablation. Seeds 0 and 2 predate the reproducibility repair.}
+\centering
+\scriptsize
+\begin{tabular}{lcccccc}
+\toprule
+Strong transform & S0$\dagger$ & S1 & S2$\dagger$ & S3 & S4 & Post-repair WG \\
+\midrule
+All components & 50.33/39.29 & 54.07/52.08 & 56.16/49.36 & 50.77/43.85 & 52.94/46.87 & $47.60\pm4.16$ \\
+Crop only & 52.44/44.80 & 53.72/45.03 & 55.40/46.10 & not run & not run & -- ($n=1$) \\
+Color jitter only & 48.23/39.08 & 57.80/45.19 & 54.96/44.84 & not run & not run & -- ($n=1$) \\
+Grayscale only & 53.53/48.52 & 51.66/46.99 & 52.70/38.80 & not run & not run & -- ($n=1$) \\
+Gaussian blur only & 44.79/34.12 & 51.13/48.91 & 52.49/44.35 & not run & not run & -- ($n=1$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Incomplete Routing-Control Snapshot}
+Table~\ref{tab:routing_snapshot} preserves the latest random-routing and
+augment-all measurements for reproducibility. Entries marked by an epoch are
+intermediate and are not used in the paper's conclusions.
+\begin{table}[h]
+\caption{Average/WG validation accuracy (\%) for secondary routing controls at
+the latest available snapshot.}
+\label{tab:routing_snapshot}
+\centering
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Routing policy & Seed 1 & Seed 3 & Seed 4 & Status \\
+\midrule
+Matched random & 54.05/43.68 & 52.78/44.78 & 55.50/46.02
+& S1 final; S3 E200; S4 E175 \\
+Augment all & 53.32/48.35 & 49.98/46.40 & 56.18/46.02
+& S1 E650; S3 E100; S4 E75 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\section{Reproduction Notes}
+The main entry point is \texttt{spur\_splice.py}. Supported SpLiCE modes are \texttt{none}, \texttt{augment}, \texttt{corr\_reg}, and \texttt{augment\_corr\_reg}. Utility scripts include \texttt{tools/discover\_splice\_spurious\_concepts.py} for group-conditioned concept ranking and \texttt{tools/summarize\_splice\_scores.py} for score-distribution summaries. The same experiment arrays accept \texttt{DATASET=spur\_cifar10} and automatically select a standard ResNet18 for $32\times32$ inputs. Final test evaluation requires the explicit \texttt{--final\_test} flag.
+
+\end{document}
