@@ -41,6 +41,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--auto_top_k", type=int, default=10)
     parser.add_argument("--auto_out_dir", default="outputs")
+    parser.add_argument(
+        "--auto_ranking_method",
+        default="conditional_group",
+        choices=["conditional_group", "error_contrast", "gradient_probe"],
+        help="Discovery signal used when --intervention_concepts=auto. error_contrast needs no group labels.",
+    )
+    parser.add_argument("--auto_gradient_step_scale", type=float, default=0.1)
+    parser.add_argument(
+        "--auto_gradient_score",
+        default="indicator",
+        choices=["indicator", "signed"],
+    )
+    parser.add_argument("--auto_probe_cv_folds", type=int, default=5)
     parser.add_argument("--auto_label_penalty", type=float, default=1.0)
     parser.add_argument("--auto_instability_penalty", type=float, default=1.0)
     parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
@@ -168,6 +181,7 @@ def automatically_discover_interventions(args, train_subset):
             and settings.get("splice_l1_penalty") == args.splice_l1_penalty
             and settings.get("label_penalty") == args.auto_label_penalty
             and settings.get("instability_penalty") == args.auto_instability_penalty
+            and settings.get("ranking_method", "conditional_group") == args.auto_ranking_method
         )
     if discovery_matches and concepts_path.exists() and matrix_path.exists() and metadata_path.exists():
         cached_metadata = np.load(metadata_path)
@@ -202,32 +216,73 @@ def automatically_discover_interventions(args, train_subset):
         label_penalty=args.auto_label_penalty,
         instability_penalty=args.auto_instability_penalty,
         use_abs_score=False,
+        ranking_method=args.auto_ranking_method,
+        gradient_step_scale=args.auto_gradient_step_scale,
+        gradient_score=args.auto_gradient_score,
+        probe_c=args.probe_c,
+        probe_max_iter=args.probe_max_iter,
+        probe_cv_folds=args.auto_probe_cv_folds,
+        seed=args.seed,
+        deduplicate_concepts=True,
     )
-    (
-        vocabulary,
-        group_means,
-        group_counts,
-        dataset_mean,
-        total_count,
-        spurious_values,
-        target_values,
-        metadata_names,
-        sparse_weights,
-        discovery_dataset,
-    ) = discovery.decompose_by_group(discovery_args)
-    candidates = discovery.rank_concepts(
-        vocabulary,
-        group_means,
-        group_counts,
-        dataset_mean,
-        spurious_values,
-        target_values,
-        metadata_names,
-        discovery_args,
-    )
+    if args.auto_ranking_method in {"error_contrast", "gradient_probe"}:
+        (
+            vocabulary,
+            splicemodel,
+            embeddings,
+            labels,
+            sparse_weights,
+            discovery_dataset,
+        ) = discovery.collect_embeddings_and_codes(discovery_args)
+        probe, predictions, probe_accuracy = discovery.fit_audit_probe(embeddings, labels, discovery_args)
+        if args.auto_ranking_method == "error_contrast":
+            candidates, diagnostics = discovery.rank_concepts_by_error_contrast(
+                vocabulary,
+                sparse_weights,
+                labels,
+                predictions,
+                probe_accuracy,
+                discovery_args,
+            )
+        else:
+            candidates, diagnostics = discovery.rank_concepts_by_gradient_probe(
+                vocabulary,
+                splicemodel,
+                embeddings,
+                labels,
+                predictions,
+                probe,
+                probe_accuracy,
+                discovery_args,
+            )
+        group_counts, total_count = {}, int(labels.numel())
+    else:
+        (
+            vocabulary,
+            group_means,
+            group_counts,
+            dataset_mean,
+            total_count,
+            spurious_values,
+            target_values,
+            metadata_names,
+            sparse_weights,
+            discovery_dataset,
+        ) = discovery.decompose_by_group(discovery_args)
+        candidates = discovery.rank_concepts(
+            vocabulary,
+            group_means,
+            group_counts,
+            dataset_mean,
+            spurious_values,
+            target_values,
+            metadata_names,
+            discovery_args,
+        )
+        diagnostics = None
     if not candidates:
         raise ValueError("Automatic SpLiCE-CBM discovery found no positive-scoring concepts.")
-    discovery.write_outputs(discovery_args, candidates, group_counts, total_count)
+    discovery.write_outputs(discovery_args, candidates, group_counts, total_count, diagnostics=diagnostics)
     discovery.cache_discovered_scores(discovery_args, candidates, sparse_weights, discovery_dataset)
 
     train_matrix = sparse.csr_matrix(

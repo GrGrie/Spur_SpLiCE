@@ -7,8 +7,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+import torch.nn.functional as F
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_predict
 from torch.utils.data import DataLoader
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +47,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="train", choices=["train", "ds_train", "us_train", "balanced_train", "val", "test"])
     parser.add_argument("--out_path", required=True)
     parser.add_argument("--top_k", type=int, default=20)
+    parser.add_argument(
+        "--ranking_method",
+        default="conditional_group",
+        choices=["conditional_group", "error_contrast", "gradient_probe"],
+        help=(
+            "conditional_group ranks by group-conditioned means and REQUIRES spurious metadata. "
+            "error_contrast contrasts correctly classified against misclassified examples of the "
+            "same class and needs class labels only (recommended group-free method). "
+            "gradient_probe is the published gradient estimator, kept for comparison."
+        ),
+    )
+    parser.add_argument(
+        "--gradient_step_scale",
+        type=float,
+        default=0.1,
+        help=(
+            "Relative size of the error-correcting step: the displacement norm is this fraction of "
+            "the embedding norm. Relative units keep the step scale-free across datasets."
+        ),
+    )
+    parser.add_argument(
+        "--gradient_score",
+        default="indicator",
+        choices=["indicator", "signed"],
+        help=(
+            "indicator counts sparse-support changes (faithful port of the published estimator, "
+            "chance level 0.5). signed averages the continuous concept displacement instead, which "
+            "degrades more gracefully when the support rarely changes."
+        ),
+    )
+    parser.add_argument("--probe_c", type=float, default=1.0, help="Inverse L2 strength of the audit probe.")
+    parser.add_argument("--probe_max_iter", type=int, default=2000)
+    parser.add_argument(
+        "--probe_cv_folds",
+        type=int,
+        default=5,
+        help="Cross-validation folds used to obtain honest probe errors on the discovery split.",
+    )
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--per_image_top_k",
         type=int,
@@ -142,6 +185,22 @@ class SparseConceptWeights:
             if mask.any():
                 selected[self.rows[mask], output_column] = self.values[mask]
         return selected
+
+    def masked_column_means(self, row_mask: torch.Tensor) -> torch.Tensor:
+        """Mean of every concept column over the selected rows.
+
+        Accumulating straight from the sparse triplets keeps this usable on
+        datasets where an ``n_rows x vocabulary`` dense matrix would not fit.
+        """
+
+        count = int(row_mask.sum())
+        sums = torch.zeros(self.n_columns, dtype=torch.float64)
+        if count == 0 or self.rows.numel() == 0:
+            return sums.float()
+        keep = row_mask[self.rows]
+        if bool(keep.any()):
+            sums.index_add_(0, self.columns[keep], self.values[keep].double())
+        return (sums / count).float()
 
 
 def resolve_metadata_indices(args: argparse.Namespace, dataset_spec: dict) -> tuple[int, int]:
@@ -309,6 +368,370 @@ def decompose_by_group(args: argparse.Namespace):
         sparse_weights,
         full_dataset,
     )
+
+
+def splice_codes_from_embeddings(
+    splicemodel,
+    embeddings: torch.Tensor,
+    device: str,
+    batch_size: int,
+) -> torch.Tensor:
+    """Decompose already-encoded CLIP embeddings, mirroring ``SPLICE.encode_image``.
+
+    The decomposition is solved in the mean-centered space, so the same centering
+    and renormalization must be applied here for the codes to be comparable with
+    the ones produced by the regular image path.
+    """
+
+    codes = []
+    with torch.no_grad():
+        for chunk in embeddings.split(max(1, batch_size)):
+            batch = F.normalize(chunk.to(device).float(), dim=1)
+            centered = F.normalize(batch - splicemodel.image_mean, dim=1)
+            codes.append(splicemodel.decompose(centered).detach().cpu().float())
+    return torch.cat(codes, dim=0)
+
+
+def collect_embeddings_and_codes(args: argparse.Namespace):
+    """Single pass returning CLIP embeddings, sparse SpLiCE codes, and class labels.
+
+    Unlike :func:`decompose_by_group` this never touches the spurious metadata
+    column, which is what makes gradient-probe discovery group-annotation free.
+    """
+
+    preprocess, vocabulary, splicemodel = load_splice(args)
+    _, full_dataset, subset = build_dataset_subset(args)
+    loader = DataLoader(
+        subset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=identity_collate,
+    )
+
+    vocab_size = len(vocabulary)
+    embeddings: list[torch.Tensor] = []
+    labels: list[int] = []
+    sparse_rows, sparse_columns, sparse_values = [], [], []
+    row_offset = 0
+    with torch.no_grad():
+        for batch_index, batch in enumerate(loader, start=1):
+            images = torch.stack([preprocess(item[0]) for item in batch], dim=0).to(args.device)
+            encoded = F.normalize(splicemodel.clip.encode_image(images).float(), dim=1)
+            centered = F.normalize(encoded - splicemodel.image_mean, dim=1)
+            weights = splicemodel.decompose(centered).detach().cpu().float()
+
+            embeddings.append(encoded.detach().cpu())
+            labels.extend(int(item[1]) for item in batch)
+            nonzero = torch.nonzero(weights, as_tuple=False)
+            if nonzero.numel():
+                sparse_rows.append(nonzero[:, 0].long() + row_offset)
+                sparse_columns.append(nonzero[:, 1].long())
+                sparse_values.append(weights[nonzero[:, 0], nonzero[:, 1]])
+            row_offset += weights.shape[0]
+            if batch_index % 10 == 0:
+                print(f"[INFO] Encoded {row_offset} images", flush=True)
+
+    sparse_weights = SparseConceptWeights(
+        rows=torch.cat(sparse_rows) if sparse_rows else torch.empty(0, dtype=torch.long),
+        columns=torch.cat(sparse_columns) if sparse_columns else torch.empty(0, dtype=torch.long),
+        values=torch.cat(sparse_values) if sparse_values else torch.empty(0, dtype=torch.float32),
+        n_rows=row_offset,
+        n_columns=vocab_size,
+    )
+    return (
+        vocabulary,
+        splicemodel,
+        torch.cat(embeddings, dim=0),
+        torch.tensor(labels, dtype=torch.long),
+        sparse_weights,
+        full_dataset,
+    )
+
+
+def fit_audit_probe(
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    args: argparse.Namespace,
+) -> tuple[LogisticRegression, torch.Tensor, float]:
+    """Fit the audit probe and return honest, cross-validated predictions.
+
+    Errors drive both group-free ranking methods, so they must not be hidden by a
+    probe that has memorized the discovery split.
+    """
+
+    features = embeddings.numpy().astype(np.float64)
+    targets = labels.numpy()
+    probe = LogisticRegression(
+        C=args.probe_c,
+        max_iter=args.probe_max_iter,
+        random_state=args.seed,
+    )
+    folds = max(2, int(args.probe_cv_folds))
+    smallest_class = int(np.bincount(targets).min())
+    folds = min(folds, smallest_class) if smallest_class >= 2 else 2
+    predictions = cross_val_predict(probe, features, targets, cv=folds)
+    probe.fit(features, targets)
+    accuracy = float((predictions == targets).mean())
+    print(
+        f"[INFO] Audit probe: {folds}-fold cross-validated accuracy {accuracy:.4f} "
+        f"({int((predictions != targets).sum())} errors of {len(targets)})",
+        flush=True,
+    )
+    return probe, torch.from_numpy(predictions).long(), accuracy
+
+
+def error_correcting_displacement(
+    probe: LogisticRegression,
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    args: argparse.Namespace,
+) -> torch.Tensor:
+    """Return the gradient step that would fix each example.
+
+    The magnitude is expressed relative to the embedding norm so that no
+    per-dataset step size has to be tuned.
+    """
+
+    features = embeddings.numpy().astype(np.float64)
+    targets = labels.numpy()
+    n_classes = int(targets.max()) + 1
+    probabilities = probe.predict_proba(features)
+    coefficients = probe.coef_
+    if n_classes == 2 and coefficients.shape[0] == 1:
+        # Binary sklearn keeps a single weight vector for the positive class.
+        residual = (probabilities[:, 1] - targets)[:, None]
+        gradients = residual * coefficients
+    else:
+        one_hot = np.zeros_like(probabilities)
+        one_hot[np.arange(len(targets)), targets] = 1.0
+        gradients = (probabilities - one_hot) @ coefficients
+
+    gradients = torch.from_numpy(gradients).float()
+    gradient_norms = gradients.norm(dim=1, keepdim=True).clamp_min(1e-12)
+    embedding_norms = embeddings.norm(dim=1, keepdim=True)
+    # z' = z - d * grad, with d chosen so that ||d * grad|| = scale * ||z||.
+    return -args.gradient_step_scale * embedding_norms * gradients / gradient_norms
+
+
+def rank_concepts_by_error_contrast(
+    vocabulary: list[str],
+    weights: SparseConceptWeights,
+    labels: torch.Tensor,
+    predictions: torch.Tensor,
+    probe_accuracy: float,
+    args: argparse.Namespace,
+) -> tuple[list[dict], dict]:
+    """Rank concepts by how much they differ between correct and misclassified examples.
+
+    A biased model fails precisely where the shortcut points the wrong way, so its
+    errors are enriched in the conflict group. Conditioning on ``(class, correct)``
+    versus ``(class, error)`` therefore stands in for conditioning on the minority
+    group, and needs class labels only. A core concept is present whether or not
+    the example was classified correctly, so it cancels; a shortcut concept does
+    not, because its value is what made the example easy or hard.
+    """
+
+    class_values = [int(value) for value in torch.unique(labels).tolist()]
+    signed_effect = torch.zeros(len(class_values), weights.n_columns, dtype=torch.float32)
+    class_support: dict[int, dict[str, int]] = {}
+    for position, class_value in enumerate(class_values):
+        in_class = labels == class_value
+        correct_mask = in_class & (predictions == class_value)
+        error_mask = in_class & (predictions != class_value)
+        class_support[class_value] = {
+            "correct": int(correct_mask.sum()),
+            "errors": int(error_mask.sum()),
+        }
+        if not bool(correct_mask.any()) or not bool(error_mask.any()):
+            continue
+        signed_effect[position] = weights.masked_column_means(correct_mask) - weights.masked_column_means(
+            error_mask
+        )
+
+    usable = [position for position, value in enumerate(class_values) if all(class_support[value].values())]
+    if not usable:
+        raise ValueError(
+            "Every class is either perfectly classified or never correct, so no error contrast "
+            "exists. Weaken the audit probe with a smaller --probe_c."
+        )
+    signed_effect = signed_effect[usable]
+    score = signed_effect.abs().mean(dim=0)
+
+    # A shortcut helps one class and hurts the other, so its signed effect flips
+    # across classes. Core concepts drift the same way for everyone.
+    direction_epsilon = 1e-12
+    if len(usable) >= 2:
+        positive = (signed_effect > direction_epsilon).any(dim=0)
+        negative = (signed_effect < -direction_epsilon).any(dim=0)
+        sign_flips = positive & negative
+    else:
+        sign_flips = torch.ones(weights.n_columns, dtype=torch.bool)
+    if getattr(args, "require_consistent_spurious_direction", False):
+        score = score * sign_flips.float()
+
+    overall_mean = weights.masked_column_means(torch.ones_like(labels, dtype=torch.bool))
+    eligible = overall_mean >= getattr(args, "min_mean_weight", 0.0)
+
+    candidates: list[dict] = []
+    seen_families: set[str] = set()
+    for index in torch.argsort(score, descending=True).tolist():
+        if not bool(eligible[index]) or score[index].item() <= 0:
+            continue
+        family_key = concept_family_key(vocabulary[index])
+        if getattr(args, "deduplicate_concepts", False) and family_key in seen_families:
+            continue
+        seen_families.add(family_key)
+        candidates.append(
+            {
+                "index": index,
+                "concept": vocabulary[index],
+                "score": round(score[index].item(), 8),
+                "sign_flips_across_classes": bool(sign_flips[index].item()),
+                "signed_effect_by_class": {
+                    str(class_values[usable[position]]): round(signed_effect[position, index].item(), 8)
+                    for position in range(len(usable))
+                },
+                "mean_weight": round(overall_mean[index].item(), 8),
+            }
+        )
+        if len(candidates) >= args.top_k:
+            break
+
+    diagnostics = {
+        "probe_cv_accuracy": round(probe_accuracy, 6),
+        "error_count": int((predictions != labels).sum()),
+        "total_count": int(labels.numel()),
+        "class_support": class_support,
+    }
+    return candidates, diagnostics
+
+
+def rank_concepts_by_gradient_probe(
+    vocabulary: list[str],
+    splicemodel,
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    predictions: torch.Tensor,
+    probe: LogisticRegression,
+    probe_accuracy: float,
+    args: argparse.Namespace,
+) -> tuple[list[dict], dict]:
+    """Rank concepts by the asymmetric signature of error-correcting gradients.
+
+    This is a direct port of the published gradient-probe estimator, kept as a
+    comparison point. Note that the correction direction is the probe's weight
+    vector, which mixes shortcut and core evidence, so in this sparse text-concept
+    setting it ranks core concepts highly as well; see the report for the
+    controlled comparison against :func:`rank_concepts_by_error_contrast`.
+    """
+
+    displacement = error_correcting_displacement(probe, embeddings, labels, args)
+    error_mask = predictions != labels
+    if not bool(error_mask.any()):
+        raise ValueError(
+            "The audit probe made no cross-validated errors, so no gradient signal is available. "
+            "Lower --probe_c to weaken the probe, or discover concepts on a harder split."
+        )
+
+    error_indices = torch.nonzero(error_mask, as_tuple=False).view(-1)
+    original = embeddings[error_indices]
+    corrected = original + displacement[error_indices]
+    # Only misclassified examples are decomposed twice: the audit set is small.
+    codes = splice_codes_from_embeddings(splicemodel, original, args.device, args.batch_size)
+    corrected_codes = splice_codes_from_embeddings(splicemodel, corrected, args.device, args.batch_size)
+    delta = corrected_codes - codes
+
+    activated = (codes <= 0) & (corrected_codes > 0)
+    suppressed = (codes > 0) & (corrected_codes <= 0)
+    print(
+        f"[INFO] Support changes over {len(error_indices)} errors: "
+        f"{int(activated.sum())} activations, {int(suppressed.sum())} suppressions",
+        flush=True,
+    )
+    if args.gradient_score == "indicator" and int(activated.sum()) + int(suppressed.sum()) == 0:
+        raise ValueError(
+            "The correction step never changed the sparse support, so indicator scores are all zero. "
+            "Increase --gradient_step_scale or use --gradient_score signed."
+        )
+
+    error_labels = labels[error_indices]
+    error_predictions = predictions[error_indices]
+    class_values = torch.unique(labels).tolist()
+    vocab_size = len(vocabulary)
+    per_class_scores = torch.zeros(len(class_values), vocab_size, dtype=torch.float32)
+    class_support = {}
+
+    for position, class_value in enumerate(class_values):
+        # False negatives of this class: the true class was missed.
+        false_negative = error_labels == class_value
+        # False positives: another class was misread as this one.
+        false_positive = error_predictions == class_value
+        class_support[int(class_value)] = {
+            "false_negatives": int(false_negative.sum()),
+            "false_positives": int(false_positive.sum()),
+        }
+        terms = []
+        if bool(false_negative.any()):
+            if args.gradient_score == "indicator":
+                terms.append(activated[false_negative].float().mean(dim=0))
+            else:
+                terms.append(delta[false_negative].mean(dim=0))
+        if bool(false_positive.any()):
+            if args.gradient_score == "indicator":
+                terms.append(suppressed[false_positive].float().mean(dim=0))
+            else:
+                terms.append(-delta[false_positive].mean(dim=0))
+        if terms:
+            per_class_scores[position] = torch.stack(terms).mean(dim=0)
+
+    # A concept only has to look spurious for one class to be worth removing.
+    score, best_class_position = per_class_scores.max(dim=0)
+    activation_rate = activated.float().mean(dim=0)
+    suppression_rate = suppressed.float().mean(dim=0)
+    mean_weight = codes.mean(dim=0)
+    # The published 0.55 cut-off assumes dense NNLS coefficients that flip support
+    # often. l1-sparse SpLiCE codes change support rarely, so an absolute floor
+    # rejects everything; rank and take top-K instead, which also avoids a
+    # per-dataset threshold.
+    minimum_score = 0.0
+
+    candidates: list[dict] = []
+    seen_families: set[str] = set()
+    for index in torch.argsort(score, descending=True).tolist():
+        if score[index].item() <= minimum_score:
+            continue
+        family_key = concept_family_key(vocabulary[index])
+        if getattr(args, "deduplicate_concepts", False) and family_key in seen_families:
+            continue
+        seen_families.add(family_key)
+        candidates.append(
+            {
+                "index": index,
+                "concept": vocabulary[index],
+                "score": round(score[index].item(), 8),
+                "best_class": int(class_values[int(best_class_position[index].item())]),
+                "per_class_score": {
+                    str(int(class_value)): round(per_class_scores[position, index].item(), 8)
+                    for position, class_value in enumerate(class_values)
+                },
+                "activation_rate_on_errors": round(activation_rate[index].item(), 8),
+                "suppression_rate_on_errors": round(suppression_rate[index].item(), 8),
+                "mean_delta_on_errors": round(delta[:, index].mean().item(), 8),
+                "mean_weight_on_errors": round(mean_weight[index].item(), 8),
+            }
+        )
+        if len(candidates) >= args.top_k:
+            break
+
+    diagnostics = {
+        "probe_cv_accuracy": round(probe_accuracy, 6),
+        "error_count": int(error_indices.numel()),
+        "total_count": int(labels.numel()),
+        "class_support": class_support,
+        "minimum_score": minimum_score,
+    }
+    return candidates, diagnostics
 
 
 def cache_discovered_scores(args, candidates: list[dict], weights: SparseConceptWeights, full_dataset) -> None:
@@ -482,12 +905,38 @@ def rank_concepts(
     return candidates
 
 
-def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts: dict[tuple[int, int], int], total_count: int) -> None:
+def write_outputs(
+    args: argparse.Namespace,
+    candidates: list[dict],
+    group_counts: dict[tuple[int, int], int],
+    total_count: int,
+    diagnostics: dict | None = None,
+) -> None:
     out_path = Path(args.out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Callers such as splice_cbm.py build this namespace by hand, so every
+    # gradient-probe field has to degrade to the historical default.
+    ranking_method = getattr(args, "ranking_method", "conditional_group")
+    if ranking_method == "error_contrast":
+        method = "error_conditioned_contrast"
+        formula = "mean_y abs( E[c | y, predicted correctly] - E[c | y, misclassified] )"
+    elif ranking_method == "gradient_probe":
+        method = "gradient_probe_error_correction_asymmetry"
+        formula = (
+            "mean_y 0.5 * ( E_{i in FN(y)}[activated_k(i)] + E_{i in FP(y)}[suppressed_k(i)] ), "
+            "activation measured on SpLiCE codes before/after z' = z - d * grad_z L"
+        )
+    else:
+        method = "conditional_spurious_effect_minus_target_effect_minus_instability"
+        formula = (
+            "mean_y mean_{s_i<s_j} abs(E[c|s_i,y]-E[c|s_j,y]) - label_penalty * mean_s "
+            "mean_{y_i<y_j} abs(E[c|s,y_i]-E[c|s,y_j]) - instability_penalty * "
+            "std_y(pairwise_spurious_effect_y)"
+        )
     payload = {
-        "method": "conditional_spurious_effect_minus_target_effect_minus_instability",
-        "formula": "mean_y mean_{s_i<s_j} abs(E[c|s_i,y]-E[c|s_j,y]) - label_penalty * mean_s mean_{y_i<y_j} abs(E[c|s,y_i]-E[c|s,y_j]) - instability_penalty * std_y(pairwise_spurious_effect_y)",
+        "method": method,
+        "formula": formula,
+        "uses_spurious_metadata": ranking_method != "gradient_probe",
         "dataset": args.dataset,
         "split": args.split,
         "total_count": total_count,
@@ -497,6 +946,12 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
         },
         "settings": {
             "top_k": args.top_k,
+            "ranking_method": ranking_method,
+            "gradient_step_scale": getattr(args, "gradient_step_scale", None),
+            "gradient_score": getattr(args, "gradient_score", None),
+            "probe_c": getattr(args, "probe_c", None),
+            "probe_cv_folds": getattr(args, "probe_cv_folds", None),
+            "seed": getattr(args, "seed", None),
             "per_image_top_k": int(getattr(args, "per_image_top_k", 0)),
             "target_metadata_index": args.target_metadata_index,
             "spurious_metadata_index": args.spurious_metadata_index,
@@ -515,6 +970,8 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
         },
         "concepts": candidates,
     }
+    if diagnostics is not None:
+        payload["diagnostics"] = diagnostics
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     concepts_path = out_path.with_suffix(".concepts.txt")
@@ -528,15 +985,66 @@ def write_outputs(args: argparse.Namespace, candidates: list[dict], group_counts
     print(f"[INFO] Wrote index list to {indices_path}")
     print("[INFO] Top concepts:")
     for candidate in candidates:
-        print(
-            f"  {candidate['index']:5d} {candidate['concept']:<30} "
-            f"score={candidate['score']:.6f} spurious={candidate['spurious_effect']:.6f} "
-            f"target={candidate['target_effect']:.6f} instability={candidate['instability']:.6f}"
-        )
+        head = f"  {candidate['index']:5d} {candidate['concept']:<30} score={candidate['score']:.6f}"
+        if "spurious_effect" in candidate:
+            print(
+                f"{head} spurious={candidate['spurious_effect']:.6f} "
+                f"target={candidate['target_effect']:.6f} instability={candidate['instability']:.6f}"
+            )
+        elif "signed_effect_by_class" in candidate:
+            effects = " ".join(
+                f"y{key}={value:+.6f}" for key, value in candidate["signed_effect_by_class"].items()
+            )
+            print(f"{head} {effects} flips={candidate['sign_flips_across_classes']}")
+        else:
+            print(
+                f"{head} activated={candidate['activation_rate_on_errors']:.4f} "
+                f"suppressed={candidate['suppression_rate_on_errors']:.4f} "
+                f"class={candidate['best_class']}"
+            )
 
 
 def main() -> None:
     args = parse_args()
+    if args.ranking_method in {"error_contrast", "gradient_probe"}:
+        (
+            vocabulary,
+            splicemodel,
+            embeddings,
+            labels,
+            per_image_weights,
+            full_dataset,
+        ) = collect_embeddings_and_codes(args)
+        probe, predictions, probe_accuracy = fit_audit_probe(embeddings, labels, args)
+        if args.ranking_method == "error_contrast":
+            candidates, diagnostics = rank_concepts_by_error_contrast(
+                vocabulary,
+                per_image_weights,
+                labels,
+                predictions,
+                probe_accuracy,
+                args,
+            )
+        else:
+            candidates, diagnostics = rank_concepts_by_gradient_probe(
+                vocabulary,
+                splicemodel,
+                embeddings,
+                labels,
+                predictions,
+                probe,
+                probe_accuracy,
+                args,
+            )
+        if not candidates:
+            raise ValueError(
+                f"{args.ranking_method} discovery found no concept with a positive score. "
+                "Check the audit-probe diagnostics printed above."
+            )
+        write_outputs(args, candidates, {}, int(labels.numel()), diagnostics=diagnostics)
+        cache_discovered_scores(args, candidates, per_image_weights, full_dataset)
+        return
+
     (
         vocabulary,
         group_means,
