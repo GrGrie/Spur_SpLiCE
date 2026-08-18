@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import scipy.sparse as sparse
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from scipy.special import softmax
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit, cross_val_predict
 from torch.utils.data import DataLoader
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,12 +52,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ranking_method",
         default="conditional_group",
-        choices=["conditional_group", "error_contrast", "gradient_probe"],
+        choices=["conditional_group", "error_contrast", "gradient_probe", "intervention_utility"],
         help=(
             "conditional_group ranks by group-conditioned means and REQUIRES spurious metadata. "
             "error_contrast contrasts correctly classified against misclassified examples of the "
-            "same class and needs class labels only (recommended group-free method). "
-            "gradient_probe is the published gradient estimator, kept for comparison."
+            "same class and needs class labels only. gradient_probe is the published gradient "
+            "estimator, kept for comparison. intervention_utility is the proposed group-free "
+            "method: it ranks exact held-out error repair against damage after concept ablation."
         ),
     )
     parser.add_argument(
@@ -84,6 +87,30 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help="Cross-validation folds used to obtain honest probe errors on the discovery split.",
+    )
+    parser.add_argument(
+        "--utility_max_samples",
+        type=int,
+        default=20000,
+        help="Maximum stratified audit-set size for intervention-utility cross-fitting; <=0 uses all rows.",
+    )
+    parser.add_argument(
+        "--utility_candidate_pool",
+        type=int,
+        default=100,
+        help="Number of positive individual-utility concepts considered by joint greedy selection.",
+    )
+    parser.add_argument(
+        "--utility_min_repair",
+        type=int,
+        default=1,
+        help="Minimum number of held-out wrong-to-correct transitions required for a candidate.",
+    )
+    parser.add_argument(
+        "--utility_min_marginal",
+        type=float,
+        default=0.0,
+        help="Stop greedy selection when the class-balanced soft utility gain is not above this value.",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -201,6 +228,360 @@ class SparseConceptWeights:
         if bool(keep.any()):
             sums.index_add_(0, self.columns[keep], self.values[keep].double())
         return (sums / count).float()
+
+    def to_csr(self) -> sparse.csr_matrix:
+        return sparse.csr_matrix(
+            (
+                self.values.numpy(),
+                (self.rows.numpy(), self.columns.numpy()),
+            ),
+            shape=(self.n_rows, self.n_columns),
+            dtype=np.float32,
+        )
+
+
+@dataclass
+class UtilityProbeFold:
+    """One held-out fold of a sparse linear probe used for exact interventions."""
+
+    features: sparse.csc_matrix
+    labels: np.ndarray
+    logits: np.ndarray
+    probabilities: np.ndarray
+    predictions: np.ndarray
+    coefficients: np.ndarray
+
+
+def _stratified_audit_indices(labels: np.ndarray, max_samples: int, seed: int) -> np.ndarray:
+    if max_samples <= 0 or len(labels) <= max_samples:
+        return np.arange(len(labels), dtype=np.int64)
+    splitter = StratifiedShuffleSplit(n_splits=1, train_size=max_samples, random_state=seed)
+    indices, _ = next(splitter.split(np.zeros(len(labels)), labels))
+    return np.sort(indices.astype(np.int64))
+
+
+def _expanded_probe_parameters(
+    probe: LogisticRegression,
+    features: sparse.spmatrix,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return one logit row per class, including sklearn's binary special case."""
+
+    raw_logits = probe.decision_function(features)
+    if probe.coef_.shape[0] == 1:
+        logits = np.column_stack((np.zeros(features.shape[0], dtype=np.float64), raw_logits))
+        coefficients = np.vstack((np.zeros_like(probe.coef_[0]), probe.coef_[0]))
+    else:
+        logits = np.asarray(raw_logits, dtype=np.float64)
+        coefficients = np.asarray(probe.coef_, dtype=np.float64)
+    expected_classes = np.arange(coefficients.shape[0])
+    if not np.array_equal(probe.classes_, expected_classes):
+        raise ValueError(
+            "Intervention utility expects contiguous integer class labels starting at zero; "
+            f"got {probe.classes_.tolist()}."
+        )
+    return logits, coefficients
+
+
+def fit_cross_fitted_sparse_probes(
+    weights: SparseConceptWeights,
+    labels: torch.Tensor,
+    args: argparse.Namespace,
+) -> tuple[list[UtilityProbeFold], dict]:
+    """Fit L1 probes on fold complements and retain honest held-out logits."""
+
+    matrix = weights.to_csr()
+    targets = labels.numpy().astype(np.int64, copy=False)
+    audit_indices = _stratified_audit_indices(
+        targets,
+        int(getattr(args, "utility_max_samples", 20000)),
+        int(args.seed),
+    )
+    matrix = matrix[audit_indices]
+    targets = targets[audit_indices]
+
+    smallest_class = int(np.bincount(targets).min())
+    folds = min(max(2, int(args.probe_cv_folds)), smallest_class)
+    if folds < 2:
+        raise ValueError("Intervention utility needs at least two examples in every target class.")
+
+    splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=int(args.seed))
+    fold_states: list[UtilityProbeFold] = []
+    all_predictions = np.empty_like(targets)
+    active_features: set[int] = set()
+    for fold_index, (train_indices, eval_indices) in enumerate(splitter.split(matrix, targets), start=1):
+        probe = LogisticRegression(
+            penalty="l1",
+            solver="saga",
+            C=float(args.probe_c),
+            fit_intercept=False,
+            max_iter=int(args.probe_max_iter),
+            random_state=int(args.seed) + fold_index,
+        )
+        probe.fit(matrix[train_indices], targets[train_indices])
+        eval_features = matrix[eval_indices].tocsc()
+        logits, coefficients = _expanded_probe_parameters(probe, eval_features)
+        probabilities = softmax(logits, axis=1)
+        predictions = logits.argmax(axis=1)
+        all_predictions[eval_indices] = predictions
+        active_features.update(np.flatnonzero(np.any(coefficients != 0, axis=0)).tolist())
+        fold_states.append(
+            UtilityProbeFold(
+                features=eval_features,
+                labels=targets[eval_indices],
+                logits=logits,
+                probabilities=probabilities,
+                predictions=predictions,
+                coefficients=coefficients,
+            )
+        )
+
+    n_classes = int(targets.max()) + 1
+    error_support = np.bincount(
+        targets[all_predictions != targets], minlength=n_classes
+    ).astype(np.int64)
+    correct_support = np.bincount(
+        targets[all_predictions == targets], minlength=n_classes
+    ).astype(np.int64)
+    diagnostics = {
+        "probe_cv_folds": folds,
+        "probe_cv_accuracy": round(float((all_predictions == targets).mean()), 6),
+        "audit_sample_count": int(len(targets)),
+        "full_sample_count": int(len(labels)),
+        "active_probe_concepts": int(len(active_features)),
+        "error_support_by_class": {str(index): int(value) for index, value in enumerate(error_support)},
+        "correct_support_by_class": {str(index): int(value) for index, value in enumerate(correct_support)},
+    }
+    return fold_states, diagnostics
+
+
+def _summarize_utility(
+    soft_repair: np.ndarray,
+    soft_damage: np.ndarray,
+    repairs: np.ndarray,
+    damages: np.ndarray,
+    error_support: np.ndarray,
+    correct_support: np.ndarray,
+) -> dict[str, float | int]:
+    error_classes = error_support > 0
+    correct_classes = correct_support > 0
+    if not bool(error_classes.any()) or not bool(correct_classes.any()):
+        raise ValueError("Intervention utility requires both correct and misclassified held-out examples.")
+    repair_soft_rate = float(np.mean(soft_repair[error_classes] / error_support[error_classes]))
+    damage_soft_rate = float(np.mean(soft_damage[correct_classes] / correct_support[correct_classes]))
+    repair_rate = float(np.mean(repairs[error_classes] / error_support[error_classes]))
+    damage_rate = float(np.mean(damages[correct_classes] / correct_support[correct_classes]))
+    smoothed_ratio = (repair_rate + 0.5 / max(int(error_support.sum()), 1)) / (
+        damage_rate + 0.5 / max(int(correct_support.sum()), 1)
+    )
+    return {
+        "score": repair_soft_rate - damage_soft_rate,
+        "soft_repair_rate": repair_soft_rate,
+        "soft_damage_rate": damage_soft_rate,
+        "repair_rate": repair_rate,
+        "damage_rate": damage_rate,
+        "repair_damage_ratio": smoothed_ratio,
+        "repaired": int(repairs.sum()),
+        "damaged": int(damages.sum()),
+    }
+
+
+def _utility_support(folds: list[UtilityProbeFold]) -> tuple[np.ndarray, np.ndarray]:
+    n_classes = folds[0].logits.shape[1]
+    error_support = np.zeros(n_classes, dtype=np.int64)
+    correct_support = np.zeros(n_classes, dtype=np.int64)
+    for fold in folds:
+        errors = fold.predictions != fold.labels
+        error_support += np.bincount(fold.labels[errors], minlength=n_classes)
+        correct_support += np.bincount(fold.labels[~errors], minlength=n_classes)
+    return error_support, correct_support
+
+
+def evaluate_single_concept_utility(
+    folds: list[UtilityProbeFold],
+    concept_index: int,
+    error_support: np.ndarray,
+    correct_support: np.ndarray,
+) -> dict[str, float | int]:
+    """Evaluate one deletion in time proportional to its sparse activation count."""
+
+    n_classes = len(error_support)
+    soft_repair = np.zeros(n_classes, dtype=np.float64)
+    soft_damage = np.zeros(n_classes, dtype=np.float64)
+    repairs = np.zeros(n_classes, dtype=np.int64)
+    damages = np.zeros(n_classes, dtype=np.int64)
+    for fold in folds:
+        coefficient = fold.coefficients[:, concept_index]
+        if not np.any(coefficient):
+            continue
+        column = fold.features.getcol(concept_index).tocoo()
+        if column.nnz == 0:
+            continue
+        rows = column.row
+        ablated_logits = fold.logits[rows] - column.data[:, None] * coefficient[None, :]
+        ablated_probabilities = softmax(ablated_logits, axis=1)
+        ablated_predictions = ablated_logits.argmax(axis=1)
+        labels = fold.labels[rows]
+        base_predictions = fold.predictions[rows]
+        base_true_probability = fold.probabilities[rows, labels]
+        ablated_true_probability = ablated_probabilities[np.arange(len(rows)), labels]
+        base_errors = base_predictions != labels
+        repair_values = np.maximum(ablated_true_probability - base_true_probability, 0.0) * base_errors
+        damage_values = np.maximum(base_true_probability - ablated_true_probability, 0.0) * ~base_errors
+        soft_repair += np.bincount(labels, weights=repair_values, minlength=n_classes)
+        soft_damage += np.bincount(labels, weights=damage_values, minlength=n_classes)
+        repaired_mask = base_errors & (ablated_predictions == labels)
+        damaged_mask = ~base_errors & (ablated_predictions != labels)
+        repairs += np.bincount(labels[repaired_mask], minlength=n_classes)
+        damages += np.bincount(labels[damaged_mask], minlength=n_classes)
+    return _summarize_utility(
+        soft_repair,
+        soft_damage,
+        repairs,
+        damages,
+        error_support,
+        correct_support,
+    )
+
+
+def evaluate_concept_set_utility(
+    folds: list[UtilityProbeFold],
+    concept_indices: list[int],
+    error_support: np.ndarray,
+    correct_support: np.ndarray,
+) -> dict[str, float | int]:
+    n_classes = len(error_support)
+    soft_repair = np.zeros(n_classes, dtype=np.float64)
+    soft_damage = np.zeros(n_classes, dtype=np.float64)
+    repairs = np.zeros(n_classes, dtype=np.int64)
+    damages = np.zeros(n_classes, dtype=np.int64)
+    for fold in folds:
+        if concept_indices:
+            contribution = fold.features[:, concept_indices] @ fold.coefficients[:, concept_indices].T
+            ablated_logits = fold.logits - np.asarray(contribution)
+        else:
+            ablated_logits = fold.logits
+        ablated_probabilities = softmax(ablated_logits, axis=1)
+        ablated_predictions = ablated_logits.argmax(axis=1)
+        row_indices = np.arange(len(fold.labels))
+        base_true_probability = fold.probabilities[row_indices, fold.labels]
+        ablated_true_probability = ablated_probabilities[row_indices, fold.labels]
+        base_errors = fold.predictions != fold.labels
+        repair_values = np.maximum(ablated_true_probability - base_true_probability, 0.0) * base_errors
+        damage_values = np.maximum(base_true_probability - ablated_true_probability, 0.0) * ~base_errors
+        soft_repair += np.bincount(fold.labels, weights=repair_values, minlength=n_classes)
+        soft_damage += np.bincount(fold.labels, weights=damage_values, minlength=n_classes)
+        repaired_mask = base_errors & (ablated_predictions == fold.labels)
+        damaged_mask = ~base_errors & (ablated_predictions != fold.labels)
+        repairs += np.bincount(fold.labels[repaired_mask], minlength=n_classes)
+        damages += np.bincount(fold.labels[damaged_mask], minlength=n_classes)
+    return _summarize_utility(
+        soft_repair,
+        soft_damage,
+        repairs,
+        damages,
+        error_support,
+        correct_support,
+    )
+
+
+def rank_concepts_by_intervention_utility(
+    vocabulary: list[str],
+    weights: SparseConceptWeights,
+    labels: torch.Tensor,
+    args: argparse.Namespace,
+) -> tuple[list[dict], dict]:
+    """Select a non-redundant set whose exact deletion repairs held-out errors."""
+
+    folds, diagnostics = fit_cross_fitted_sparse_probes(weights, labels, args)
+    error_support, correct_support = _utility_support(folds)
+    if not bool(error_support.any()):
+        raise ValueError(
+            "The cross-fitted sparse probe made no errors, so intervention utility is undefined. "
+            "Reduce --probe_c or use a harder audit split."
+        )
+
+    active_indices = sorted(
+        {
+            int(index)
+            for fold in folds
+            for index in np.flatnonzero(np.any(fold.coefficients != 0, axis=0))
+        }
+    )
+    individual: dict[int, dict[str, float | int]] = {}
+    minimum_repairs = max(0, int(getattr(args, "utility_min_repair", 1)))
+    for position, index in enumerate(active_indices, start=1):
+        metrics = evaluate_single_concept_utility(folds, index, error_support, correct_support)
+        if metrics["score"] > 0 and metrics["repaired"] >= minimum_repairs:
+            individual[index] = metrics
+        if position % 500 == 0:
+            print(f"[INFO] Intervention-utility screening {position}/{len(active_indices)}", flush=True)
+
+    pool_size = max(int(args.top_k), int(getattr(args, "utility_candidate_pool", 100)))
+    pool = sorted(individual, key=lambda index: individual[index]["score"], reverse=True)[:pool_size]
+    if not pool:
+        raise ValueError(
+            "No concept produced positive repair-minus-damage utility with the requested minimum repairs."
+        )
+
+    selected: list[int] = []
+    selected_families: set[str] = set()
+    current_score = 0.0
+    candidates: list[dict] = []
+    minimum_marginal = float(getattr(args, "utility_min_marginal", 0.0))
+    while len(selected) < int(args.top_k):
+        best_index = None
+        best_metrics = None
+        for index in pool:
+            if index in selected:
+                continue
+            family = concept_family_key(vocabulary[index])
+            if getattr(args, "deduplicate_concepts", False) and family in selected_families:
+                continue
+            metrics = evaluate_concept_set_utility(
+                folds,
+                selected + [index],
+                error_support,
+                correct_support,
+            )
+            if best_metrics is None or metrics["score"] > best_metrics["score"]:
+                best_index = index
+                best_metrics = metrics
+        if best_index is None or best_metrics is None:
+            break
+        marginal = float(best_metrics["score"]) - current_score
+        if marginal <= minimum_marginal:
+            break
+        selected.append(best_index)
+        selected_families.add(concept_family_key(vocabulary[best_index]))
+        current_score = float(best_metrics["score"])
+        standalone = individual[best_index]
+        candidates.append(
+            {
+                "index": best_index,
+                "concept": vocabulary[best_index],
+                "score": round(current_score, 8),
+                "selection_step": len(selected),
+                "marginal_utility": round(marginal, 8),
+                "individual_utility": round(float(standalone["score"]), 8),
+                "soft_repair_rate": round(float(best_metrics["soft_repair_rate"]), 8),
+                "soft_damage_rate": round(float(best_metrics["soft_damage_rate"]), 8),
+                "repair_rate": round(float(best_metrics["repair_rate"]), 8),
+                "damage_rate": round(float(best_metrics["damage_rate"]), 8),
+                "repair_damage_ratio": round(float(best_metrics["repair_damage_ratio"]), 8),
+                "repaired": int(best_metrics["repaired"]),
+                "damaged": int(best_metrics["damaged"]),
+            }
+        )
+
+    diagnostics.update(
+        {
+            "positive_individual_candidates": len(individual),
+            "greedy_candidate_pool": len(pool),
+            "selected_count": len(candidates),
+            "final_joint_utility": round(current_score, 8),
+        }
+    )
+    return candidates, diagnostics
 
 
 def resolve_metadata_indices(args: argparse.Namespace, dataset_spec: dict) -> tuple[int, int]:
@@ -917,7 +1298,13 @@ def write_outputs(
     # Callers such as splice_cbm.py build this namespace by hand, so every
     # gradient-probe field has to degrade to the historical default.
     ranking_method = getattr(args, "ranking_method", "conditional_group")
-    if ranking_method == "error_contrast":
+    if ranking_method == "intervention_utility":
+        method = "cross_fitted_intervention_repair_damage_utility"
+        formula = (
+            "greedy_S class_balanced_mean_{errors} positive_delta_p_true(delete S) - "
+            "class_balanced_mean_{correct} positive_negative_delta_p_true(delete S)"
+        )
+    elif ranking_method == "error_contrast":
         method = "error_conditioned_contrast"
         formula = "mean_y abs( E[c | y, predicted correctly] - E[c | y, misclassified] )"
     elif ranking_method == "gradient_probe":
@@ -936,7 +1323,7 @@ def write_outputs(
     payload = {
         "method": method,
         "formula": formula,
-        "uses_spurious_metadata": ranking_method != "gradient_probe",
+        "uses_spurious_metadata": ranking_method == "conditional_group",
         "dataset": args.dataset,
         "split": args.split,
         "total_count": total_count,
@@ -951,6 +1338,10 @@ def write_outputs(
             "gradient_score": getattr(args, "gradient_score", None),
             "probe_c": getattr(args, "probe_c", None),
             "probe_cv_folds": getattr(args, "probe_cv_folds", None),
+            "utility_max_samples": getattr(args, "utility_max_samples", None),
+            "utility_candidate_pool": getattr(args, "utility_candidate_pool", None),
+            "utility_min_repair": getattr(args, "utility_min_repair", None),
+            "utility_min_marginal": getattr(args, "utility_min_marginal", None),
             "seed": getattr(args, "seed", None),
             "per_image_top_k": int(getattr(args, "per_image_top_k", 0)),
             "target_metadata_index": args.target_metadata_index,
@@ -986,7 +1377,13 @@ def write_outputs(
     print("[INFO] Top concepts:")
     for candidate in candidates:
         head = f"  {candidate['index']:5d} {candidate['concept']:<30} score={candidate['score']:.6f}"
-        if "spurious_effect" in candidate:
+        if "marginal_utility" in candidate:
+            print(
+                f"{head} marginal={candidate['marginal_utility']:+.6f} "
+                f"repair={candidate['repaired']} damage={candidate['damaged']} "
+                f"ratio={candidate['repair_damage_ratio']:.3f}"
+            )
+        elif "spurious_effect" in candidate:
             print(
                 f"{head} spurious={candidate['spurious_effect']:.6f} "
                 f"target={candidate['target_effect']:.6f} instability={candidate['instability']:.6f}"
@@ -1006,7 +1403,7 @@ def write_outputs(
 
 def main() -> None:
     args = parse_args()
-    if args.ranking_method in {"error_contrast", "gradient_probe"}:
+    if args.ranking_method in {"error_contrast", "gradient_probe", "intervention_utility"}:
         (
             vocabulary,
             splicemodel,
@@ -1015,7 +1412,15 @@ def main() -> None:
             per_image_weights,
             full_dataset,
         ) = collect_embeddings_and_codes(args)
-        probe, predictions, probe_accuracy = fit_audit_probe(embeddings, labels, args)
+        if args.ranking_method == "intervention_utility":
+            candidates, diagnostics = rank_concepts_by_intervention_utility(
+                vocabulary,
+                per_image_weights,
+                labels,
+                args,
+            )
+        else:
+            probe, predictions, probe_accuracy = fit_audit_probe(embeddings, labels, args)
         if args.ranking_method == "error_contrast":
             candidates, diagnostics = rank_concepts_by_error_contrast(
                 vocabulary,
@@ -1025,7 +1430,7 @@ def main() -> None:
                 probe_accuracy,
                 args,
             )
-        else:
+        elif args.ranking_method == "gradient_probe":
             candidates, diagnostics = rank_concepts_by_gradient_probe(
                 vocabulary,
                 splicemodel,

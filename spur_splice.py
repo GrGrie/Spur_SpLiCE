@@ -122,6 +122,7 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         split=args.splice_auto_split,
         out_path=str(discovery_path),
         top_k=args.splice_auto_top_k,
+        ranking_method=args.splice_auto_ranking_method,
         per_image_top_k=args.splice_per_image_top_k,
         target_metadata_index=None,
         spurious_metadata_index=None,
@@ -141,34 +142,69 @@ def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
         use_abs_score=args.splice_auto_use_abs_score,
         require_consistent_spurious_direction=args.splice_auto_require_consistent_direction,
         deduplicate_concepts=args.splice_auto_deduplicate_concepts,
+        gradient_step_scale=0.1,
+        gradient_score="indicator",
+        probe_c=args.splice_auto_probe_c,
+        probe_max_iter=args.splice_auto_probe_max_iter,
+        probe_cv_folds=args.splice_auto_probe_cv_folds,
+        utility_max_samples=args.splice_auto_utility_max_samples,
+        utility_candidate_pool=args.splice_auto_utility_candidate_pool,
+        utility_min_repair=args.splice_auto_utility_min_repair,
+        utility_min_marginal=args.splice_auto_utility_min_marginal,
+        seed=args.seed,
     )
     print(
         "[INFO] Auto-discovering SpLiCE concepts: "
         f"dataset={args.dataset} split={args.splice_auto_split} top_k={args.splice_auto_top_k}"
     )
-    (
-        vocabulary,
-        group_means,
-        group_counts,
-        dataset_mean,
-        total_count,
-        spurious_values,
-        target_values,
-        metadata_names,
-        per_image_weights,
-        discovery_dataset,
-    ) = concept_discovery.decompose_by_group(discovery_args)
-    candidates = concept_discovery.rank_concepts(
-        vocabulary,
-        group_means,
-        group_counts,
-        dataset_mean,
-        spurious_values,
-        target_values,
-        metadata_names,
+    if args.splice_auto_ranking_method == "intervention_utility":
+        (
+            vocabulary,
+            _,
+            _,
+            labels,
+            per_image_weights,
+            discovery_dataset,
+        ) = concept_discovery.collect_embeddings_and_codes(discovery_args)
+        candidates, diagnostics = concept_discovery.rank_concepts_by_intervention_utility(
+            vocabulary,
+            per_image_weights,
+            labels,
+            discovery_args,
+        )
+        group_counts = {}
+        total_count = int(labels.numel())
+    else:
+        (
+            vocabulary,
+            group_means,
+            group_counts,
+            dataset_mean,
+            total_count,
+            spurious_values,
+            target_values,
+            metadata_names,
+            per_image_weights,
+            discovery_dataset,
+        ) = concept_discovery.decompose_by_group(discovery_args)
+        candidates = concept_discovery.rank_concepts(
+            vocabulary,
+            group_means,
+            group_counts,
+            dataset_mean,
+            spurious_values,
+            target_values,
+            metadata_names,
+            discovery_args,
+        )
+        diagnostics = None
+    concept_discovery.write_outputs(
         discovery_args,
+        candidates,
+        group_counts,
+        total_count,
+        diagnostics=diagnostics,
     )
-    concept_discovery.write_outputs(discovery_args, candidates, group_counts, total_count)
     concept_discovery.cache_discovered_scores(
         discovery_args, candidates, per_image_weights, discovery_dataset
     )
@@ -452,6 +488,20 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Number of concepts to discover when --splice_concepts is empty or auto.",
     )
+    parser.add_argument(
+        "--splice_auto_ranking_method",
+        type=str,
+        default="intervention_utility",
+        choices=["intervention_utility", "conditional_group"],
+        help="Automatic concept selector. intervention_utility uses target labels but no spurious metadata.",
+    )
+    parser.add_argument("--splice_auto_probe_c", type=float, default=1.0)
+    parser.add_argument("--splice_auto_probe_max_iter", type=int, default=5000)
+    parser.add_argument("--splice_auto_probe_cv_folds", type=int, default=5)
+    parser.add_argument("--splice_auto_utility_max_samples", type=int, default=20000)
+    parser.add_argument("--splice_auto_utility_candidate_pool", type=int, default=100)
+    parser.add_argument("--splice_auto_utility_min_repair", type=int, default=1)
+    parser.add_argument("--splice_auto_utility_min_marginal", type=float, default=0.0)
     parser.add_argument(
         "--splice_per_image_top_k",
         type=int,

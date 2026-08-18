@@ -28,7 +28,14 @@ from splice.ssl_regularization import (
 )
 from splice.model import SPLICE
 from spur_splice import resolve_epoch_schedule
-from scripts.tools.discover_splice_spurious_concepts import SparseConceptWeights, rank_concepts
+from scripts.tools.discover_splice_spurious_concepts import (
+    SparseConceptWeights,
+    UtilityProbeFold,
+    evaluate_concept_set_utility,
+    evaluate_single_concept_utility,
+    fit_cross_fitted_sparse_probes,
+    rank_concepts,
+)
 
 
 class SplicePipelineTests(unittest.TestCase):
@@ -205,6 +212,93 @@ class SplicePipelineTests(unittest.TestCase):
             weights.select_columns([5, 1]),
             torch.tensor([[0.2, 0.1], [0.3, 0.0], [0.0, 0.0]]),
         )
+
+    def test_intervention_utility_rewards_repairs_and_penalizes_damage(self):
+        features = sparse.csc_matrix(
+            np.asarray(
+                [
+                    [1.0, 0.0],
+                    [0.0, 0.0],
+                    [0.0, 1.0],
+                    [0.0, 0.0],
+                ]
+            )
+        )
+        logits = np.asarray(
+            [
+                [0.0, 1.0],  # wrong y=0; deleting concept 0 repairs it
+                [0.0, 2.0],
+                [1.0, 0.0],  # correct y=0; deleting concept 1 damages it
+                [0.0, 2.0],
+            ]
+        )
+        probabilities = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
+        fold = UtilityProbeFold(
+            features=features,
+            labels=np.asarray([0, 1, 0, 1]),
+            logits=logits,
+            probabilities=probabilities,
+            predictions=logits.argmax(axis=1),
+            coefficients=np.asarray([[0.0, 2.0], [2.0, 0.0]]),
+        )
+        error_support = np.asarray([1, 0])
+        correct_support = np.asarray([1, 2])
+        repair = evaluate_single_concept_utility([fold], 0, error_support, correct_support)
+        damage = evaluate_single_concept_utility([fold], 1, error_support, correct_support)
+        self.assertEqual(repair["repaired"], 1)
+        self.assertEqual(repair["damaged"], 0)
+        self.assertGreater(repair["score"], 0.0)
+        self.assertEqual(damage["repaired"], 0)
+        self.assertEqual(damage["damaged"], 1)
+        self.assertLess(damage["score"], 0.0)
+
+    def test_intervention_utility_cross_fits_binary_sparse_probe(self):
+        labels = torch.tensor([index % 2 for index in range(40)], dtype=torch.long)
+        weights = SparseConceptWeights(
+            rows=torch.arange(40, dtype=torch.long),
+            columns=labels.clone(),
+            values=torch.ones(40),
+            n_rows=40,
+            n_columns=2,
+        )
+        folds, diagnostics = fit_cross_fitted_sparse_probes(
+            weights,
+            labels,
+            argparse.Namespace(
+                utility_max_samples=0,
+                probe_cv_folds=4,
+                probe_c=1.0,
+                probe_max_iter=1000,
+                seed=7,
+            ),
+        )
+        self.assertEqual(len(folds), 4)
+        self.assertEqual(sum(len(fold.labels) for fold in folds), 40)
+        self.assertTrue(all(fold.logits.shape[1] == 2 for fold in folds))
+        self.assertEqual(diagnostics["audit_sample_count"], 40)
+        self.assertGreaterEqual(diagnostics["probe_cv_accuracy"], 0.95)
+
+    def test_joint_intervention_utility_evaluates_selected_set_exactly(self):
+        features = sparse.csc_matrix(np.asarray([[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]]))
+        logits = np.asarray([[0.0, 1.0], [2.0, 0.0], [0.0, 2.0]])
+        probabilities = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
+        fold = UtilityProbeFold(
+            features=features,
+            labels=np.asarray([0, 0, 1]),
+            logits=logits,
+            probabilities=probabilities,
+            predictions=logits.argmax(axis=1),
+            coefficients=np.asarray([[0.0, 0.0], [0.6, 0.6]]),
+        )
+        metrics = evaluate_concept_set_utility(
+            [fold],
+            [0, 1],
+            np.asarray([1, 0]),
+            np.asarray([1, 1]),
+        )
+        self.assertEqual(metrics["repaired"], 1)
+        self.assertEqual(metrics["damaged"], 0)
+        self.assertGreater(metrics["score"], 0.0)
 
     def test_discovery_penalizes_target_specific_concept_at_full_scale(self):
         # concept 0 varies only with the spurious value; concept 1 varies only with target.

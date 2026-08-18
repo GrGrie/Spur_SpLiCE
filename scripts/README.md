@@ -1,5 +1,24 @@
 # Home training on Windows
 
+## Universal cluster arrays
+
+Two Slurm arrays implement the intervention-utility method. Each submission
+targets one dataset through the `DATASET` variable (`waterbirds`, `celeba`, or
+`spur_cifar10`). `SpLiCE_intervention_utility_discovery_array.sbatch` has four
+tasks: intervention utility, error contrast, the published gradient probe, and
+the metadata oracle under the same frozen SpLiCE-CBM intervention.
+
+`SpLiCE_intervention_utility_training_array.sbatch` has five tasks for the
+selected dataset: SimCLR, unedited CLIP distillation, proposed utility-selected
+class neutralization, zero-out, and matched random-coordinate neutralization.
+Repeat the array with different `SEED` values; do not pool unmatched epoch
+budgets.
+
+```bash
+sbatch --export=ALL,DATASET=waterbirds scripts/SpLiCE_intervention_utility_discovery_array.sbatch
+sbatch --export=ALL,DATASET=waterbirds,SEED=0 scripts/SpLiCE_intervention_utility_training_array.sbatch
+```
+
 These scripts reproduce the Slurm experiment families sequentially on one
 Windows GPU. They default to the 500-epoch protocol used by the
 synthesis--distillation stage, do not throttle the GPU or change process

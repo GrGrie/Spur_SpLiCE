@@ -37,15 +37,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--intervention_concepts",
         default="auto",
-        help="Comma-separated concepts/indices, or 'auto' (default) for metadata-conditioned discovery.",
+        help="Comma-separated concepts/indices, or 'auto' for intervention-utility discovery.",
     )
     parser.add_argument("--auto_top_k", type=int, default=10)
     parser.add_argument("--auto_out_dir", default="outputs")
     parser.add_argument(
         "--auto_ranking_method",
-        default="conditional_group",
-        choices=["conditional_group", "error_contrast", "gradient_probe"],
-        help="Discovery signal used when --intervention_concepts=auto. error_contrast needs no group labels.",
+        default="intervention_utility",
+        choices=["conditional_group", "error_contrast", "gradient_probe", "intervention_utility"],
+        help="Discovery signal used when --intervention_concepts=auto. Only conditional_group uses group labels.",
     )
     parser.add_argument("--auto_gradient_step_scale", type=float, default=0.1)
     parser.add_argument(
@@ -54,6 +54,10 @@ def parse_args() -> argparse.Namespace:
         choices=["indicator", "signed"],
     )
     parser.add_argument("--auto_probe_cv_folds", type=int, default=5)
+    parser.add_argument("--auto_utility_max_samples", type=int, default=20000)
+    parser.add_argument("--auto_utility_candidate_pool", type=int, default=100)
+    parser.add_argument("--auto_utility_min_repair", type=int, default=1)
+    parser.add_argument("--auto_utility_min_marginal", type=float, default=0.0)
     parser.add_argument("--auto_label_penalty", type=float, default=1.0)
     parser.add_argument("--auto_instability_penalty", type=float, default=1.0)
     parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
@@ -182,6 +186,10 @@ def automatically_discover_interventions(args, train_subset):
             and settings.get("label_penalty") == args.auto_label_penalty
             and settings.get("instability_penalty") == args.auto_instability_penalty
             and settings.get("ranking_method", "conditional_group") == args.auto_ranking_method
+            and settings.get("utility_max_samples") == args.auto_utility_max_samples
+            and settings.get("utility_candidate_pool") == args.auto_utility_candidate_pool
+            and settings.get("utility_min_repair") == args.auto_utility_min_repair
+            and settings.get("utility_min_marginal") == args.auto_utility_min_marginal
         )
     if discovery_matches and concepts_path.exists() and matrix_path.exists() and metadata_path.exists():
         cached_metadata = np.load(metadata_path)
@@ -222,10 +230,14 @@ def automatically_discover_interventions(args, train_subset):
         probe_c=args.probe_c,
         probe_max_iter=args.probe_max_iter,
         probe_cv_folds=args.auto_probe_cv_folds,
+        utility_max_samples=args.auto_utility_max_samples,
+        utility_candidate_pool=args.auto_utility_candidate_pool,
+        utility_min_repair=args.auto_utility_min_repair,
+        utility_min_marginal=args.auto_utility_min_marginal,
         seed=args.seed,
         deduplicate_concepts=True,
     )
-    if args.auto_ranking_method in {"error_contrast", "gradient_probe"}:
+    if args.auto_ranking_method in {"error_contrast", "gradient_probe", "intervention_utility"}:
         (
             vocabulary,
             splicemodel,
@@ -234,7 +246,15 @@ def automatically_discover_interventions(args, train_subset):
             sparse_weights,
             discovery_dataset,
         ) = discovery.collect_embeddings_and_codes(discovery_args)
-        probe, predictions, probe_accuracy = discovery.fit_audit_probe(embeddings, labels, discovery_args)
+        if args.auto_ranking_method == "intervention_utility":
+            candidates, diagnostics = discovery.rank_concepts_by_intervention_utility(
+                vocabulary,
+                sparse_weights,
+                labels,
+                discovery_args,
+            )
+        else:
+            probe, predictions, probe_accuracy = discovery.fit_audit_probe(embeddings, labels, discovery_args)
         if args.auto_ranking_method == "error_contrast":
             candidates, diagnostics = discovery.rank_concepts_by_error_contrast(
                 vocabulary,
@@ -244,7 +264,7 @@ def automatically_discover_interventions(args, train_subset):
                 probe_accuracy,
                 discovery_args,
             )
-        else:
+        elif args.auto_ranking_method == "gradient_probe":
             candidates, diagnostics = discovery.rank_concepts_by_gradient_probe(
                 vocabulary,
                 splicemodel,

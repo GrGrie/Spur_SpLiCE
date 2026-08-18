@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 METHOD_LABELS = {
+    "utility": "intervention_utility (target labels only)",
     "oracle": "conditional_group (uses group metadata)",
     "errcontrast": "error_contrast (class labels only)",
     "gradprobe": "gradient_probe (published estimator)",
@@ -25,18 +26,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results_dir", default="outputs")
     parser.add_argument(
         "--methods",
-        default="oracle,errcontrast,gradprobe,paper",
+        default="utility,oracle,errcontrast,gradprobe,paper",
         help="Comma-separated run labels matching the sbatch array tasks.",
     )
+    parser.add_argument("--seed", type=int, default=None, help="Optional seed suffix used by the universal array.")
     parser.add_argument("--out_path", default="")
     return parser.parse_args()
 
 
-def load_result(results_dir: Path, dataset: str, method: str) -> dict | None:
-    path = results_dir / f"{dataset}_discovery_{method}_cbm.json"
-    if not path.is_file():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
+def load_result(results_dir: Path, dataset: str, method: str, seed: int | None) -> dict | None:
+    names = []
+    if seed is not None:
+        names.append(f"{dataset}_discovery_{method}_cbm_seed{seed}.json")
+    names.append(f"{dataset}_discovery_{method}_cbm.json")
+    for name in names:
+        path = results_dir / name
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return None
 
 
 def main() -> None:
@@ -46,7 +53,7 @@ def main() -> None:
 
     rows = []
     for method in methods:
-        payload = load_result(results_dir, args.dataset, method)
+        payload = load_result(results_dir, args.dataset, method, args.seed)
         if payload is None:
             print(f"[WARN] Missing results for {method!r}; has that array task finished?")
             continue

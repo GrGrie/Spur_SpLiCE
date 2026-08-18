@@ -420,10 +420,16 @@ class SpliceConceptScorer:
 
         clip_embeddings = self.clip_embeddings_dataset(dataset, cache_key=cache_key)
         labels = torch.as_tensor(dataset.y_array).long().view(-1)
-        metadata = torch.as_tensor(dataset.metadata_array)
-        if metadata.ndim != 2 or not 0 <= spurious_metadata_index < metadata.shape[1]:
-            raise ValueError("SpLiCE synthesis requires a valid spurious metadata column.")
-        spurious_values = metadata[:, spurious_metadata_index].long()
+        needs_spurious_metadata = self.config.intervention in {"core_matched_swap", "shuffled_donor"}
+        if needs_spurious_metadata:
+            metadata = torch.as_tensor(dataset.metadata_array)
+            if metadata.ndim != 2 or not 0 <= spurious_metadata_index < metadata.shape[1]:
+                raise ValueError("This SpLiCE synthesis intervention requires a valid spurious metadata column.")
+            spurious_values = metadata[:, spurious_metadata_index].long()
+        else:
+            # Group-free edits use only target labels. A constant placeholder keeps
+            # the shared edit function simple without reading spurious metadata.
+            spurious_values = torch.zeros_like(labels)
         edit_indices = self.concept_indices
         if self.config.intervention == "random_coords":
             edit_indices = random_dictionary_indices(

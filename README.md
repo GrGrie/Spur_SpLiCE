@@ -67,6 +67,32 @@ comparable with the existing epoch-1000 report tables.
 
 ## Experiment families
 
+### Intervention-utility discovery (group-label free)
+
+The `intervention_utility` selector fits L1 probes by cross-validation on sparse
+SpLiCE codes and evaluates exact held-out concept deletion. It rewards increases
+in the true-class probability on probe errors, penalizes decreases on correct
+examples, and greedily selects a jointly useful non-redundant concept set. It
+uses target labels but never spurious/group metadata.
+
+Each Slurm submission targets one dataset through `DATASET`; repeat it for
+CelebA or SpurCIFAR10 after their files are available:
+
+```bash
+# Frozen discovery comparison: utility, error contrast, gradient probe, oracle.
+sbatch --export=ALL,DATASET=waterbirds scripts/SpLiCE_intervention_utility_discovery_array.sbatch
+
+# Matched downstream battery for one seed; repeat with SEED=1,2,...
+sbatch --export=ALL,DATASET=waterbirds,SEED=0 scripts/SpLiCE_intervention_utility_training_array.sbatch
+```
+
+The proposed downstream configuration is `UtilityNeutralize`: automatically
+selected coordinates are replaced by their target-class median in the frozen
+SpLiCE code, the residual-preserving CLIP target is synthesized, and the target
+is distilled through the dedicated CLIP head. This edit is agnostic to whether
+the nuisance is a background, demographic attribute, colour, texture, or other
+language-aligned concept.
+
 ### Routing controls
 
 Tasks are baseline, semantic, shuffled, matched-random, and augment-all:
