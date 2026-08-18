@@ -29,6 +29,7 @@ module purge
 module load miniforge3/latest
 . "${ANACONDA_HOME}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
+export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 

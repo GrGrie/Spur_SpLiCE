@@ -22,6 +22,7 @@ module purge
 module load miniforge3/latest
 . "${ANACONDA_HOME}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
+export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
 read -r -a FILES <<< "${GRAPH_FILES}"
 python -u scripts/tools/evaluate_crp_graph_waterbirds.py \

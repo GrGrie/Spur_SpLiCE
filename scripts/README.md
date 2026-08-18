@@ -71,6 +71,17 @@ cache, builds exact directed 10-NN graphs from centered CLIP and DINO features,
 and evaluates them with the same Waterbirds post-hoc script. No labels enter
 graph construction.
 
+For a hands-off run, use the combined job; it builds the two baselines and then
+runs the comparison in one Slurm allocation:
+
+```bash
+sbatch scripts/SpLiCE_CRP_v2_baseline_compare.sbatch
+```
+
+The combined job has fixed cluster paths matching the existing CRP outputs and
+adds the project root to `PYTHONPATH`, so it does not depend on the shell's
+current module path.
+
 ```bash
 BASELINE_JOB=$(sbatch --parsable \
   --export='ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt,OUT_DIR=outputs/crp/waterbirds_baselines,TOP_K=10' \
