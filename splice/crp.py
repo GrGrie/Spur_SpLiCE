@@ -20,7 +20,7 @@ import torch.nn.functional as F
 
 
 CACHE_VERSION = 1
-GRAPH_VERSION = 1
+GRAPH_VERSION = 2
 REQUIRED_CACHE_KEYS = {
     "cache_version",
     "sample_ids",
@@ -385,6 +385,22 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
     edge_gain = gain[rows, positions]
     edge_dino = geometry["semantic_similarity"][rows, positions]
     confidence = edge_gain * (0.5 + 0.5 * edge_dino)
+    positive_gain_values = gain[gain > config.min_intervention_gain]
+    positive_activation_differences = activation_difference[gain > config.min_intervention_gain]
+    if positive_gain_values.numel() >= 2:
+        gain_centered = positive_gain_values - positive_gain_values.mean()
+        activation_centered = (
+            positive_activation_differences - positive_activation_differences.mean()
+        )
+        denominator = gain_centered.norm() * activation_centered.norm()
+        activation_gain_alignment = (
+            float(torch.dot(gain_centered, activation_centered) / denominator)
+            if float(denominator) > 1e-12
+            else 0.0
+        )
+    else:
+        activation_gain_alignment = 0.0
+    activation_gain_alignment = max(0.0, min(1.0, activation_gain_alignment))
     covered = torch.zeros(len(neighbours), dtype=torch.bool)
     if rows.numel():
         covered[rows] = True
@@ -393,7 +409,13 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
     semantic_agreement = float(edge_dino.mean()) if edge_dino.numel() else 0.0
     coverage = float(covered.float().mean())
     hubness_penalty = 1.0 + _gini(indegree) + float(indegree.max()) / max(1, len(neighbours))
-    score = positive_gain * coverage * max(semantic_agreement, 0.0) / hubness_penalty
+    score = (
+        positive_gain
+        * coverage
+        * max(semantic_agreement, 0.0)
+        * activation_gain_alignment
+        / hubness_penalty
+    )
     return {
         "rows": rows,
         "columns": columns,
@@ -404,6 +426,7 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
         "positive_gain": positive_gain,
         "semantic_agreement": semantic_agreement,
         "hubness_penalty": hubness_penalty,
+        "activation_gain_alignment": activation_gain_alignment,
         "score": score,
         "top1_neighbor_turnover": geometry["top1_neighbor_turnover"],
         "mean_neighbor_turnover": geometry["mean_neighbor_turnover"],
@@ -575,6 +598,7 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
             "robust_positive_gain": evidence["positive_gain"],
             "semantic_agreement": evidence["semantic_agreement"],
             "hubness_penalty": evidence["hubness_penalty"],
+            "activation_gain_alignment": evidence["activation_gain_alignment"],
             "accepted_edges": len(evidence["rows"]),
             "top1_neighbor_turnover": evidence["top1_neighbor_turnover"],
             "mean_neighbor_turnover": evidence["mean_neighbor_turnover"],

@@ -130,6 +130,7 @@ class SplicePipelineTests(unittest.TestCase):
         supported = row_sums > 0
         torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
         self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
+        self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
 
     def test_automatic_lr_schedules_scale_with_training_length(self):
         self.assertEqual(resolve_epoch_schedule("auto", 1000, (0.70, 0.80, 0.90)), [700, 800, 900])

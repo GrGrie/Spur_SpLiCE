@@ -17,6 +17,15 @@ sbatch --dependency=afterok:${CACHE_JOB} \
 # Or repeat null calibration with three seeds after an existing cache is ready.
 sbatch --array=0-2 --export=ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt \
   scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
+
+# After the array finishes, run the label-free go/no-go report on all JSONs.
+sbatch --export=ALL,REPORT_FILES='outputs/crp/waterbirds/teacher_graph_seed0.json outputs/crp/waterbirds/teacher_graph_seed1.json outputs/crp/waterbirds/teacher_graph_seed2.json' \
+  scripts/SpLiCE_CRP_v2_report.sbatch
+
+# Only after the label-free report, measure hidden-label graph quality post hoc.
+sbatch --array=0-2 \
+  --export=ALL,METADATA_CSV='./datasets/waterbirds/metadata.csv' \
+  scripts/SpLiCE_CRP_v2_posthoc_waterbirds.sbatch
 ```
 
 Override `PROJECT_DIR`, `CONDA_ENV`, `DATASET`, `OUT_DIR`, or `SEED_BASE` in the
@@ -24,6 +33,36 @@ same way as the existing jobs. Advanced audit settings can be passed as JSON, fo
 example `CRP_CONFIG_JSON='{"null_trials":8,"similarity_chunk_size":256}'`.
 The cache job reuses an existing output unless `FORCE=true`; the audit job fails
 before allocating audit work when `CACHE_PATH` does not exist.
+
+The report job is deliberately a gate, not a training job.  It returns a
+non-zero status when the projection is effectively unchanged or when selected
+groups do not beat the shuffled-code null.  The current repository does not yet
+contain CRP relational SSL training, so do not submit a CRP training sweep based
+on a report that says `NO_GO`.
+
+### Recommended overnight command
+
+Use a new output directory so the old graph is retained for comparison:
+
+```bash
+AUDIT_JOB=$(sbatch --parsable --array=0-2 \
+  --export='ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt,OUT_DIR=outputs/crp/waterbirds_v2,CRP_CONFIG_JSON={"null_trials":32}' \
+  scripts/SpLiCE_CRP_v2_frozen_audit.sbatch)
+
+REPORT_JOB=$(sbatch --parsable --dependency=afterany:${AUDIT_JOB} \
+  --export='ALL,REPORT_FILES=outputs/crp/waterbirds_v2/teacher_graph_seed0.json outputs/crp/waterbirds_v2/teacher_graph_seed1.json outputs/crp/waterbirds_v2/teacher_graph_seed2.json' \
+  scripts/SpLiCE_CRP_v2_report.sbatch)
+
+# Run post-hoc annotation diagnostics even when the label-free gate says NO_GO.
+sbatch --array=0-2 --dependency=afterany:${REPORT_JOB} \
+  --export='ALL,METADATA_CSV=./datasets/waterbirds/metadata.csv' \
+  scripts/SpLiCE_CRP_v2_posthoc_waterbirds.sbatch
+```
+
+Fetch `outputs/crp/waterbirds_v2/teacher_graph_seed*.json`, the three report
+outputs, and the three post-hoc outputs tomorrow.  A CRP SSL sweep is not a
+valid next command until the report passes and the post-hoc precision/coverage
+numbers are inspected.
 
 ## Universal cluster arrays
 
