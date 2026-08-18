@@ -64,6 +64,29 @@ outputs, and the three post-hoc outputs tomorrow.  A CRP SSL sweep is not a
 valid next command until the report passes and the post-hoc precision/coverage
 numbers are inspected.
 
+### Matched raw-CLIP and DINO-only baselines
+
+This is the next experiment after the current CRP `NO_GO`. It reuses the frozen
+cache, builds exact directed 10-NN graphs from centered CLIP and DINO features,
+and evaluates them with the same Waterbirds post-hoc script. No labels enter
+graph construction.
+
+```bash
+BASELINE_JOB=$(sbatch --parsable \
+  --export='ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt,OUT_DIR=outputs/crp/waterbirds_baselines,TOP_K=10' \
+  scripts/SpLiCE_CRP_v2_baseline_graphs.sbatch)
+
+COMPARE_JOB=$(sbatch --parsable --dependency=afterok:${BASELINE_JOB} \
+  --export='ALL,METADATA_CSV=./datasets/waterbirds/metadata.csv,GRAPH_FILES=outputs/crp/waterbirds_v2/teacher_graph_seed0.pt outputs/crp/waterbirds_v2/teacher_graph_seed1.pt outputs/crp/waterbirds_v2/teacher_graph_seed2.pt outputs/crp/waterbirds_baselines/raw_clip_graph.pt outputs/crp/waterbirds_baselines/dino_graph.pt' \
+  scripts/SpLiCE_CRP_v2_baselines_posthoc.sbatch)
+```
+
+The comparison log reports edge count, anchor coverage, same-target precision,
+same-target/opposite-background rate, and coverage of all four `(y,a)` groups.
+The decisive comparison is whether CRP increases the opposite-background rate
+over raw CLIP and DINO while retaining precision; high same-target precision by
+itself is not evidence of invariance.
+
 ## Universal cluster arrays
 
 Two Slurm arrays implement the intervention-utility method. Each submission
