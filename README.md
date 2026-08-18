@@ -1,5 +1,13 @@
 # Spur SpLiCE
 
+> **Current project source of truth:** read
+> [`PROJECT_GROUND_TRUTH.md`](PROJECT_GROUND_TRUTH.md) before changing the method,
+> experiments, or paper. It defines the proposed label-free SpLiCE-CRP v2
+> architecture and supersedes older SpLiCE-IU proposal text when they conflict.
+> The training code and report still implement/describe legacy experiments. The
+> CRP v2 frozen audit is implemented, but relational SSL training is intentionally
+> gated on the audit and there is no reported CRP v2 result.
+
 Spur SpLiCE studies whether sparse, language-aligned concepts from a frozen
 OpenCLIP/SpLiCE model can identify and mitigate spurious correlations during
 SimCLR training. The current experiments focus on Waterbirds and SpurCIFAR10.
@@ -35,6 +43,8 @@ with `--data_folder` or `-DataFolder`.
 - `linear_probe.py` — standalone target/spurious linear probing.
 - `splice_cbm.py` — sparse concept-bottleneck baseline.
 - `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
+- `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE/DINOv3 cache construction.
+- `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
@@ -173,3 +183,27 @@ precomputation before SSL training starts.
 
 See `experiments/spurious_eval/README.md` for implementation-level details and
 `scripts/README.md` for Windows launch/recovery instructions.
+
+## SpLiCE-CRP v2 frozen audit
+
+The first canonical CRP v2 implementation is deliberately separated from SSL
+training. It consumes one `.pt` cache with dataset-ordered `sample_ids`, normalized
+`clip_embeddings`, `image_mean`, dense non-negative `splice_codes`, `dictionary`,
+`vocabulary`, normalized `dino_embeddings`, and `cache_version: 1`. An optional
+`provenance` mapping may record checkpoint and dataset identifiers; users do not
+need to calculate hashes manually. Annotation keys such as `labels`,
+`targets`, `metadata`, or `groups` are rejected at the cache boundary.
+
+```bash
+python -m splice.crp \
+  --cache outputs/crp/waterbirds_train_features.pt \
+  --output outputs/crp/waterbirds_teacher_graph.pt
+```
+
+The command clusters active concepts, projects the full centered CLIP embedding,
+keeps reciprocal relations supported by DINO, calibrates group selection against
+matched random-subspace and shuffled-code nulls, caps donor indegree, and writes a
+row-stochastic top-k teacher graph plus a readable JSON audit. Selecting no group
+is valid and produces an empty graph, which means the downstream method must remain
+the SimCLR baseline. CRP relational training should only be enabled after this
+frozen artifact passes the go/no-go diagnostics in `PROJECT_GROUND_TRUTH.md`.

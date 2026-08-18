@@ -26,6 +26,14 @@ from splice.ssl_regularization import (
     residual_preserving_intervention,
     score_cache_path,
 )
+from splice.crp import (
+    CrpAuditConfig,
+    orthonormal_basis,
+    project_out,
+    run_frozen_audit,
+    save_feature_cache,
+    validate_feature_cache,
+)
 from splice.model import SPLICE
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.discover_splice_spurious_concepts import (
@@ -36,9 +44,93 @@ from scripts.tools.discover_splice_spurious_concepts import (
     fit_cross_fitted_sparse_probes,
     rank_concepts,
 )
+from scripts.tools.cache_crp_features import IndexedImages
 
 
 class SplicePipelineTests(unittest.TestCase):
+    @staticmethod
+    def _tiny_crp_cache():
+        generator = torch.Generator().manual_seed(4)
+        return {
+            "cache_version": 1,
+            "provenance": {"fixture": "tiny-crp-cache"},
+            "sample_ids": [f"image-{index}" for index in range(8)],
+            "clip_embeddings": torch.nn.functional.normalize(torch.randn(8, 4, generator=generator), dim=1),
+            "image_mean": torch.zeros(4),
+            "splice_codes": torch.tensor(
+                [[1.0, 0.0], [1.0, 0.0], [0.8, 0.0], [0.8, 0.0],
+                 [0.0, 1.0], [0.0, 1.0], [0.0, 0.8], [0.0, 0.8]]
+            ),
+            "dictionary": torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
+            "vocabulary": ["forest", "water"],
+            "dino_embeddings": torch.nn.functional.normalize(torch.randn(8, 3, generator=generator), dim=1),
+        }
+
+    def test_crp_projection_removes_the_full_group_subspace(self):
+        basis = orthonormal_basis(torch.tensor([[1.0, 0.0, 0.0], [1.0, 1e-9, 0.0]]))
+        self.assertEqual(tuple(basis.shape), (3, 1))
+        embeddings = torch.tensor([[0.6, 0.0, 0.8], [0.0, 0.6, 0.8]])
+        projected = project_out(embeddings, basis)
+        torch.testing.assert_close(projected @ basis, torch.zeros(2, 1), atol=1e-6, rtol=0)
+
+    def test_crp_cache_rejects_training_annotations(self):
+        cache = self._tiny_crp_cache()
+        cache["labels"] = torch.zeros(8)
+        with self.assertRaisesRegex(ValueError, "forbidden annotation"):
+            validate_feature_cache(cache)
+
+    def test_crp_cache_does_not_require_manual_hashes(self):
+        cache = self._tiny_crp_cache()
+        cache.pop("provenance")
+        validated = validate_feature_cache(cache)
+        self.assertEqual(validated["sample_ids"], cache["sample_ids"])
+
+    def test_crp_feature_cache_is_saved_atomically(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "cache.pt"
+            save_feature_cache(self._tiny_crp_cache(), path)
+            loaded = torch.load(path, map_location="cpu", weights_only=True)
+            self.assertEqual(loaded["cache_version"], 1)
+            self.assertFalse(list(path.parent.glob("*.tmp")))
+
+    def test_crp_cache_builder_reads_images_without_labels(self):
+        class ImagesOnlyDataset:
+            def get_subset(self, split, transform=None):
+                self.asserted_split = split
+                return argparse.Namespace(indices=np.asarray([2, 0]))
+
+            def get_input(self, index):
+                return f"image-{index}"
+
+            def __getitem__(self, index):
+                raise AssertionError("The CRP cache builder must not read labels or metadata.")
+
+        dataset = ImagesOnlyDataset()
+        images = IndexedImages(dataset)
+        self.assertEqual(images[0], (2, "image-2"))
+        self.assertEqual(dataset.asserted_split, "train")
+
+    def test_crp_audit_is_deterministic_and_exports_row_stochastic_graph(self):
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            projected_neighbors=3,
+            dino_neighbors=4,
+            graph_top_k=2,
+            null_trials=1,
+            null_quantile=0.0,
+            min_coverage=0.0,
+            seed=7,
+        )
+        first = run_frozen_audit(self._tiny_crp_cache(), config)
+        second = run_frozen_audit(self._tiny_crp_cache(), config)
+        torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
+        torch.testing.assert_close(first["weights"], second["weights"])
+        row_sums = first["weights"].sum(dim=1)
+        supported = row_sums > 0
+        torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
+        self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
+
     def test_automatic_lr_schedules_scale_with_training_length(self):
         self.assertEqual(resolve_epoch_schedule("auto", 1000, (0.70, 0.80, 0.90)), [700, 800, 900])
         self.assertEqual(resolve_epoch_schedule("auto", 500, (0.70, 0.80, 0.90)), [350, 400, 450])

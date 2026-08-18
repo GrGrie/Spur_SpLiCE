@@ -71,6 +71,7 @@ packages = [
     "open_clip",
     "huggingface_hub",
     "pandas",
+    "timm",
     "wandb",
 ]
 
@@ -115,9 +116,20 @@ import splice
 
 print("splice module:", splice.__file__)
 print("available models:", splice.available_models())
-vocab = splice.get_vocabulary("laion")
+vocab = splice.get_vocabulary("laion", -1)
 print("laion vocab length:", len(vocab))
 print("laion vocab tail sample:", vocab[-5:])
+PY
+
+echo
+echo "== DINOv3/timm model check =="
+python - <<'PY'
+import timm
+
+model_name = "vit_small_patch16_dinov3.lvd1689m"
+if model_name not in timm.list_models("*dinov3*", pretrained=True):
+    raise RuntimeError(f"Required DINOv3 model is unavailable in timm: {model_name}")
+print("OK DINOv3 model registration:", model_name)
 PY
 
 echo

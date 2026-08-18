@@ -1,5 +1,30 @@
 # Home training on Windows
 
+## SpLiCE-CRP v2 frozen audit on Slurm
+
+The first job caches dataset-ordered OpenCLIP, SpLiCE, and DINOv3 features. The
+second exports the teacher graph plus its JSON audit. Only caching requests a GPU;
+neither job reads labels into its artifact or starts SSL training.
+
+```bash
+# Cache first, then start one audit only after caching succeeds.
+CACHE_JOB=$(sbatch --parsable --export=ALL,DATASET=waterbirds,DATA_FOLDER=./datasets \
+  scripts/SpLiCE_CRP_v2_cache_features.sbatch)
+sbatch --dependency=afterok:${CACHE_JOB} \
+  --export=ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt \
+  scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
+
+# Or repeat null calibration with three seeds after an existing cache is ready.
+sbatch --array=0-2 --export=ALL,CACHE_PATH=outputs/crp/waterbirds_train_features.pt \
+  scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
+```
+
+Override `PROJECT_DIR`, `CONDA_ENV`, `DATASET`, `OUT_DIR`, or `SEED_BASE` in the
+same way as the existing jobs. Advanced audit settings can be passed as JSON, for
+example `CRP_CONFIG_JSON='{"null_trials":8,"similarity_chunk_size":256}'`.
+The cache job reuses an existing output unless `FORCE=true`; the audit job fails
+before allocating audit work when `CACHE_PATH` does not exist.
+
 ## Universal cluster arrays
 
 Two Slurm arrays implement the intervention-utility method. Each submission
