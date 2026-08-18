@@ -19,6 +19,7 @@ from experiments.spurious_eval.splice_cbm import zero_sparse_columns
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
 from splice.ssl_regularization import (
     CorrelationSpliceRegularizer,
+    OracleRelationalRegularizer,
     SpliceSynthesisDistillation,
     SpliceConfig,
     edit_spurious_concept_weights,
@@ -266,6 +267,41 @@ class SplicePipelineTests(unittest.TestCase):
         loss.backward()
         self.assertGreater(float(predictions.grad.norm()), 0.0)
         self.assertIsNone(teacher.grad)
+
+    def test_oracle_relational_regularizer_uses_same_target_opposite_spurious_pairs(self):
+        metadata = torch.tensor([[0, 0], [1, 0], [0, 1]])
+        aligned = torch.tensor([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        separated = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0]])
+        regularizer = OracleRelationalRegularizer(1.0)
+        aligned_loss = regularizer(aligned, targets=metadata)
+        separated_loss = regularizer(separated, targets=metadata)
+        self.assertLess(float(aligned_loss), float(separated_loss))
+
+    def test_oracle_relational_metadata_reaches_ssl_loss(self):
+        class TinyEncoder(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Linear(2, 3)
+                self.head = torch.nn.Linear(3, 2)
+
+        model = TinyEncoder()
+        images = [
+            torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
+            torch.tensor([[0.9, 0.1], [0.1, 0.9], [0.8, 0.8]]),
+        ]
+        metadata = torch.tensor([[0, 0], [1, 0], [0, 1]])
+        loss, parts, _ = simclr_forward_loss(
+            model,
+            SimCLRLoss(temperature=0.1),
+            images,
+            None,
+            metadata[:, 1],
+            OracleRelationalRegularizer(0.1),
+            metadata=metadata,
+        )
+        loss.backward()
+        self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
+        self.assertGreater(float(parts["splice"]), 0.0)
 
     def test_synthesis_mode_trains_simclr_and_clip_distillation_heads(self):
         class TinyTwoHead(torch.nn.Module):

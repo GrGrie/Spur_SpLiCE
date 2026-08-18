@@ -36,9 +36,9 @@ before allocating audit work when `CACHE_PATH` does not exist.
 
 The report job is deliberately a gate, not a training job.  It returns a
 non-zero status when the projection is effectively unchanged or when selected
-groups do not beat the shuffled-code null.  The current repository does not yet
-contain CRP relational SSL training, so do not submit a CRP training sweep based
-on a report that says `NO_GO`.
+groups do not beat the shuffled-code null.  The repository contains only the
+privileged `oracle_relational` diagnostic, not label-free CRP relational SSL;
+do not submit a CRP training sweep based on a report that says `NO_GO`.
 
 ### Recommended overnight command
 
@@ -97,6 +97,25 @@ same-target/opposite-background rate, and coverage of all four `(y,a)` groups.
 The decisive comparison is whether CRP increases the opposite-background rate
 over raw CLIP and DINO while retaining precision; high same-target precision by
 itself is not evidence of invariance.
+
+### Privileged oracle relational upper bound
+
+After the graph comparison, the only justified SSL run is the diagnostic upper
+bound. The two-task array uses the same Waterbirds/ResNet18-large/500-epoch
+protocol for a plain SimCLR baseline and a label-aware oracle regularizer that
+pulls together pairs with the same target and opposite background. This is not
+the proposed label-free method and must be reported as a privileged upper bound.
+
+```bash
+sbatch scripts/SpLiCE_oracle_relational_training.sbatch
+```
+
+Task `0` is the matched baseline and task `1` is `OracleRelational`. Their logs
+are `output/SpLiCE_oracle_upper_<JOBID>_0.out` and `_1.out`; checkpoints are
+under `outputs/oracle_upper_bound/`. Compare the averaged validation WGA from
+the last ten linear-probe epochs. If the oracle improves over baseline, the
+failure is in label-free relation discovery. If it does not, the student loss
+or transfer mechanism is the bottleneck.
 
 ## Universal cluster arrays
 

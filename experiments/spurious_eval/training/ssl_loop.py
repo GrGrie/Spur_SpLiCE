@@ -36,6 +36,7 @@ def simclr_forward_loss(
     splice_concepts=None,
     targets=None,
     splice_regularizer=None,
+    metadata=None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
     bsz = image[0].size(0)
     images = torch.cat([image[0], image[1]], dim=0)
@@ -52,6 +53,10 @@ def simclr_forward_loss(
             repeated_concepts = torch.cat([splice_concepts, splice_concepts], dim=0)
         if targets is not None:
             repeated_targets = torch.cat([targets, targets], dim=0)
+        if getattr(splice_regularizer, "requires_oracle_metadata", False):
+            if metadata is None:
+                raise ValueError("Oracle relational regularization requires batch metadata.")
+            repeated_targets = torch.cat([metadata, metadata], dim=0)
         regularized_embeddings = embeddings
         if getattr(splice_regularizer, "requires_clip_distillation", False):
             if model.clip_distillation_head is None:
@@ -88,6 +93,7 @@ def train_one_epoch(
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
         targets = data[1].to(args.device, non_blocking=True)
+        metadata = data[2].to(args.device, non_blocking=True)
         splice_concepts = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
@@ -103,6 +109,7 @@ def train_one_epoch(
                 splice_concepts,
                 targets,
                 splice_regularizer,
+                metadata=metadata,
             )
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
@@ -120,6 +127,7 @@ def train_one_epoch(
                 splice_concepts,
                 targets,
                 splice_regularizer,
+                metadata=metadata,
             )
             optimizer.zero_grad()
             loss.backward()

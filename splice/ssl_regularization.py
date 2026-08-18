@@ -97,7 +97,7 @@ def splice_mode_uses_scores(mode: str) -> bool:
 
 
 def splice_mode_uses_regularizer(mode: str) -> bool:
-    return mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"}
+    return mode in {"corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"}
 
 
 def residual_preserving_intervention(
@@ -567,6 +567,43 @@ class DisabledSpliceRegularizer:
         return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
 
 
+class OracleRelationalRegularizer:
+    """Privileged same-target/opposite-spurious relation upper bound.
+
+    ``targets`` is a metadata matrix with columns ``[spurious, target]``.  The
+    regularizer is intentionally label-aware and must only be used as a
+    diagnostic upper bound, never as the label-free CRP method.
+    """
+
+    enabled = True
+    requires_clip_distillation = False
+    requires_oracle_metadata = True
+
+    def __init__(self, weight: float) -> None:
+        self.weight = float(weight)
+
+    def __call__(
+        self,
+        embeddings: torch.Tensor,
+        concept_weights: torch.Tensor | None = None,
+        targets: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        del concept_weights
+        if targets is None or targets.ndim != 2 or targets.shape[1] < 2:
+            raise ValueError("Oracle relational regularization requires metadata shaped [batch, spurious, target].")
+        if embeddings.shape[0] != targets.shape[0]:
+            raise ValueError("Oracle relation metadata must contain one row per embedding.")
+        metadata = targets.to(device=embeddings.device)
+        same_target = metadata[:, 1].view(-1, 1) == metadata[:, 1].view(1, -1)
+        opposite_spurious = metadata[:, 0].view(-1, 1) != metadata[:, 0].view(1, -1)
+        pair_mask = same_target & opposite_spurious
+        if not torch.any(pair_mask):
+            return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
+        normalized = F.normalize(embeddings.float(), dim=1)
+        pair_similarity = normalized @ normalized.T
+        return self.weight * (1.0 - pair_similarity[pair_mask]).mean().to(dtype=embeddings.dtype)
+
+
 class SpliceSynthesisDistillation:
     """Stop-gradient cosine distillation from a synthesized CLIP target."""
 
@@ -599,6 +636,8 @@ def build_splice_regularizer(config: SpliceConfig):
         return DisabledSpliceRegularizer()
     if config.mode == "synthesis_distill":
         return SpliceSynthesisDistillation(config.splice_weight)
+    if config.mode == "oracle_relational":
+        return OracleRelationalRegularizer(config.splice_weight)
     return CorrelationSpliceRegularizer(
         config.splice_weight,
         conditional_on_target=config.conditional_on_target,

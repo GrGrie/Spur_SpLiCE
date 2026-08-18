@@ -416,7 +416,7 @@ def parse_args() -> argparse.Namespace:
         "--splice_mode",
         type=str,
         default="none",
-        choices=["none", "augment", "corr_reg", "augment_corr_reg", "synthesis_distill"],
+        choices=["none", "augment", "corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"],
     )
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
@@ -628,11 +628,11 @@ def parse_args() -> argparse.Namespace:
     if args.use_splice and args.splice_mode == "none":
         args.splice_mode = "corr_reg"
     args.use_splice = args.splice_mode != "none"
-    if args.use_splice and not args.splice_concepts.strip():
+    if args.use_splice and splice_mode_uses_scores(args.splice_mode) and not args.splice_concepts.strip():
         args.splice_concepts = "auto"
-    if args.use_splice and args.splice_concepts.strip().lower() == "auto":
+    if args.use_splice and splice_mode_uses_scores(args.splice_mode) and args.splice_concepts.strip().lower() == "auto":
         auto_discover_splice_concepts(args)
-    if args.splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"} and args.splice_weight <= 0:
+    if args.splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"} and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
     if not 0 <= args.splice_intervention_strength <= 2:
         parser.error("--splice_intervention_strength must be in the interval [0, 2].")
@@ -821,6 +821,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = f"augcorr-{args.splice_routing_mode}"
     elif args.splice_mode == "synthesis_distill":
         experiment = f"syn-{args.splice_intervention}"
+    elif args.splice_mode == "oracle_relational":
+        experiment = "oracle-relational"
     else:
         experiment = "corr"
 
