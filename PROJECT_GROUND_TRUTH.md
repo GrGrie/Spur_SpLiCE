@@ -1,10 +1,10 @@
 # Spur_SpLiCE Project Ground Truth
 
 **Status:** canonical project specification  
-**Last updated:** 2026-08-18  
+**Last updated:** 2026-08-24
 **Canonical proposal:** SpLiCE-CRP v2 — Concept-Projected Relational Pretraining  
-**Implementation status:** frozen feature caching, audit, and teacher-graph construction implemented;
-empirical validation and SSL relational training remain pending
+**Implementation status:** frozen feature caching, audit, teacher-graph construction, and
+SSL relational training are implemented; empirical validation remains pending
 
 > This file is the authoritative source of truth for the current project direction.
 > If `README.md`, `SPUR_SPLICE_CHAT_SUMMARY.md`, `Spur_SpLiCE.tex`, old chat
@@ -697,9 +697,12 @@ Current important files:
 - `splice/ssl_regularization.py` — existing interventions and distillation code;
 - `experiments/spurious_eval/` — datasets, models, losses, training, and metrics.
 
-`splice/crp.py` now implements the label-free frozen audit and teacher-graph
-artifact. The LaTeX paper and current training CLI still do not demonstrate CRP v2
-training or a positive result.
+`splice/crp.py` implements the label-free frozen audit and teacher-graph artifact.
+`splice/crp_training.py` and `spur_splice.py --splice_mode crp_relational` implement
+confidence-weighted graph distillation on ResNet backbone features with graph-aware
+sampling, a pure-SimCLR start period, a gradual loss ramp, and empty-graph fallback.
+This is executable infrastructure, not evidence of a positive CRP v2 result; matched
+real-data experiments and the required control matrix remain pending.
 
 ## 15. Literature anchors
 

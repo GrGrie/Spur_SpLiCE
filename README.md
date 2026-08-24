@@ -4,9 +4,9 @@
 > [`PROJECT_GROUND_TRUTH.md`](PROJECT_GROUND_TRUTH.md) before changing the method,
 > experiments, or paper. It defines the proposed label-free SpLiCE-CRP v2
 > architecture and supersedes older SpLiCE-IU proposal text when they conflict.
-> The training code and report still implement/describe legacy experiments. The
-> CRP v2 frozen audit is implemented, but relational SSL training is intentionally
-> gated on the audit and there is no reported CRP v2 result.
+> The CRP v2 frozen audit and relational SSL training path are implemented. There
+> is still no reported CRP v2 result; matched real-data runs and controls remain
+> necessary before making an empirical claim.
 
 Spur SpLiCE studies whether sparse, language-aligned concepts from a frozen
 OpenCLIP/SpLiCE model can identify and mitigate spurious correlations during
@@ -45,6 +45,7 @@ with `--data_folder` or `-DataFolder`.
 - `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
 - `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE/DINOv3 cache construction.
 - `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
+- `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
@@ -204,6 +205,49 @@ The command clusters active concepts, projects the full centered CLIP embedding,
 keeps reciprocal relations supported by DINO, calibrates group selection against
 matched random-subspace and shuffled-code nulls, caps donor indegree, and writes a
 row-stochastic top-k teacher graph plus a readable JSON audit. Selecting no group
-is valid and produces an empty graph, which means the downstream method must remain
-the SimCLR baseline. CRP relational training should only be enabled after this
-frozen artifact passes the go/no-go diagnostics in `PROJECT_GROUND_TRUTH.md`.
+is valid and produces an empty graph, in which case training automatically reduces
+to SimCLR.
+
+## SpLiCE-CRP v2 student training
+
+The student path uses `--splice_mode crp_relational`. Every sample remains an SSL
+anchor; for supported graph rows, the batch sampler adds a neighbour drawn from the
+row-stochastic teacher distribution. The backbone relation distribution is matched
+with confidence-weighted KL while the ordinary SimCLR projection-head loss remains
+active. Target labels, spurious attributes, and groups are not passed to this loss.
+
+Run only the training job after a teacher graph already exists:
+
+```bash
+sbatch scripts/SpLiCE_CRP_v2_training.sbatch
+```
+
+Or submit cache, frozen audit, the label-free go/no-go gate, and training as a
+dependency chain with one command:
+
+```bash
+bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh
+```
+
+All paths and hyperparameters are declared inside the scripts, so no terminal-side
+environment variables are required. Edit `PROJECT_DIR` and `DATA_FOLDER` in the
+`.sbatch` files if the cluster layout differs from the checked-in defaults.
+
+The default dependency chain is conservative: `GO_NO_GO=NO_GO` prevents the
+expensive ResNet job. To run an explicitly exploratory student even when that
+separate report would fail, skip only the blocking report:
+
+```bash
+bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh --skip-gate
+```
+
+The audit still constructs the graph. If it contains no accepted edges, training
+runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The
+ungated run must not be reported as having passed the frozen audit.
+
+All checked-in `.sbatch` files that launch `spur_splice.py` enable Weights & Biases.
+CRP v2 runs use project `Spur_SpLiCE`, group by dataset/seed/protocol, and record
+the graph SHA-256 plus resolved settings in the run config. SSL losses and learning
+rate are logged every epoch; linear-probe and rank metrics retain their configured
+frequencies. A persistent W&B login must already exist on the cluster account; API
+keys are deliberately not stored in the repository.

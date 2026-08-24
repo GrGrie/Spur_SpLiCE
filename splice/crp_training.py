@@ -1,0 +1,347 @@
+"""Label-free CRP v2 graph distillation for the SimCLR student."""
+
+from __future__ import annotations
+
+import hashlib
+import math
+from pathlib import Path
+from typing import Iterator, Sequence
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset, Sampler
+
+from splice.crp import GRAPH_VERSION
+
+
+REQUIRED_GRAPH_KEYS = {
+    "artifact",
+    "graph_version",
+    "sample_ids",
+    "neighbor_indices",
+    "weights",
+    "confidence",
+}
+FORBIDDEN_ANNOTATION_KEYS = {
+    "a",
+    "attribute",
+    "attributes",
+    "label",
+    "labels",
+    "metadata",
+    "spurious",
+    "target",
+    "targets",
+    "y",
+}
+
+
+def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | None = None) -> dict:
+    """Validate the sparse CRP graph before it can influence training."""
+
+    if not isinstance(graph, dict):
+        raise ValueError("CRP teacher graph must be a dictionary.")
+
+    def collect_keys(value) -> set[str]:
+        if not isinstance(value, dict):
+            return set()
+        keys = {str(key).lower() for key in value}
+        for nested in value.values():
+            keys.update(collect_keys(nested))
+        return keys
+
+    forbidden = FORBIDDEN_ANNOTATION_KEYS.intersection(collect_keys(graph))
+    if forbidden:
+        raise ValueError(f"CRP teacher graph contains forbidden annotation keys: {sorted(forbidden)}")
+    missing = REQUIRED_GRAPH_KEYS.difference(graph)
+    if missing:
+        raise ValueError(f"CRP teacher graph is missing required keys: {sorted(missing)}")
+    if graph["artifact"] != "splice_crp_v2_teacher_graph":
+        raise ValueError(f"Unexpected CRP artifact type: {graph['artifact']!r}.")
+    if graph["graph_version"] != GRAPH_VERSION:
+        raise ValueError(
+            f"Unsupported CRP graph version {graph['graph_version']!r}; expected {GRAPH_VERSION}."
+        )
+
+    sample_ids = [str(sample_id) for sample_id in graph["sample_ids"]]
+    if not sample_ids or len(sample_ids) != len(set(sample_ids)):
+        raise ValueError("CRP graph sample_ids must be non-empty and unique.")
+    if expected_sample_ids is not None and sample_ids != [str(value) for value in expected_sample_ids]:
+        raise ValueError(
+            "CRP graph sample_ids do not exactly match the SSL train split. "
+            "Rebuild the frozen cache and graph for this dataset configuration."
+        )
+
+    n_samples = len(sample_ids)
+    indices = torch.as_tensor(graph["neighbor_indices"]).detach().long().cpu()
+    weights = torch.as_tensor(graph["weights"]).detach().float().cpu()
+    confidence = torch.as_tensor(graph["confidence"]).detach().float().cpu().view(-1)
+    if indices.ndim != 2 or weights.shape != indices.shape:
+        raise ValueError("CRP neighbor_indices and weights must be aligned rank-2 tensors.")
+    if indices.shape[0] != n_samples or confidence.shape != (n_samples,):
+        raise ValueError("CRP graph tensors must contain one row per sample_id.")
+    if not torch.isfinite(weights).all() or not torch.isfinite(confidence).all():
+        raise ValueError("CRP graph contains non-finite weights or confidence values.")
+
+    valid = indices >= 0
+    if torch.any(indices < -1) or torch.any(indices[valid] >= n_samples):
+        raise ValueError("CRP neighbor index is outside the sample_id range.")
+    if torch.any(weights < 0) or torch.any(weights[~valid] != 0):
+        raise ValueError("CRP weights must be non-negative and zero for padded edges.")
+    rows = torch.arange(n_samples).view(-1, 1).expand_as(indices)
+    if torch.any(indices[valid] == rows[valid]):
+        raise ValueError("CRP teacher graph must not contain self-edges.")
+    row_sums = weights.sum(dim=1)
+    supported = row_sums > 0
+    if torch.any(valid & (weights <= 0)):
+        raise ValueError("Every valid CRP edge must have positive weight.")
+    if torch.any(~torch.isclose(row_sums[supported], torch.ones_like(row_sums[supported]), atol=1e-5)):
+        raise ValueError("Supported CRP graph rows must be row-stochastic.")
+    if torch.any(valid.any(dim=1) != supported):
+        raise ValueError("CRP graph rows cannot contain zero-weight or weight-only edges.")
+
+    anchor_confidence = graph.get("anchor_confidence", confidence)
+    anchor_confidence = torch.as_tensor(anchor_confidence).detach().float().cpu().view(-1)
+    if anchor_confidence.shape != (n_samples,) or not torch.isfinite(anchor_confidence).all():
+        raise ValueError("CRP anchor_confidence must contain one finite value per sample.")
+    if torch.any(anchor_confidence < 0) or torch.any(anchor_confidence > 1 + 1e-6):
+        raise ValueError("CRP anchor_confidence must be in [0, 1].")
+    if torch.any((anchor_confidence > 0) != supported):
+        raise ValueError("CRP anchor confidence support must match graph edge support.")
+
+    return {
+        **graph,
+        "sample_ids": sample_ids,
+        "neighbor_indices": indices,
+        "weights": weights,
+        "confidence": confidence,
+        "anchor_confidence": anchor_confidence.clamp(0, 1),
+    }
+
+
+def load_teacher_graph(
+    path: str | Path,
+    dataset_name: str,
+    source_indices: Sequence[int],
+) -> tuple[dict, str]:
+    """Load a graph and bind its rows to the exact training subset order."""
+
+    graph_path = Path(path)
+    if not graph_path.is_file():
+        raise FileNotFoundError(f"CRP teacher graph not found: {graph_path}")
+    expected_sample_ids = [f"{dataset_name}:{int(index)}" for index in source_indices]
+    graph = torch.load(graph_path, map_location="cpu", weights_only=True)
+    graph = validate_teacher_graph(graph, expected_sample_ids)
+    digest = hashlib.sha256(graph_path.read_bytes()).hexdigest()
+    return graph, digest
+
+
+class IndexedCrpDataset(Dataset):
+    """Return augmented images and graph rows without reading annotations."""
+
+    def __init__(self, dataset) -> None:
+        self.dataset = dataset
+        self.transform = getattr(dataset, "transform", None)
+        self.source_indices = getattr(dataset, "indices", None)
+        self.source_dataset = getattr(dataset, "dataset", None)
+        if self.source_indices is None or self.source_dataset is None or self.transform is None:
+            raise ValueError("CRP training requires an indexed subset with an image transform.")
+        if not hasattr(self.source_dataset, "get_input"):
+            raise ValueError("CRP source dataset must expose get_input without annotations.")
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    @property
+    def collate(self):
+        return getattr(self.dataset, "collate", None)
+
+    def __getitem__(self, index: int):
+        source_index = int(self.source_indices[index])
+        image = self.source_dataset.get_input(source_index)
+        return self.transform(image), int(index)
+
+
+class CrpGraphBatchSampler(Sampler[list[int]]):
+    """Group anchors with weighted graph neighbours at fixed epoch cost.
+
+    Every train sample occurs exactly once per epoch, matching the SimCLR
+    baseline's image and optimizer-step budget.  The random anchor order changes
+    which supported rows get an explicitly paired neighbour across epochs.
+    """
+
+    def __init__(
+        self,
+        neighbor_indices: torch.Tensor,
+        weights: torch.Tensor,
+        batch_size: int,
+        generator: torch.Generator,
+    ) -> None:
+        if batch_size < 2:
+            raise ValueError("CRP graph training requires batch_size >= 2.")
+        self.neighbor_indices = neighbor_indices
+        self.weights = weights
+        self.batch_size = int(batch_size)
+        self.generator = generator
+        self.supported = weights.sum(dim=1) > 0
+
+    def __len__(self) -> int:
+        return math.ceil(len(self.neighbor_indices) / self.batch_size)
+
+    def __iter__(self) -> Iterator[list[int]]:
+        order = torch.randperm(len(self.neighbor_indices), generator=self.generator).tolist()
+        unused = torch.ones(len(order), dtype=torch.bool)
+        cursor = 0
+        while cursor < len(order):
+            batch: list[int] = []
+            while len(batch) < self.batch_size:
+                while cursor < len(order) and not bool(unused[order[cursor]]):
+                    cursor += 1
+                if cursor >= len(order):
+                    break
+                anchor = order[cursor]
+                cursor += 1
+                batch.append(anchor)
+                unused[anchor] = False
+                if len(batch) >= self.batch_size or not bool(self.supported[anchor]):
+                    continue
+
+                neighbor_row = self.neighbor_indices[anchor]
+                row_weights = self.weights[anchor].clone()
+                valid = neighbor_row >= 0
+                if torch.any(valid):
+                    available = torch.zeros_like(valid)
+                    available[valid] = unused[neighbor_row[valid]]
+                    row_weights[~available] = 0
+                if float(row_weights.sum()) <= 0:
+                    continue
+                position = int(torch.multinomial(row_weights, 1, generator=self.generator).item())
+                donor = int(neighbor_row[position])
+                batch.append(donor)
+                unused[donor] = False
+            if batch:
+                yield batch
+
+
+def build_crp_training_loader(
+    dataset,
+    graph: dict,
+    batch_size: int,
+    num_workers: int,
+    generator: torch.Generator,
+    worker_init_fn=None,
+) -> DataLoader:
+    indexed_dataset = IndexedCrpDataset(dataset)
+    batch_sampler = CrpGraphBatchSampler(
+        graph["neighbor_indices"],
+        graph["weights"],
+        batch_size,
+        generator,
+    )
+    loader = DataLoader(
+        indexed_dataset,
+        batch_sampler=batch_sampler,
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=indexed_dataset.collate,
+        worker_init_fn=worker_init_fn if num_workers > 0 else None,
+        generator=generator,
+    )
+    loader.crp_graph = graph
+    return loader
+
+
+class CrpRelationalRegularizer:
+    """Confidence-weighted KL distillation from a fixed CRP teacher graph."""
+
+    enabled = True
+    requires_clip_distillation = False
+    requires_crp_indices = True
+
+    def __init__(
+        self,
+        graph: dict,
+        weight: float,
+        temperature: float,
+        start_epoch: int,
+        warmup_epochs: int,
+    ) -> None:
+        if weight <= 0:
+            raise ValueError("CRP relational weight must be positive.")
+        if temperature <= 0:
+            raise ValueError("CRP student temperature must be positive.")
+        if start_epoch < 0 or warmup_epochs < 0:
+            raise ValueError("CRP start and warmup epochs must be non-negative.")
+        self.neighbor_indices = graph["neighbor_indices"]
+        self.weights = graph["weights"]
+        self.anchor_confidence = graph["anchor_confidence"]
+        self.weight = float(weight)
+        self.temperature = float(temperature)
+        self.start_epoch = int(start_epoch)
+        self.warmup_epochs = int(warmup_epochs)
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    @property
+    def scheduled_weight(self) -> float:
+        if self.epoch <= self.start_epoch:
+            return 0.0
+        if self.warmup_epochs == 0:
+            return self.weight
+        progress = (self.epoch - self.start_epoch) / self.warmup_epochs
+        return self.weight * min(1.0, max(0.0, progress))
+
+    def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+        if embeddings.ndim != 2 or embeddings.shape[0] % 2:
+            raise ValueError("CRP regularization expects two aligned views per batch sample.")
+        batch_size = embeddings.shape[0] // 2
+        sample_indices = torch.as_tensor(sample_indices).detach().long().cpu().view(-1)
+        if sample_indices.shape != (batch_size,):
+            raise ValueError("CRP regularization requires one graph-row index per batch sample.")
+        if batch_size < 2 or self.scheduled_weight <= 0:
+            return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
+
+        first, second = embeddings.float().split(batch_size, dim=0)
+        student = F.normalize(F.normalize(first, dim=1) + F.normalize(second, dim=1), dim=1)
+        positions: dict[int, list[int]] = {}
+        for position, sample_index in enumerate(sample_indices.tolist()):
+            positions.setdefault(sample_index, []).append(position)
+
+        teacher = torch.zeros(batch_size, batch_size, dtype=torch.float32)
+        confidence = torch.zeros(batch_size, dtype=torch.float32)
+        for anchor_position, anchor_index in enumerate(sample_indices.tolist()):
+            for neighbor_index, edge_weight in zip(
+                self.neighbor_indices[anchor_index].tolist(),
+                self.weights[anchor_index].tolist(),
+            ):
+                if neighbor_index < 0 or edge_weight <= 0 or neighbor_index not in positions:
+                    continue
+                neighbor_positions = positions[neighbor_index]
+                per_occurrence = edge_weight / len(neighbor_positions)
+                teacher[anchor_position, neighbor_positions] += per_occurrence
+            if float(teacher[anchor_position].sum()) > 0:
+                confidence[anchor_position] = self.anchor_confidence[anchor_index]
+
+        row_sums = teacher.sum(dim=1)
+        supported = row_sums > 0
+        if not torch.any(supported):
+            return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
+        teacher[supported] /= row_sums[supported].unsqueeze(1)
+
+        sample_indices_device = sample_indices.to(embeddings.device)
+        same_sample = sample_indices_device.view(-1, 1) == sample_indices_device.view(1, -1)
+        logits = (student @ student.T) / self.temperature
+        logits = logits.masked_fill(same_sample, -torch.inf)
+        log_student = F.log_softmax(logits, dim=1)
+        teacher = teacher.to(embeddings.device)
+        confidence = confidence.to(embeddings.device)
+        positive = teacher > 0
+        log_teacher = torch.zeros_like(teacher)
+        log_teacher[positive] = teacher[positive].log()
+        kl_terms = torch.zeros_like(teacher)
+        kl_terms[positive] = teacher[positive] * (log_teacher[positive] - log_student[positive])
+        per_anchor_kl = kl_terms.sum(dim=1)
+        loss = (confidence[supported] * per_anchor_kl[supported]).mean()
+        return (self.scheduled_weight * loss).to(dtype=embeddings.dtype)

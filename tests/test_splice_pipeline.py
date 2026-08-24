@@ -16,7 +16,7 @@ from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_spl
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.splice_cbm import zero_sparse_columns
-from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
+from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
 from splice.ssl_regularization import (
     CorrelationSpliceRegularizer,
     OracleRelationalRegularizer,
@@ -35,6 +35,12 @@ from splice.crp import (
     save_feature_cache,
     validate_feature_cache,
 )
+from splice.crp_training import (
+    CrpGraphBatchSampler,
+    CrpRelationalRegularizer,
+    IndexedCrpDataset,
+    validate_teacher_graph,
+)
 from splice.model import SPLICE
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.discover_splice_spurious_concepts import (
@@ -49,6 +55,18 @@ from scripts.tools.cache_crp_features import IndexedImages
 
 
 class SplicePipelineTests(unittest.TestCase):
+    @staticmethod
+    def _tiny_teacher_graph():
+        return {
+            "artifact": "splice_crp_v2_teacher_graph",
+            "graph_version": 2,
+            "sample_ids": [f"waterbirds:{index}" for index in range(4)],
+            "neighbor_indices": torch.tensor([[1, -1], [0, -1], [3, -1], [2, -1]]),
+            "weights": torch.tensor([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]]),
+            "confidence": torch.ones(4),
+            "anchor_confidence": torch.tensor([1.0, 0.8, 0.6, 0.4]),
+        }
+
     @staticmethod
     def _tiny_crp_cache():
         generator = torch.Generator().manual_seed(4)
@@ -131,7 +149,181 @@ class SplicePipelineTests(unittest.TestCase):
         supported = row_sums > 0
         torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
         self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
+        self.assertTrue(torch.all((first["anchor_confidence"] >= 0) & (first["anchor_confidence"] <= 1)))
         self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
+
+    def test_crp_teacher_graph_is_bound_to_exact_training_order(self):
+        graph = validate_teacher_graph(
+            self._tiny_teacher_graph(),
+            [f"waterbirds:{index}" for index in range(4)],
+        )
+        self.assertEqual(graph["neighbor_indices"].shape, (4, 2))
+        with self.assertRaisesRegex(ValueError, "do not exactly match"):
+            validate_teacher_graph(graph, ["waterbirds:1", "waterbirds:0", "waterbirds:2", "waterbirds:3"])
+
+    def test_crp_teacher_graph_rejects_hidden_annotations(self):
+        graph = self._tiny_teacher_graph()
+        graph["provenance"] = {"labels": [0, 1, 0, 1]}
+        with self.assertRaisesRegex(ValueError, "forbidden annotation"):
+            validate_teacher_graph(graph)
+
+    def test_crp_batch_sampler_visits_every_anchor_and_adds_graph_donors(self):
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        sampler = CrpGraphBatchSampler(
+            graph["neighbor_indices"],
+            graph["weights"],
+            batch_size=4,
+            generator=torch.Generator().manual_seed(5),
+        )
+        batches = list(sampler)
+        flattened = [index for batch in batches for index in batch]
+        self.assertEqual(sorted(flattened), [0, 1, 2, 3])
+        self.assertEqual(len(flattened), len(set(flattened)))
+        self.assertTrue(
+            any(
+                neighbor in batch
+                for batch in batches
+                for anchor in batch
+                for neighbor in graph["neighbor_indices"][anchor].tolist()
+                if neighbor >= 0
+            )
+        )
+
+    def test_crp_training_dataset_does_not_read_labels_or_metadata(self):
+        class ImagesOnlySource:
+            def get_input(self, index):
+                return f"image-{index}"
+
+        class AnnotationReturningSubset:
+            indices = np.asarray([4, 9])
+            dataset = ImagesOnlySource()
+            transform = staticmethod(lambda image: [f"view-a:{image}", f"view-b:{image}"])
+            collate = None
+
+            def __len__(self):
+                return len(self.indices)
+
+            def __getitem__(self, index):
+                raise AssertionError("CRP training must bypass annotation-returning __getitem__.")
+
+        dataset = IndexedCrpDataset(AnnotationReturningSubset())
+        self.assertEqual(dataset[1], (["view-a:image-9", "view-b:image-9"], 1))
+
+    def test_crp_relational_loss_prefers_teacher_aligned_student_geometry(self):
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=1.0, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        regularizer.set_epoch(1)
+        aligned = torch.tensor([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])
+        misaligned = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+        sample_indices = torch.arange(4)
+        aligned_loss = regularizer(torch.cat([aligned, aligned]), sample_indices)
+        misaligned_loss = regularizer(torch.cat([misaligned, misaligned]), sample_indices)
+        self.assertTrue(torch.isfinite(aligned_loss))
+        self.assertLess(float(aligned_loss), float(misaligned_loss))
+
+    def test_crp_schedule_has_pure_simclr_start_and_linear_ramp(self):
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=0.2, temperature=0.1, start_epoch=2, warmup_epochs=2
+        )
+        regularizer.set_epoch(2)
+        self.assertEqual(regularizer.scheduled_weight, 0.0)
+        regularizer.set_epoch(3)
+        self.assertAlmostEqual(regularizer.scheduled_weight, 0.1)
+        regularizer.set_epoch(4)
+        self.assertAlmostEqual(regularizer.scheduled_weight, 0.2)
+
+    def test_empty_crp_graph_uses_plain_simclr_batches_and_zero_loss(self):
+        graph = self._tiny_teacher_graph()
+        graph["neighbor_indices"] = torch.full((4, 2), -1)
+        graph["weights"] = torch.zeros(4, 2)
+        graph["confidence"] = torch.zeros(4)
+        graph["anchor_confidence"] = torch.zeros(4)
+        graph = validate_teacher_graph(graph)
+        sampler = CrpGraphBatchSampler(
+            graph["neighbor_indices"],
+            graph["weights"],
+            batch_size=3,
+            generator=torch.Generator().manual_seed(3),
+        )
+        batches = list(sampler)
+        self.assertEqual(sorted(index for batch in batches for index in batch), [0, 1, 2, 3])
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        regularizer.set_epoch(1)
+        loss = regularizer(torch.randn(8, 3), torch.arange(4))
+        self.assertEqual(float(loss), 0.0)
+
+    def test_crp_relational_loss_reaches_simclr_encoder(self):
+        class TinyEncoder(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Linear(2, 3)
+                self.head = torch.nn.Linear(3, 2)
+
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        regularizer.set_epoch(1)
+        model = TinyEncoder()
+        images = [torch.randn(4, 2), torch.randn(4, 2)]
+        loss, parts, _ = simclr_forward_loss(
+            model,
+            SimCLRLoss(temperature=0.1),
+            images,
+            splice_regularizer=regularizer,
+            sample_indices=torch.arange(4),
+        )
+        loss.backward()
+        self.assertTrue(torch.isfinite(loss))
+        self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
+        self.assertGreaterEqual(float(parts["splice"]), 0.0)
+
+    def test_crp_label_free_batch_runs_through_training_loop(self):
+        class TinyEncoder(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Linear(2, 3)
+                self.head = torch.nn.Linear(3, 2)
+
+        class LabelFreeBatchDataset(torch.utils.data.Dataset):
+            def __len__(self):
+                return 4
+
+            def __getitem__(self, index):
+                image = torch.tensor([float(index == 0), float(index != 0)])
+                return [image, image + 0.01], index
+
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        model = TinyEncoder()
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        args = argparse.Namespace(
+            device="cpu",
+            channels_last=False,
+            warm=False,
+            optimizer="SGD",
+            amp=False,
+            print_freq=100,
+        )
+        metrics = train_one_epoch(
+            torch.utils.data.DataLoader(LabelFreeBatchDataset(), batch_size=4),
+            model,
+            SimCLRLoss(temperature=0.1),
+            optimizer,
+            torch.amp.GradScaler("cuda", enabled=False),
+            epoch=1,
+            args=args,
+            splice_regularizer=regularizer,
+        )
+        self.assertTrue(np.isfinite(metrics["loss"]))
+        self.assertGreaterEqual(metrics["splice_loss"], 0.0)
 
     def test_automatic_lr_schedules_scale_with_training_length(self):
         self.assertEqual(resolve_epoch_schedule("auto", 1000, (0.70, 0.80, 0.90)), [700, 800, 900])

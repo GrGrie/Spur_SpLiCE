@@ -36,6 +36,27 @@ class FakeScaler:
 
 
 class ReproducibilityTests(unittest.TestCase):
+    def test_crp_resume_rejects_a_different_teacher_graph(self):
+        model = torch.nn.Linear(2, 1)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checkpoint_path = str(Path(temporary_directory) / "crp_resume.pth")
+            save_checkpoint(
+                model,
+                optimizer,
+                argparse.Namespace(crp_graph_sha256="graph-a"),
+                1,
+                checkpoint_path,
+            )
+            with self.assertRaisesRegex(ValueError, "different teacher graph"):
+                load_checkpoint(
+                    model,
+                    optimizer,
+                    checkpoint_path,
+                    torch.device("cpu"),
+                    expected_crp_graph_sha256="graph-b",
+                )
+
     def test_every_dataset_has_a_dedicated_rank_loader(self):
         for dataset_name, spec in DATASET_REGISTRY.items():
             with self.subTest(dataset=dataset_name):

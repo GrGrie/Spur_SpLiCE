@@ -97,7 +97,13 @@ def splice_mode_uses_scores(mode: str) -> bool:
 
 
 def splice_mode_uses_regularizer(mode: str) -> bool:
-    return mode in {"corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"}
+    return mode in {
+        "corr_reg",
+        "augment_corr_reg",
+        "synthesis_distill",
+        "oracle_relational",
+        "crp_relational",
+    }
 
 
 def residual_preserving_intervention(

@@ -28,6 +28,11 @@ from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
+from splice.crp_training import (
+    CrpRelationalRegularizer,
+    build_crp_training_loader,
+    load_teacher_graph,
+)
 from splice.ssl_regularization import (
     SpliceConceptScorer,
     SpliceConfig,
@@ -416,7 +421,15 @@ def parse_args() -> argparse.Namespace:
         "--splice_mode",
         type=str,
         default="none",
-        choices=["none", "augment", "corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"],
+        choices=[
+            "none",
+            "augment",
+            "corr_reg",
+            "augment_corr_reg",
+            "synthesis_distill",
+            "oracle_relational",
+            "crp_relational",
+        ],
     )
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
@@ -440,6 +453,30 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
+    parser.add_argument(
+        "--crp_teacher_graph",
+        type=str,
+        default="",
+        help="Version-2 label-free CRP teacher graph used by --splice_mode crp_relational.",
+    )
+    parser.add_argument(
+        "--crp_temperature",
+        type=float,
+        default=0.1,
+        help="Temperature of the student relation distribution.",
+    )
+    parser.add_argument(
+        "--crp_start_epoch",
+        type=int,
+        default=10,
+        help="Number of pure-SimCLR epochs before relational distillation starts.",
+    )
+    parser.add_argument(
+        "--crp_warmup_epochs",
+        type=int,
+        default=10,
+        help="Linear warm-up duration for the CRP relational loss weight; 0 disables warm-up.",
+    )
     parser.add_argument(
         "--splice_intervention",
         type=str,
@@ -632,8 +669,27 @@ def parse_args() -> argparse.Namespace:
         args.splice_concepts = "auto"
     if args.use_splice and splice_mode_uses_scores(args.splice_mode) and args.splice_concepts.strip().lower() == "auto":
         auto_discover_splice_concepts(args)
-    if args.splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill", "oracle_relational"} and args.splice_weight <= 0:
+    if args.splice_mode in {
+        "corr_reg",
+        "augment_corr_reg",
+        "synthesis_distill",
+        "oracle_relational",
+        "crp_relational",
+    } and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
+    if args.splice_mode == "crp_relational" and not args.crp_teacher_graph.strip():
+        parser.error("--crp_teacher_graph is required for --splice_mode crp_relational.")
+    if args.splice_mode == "crp_relational":
+        graph_path = Path(args.crp_teacher_graph)
+        if not graph_path.is_file():
+            parser.error(f"--crp_teacher_graph does not exist: {graph_path}")
+        args.crp_graph_sha256 = hashlib.sha256(graph_path.read_bytes()).hexdigest()
+    else:
+        args.crp_graph_sha256 = None
+    if args.crp_temperature <= 0:
+        parser.error("--crp_temperature must be positive.")
+    if args.crp_start_epoch < 0 or args.crp_warmup_epochs < 0:
+        parser.error("--crp_start_epoch and --crp_warmup_epochs must be non-negative.")
     if not 0 <= args.splice_intervention_strength <= 2:
         parser.error("--splice_intervention_strength must be in the interval [0, 2].")
     if not 0 < args.ssl_crop_min <= 1:
@@ -807,6 +863,10 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
             else f"_w{args.splice_weight:g}a{args.splice_intervention_strength:g}"
         )
         return f"{prefix}_{label}{hyper}{suffix}"
+    if args.splice_mode == "crp_relational":
+        return f"{prefix}_CRPv2_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
+    if args.splice_mode == "oracle_relational":
+        return f"{prefix}_OracleRel_w{args.splice_weight:g}{suffix}"
     conditional = "Y" if args.splice_conditional_on_target else ""
     return f"{prefix}_Corr{args.splice_weight:g}{conditional}{suffix}"
 
@@ -823,6 +883,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = f"syn-{args.splice_intervention}"
     elif args.splice_mode == "oracle_relational":
         experiment = "oracle-relational"
+    elif args.splice_mode == "crp_relational":
+        experiment = "crp-v2-relational"
     else:
         experiment = "corr"
 
@@ -878,6 +940,11 @@ def format_run_name(args: argparse.Namespace) -> str:
             f"synthesis_distill_{args.splice_intervention}_"
             f"a{args.splice_intervention_strength:g}_w{args.splice_weight:g}"
         )
+    elif args.splice_mode == "crp_relational":
+        splice_name = (
+            f"crp_relational_w{args.splice_weight:g}_"
+            f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
+        )
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
         splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
@@ -891,7 +958,7 @@ def format_run_name(args: argparse.Namespace) -> str:
                 f"{splice_name}_augment{threshold_name}_route{args.splice_routing_mode}_"
                 f"{format_strong_aug_name(args)}"
             )
-    if args.use_splice:
+    if args.use_splice and args.splice_mode != "crp_relational":
         concept_digest = hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:8]
         splice_name = f"{splice_name}_concepts{concept_digest}"
     run_name = (
@@ -1048,7 +1115,7 @@ def build_ssl_loader(args: argparse.Namespace):
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
-    return dataset_spec["ssl_loader"](
+    loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
         concept_scorer=concept_scorer,
@@ -1059,6 +1126,39 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_routing_seed=args.seed,
         **loader_kwargs,
     )
+    if args.splice_mode != "crp_relational":
+        return loader
+
+    source_indices = getattr(loader.dataset, "indices", None)
+    if source_indices is None:
+        raise ValueError("CRP training requires an SSL dataset with stable source indices.")
+    graph, graph_sha256 = load_teacher_graph(
+        args.crp_teacher_graph,
+        args.dataset,
+        source_indices,
+    )
+    if graph_sha256 != args.crp_graph_sha256:
+        raise ValueError("CRP teacher graph changed after argument validation; restart the run.")
+    args.crp_graph_sha256 = graph_sha256
+    crp_loader = build_crp_training_loader(
+        loader.dataset,
+        graph,
+        args.batch_size,
+        args.num_workers,
+        loader.generator,
+        worker_init_fn=seed_worker,
+    )
+    stats = graph.get("degree_stats", {})
+    print(
+        "[INFO] Loaded CRP v2 teacher graph: "
+        f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "
+        f"coverage={stats.get('coverage', float((graph['weights'].sum(dim=1) > 0).float().mean())):.4f}, "
+        f"sha256={graph_sha256[:12]}",
+        flush=True,
+    )
+    if not torch.any(graph["weights"].sum(dim=1) > 0):
+        print("[WARNING] CRP graph is empty; training falls back to pure SimCLR.", flush=True)
+    return crp_loader
 
 
 def build_rank_loader(args: argparse.Namespace):
@@ -1197,7 +1297,16 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     criterion = SimCLRLoss(temperature=args.temp).to(device)
     optimizer = build_optimizer(args, model)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
-    splice_regularizer = build_splice_regularizer(build_splice_config(args))
+    if args.splice_mode == "crp_relational":
+        splice_regularizer = CrpRelationalRegularizer(
+            train_loader.crp_graph,
+            weight=args.splice_weight,
+            temperature=args.crp_temperature,
+            start_epoch=args.crp_start_epoch,
+            warmup_epochs=args.crp_warmup_epochs,
+        )
+    else:
+        splice_regularizer = build_splice_regularizer(build_splice_config(args))
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
 
 
@@ -1221,6 +1330,7 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
                 "splice_routed_count": args.splice_routed_count,
                 "splice_routed_fraction": args.splice_routed_fraction,
+                "crp_graph_sha256": getattr(args, "crp_graph_sha256", None),
             },
             allow_val_change=True,
         )
@@ -1306,6 +1416,7 @@ def main() -> None:
             device,
             scaler=scaler,
             loader_generator=train_loader.generator,
+            expected_crp_graph_sha256=getattr(args, "crp_graph_sha256", None),
         )
         + 1
         if args.resume
@@ -1323,7 +1434,7 @@ def main() -> None:
         time2 = time.time()
         print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
-        log_metrics = epoch % args.print_freq == 0
+        log_metrics = wandb_run is not None or epoch % args.print_freq == 0
         log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
         if log_metrics or log_rank:
             with preserve_rng_state():

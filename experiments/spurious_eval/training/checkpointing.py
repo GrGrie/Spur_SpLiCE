@@ -43,11 +43,24 @@ def load_checkpoint(
     device: torch.device,
     scaler=None,
     loader_generator: torch.Generator | None = None,
+    expected_crp_graph_sha256: str | None = None,
 ) -> int:
     try:
         checkpoint = torch.load(path, map_location=device, weights_only=False)
     except TypeError:
         checkpoint = torch.load(path, map_location=device)
+    if expected_crp_graph_sha256 is not None:
+        saved_options = checkpoint.get("opt")
+        saved_digest = (
+            saved_options.get("crp_graph_sha256")
+            if isinstance(saved_options, dict)
+            else getattr(saved_options, "crp_graph_sha256", None)
+        )
+        if saved_digest != expected_crp_graph_sha256:
+            raise ValueError(
+                "Cannot resume CRP training with a different teacher graph: "
+                f"checkpoint={saved_digest!r}, current={expected_crp_graph_sha256!r}."
+            )
     model.load_state_dict(checkpoint["model"], strict=True)
     optimizer.load_state_dict(checkpoint["optimizer"])
     reproducibility_keys = {

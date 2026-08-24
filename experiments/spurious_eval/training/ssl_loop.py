@@ -37,6 +37,7 @@ def simclr_forward_loss(
     targets=None,
     splice_regularizer=None,
     metadata=None,
+    sample_indices=None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
     bsz = image[0].size(0)
     images = torch.cat([image[0], image[1]], dim=0)
@@ -47,6 +48,17 @@ def simclr_forward_loss(
     loss, decor_loss, entropy_loss, _, _ = criterion(features)
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
+        if getattr(splice_regularizer, "requires_crp_indices", False):
+            if sample_indices is None:
+                raise ValueError("CRP relational regularization requires graph-row sample indices.")
+            splice_loss = splice_regularizer(embeddings, sample_indices)
+            loss = loss + splice_loss
+            parts = {
+                "decor": decor_loss,
+                "entropy": entropy_loss,
+                "splice": splice_loss,
+            }
+            return loss, parts, bsz
         repeated_concepts = None
         repeated_targets = None
         if splice_concepts is not None:
@@ -83,6 +95,9 @@ def train_one_epoch(
     entropy_losses = AverageMeter()
     splice_losses = AverageMeter()
 
+    if hasattr(splice_regularizer, "set_epoch"):
+        splice_regularizer.set_epoch(epoch)
+
     end = time.time()
     for idx, data in enumerate(train_loader):
         data_time.update(time.time() - end)
@@ -92,9 +107,19 @@ def train_one_epoch(
         if args.channels_last and str(args.device).startswith("cuda"):
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
-        targets = data[1].to(args.device, non_blocking=True)
-        metadata = data[2].to(args.device, non_blocking=True)
-        splice_concepts = data[3].to(args.device, non_blocking=True) if len(data) > 3 else None
+        crp_training = getattr(splice_regularizer, "requires_crp_indices", False)
+        targets = None if crp_training else data[1].to(args.device, non_blocking=True)
+        metadata = (
+            data[2].to(args.device, non_blocking=True)
+            if getattr(splice_regularizer, "requires_oracle_metadata", False)
+            else None
+        )
+        splice_concepts = (
+            data[3].to(args.device, non_blocking=True)
+            if len(data) > 3 and not crp_training
+            else None
+        )
+        sample_indices = data[1] if crp_training else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(
@@ -110,6 +135,7 @@ def train_one_epoch(
                 targets,
                 splice_regularizer,
                 metadata=metadata,
+                sample_indices=sample_indices,
             )
         losses.update(loss.item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
@@ -128,6 +154,7 @@ def train_one_epoch(
                 targets,
                 splice_regularizer,
                 metadata=metadata,
+                sample_indices=sample_indices,
             )
             optimizer.zero_grad()
             loss.backward()

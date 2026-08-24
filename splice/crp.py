@@ -491,6 +491,7 @@ def _build_teacher_graph(
 
     indices = torch.full((n_samples, config.graph_top_k), -1, dtype=torch.long)
     weights = torch.zeros((n_samples, config.graph_top_k), dtype=torch.float32)
+    edge_confidences = torch.zeros_like(weights)
     group_ids = torch.full_like(indices, -1)
     gains = torch.zeros_like(weights)
     for row, edges in enumerate(by_anchor):
@@ -504,6 +505,7 @@ def _build_teacher_graph(
         for position, ((column, evidence), weight) in enumerate(zip(kept, raw_weights)):
             indices[row, position] = column
             weights[row, position] = weight
+            edge_confidences[row, position] = float(evidence["confidence"])
             group_ids[row, position] = int(evidence["group_id"])
             gains[row, position] = float(evidence["gain"])
 
@@ -511,11 +513,17 @@ def _build_teacher_graph(
     indegree = torch.bincount(indices[valid], minlength=n_samples)
     row_sums = weights.sum(dim=1)
     supported = row_sums > 0
+    anchor_confidence = edge_confidences.max(dim=1).values
+    if float(anchor_confidence.max()) > 0:
+        anchor_confidence /= anchor_confidence.max()
     return {
         "neighbor_indices": indices,
         "weights": weights,
+        "edge_confidences": edge_confidences,
         "group_ids": group_ids,
         "intervention_gains": gains,
+        "anchor_confidence": anchor_confidence,
+        # Kept for backward compatibility with existing graph-v2 artifacts.
         "confidence": row_sums,
         "degree_stats": {
             "edge_count": int(valid.sum()),
