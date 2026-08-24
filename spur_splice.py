@@ -1153,7 +1153,7 @@ def build_ssl_loader(args: argparse.Namespace):
         "[INFO] Loaded CRP v2 teacher graph: "
         f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "
         f"coverage={stats.get('coverage', float((graph['weights'].sum(dim=1) > 0).float().mean())):.4f}, "
-        f"sha256={graph_sha256[:12]}",
+        f"path={args.crp_teacher_graph}",
         flush=True,
     )
     if not torch.any(graph["weights"].sum(dim=1) > 0):
@@ -1330,7 +1330,6 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
                 "splice_routed_count": args.splice_routed_count,
                 "splice_routed_fraction": args.splice_routed_fraction,
-                "crp_graph_sha256": getattr(args, "crp_graph_sha256", None),
             },
             allow_val_change=True,
         )
@@ -1393,6 +1392,7 @@ def main() -> None:
             import wandb
 
             wandb_config = vars(args).copy()
+            wandb_config.pop("crp_graph_sha256", None)
             wandb_config["strong_aug"] = strong_aug_config(args)
             wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
             wandb_run = wandb.init(

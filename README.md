@@ -222,8 +222,8 @@ Run only the training job after a teacher graph already exists:
 sbatch scripts/SpLiCE_CRP_v2_training.sbatch
 ```
 
-Or submit cache, frozen audit, the label-free go/no-go gate, and training as a
-dependency chain with one command:
+After the one-time feature file exists, submit frozen audit, the label-free
+go/no-go gate, and training as a dependency chain with one command:
 
 ```bash
 bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh
@@ -232,6 +232,12 @@ bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh
 All paths and hyperparameters are declared inside the scripts, so no terminal-side
 environment variables are required. Edit `PROJECT_DIR` and `DATA_FOLDER` in the
 `.sbatch` files if the cluster layout differs from the checked-in defaults.
+
+For CRP graph sweeps, edit the named numeric variables near the top of
+`scripts/SpLiCE_CRP_v2_frozen_audit.sbatch`, for example
+`MIN_GROUP_SIZE="2"`, and submit the pipeline again. The fixed feature file is
+reused without submitting another cache job. ResNet and CRP-loss settings remain
+in `scripts/SpLiCE_CRP_v2_training.sbatch`.
 
 The default dependency chain is conservative: `GO_NO_GO=NO_GO` prevents the
 expensive ResNet job. To run an explicitly exploratory student even when that
@@ -246,8 +252,7 @@ runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The
 ungated run must not be reported as having passed the frozen audit.
 
 All checked-in `.sbatch` files that launch `spur_splice.py` enable Weights & Biases.
-CRP v2 runs use project `Spur_SpLiCE`, group by dataset/seed/protocol, and record
-the graph SHA-256 plus resolved settings in the run config. SSL losses and learning
-rate are logged every epoch; linear-probe and rank metrics retain their configured
-frequencies. A persistent W&B login must already exist on the cluster account; API
-keys are deliberately not stored in the repository.
+CRP v2 runs use project `Spur_SpLiCE` and group by dataset/seed/protocol. SSL losses
+and learning rate are logged every epoch; linear-probe and rank metrics retain their
+configured frequencies. A persistent W&B login must already exist on the cluster
+account; API keys are deliberately not stored in the repository.

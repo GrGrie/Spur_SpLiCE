@@ -21,15 +21,22 @@ DATASET="${DATASET:-waterbirds}"
 OUTPUT_PATH="${OUTPUT_PATH:-outputs/crp/${DATASET}_train_features.pt}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
-DINO_MODEL="${DINO_MODEL:-vit_small_patch16_dinov3.lvd1689m}"
-FORCE="${FORCE:-false}"
+
+# Frozen feature settings. This job is a one-time preparation step and is not
+# submitted by the graph/training sweep pipeline.
+SPLICE_MODEL="open_clip:ViT-B-32"
+SPLICE_PRETRAINED="laion2b_s34b_b79k"
+SPLICE_VOCAB="laion"
+SPLICE_VOCAB_SIZE="10000"
+SPLICE_L1_PENALTY="0.25"
+DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
+FORCE="false"
 
 cd "${PROJECT_DIR}"
 mkdir -p "$(dirname "${OUTPUT_PATH}")" ./output
 
 if [[ -f "${OUTPUT_PATH}" && "${FORCE}" != "true" ]]; then
-    echo "Frozen feature cache already exists: ${OUTPUT_PATH}"
-    echo "Set FORCE=true or choose another OUTPUT_PATH to rebuild it."
+    echo "Frozen feature file already exists: ${OUTPUT_PATH}"
     exit 0
 fi
 
@@ -40,14 +47,23 @@ conda activate "${CONDA_ENV}"
 
 echo "=== SpLiCE-CRP v2 frozen feature cache ==="
 echo "dataset=${DATASET} data=${DATA_FOLDER} output=${OUTPUT_PATH} dino=${DINO_MODEL}"
+echo "splice_model=${SPLICE_MODEL} pretrained=${SPLICE_PRETRAINED} vocab=${SPLICE_VOCAB}:${SPLICE_VOCAB_SIZE} l1=${SPLICE_L1_PENALTY}"
 
-python -u -m scripts.tools.cache_crp_features \
-    --dataset "${DATASET}" \
-    --data-folder "${DATA_FOLDER}" \
-    --output "${OUTPUT_PATH}" \
-    --batch-size "${BATCH_SIZE}" \
-    --num-workers "${NUM_WORKERS}" \
+ARGS=(
+    --dataset "${DATASET}"
+    --data-folder "${DATA_FOLDER}"
+    --output "${OUTPUT_PATH}"
+    --batch-size "${BATCH_SIZE}"
+    --num-workers "${NUM_WORKERS}"
+    --splice-model "${SPLICE_MODEL}"
+    --splice-pretrained "${SPLICE_PRETRAINED}"
+    --splice-vocab "${SPLICE_VOCAB}"
+    --splice-vocab-size "${SPLICE_VOCAB_SIZE}"
+    --splice-l1-penalty "${SPLICE_L1_PENALTY}"
     --dino-model "${DINO_MODEL}"
+)
+
+python -u -m scripts.tools.cache_crp_features "${ARGS[@]}"
 
 echo "Finished frozen feature cache; output=${OUTPUT_PATH}; $(date --iso-8601=seconds)"
 conda deactivate

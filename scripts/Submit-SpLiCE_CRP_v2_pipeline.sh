@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-# Submit from the repository root with one command:
+# Submit from the repository root with one command. The fixed OpenCLIP/SpLiCE/
+# DINO feature file must already exist; graph sweeps do not rebuild it.
 #   bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh
 # To train even when the label-free report returns NO_GO:
 #   bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh --skip-gate
@@ -17,9 +18,7 @@ fi
 cd "$(dirname "$0")/.."
 mkdir -p ./output
 
-CACHE_SUBMISSION="$(sbatch --parsable scripts/SpLiCE_CRP_v2_cache_features.sbatch)"
-CACHE_JOB="${CACHE_SUBMISSION%%;*}"
-AUDIT_SUBMISSION="$(sbatch --parsable --dependency="afterok:${CACHE_JOB}" scripts/SpLiCE_CRP_v2_frozen_audit.sbatch)"
+AUDIT_SUBMISSION="$(sbatch --parsable scripts/SpLiCE_CRP_v2_frozen_audit.sbatch)"
 AUDIT_JOB="${AUDIT_SUBMISSION%%;*}"
 if [[ "${MODE}" == "--skip-gate" ]]; then
     REPORT_JOB="skipped"
@@ -33,12 +32,11 @@ TRAIN_SUBMISSION="$(sbatch --parsable --dependency="afterok:${TRAIN_DEPENDENCY}"
 TRAIN_JOB="${TRAIN_SUBMISSION%%;*}"
 
 echo "Submitted CRP v2 pipeline:"
-echo "  cache job:    ${CACHE_JOB}"
 echo "  audit job:    ${AUDIT_JOB}"
 echo "  go/no-go job: ${REPORT_JOB}"
 echo "  training job: ${TRAIN_JOB}"
 if [[ "${MODE}" == "--skip-gate" ]]; then
     echo "UNSAFE/EXPLORATORY: training starts after audit even if the separate go/no-go report would fail."
 else
-    echo "Training starts only after cache, audit, and the label-free go/no-go gate succeed."
+    echo "Training starts only after the audit and label-free go/no-go gate succeed."
 fi

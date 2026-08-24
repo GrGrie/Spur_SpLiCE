@@ -28,11 +28,12 @@ sbatch --array=0-2 \
   scripts/SpLiCE_CRP_v2_posthoc_waterbirds.sbatch
 ```
 
-Override `PROJECT_DIR`, `CONDA_ENV`, `DATASET`, `OUT_DIR`, or `SEED_BASE` in the
-same way as the existing jobs. Advanced audit settings can be passed as JSON, for
-example `CRP_CONFIG_JSON='{"null_trials":8,"similarity_chunk_size":256}'`.
-The cache job reuses an existing output unless `FORCE=true`; the audit job fails
-before allocating audit work when `CACHE_PATH` does not exist.
+For the ordinary sweep workflow, build the frozen feature file once. Then edit
+graph settings such as `MIN_GROUP_SIZE` in
+`SpLiCE_CRP_v2_frozen_audit.sbatch` and student settings such as `CRP_WEIGHT` in
+`SpLiCE_CRP_v2_training.sbatch`. No terminal exports or hand-written JSON are
+needed, and the sweep pipeline does not submit another cache job. The audit job
+fails with a direct message if the one-time feature file does not exist.
 
 The report job is deliberately a gate, not a training job.  It returns a
 non-zero status when the projection is effectively unchanged or when selected
