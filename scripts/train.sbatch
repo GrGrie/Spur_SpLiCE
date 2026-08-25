@@ -189,11 +189,11 @@ conda activate "${CONDA_ENV}"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
 case "${MODE}" in
-    none) RUN_LABEL="Baseline" ;;
-    crp_relational) RUN_LABEL="CRP_w${SPLICE_WEIGHT}_t${CRP_TEMPERATURE}_s${CRP_START_EPOCH}_wu${CRP_WARMUP_EPOCHS}" ;;
-    corr_reg) RUN_LABEL="Corr_w${SPLICE_WEIGHT}" ;;
-    augment) RUN_LABEL="Aug_q${SPLICE_SCORE_QUANTILE}_${SPLICE_ROUTING_MODE}" ;;
-    augment_corr_reg) RUN_LABEL="AugCorr_q${SPLICE_SCORE_QUANTILE}_w${SPLICE_WEIGHT}" ;;
+    none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
+    corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
+    augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
+    augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
 esac
 
 WANDB_RUN_NAME="${DATASET}_S${SEED}_${RUN_LABEL}_e${EPOCHS}"
