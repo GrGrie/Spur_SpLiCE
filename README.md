@@ -50,7 +50,7 @@ with `--data_folder` or `-DataFolder`.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
 - `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
-- `scripts/*.sbatch` — Slurm arrays for cluster runs.
+- `scripts/train.sbatch` — единственная точка входа для обучения на Slurm.
 
 ## Training length and learning-rate schedules
 
@@ -60,21 +60,21 @@ Both SSL and linear-probe milestone schedules accept either explicit epochs or
 - SSL: 70%, 80%, and 90% of `--epochs`;
 - linear probe: 60%, 75%, and 90% of `--linear_probe_epochs`.
 
-Thus 1,000 SSL epochs resolve to `700,800,900`, while 500 resolve to
-`350,400,450`.
+The current protocol fixes SSL training at 500 epochs, which resolves the
+automatic milestones to `350,400,450`.
 
 ```bash
 python spur_splice.py \
   --dataset waterbirds \
   --data_folder ./datasets \
-  --epochs 1000 \
+  --epochs 500 \
   --lr_decay_epochs auto \
   --linear_lr_decay_epochs auto \
   --splice_mode none
 ```
 
-Shortened 500-epoch runs are operationally supported, but they are not directly
-comparable with the existing epoch-1000 report tables.
+Runs with a different epoch budget are not directly comparable with the current
+500-epoch protocol.
 
 ## Experiment families
 
@@ -86,16 +86,9 @@ in the true-class probability on probe errors, penalizes decreases on correct
 examples, and greedily selects a jointly useful non-redundant concept set. It
 uses target labels but never spurious/group metadata.
 
-Each Slurm submission targets one dataset through `DATASET`; repeat it for
-CelebA or SpurCIFAR10 after their files are available:
-
-```bash
-# Frozen discovery comparison: utility, error contrast, gradient probe, oracle.
-sbatch --export=ALL,DATASET=waterbirds scripts/SpLiCE_intervention_utility_discovery_array.sbatch
-
-# Matched downstream battery for one seed; repeat with SEED=1,2,...
-sbatch --export=ALL,DATASET=waterbirds,SEED=0 scripts/SpLiCE_intervention_utility_training_array.sbatch
-```
+The simplified Slurm launcher intentionally exposes only current CRPv2 and the
+older augmentation/correlation methods. Historical synthesis experiments remain
+available through the direct Python interface documented below.
 
 The proposed downstream configuration is `UtilityNeutralize`: automatically
 selected coordinates are replaced by their target-class median in the frozen
@@ -129,11 +122,11 @@ Tasks `0..4` are All, Crop, ColorJitter, Grayscale, and Blur.
 Tasks `0..8` are baseline, augmentation quantiles
 `.50/.75/.90/.95`, and correlation weights `.001/.01/.1/1.0`.
 
-Cluster example:
+Cluster sweeps use the same entry point: edit one configuration at a time in
+the top block and submit it. W&B names include the relevant values.
 
 ```bash
-sbatch --array=0-8 --export=ALL,DATASET=waterbirds,SEED=4 \
-  scripts/waterbirds_SpLiCE_hyperparameter_array.sbatch
+sbatch scripts/train.sbatch
 ```
 
 ### SpLiCE synthesis and distillation
@@ -216,43 +209,27 @@ row-stochastic teacher distribution. The backbone relation distribution is match
 with confidence-weighted KL while the ordinary SimCLR projection-head loss remains
 active. Target labels, spurious attributes, and groups are not passed to this loss.
 
-Run only the training job after a teacher graph already exists:
+After a teacher graph exists, set `MODE="crp_relational"` and
+`CRP_TEACHER_GRAPH` in the top block of the unified training script:
 
 ```bash
-sbatch scripts/SpLiCE_CRP_v2_training.sbatch
+sbatch scripts/train.sbatch
 ```
 
-After the one-time feature file exists, submit frozen audit, the label-free
-go/no-go gate, and training as a dependency chain with one command:
-
-```bash
-bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh
-```
-
-All paths and hyperparameters are declared inside the scripts, so no terminal-side
-environment variables are required. Edit `PROJECT_DIR` and `DATA_FOLDER` in the
-`.sbatch` files if the cluster layout differs from the checked-in defaults.
+All training paths and hyperparameters are declared once in
+`scripts/train.sbatch`; no terminal-side environment variables are required.
 
 For CRP graph sweeps, edit the named numeric variables near the top of
 `scripts/SpLiCE_CRP_v2_frozen_audit.sbatch`, for example
 `MIN_GROUP_SIZE="2"`, and submit the pipeline again. The fixed feature file is
-reused without submitting another cache job. ResNet and CRP-loss settings remain
-in `scripts/SpLiCE_CRP_v2_training.sbatch`.
-
-The default dependency chain is conservative: `GO_NO_GO=NO_GO` prevents the
-expensive ResNet job. To run an explicitly exploratory student even when that
-separate report would fail, skip only the blocking report:
-
-```bash
-bash scripts/Submit-SpLiCE_CRP_v2_pipeline.sh --skip-gate
-```
+reused without submitting another cache job. ResNet and CRP-loss settings live
+only in `scripts/train.sbatch`.
 
 The audit still constructs the graph. If it contains no accepted edges, training
 runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The
 ungated run must not be reported as having passed the frozen audit.
 
-All checked-in `.sbatch` files that launch `spur_splice.py` enable Weights & Biases.
-CRP v2 runs use project `Spur_SpLiCE` and group by dataset/seed/protocol. SSL losses
-and learning rate are logged every epoch; linear-probe and rank metrics retain their
-configured frequencies. A persistent W&B login must already exist on the cluster
-account; API keys are deliberately not stored in the repository.
+The unified training script enables Weights & Biases by default. CRP v2 runs use
+project `Spur_SpLiCE` and group by dataset/seed/protocol. A persistent W&B login
+must already exist on the cluster account; API keys are deliberately not stored
+in the repository.

@@ -1,6 +1,6 @@
 """Collect the concept-discovery comparison into one table.
 
-Reads the per-method JSON files written by ``waterbirds_SpLiCE_discovery_array.sbatch``
+Reads per-method discovery JSON files produced by the concept-discovery tool
 and reports, for every discovery signal, which concepts it selected and how much
 zeroing them changes worst-group accuracy.
 """
