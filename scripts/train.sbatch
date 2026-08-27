@@ -42,7 +42,33 @@ CRP_START_EPOCH="10"
 CRP_WARMUP_EPOCHS="10"
 BATCH_SIZE="256"
 SEED="0"
-CRP_TEACHER_GRAPH="outputs/crp/waterbirds/teacher_graph_seed0.pt"
+
+# CRP frozen-artifact preparation.  When enabled, this same Slurm job first
+# builds the dataset-ordered feature cache and then runs the label-free audit.
+# Set CRP_FORCE_REBUILD=true after changing any audit setting below.
+CRP_AUTO_BUILD_GRAPH="true"
+CRP_FORCE_REBUILD="false"
+CRP_CACHE_BATCH_SIZE="64"
+CRP_CACHE_NUM_WORKERS="4"
+CRP_DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
+
+# CRP frozen-audit hyperparameters.
+CRP_MIN_CONCEPT_FREQUENCY="0.01"
+CRP_MAX_CONCEPT_FREQUENCY="0.95"
+CRP_TEXT_SIMILARITY_THRESHOLD="0.82"
+CRP_COACTIVATION_THRESHOLD="0.35"
+CRP_MIN_GROUP_SIZE="1"
+CRP_PROJECTED_NEIGHBORS="20"
+CRP_DINO_NEIGHBORS="50"
+CRP_ACTIVATION_DIFFERENCE_QUANTILE="0.75"
+CRP_MIN_INTERVENTION_GAIN="1e-4"
+CRP_MIN_COVERAGE="0.01"
+CRP_GRAPH_TOP_K="10"
+CRP_INDEGREE_FACTOR="3.0"
+CRP_NULL_TRIALS="16"
+CRP_NULL_QUANTILE="0.95"
+CRP_SIMILARITY_CHUNK_SIZE="512"
+CRP_ORTHOGONAL_TOLERANCE="1e-6"
 
 # =============================================================================
 # LEGACY METHODS: augment / corr_reg / augment_corr_reg
@@ -136,10 +162,9 @@ RANK_EVAL_FREQ="0"
 # Cluster paths and runtime (rarely changed)
 PROJECT_DIR="/home/xar68reb/Spur_SpLiCE"
 CONDA_ENV="grgrie-train"
-DATA_FOLDER="./datasets"
+DATA_FOLDER="/home/xar68reb/Datasets"
 CHECKPOINT_DIR="outputs/training"
 RESUME=""                         # Empty = start from scratch; otherwise a .pth path.
-SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
 SPLICE_SCORE_CACHE_DIR="outputs/splice_score_cache"
 NUM_WORKERS="5"
 AMP="true"
@@ -169,16 +194,23 @@ case "${MODE}" in
     *) fail "Unknown MODE=${MODE}" ;;
 esac
 
+# The root training CLI accepts a few historical CelebA spellings, while the
+# CRP cache CLI intentionally uses the canonical lowercase spelling.
+case "${DATASET}" in
+    CelebA|celebA) DATASET="celeba" ;;
+esac
+# Recompute dataset-derived paths after canonicalization.
+SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
+CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
+CRP_GRAPH_DIR="outputs/crp/${DATASET}"
+CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
+
 if [[ "${DATASET}" == "spur_cifar10" && "${MODEL}" == *_large ]]; then
     fail "spur_cifar10 requires resnet18 or resnet50, not ${MODEL}."
 fi
 if [[ "${FINAL_TEST}" == "true" && "${LINEAR_PROBE_MODE}" != "final" ]]; then
     fail "FINAL_TEST=true requires LINEAR_PROBE_MODE=final."
 fi
-if [[ "${MODE}" == "crp_relational" && ! -f "${PROJECT_DIR}/${CRP_TEACHER_GRAPH}" && ! -f "${CRP_TEACHER_GRAPH}" ]]; then
-    fail "CRP teacher graph does not exist: ${CRP_TEACHER_GRAPH}"
-fi
-
 cd "${PROJECT_DIR}"
 mkdir -p ./output "${CHECKPOINT_DIR}" "${SPLICE_AUTO_OUT_DIR}" "${SPLICE_SCORE_CACHE_DIR}"
 
@@ -187,6 +219,58 @@ module load miniforge3/latest
 . "${ANACONDA_HOME}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+
+prepare_crp_teacher_graph() {
+    [[ "${MODE}" == "crp_relational" ]] || return 0
+
+    if [[ "${CRP_AUTO_BUILD_GRAPH}" != "true" ]]; then
+        echo "[CRP] Automatic cache/graph preparation disabled."
+        return 0
+    fi
+
+    mkdir -p "${CRP_GRAPH_DIR}" "$(dirname "${CRP_CACHE_PATH}")"
+
+    if [[ "${CRP_FORCE_REBUILD}" != "true" && -f "${CRP_TEACHER_GRAPH}" ]]; then
+        echo "[CRP] Reusing existing teacher graph: ${CRP_TEACHER_GRAPH}"
+        echo "[CRP] Set CRP_FORCE_REBUILD=true after changing CRP audit settings."
+        return 0
+    fi
+
+    if [[ "${CRP_FORCE_REBUILD}" == "true" || ! -f "${CRP_CACHE_PATH}" ]]; then
+        echo "=== Building CRP frozen feature cache ==="
+        python -u -m scripts.tools.cache_crp_features \
+            --dataset "${DATASET}" \
+            --data-folder "${DATA_FOLDER}" \
+            --output "${CRP_CACHE_PATH}" \
+            --batch-size "${CRP_CACHE_BATCH_SIZE}" \
+            --num-workers "${CRP_CACHE_NUM_WORKERS}" \
+            --splice-model "${SPLICE_MODEL}" \
+            --splice-pretrained "${SPLICE_PRETRAINED}" \
+            --splice-vocab "${SPLICE_VOCAB}" \
+            --splice-vocab-size "${SPLICE_VOCAB_SIZE}" \
+            --splice-l1-penalty "${SPLICE_L1_PENALTY}" \
+            --dino-model "${CRP_DINO_MODEL}"
+    else
+        echo "[CRP] Reusing existing feature cache: ${CRP_CACHE_PATH}"
+    fi
+
+    CRP_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED}}"
+
+    echo "=== Building CRP teacher graph ==="
+    echo "[CRP] cache=${CRP_CACHE_PATH} graph=${CRP_TEACHER_GRAPH}"
+    echo "[CRP] config=${CRP_CONFIG_JSON}"
+    python -u -m splice.crp \
+        --cache "${CRP_CACHE_PATH}" \
+        --output "${CRP_TEACHER_GRAPH}" \
+        --seed "${SEED}" \
+        --config "${CRP_CONFIG_JSON}"
+}
+
+prepare_crp_teacher_graph
+
+if [[ "${MODE}" == "crp_relational" && ! -f "${CRP_TEACHER_GRAPH}" ]]; then
+    fail "CRP teacher graph does not exist after preparation: ${CRP_TEACHER_GRAPH}"
+fi
 
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
