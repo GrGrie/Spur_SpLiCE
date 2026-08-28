@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=16:00:00
 #SBATCH --job-name=SpurSpLiCE_train
-#SBATCH --mem=64G
+#SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=5
@@ -9,8 +9,8 @@
 #SBATCH --gres=gpu:v100:1
 #SBATCH --partition=informatik-mind
 #SBATCH --gpu_cmode=shared
-#SBATCH --output=./slurm-%x_%j.out
-#SBATCH --error=./slurm-%x_%j.err
+#SBATCH --output=./output/CRPv2/slurm-%x_%j.out
+#SBATCH --error=./output/CRPv2/slurm-%x_%j.err
 
 set -euo pipefail
 
@@ -55,7 +55,7 @@ CRP_DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
 # CRP frozen-audit hyperparameters.
 CRP_MIN_CONCEPT_FREQUENCY="0.01"
 CRP_MAX_CONCEPT_FREQUENCY="0.95"
-CRP_TEXT_SIMILARITY_THRESHOLD="0.82"
+CRP_TEXT_SIMILARITY_THRESHOLD="0.8"
 CRP_COACTIVATION_THRESHOLD="0.35"
 CRP_MIN_GROUP_SIZE="1"
 CRP_PROJECTED_NEIGHBORS="20"
@@ -220,6 +220,11 @@ module load miniforge3/latest
 conda activate "${CONDA_ENV}"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
+validate_crp_feature_cache() {
+    python -c 'import sys, torch; from splice.crp import validate_feature_cache; validate_feature_cache(torch.load(sys.argv[1], map_location="cpu", weights_only=True))' \
+        "${CRP_CACHE_PATH}" >/dev/null 2>&1
+}
+
 prepare_crp_teacher_graph() {
     [[ "${MODE}" == "crp_relational" ]] || return 0
 
@@ -236,7 +241,16 @@ prepare_crp_teacher_graph() {
         return 0
     fi
 
-    if [[ "${CRP_FORCE_REBUILD}" == "true" || ! -f "${CRP_CACHE_PATH}" ]]; then
+    cache_is_valid="false"
+    if [[ "${CRP_FORCE_REBUILD}" != "true" && -f "${CRP_CACHE_PATH}" ]]; then
+        if validate_crp_feature_cache; then
+            cache_is_valid="true"
+        else
+            echo "[CRP] Existing feature cache is unreadable or invalid; rebuilding: ${CRP_CACHE_PATH}"
+        fi
+    fi
+
+    if [[ "${CRP_FORCE_REBUILD}" == "true" || "${cache_is_valid}" != "true" ]]; then
         echo "=== Building CRP frozen feature cache ==="
         python -u -m scripts.tools.cache_crp_features \
             --dataset "${DATASET}" \
@@ -252,6 +266,10 @@ prepare_crp_teacher_graph() {
             --dino-model "${CRP_DINO_MODEL}"
     else
         echo "[CRP] Reusing existing feature cache: ${CRP_CACHE_PATH}"
+    fi
+
+    if ! validate_crp_feature_cache; then
+        fail "CRP feature cache is invalid after preparation: ${CRP_CACHE_PATH}"
     fi
 
     CRP_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED}}"
