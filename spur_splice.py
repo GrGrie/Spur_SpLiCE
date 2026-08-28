@@ -9,6 +9,7 @@ import math
 import os
 import platform
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -355,6 +356,20 @@ def parse_args() -> argparse.Namespace:
         "--keep_checkpoints",
         action="store_true",
         help="Persist epoch/last checkpoints. By default checkpoints are temporary and only support linear probing.",
+    )
+    parser.add_argument(
+        "--checkpoint_keep_count",
+        type=int,
+        default=4,
+        help="Number of most recent epoch checkpoints to retain while training.",
+    )
+    parser.add_argument(
+        "--delete_checkpoints_after_training",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Delete all .pth checkpoint files from this run directory after successful training.",
     )
     parser.add_argument("--resume", type=str, default="")
 
@@ -730,6 +745,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--linear_probe_freq must be non-negative.")
     if args.keep_checkpoints and args.save_freq <= 0:
         parser.error("--save_freq must be positive when --keep_checkpoints is enabled.")
+    if args.checkpoint_keep_count <= 0:
+        parser.error("--checkpoint_keep_count must be positive.")
     if args.batch_size > 256:
         args.warm = True
     if args.warm:
@@ -1371,11 +1388,42 @@ def maybe_run_final_probe(args: argparse.Namespace, save_file: str, already_prob
     return run_linear_probe(args, save_file, args.epochs)
 
 
+def prune_epoch_checkpoints(args: argparse.Namespace) -> None:
+    """Keep only the newest periodic epoch checkpoints for crash recovery."""
+
+    if not args.keep_checkpoints:
+        return
+    checkpoint_dir = Path(args.save_folder)
+    epoch_checkpoints: list[tuple[int, Path]] = []
+    for checkpoint_path in checkpoint_dir.glob("epoch_*.pth"):
+        match = re.fullmatch(r"epoch_(\d+)\.pth", checkpoint_path.name)
+        if match:
+            epoch_checkpoints.append((int(match.group(1)), checkpoint_path))
+    epoch_checkpoints.sort(key=lambda item: item[0], reverse=True)
+    for _, checkpoint_path in epoch_checkpoints[args.checkpoint_keep_count :]:
+        checkpoint_path.unlink()
+
+
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
     temporary_paths = [Path(args.save_folder) / "probe_tmp.pth", Path(args.save_folder) / "probe_tmp.pth.tmp"]
     for temporary_path in temporary_paths:
         if temporary_path.exists():
             temporary_path.unlink()
+
+
+def cleanup_all_checkpoints(args: argparse.Namespace) -> None:
+    """Delete checkpoint artifacts for this run while preserving run metadata."""
+
+    checkpoint_dir = Path(args.save_folder)
+    removed_count = 0
+    for checkpoint_path in checkpoint_dir.iterdir():
+        if not checkpoint_path.is_file():
+            continue
+        if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
+            continue
+        checkpoint_path.unlink()
+        removed_count += 1
+    print(f"[INFO] Removed {removed_count} checkpoint files from {checkpoint_dir}")
 
 
 def main() -> None:
@@ -1424,6 +1472,7 @@ def main() -> None:
     )
     last_probe_epoch = 0
     probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
+    prune_epoch_checkpoints(args)
 
     for epoch in range(start_epoch, args.epochs + 1):
         adjust_learning_rate(args, optimizer, epoch)
@@ -1479,6 +1528,7 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
+            prune_epoch_checkpoints(args)
 
     if args.linear_probe_mode != "none" and last_probe_epoch != args.epochs:
         save_checkpoint(
@@ -1505,7 +1555,10 @@ def main() -> None:
             loader_generator=train_loader.generator,
         )
 
-    cleanup_default_checkpoints(args)
+    if args.delete_checkpoints_after_training:
+        cleanup_all_checkpoints(args)
+    else:
+        cleanup_default_checkpoints(args)
 
     if wandb_run is not None:
         wandb_run.finish()

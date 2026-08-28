@@ -156,6 +156,8 @@ LINEAR_SPURIOUS_PROBE="true"
 FINAL_TEST="false"                # true requires LINEAR_PROBE_MODE=final.
 SAVE_FREQ="25"
 KEEP_CHECKPOINTS="true"
+CHECKPOINT_KEEP_COUNT="4"          # Keep the current checkpoint plus 3 previous ones.
+DELETE_CHECKPOINTS_AFTER_TRAINING="true" # W&B remains the durable experiment record.
 PRINT_FREQ="25"
 RANK_EVAL_FREQ="0"
 
@@ -340,6 +342,8 @@ ARGS=(
     --linear_spurious_probe "${LINEAR_SPURIOUS_PROBE}"
     --checkpoint_dir "${CHECKPOINT_DIR}"
     --save_freq "${SAVE_FREQ}"
+    --checkpoint_keep_count "${CHECKPOINT_KEEP_COUNT}"
+    --delete_checkpoints_after_training "${DELETE_CHECKPOINTS_AFTER_TRAINING}"
     --splice_mode "${MODE}"
     --wandb_name "${WANDB_PROJECT}"
     --wandb_run_name "${WANDB_RUN_NAME}"
