@@ -45,6 +45,9 @@ from scripts.tools import discover_splice_spurious_concepts as concept_discovery
 from scripts.tools import summarize_splice_scores as score_summary
 
 
+RELATIONAL_GRAPH_MODES = {"crp_relational", "cqt_relational"}
+
+
 def str_to_bool(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -444,6 +447,7 @@ def parse_args() -> argparse.Namespace:
             "synthesis_distill",
             "oracle_relational",
             "crp_relational",
+            "cqt_relational",
         ],
     )
     parser.add_argument("--splice_concepts", type=str, default="")
@@ -472,7 +476,7 @@ def parse_args() -> argparse.Namespace:
         "--crp_teacher_graph",
         type=str,
         default="",
-        help="Version-2 label-free CRP teacher graph used by --splice_mode crp_relational.",
+        help="Label-free CRP or CQT teacher graph used by a relational graph mode.",
     )
     parser.add_argument(
         "--crp_temperature",
@@ -690,11 +694,12 @@ def parse_args() -> argparse.Namespace:
         "synthesis_distill",
         "oracle_relational",
         "crp_relational",
+        "cqt_relational",
     } and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
-    if args.splice_mode == "crp_relational" and not args.crp_teacher_graph.strip():
-        parser.error("--crp_teacher_graph is required for --splice_mode crp_relational.")
-    if args.splice_mode == "crp_relational":
+    if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.crp_teacher_graph.strip():
+        parser.error("--crp_teacher_graph is required for relational graph modes.")
+    if args.splice_mode in RELATIONAL_GRAPH_MODES:
         graph_path = Path(args.crp_teacher_graph)
         if not graph_path.is_file():
             parser.error(f"--crp_teacher_graph does not exist: {graph_path}")
@@ -882,6 +887,8 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         return f"{prefix}_{label}{hyper}{suffix}"
     if args.splice_mode == "crp_relational":
         return f"{prefix}_CRPv2_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
+    if args.splice_mode == "cqt_relational":
+        return f"{prefix}_CQT_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
     if args.splice_mode == "oracle_relational":
         return f"{prefix}_OracleRel_w{args.splice_weight:g}{suffix}"
     conditional = "Y" if args.splice_conditional_on_target else ""
@@ -902,6 +909,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "oracle-relational"
     elif args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
+    elif args.splice_mode == "cqt_relational":
+        experiment = "cqt-relational"
     else:
         experiment = "corr"
 
@@ -962,6 +971,11 @@ def format_run_name(args: argparse.Namespace) -> str:
             f"crp_relational_w{args.splice_weight:g}_"
             f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
         )
+    elif args.splice_mode == "cqt_relational":
+        splice_name = (
+            f"cqt_relational_w{args.splice_weight:g}_"
+            f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
+        )
     else:
         splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
         splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
@@ -975,7 +989,7 @@ def format_run_name(args: argparse.Namespace) -> str:
                 f"{splice_name}_augment{threshold_name}_route{args.splice_routing_mode}_"
                 f"{format_strong_aug_name(args)}"
             )
-    if args.use_splice and args.splice_mode != "crp_relational":
+    if args.use_splice and args.splice_mode not in RELATIONAL_GRAPH_MODES:
         concept_digest = hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:8]
         splice_name = f"{splice_name}_concepts{concept_digest}"
     run_name = (
@@ -1143,7 +1157,7 @@ def build_ssl_loader(args: argparse.Namespace):
         splice_routing_seed=args.seed,
         **loader_kwargs,
     )
-    if args.splice_mode != "crp_relational":
+    if args.splice_mode not in RELATIONAL_GRAPH_MODES:
         return loader
 
     source_indices = getattr(loader.dataset, "indices", None)
@@ -1155,8 +1169,10 @@ def build_ssl_loader(args: argparse.Namespace):
         source_indices,
     )
     if graph_sha256 != args.crp_graph_sha256:
-        raise ValueError("CRP teacher graph changed after argument validation; restart the run.")
+        raise ValueError("Relational teacher graph changed after argument validation; restart the run.")
     args.crp_graph_sha256 = graph_sha256
+    args.teacher_graph_artifact = graph["artifact"]
+    args.teacher_graph_config = graph.get("config", {})
     crp_loader = build_crp_training_loader(
         loader.dataset,
         graph,
@@ -1167,7 +1183,7 @@ def build_ssl_loader(args: argparse.Namespace):
     )
     stats = graph.get("degree_stats", {})
     print(
-        "[INFO] Loaded CRP v2 teacher graph: "
+        f"[INFO] Loaded {graph['artifact']} teacher graph: "
         f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "
         f"coverage={stats.get('coverage', float((graph['weights'].sum(dim=1) > 0).float().mean())):.4f}, "
         f"path={args.crp_teacher_graph}",
@@ -1314,7 +1330,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     criterion = SimCLRLoss(temperature=args.temp).to(device)
     optimizer = build_optimizer(args, model)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
-    if args.splice_mode == "crp_relational":
+    if args.splice_mode in RELATIONAL_GRAPH_MODES:
         splice_regularizer = CrpRelationalRegularizer(
             train_loader.crp_graph,
             weight=args.splice_weight,
@@ -1341,15 +1357,20 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
     args.splice_routed_fraction = getattr(dataset, "routed_fraction", None)
     write_run_config(args)
     if wandb_run is not None:
-        wandb_run.config.update(
-            {
-                "splice_score_threshold_resolved": args.splice_score_threshold_resolved,
-                "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
-                "splice_routed_count": args.splice_routed_count,
-                "splice_routed_fraction": args.splice_routed_fraction,
-            },
-            allow_val_change=True,
-        )
+        resolved = {
+            "splice_score_threshold_resolved": args.splice_score_threshold_resolved,
+            "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
+            "splice_routed_count": args.splice_routed_count,
+            "splice_routed_fraction": args.splice_routed_fraction,
+        }
+        if args.splice_mode in RELATIONAL_GRAPH_MODES:
+            resolved.update(
+                {
+                    "teacher_graph_artifact": args.teacher_graph_artifact,
+                    "teacher_graph_config": args.teacher_graph_config,
+                }
+            )
+        wandb_run.config.update(resolved, allow_val_change=True)
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:

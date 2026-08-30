@@ -1,10 +1,14 @@
 # Spur_SpLiCE Project Ground Truth
 
-**Status:** canonical project specification  
-**Last updated:** 2026-08-24
-**Canonical proposal:** SpLiCE-CRP v2 — Concept-Projected Relational Pretraining  
-**Implementation status:** frozen feature caching, audit, teacher-graph construction, and
-SSL relational training are implemented; empirical validation remains pending
+**Status:** canonical project specification
+
+**Last updated:** 2026-08-30
+**Implemented baseline:** SpLiCE-CRP v2 — Concept-Projected Relational Pretraining
+
+**Implemented experimental extension:** SpLiCE-CQT v1 — Concept Quotient Transport
+
+**Implementation status:** CRP and CQT graph construction plus shared SSL relational
+training are implemented; empirical validation remains pending
 
 > This file is the authoritative source of truth for the current project direction.
 > If `README.md`, `SPUR_SPLICE_CHAT_SUMMARY.md`, `Spur_SpLiCE.tex`, old chat
@@ -17,8 +21,8 @@ SSL relational training are implemented; empirical validation remains pending
 The project asks whether sparse, language-aligned concepts from a frozen
 OpenCLIP/SpLiCE model can improve the worst-group accuracy (WGA) of a separately
 trained self-supervised ResNet without using per-image target labels, spurious
-attributes, or group labels during concept discovery or SSL training. The current
-proposal, SpLiCE-CRP v2, uses SpLiCE to propose semantic factor subspaces, removes
+attributes, or group labels during concept discovery or SSL training. The existing
+SpLiCE-CRP v2 method uses SpLiCE to propose semantic factor subspaces, removes
 each candidate subspace from the **full centered CLIP embedding** by orthogonal
 projection, and asks whether that intervention restores semantic neighbourhoods
 independently supported by a frozen SSL verifier such as DINOv3. Stable
@@ -27,7 +31,10 @@ ResNet18-large is then trained with ordinary SimCLR plus a confidence-gated
 relational distillation loss that matches this graph. The method does not use one
 mined image as a permanent hard positive. Target and group annotations are used
 only after SSL training for linear evaluation, WGA measurement, and explicitly
-labelled diagnostic oracles.
+labelled diagnostic oracles. The experimental SpLiCE-CQT v1 mode reuses the same
+cache and relational trainer, but searches for two-state concept factors, removes
+only their rank-one state contrast, and builds relations by capacity-constrained
+partial transport that preserves non-factor SpLiCE semantics.
 
 ## 2. Scientific objective
 
@@ -45,7 +52,7 @@ interface between concept intervention and SSL:
 1. SpLiCE supplies interpretable semantic factor candidates.
 2. Full-space projection tests what the representation would look like without a
    factor.
-3. Independent semantic consensus rejects likely class-destroying interventions.
+3. Independent semantic checks reject likely class-destroying interventions.
 4. The accepted counterfactual geometry supervises a separately trained ResNet.
 
 In one sentence:
@@ -102,8 +109,8 @@ mechanism.
   concept quality;
 - privileged oracle methods, provided that every table labels them as oracles.
 
-The canonical method is stricter than the already implemented SpLiCE-IU method:
-SpLiCE-IU uses target labels, whereas SpLiCE-CRP v2 does not.
+The label-free CRP and CQT modes are stricter than the already implemented
+SpLiCE-IU method: SpLiCE-IU uses target labels, whereas CRP and CQT do not.
 
 ## 4. Models and their roles
 
@@ -125,8 +132,9 @@ SpLiCE-IU uses target labels, whereas SpLiCE-CRP v2 does not.
 ### Frozen semantic verifier
 
 - **Recommended:** a small or base DINOv3 checkpoint, frozen and cached once.
-- Role: provide an independent label-free similarity geometry used only to reject
-  semantically unsafe concept-removal relations.
+- Role in CRP: pair-level semantic support and neighbour agreement.
+- Role in CQT: independent local-geometry damage guard; DINO does not define CQT
+  transport cost or the quotient direction.
 - DINOv3 is not treated as an oracle and may itself contain shortcuts.
 - Required control: DINO-only relational distillation. If the proposed method does
   not beat that control, the incremental value of concepts is not established.
@@ -199,14 +207,12 @@ For every training image `x_i`, cache:
 - normalized OpenCLIP image embedding `z_i`;
 - centered CLIP vector `u_i = z_i - mu`, using the same image mean as SpLiCE;
 - sparse SpLiCE code `c_i`;
-- normalized DINOv3 embedding `d_i`;
-- optionally, the same representations for a small fixed set of deterministic
-  crops used only to measure stability.
+- normalized DINOv3 embedding `d_i`.
 
 All frozen models run without gradients. Caches must be indexed by dataset sample
-ID and record checkpoint/configuration identifiers. Content hashes may be added
-when a cache builder can compute them automatically; hand-authored hashes are not
-required because they create bookkeeping without verifying model contents.
+ID and record checkpoint/configuration identifiers. CQT reuses this cache without
+adding another cache schema. Hand-authored hashes are not required because they
+create bookkeeping without verifying model contents.
 
 **Implementation decision, 2026-08-18:** cache validation requires a schema version,
 unique sample IDs, aligned tensor lengths, and finite values. Mandatory user-supplied
@@ -226,13 +232,11 @@ Construct candidate groups using only:
 
 - cosine similarity between centered text dictionary directions;
 - coactivation similarity of sparse codes across unlabeled images;
-- lexical deduplication for trivial singular/plural or near-identical strings;
-- stability across bootstrap samples.
+- lexical deduplication for trivial singular/plural or near-identical strings.
 
-The initial implementation should build a graph over active concepts and cluster
-that graph. Group size, clustering threshold, and active-concept frequency cutoffs
-are audit hyperparameters and must be chosen from unlabeled stability/coverage,
-not WGA.
+The implementation unions active concepts satisfying those rules. Group size,
+similarity thresholds, and active-concept frequency cutoffs are audit
+hyperparameters and must be chosen from unlabeled coverage/null behavior, not WGA.
 
 For group `G`, stack its dictionary directions and compute an orthonormal basis:
 
@@ -272,16 +276,12 @@ For anchor `i`, candidate `j`, and factor group `G`, compute the intervention ga
 Delta(i,j,G) = cos(u_i^(-G), u_j^(-G)) - cos(u_i, u_j)
 ```
 
-A relation is a candidate only when:
+A relation is accepted by the current implementation only when:
 
 1. `Delta(i,j,G) > 0`: removing `G` caused the similarity increase;
 2. the group activations differ by a sufficient unlabeled quantile;
-3. `i` and `j` are reciprocal or otherwise stable neighbours in projected CLIP
-   space;
-4. their semantic compatibility is independently supported by DINOv3 similarity
-   or DINOv3 neighbour agreement;
-5. the relation persists under the fixed multi-crop/bootstrap audit;
-6. neither endpoint is accepted solely because it is a high-degree hub.
+3. `i` and `j` are reciprocal neighbours in projected CLIP space;
+4. `j` is in `i`'s raw-DINO neighbour set.
 
 Do not impose a high raw-CLIP similarity as the primary semantic constraint. On a
 spurious dataset, raw CLIP similarity can be dominated by the very factor being
@@ -294,13 +294,13 @@ The method does not declare a group nuisance because its words sound like a
 background. A group is useful only if removing it repeatedly reveals relations
 supported by an independent semantic geometry.
 
-A reference group score is:
+The implemented group score is:
 
 ```text
 score(G) = robust_positive_gain(G)
            * coverage(G)
-           * crop_bootstrap_stability(G)
            * semantic_agreement(G)
+           * activation_gain_alignment(G)
            / hubness_penalty(G)
 ```
 
@@ -308,8 +308,9 @@ Operational definitions:
 
 - `robust_positive_gain`: trimmed mean or median of positive `Delta` values;
 - `coverage`: fraction of anchors with at least one accepted relation for `G`;
-- `crop_bootstrap_stability`: reproducibility of accepted relations and group rank;
 - `semantic_agreement`: DINOv3 neighbour support;
+- `activation_gain_alignment`: non-negative correlation between activation
+  difference and positive intervention gain;
 - `hubness_penalty`: penalty based on maximum indegree, Gini coefficient, or
   effective donor count.
 
@@ -330,17 +331,16 @@ construct a sparse weighted graph or row-stochastic teacher distribution:
 
 ```text
 p_T(j | i) proportional to
-    confidence(i,j,G) * exp(sim_projected(i,j,G) / tau_T)
+    max_G confidence(i,j,G)
 ```
 
-Combine evidence from multiple accepted groups by normalized confidence. Limit the
-top-k support per anchor, degree-normalize the graph, and use an indegree cap or a
-Sinkhorn-style balancing step to prevent a few rare images from dominating.
+Projected similarity is audited/stored, while current graph weights are normalized
+accepted-edge confidence rather than a second teacher-temperature softmax.
 
-Once a group has been validated by seed relations, its projection may be applied to
-all sufficiently active images when constructing teacher similarities. This
-propagates the factor-level evidence without requiring every majority example to
-reuse one of the same few minority donors.
+The current graph builder keeps the strongest evidence per directed pair, limits
+top-k support per anchor, applies a hard global indegree cap, and row-normalizes
+supported anchors. Sinkhorn balancing and post-selection propagation are not
+implemented.
 
 The graph artifact must store:
 
@@ -348,9 +348,8 @@ The graph artifact must store:
 - responsible concept group(s);
 - intervention gain;
 - semantic-agreement confidence;
-- crop/bootstrap stability;
 - graph degree statistics;
-- complete configuration and cache hashes.
+- complete configuration, sample IDs, and cache provenance.
 
 ### Stage G — train the ResNet with SimCLR plus relational distillation
 
@@ -372,9 +371,9 @@ L_rel = sum_i q_i * KL(p_T(.|i) || p_S(.|i))
 similarities so that a separate MLP cannot absorb the entire concept signal without
 changing the representation used by the downstream probe.
 
-Implementation may use a cached top-k graph plus a graph-aware batch sampler or an
-indexed student memory bank. It must not silently degenerate into one unweighted
-hard positive per anchor.
+The implementation uses a cached top-k graph plus a graph-aware batch sampler. It
+does not use a student memory bank and does not degenerate into one unweighted hard
+positive per anchor.
 
 Training safety mechanisms:
 
@@ -407,7 +406,262 @@ Raw CLIP similarity is demoted from a strict high threshold because it can encod
 the nuisance. Semantic safety comes from independent agreement. Training uses a
 soft, degree-controlled relation graph, not repeated attraction to one rare donor.
 
-## 8. Rejected or demoted alternatives
+## 8. Experimental extension: SpLiCE-CQT v1
+
+CQT stands for **Concept Quotient Transport**. It is an implemented experimental
+graph-construction mode over the existing CRP cache and relational trainer. It does
+not replace or modify CRP, and it is not yet supported by positive real-data
+results.
+
+### 8.1 Motivation and identifiability limit
+
+CRP can select any visually strong concept group whose removal reorganizes image
+neighbours. A coherent class concept can satisfy this criterion just like a
+background concept. DINO support reduces obviously unsafe pairs, but cannot tell
+which factor matters to an unknown downstream task and can share CLIP's bias.
+
+This is partly fundamental: using task-agnostic unlabeled observations, “core” and
+“spurious” are not universally identifiable. Exchanging their names can leave the
+same observational distribution. CQT therefore does not claim to discover true
+nuisance variables. It adds a narrower, testable inductive bias:
+
+> Prefer two concept states that are mutually exclusive but retain overlapping
+> non-factor semantics; erase only their state contrast and transport mass between
+> compatible samples.
+
+Target factors can also satisfy this assumption. Hidden-label pair purity and
+average-accuracy preservation remain mandatory post-hoc falsifiers.
+
+### 8.2 Cross-reproduced two-state proposals
+
+CQT first reuses CRP's lexical/text/coactivation concept groups. To bound quadratic
+pair search, v1 retains at most `max_candidate_groups`, ranked by balanced unlabeled
+support, and at most `max_factors` final proposals.
+
+For group pair `F=(G_A,G_B)` and cross-fit fold `s`, define exclusive pseudo-states:
+
+```text
+A_s = {i in fold s : activation(G_A)>0 and activation(G_B)=0}
+B_s = {i in fold s : activation(G_B)>0 and activation(G_A)=0}
+```
+
+Coactive and inactive samples do not define this factor. A proposal must satisfy in
+both deterministic random halves:
+
+- at least `min_state_samples` per exclusive state;
+- exclusivity above `min_exclusivity`;
+- cosine agreement above `min_context_similarity` between mean semantic SpLiCE
+  embeddings after all coordinates in `F` are removed.
+
+The proposal must reproduce in both fold directions. For each direction, state
+centroids are learned on one half and predictability/intervention evidence is
+evaluated on the other. Version 1 intentionally supports exactly two states; an
+adaptive number of states would add rank and model-selection degrees of freedom.
+
+### 8.3 Rank-one concept quotient
+
+Let each state direction be the normalized mean of its dictionary words:
+
+```text
+m_A = normalize(mean_{k in G_A} D_k)
+m_B = normalize(mean_{k in G_B} D_k)
+q_F = normalize(m_A - m_B)
+```
+
+For centered normalized CLIP vector `u_i`, CQT computes:
+
+```text
+r_i^F = normalize((I - q_F q_F^T) u_i)
+```
+
+This removes exactly the one-dimensional state contrast. Directions orthogonal to
+`q_F`, including the shared state mean approximately proportional to `m_A+m_B`,
+remain. CRP instead removes the full span of all selected group words. Rank is
+fixed to one in CQT v1 and is never selected using downstream labels.
+
+The implementation checks whether the operation is meaningful by cross-fitted
+nearest-centroid pseudo-state classification. Raw pseudo-state balanced accuracy
+must exceed `min_state_balanced_accuracy`, and quotient efficacy
+
+```text
+E_F = (BA_raw - BA_quotient) / max(BA_raw - 0.5, epsilon)
+```
+
+must exceed `min_quotient_efficacy` in both directions. This rejects readable word
+pairs whose dictionary contrast has little effect on image geometry.
+
+### 8.4 Explicit non-factor word geometry
+
+CQT uses the human-readable SpLiCE decomposition directly in matching. After
+excluding factor coordinates, define:
+
+```text
+w_i^(-F) = normalize(sum_{k not in F} c_ik D_k)
+```
+
+Then:
+
+```text
+cos(w_i^(-F), w_j^(-F))
+  = normalized(c_i^(-F)^T D D^T c_j^(-F))
+```
+
+This is an implicit word-kernel similarity. The code computes sparse `c^(-F)D`
+instead of materializing the full vocabulary kernel. Thus a pair is attractive only
+when the quotient CLIP geometry improves and the other readable concepts remain
+compatible.
+
+### 8.5 Sparse capacity-constrained partial transport
+
+For each factor/evaluation fold, CQT unions the top word-semantic candidates in
+both `A -> B` and `B -> A` directions. On that fixed sparse bipartite support, cost
+is:
+
+```text
+C_ij = 0.5 * rank_distance(cos(r_i^F, r_j^F))
+       + 0.5 * (1 - cos(w_i^(-F), w_j^(-F))) / 2
+```
+
+`rank_distance` is normalized inside each anchor's candidate list. Equal weights
+are fixed in v1. CQT solves the exact linear program on this sparse support:
+
+```text
+min_T sum_ij C_ij T_ij
+subject to
+    sum_j T_ij <= 1
+    sum_i T_ij <= 1
+    sum_ij T_ij  = M_F
+    0 <= T_ij <= 1
+```
+
+`M_F` is a fixed fraction of the smaller state with a minimum pair count. A maximum
+bipartite matching check rejects candidate supports unable to carry the requested
+mass. `scipy.optimize.linprog` with HiGHS solves the sparse LP. The bipartite
+cardinality-constrained polytope has integral extreme points up to numerical
+tolerance, while the downstream graph also accepts fractional flow.
+
+Partial mass avoids forcing poor pairs. Unit source/destination capacities prevent
+factor-level donor hubs. The shared final graph builder still applies its top-k and
+global indegree cap when several factors contribute edges.
+
+### 8.6 DINO as a local-geometry damage guard
+
+CQT deliberately does not require transported cross-state pairs to be raw-DINO
+neighbours, and it does not quotient DINO. Either would recreate a hard raw-space
+veto or risk deleting an unknown core factor in both teachers.
+
+Within each pseudo-state, CQT records every point's sorted cosine similarities to
+its raw-DINO local neighbours. Candidate damage is the mean absolute difference
+between the two local similarity profiles. A transport plan passes only when its
+mass-weighted damage is no worse than `dino_damage_quantile` of candidate-edge
+damage. DINO therefore asks whether the map connects comparable local geometries;
+it neither chooses the quotient nor enters transport cost.
+
+This signature is a lightweight v1 proxy, not full Gromov-Wasserstein transport.
+A stronger structural guard is a future ablation only if this proxy is falsified.
+
+### 8.7 Null controls, gates, and factor confidence
+
+Every factor is compared with:
+
+- matched random rank-one CLIP contrasts, with transport re-solved on the same
+  pseudo-states;
+- shuffled pseudo-state assignments, preserving state sizes and re-solving
+  candidates/transport.
+
+A factor is selected only if every hard gate passes: cross-fold support/context,
+raw pseudo-state predictability, quotient efficacy, positive intervention gain,
+gain above the combined null quantile, non-factor word preservation, DINO local
+safety, and minimum coverage. Selecting no factors is valid.
+
+After these gates, factor graph confidence uses only:
+
+```text
+null_excess_gain(F) = max(0, gain(F) - null_threshold(F))
+```
+
+Proposal context, word similarity, and DINO are gates rather than multiplicative
+“independent” score terms. This avoids double-counting quantities derived from the
+same SpLiCE source.
+
+Positive-mass transport pairs become symmetric graph relations. The artifact type
+is `splice_cqt_v1_teacher_graph`; tensor `graph_version` remains 2 because the
+row-stochastic trainer contract is unchanged. `cqt_relational` uses exactly the
+same sampler, relational KL, SimCLR start/warm-up, optimizer, and evaluation path as
+CRP. The scientific comparison therefore changes graph construction only.
+
+### 8.8 Human-readable concept cards
+
+Every CQT `.pt` graph has an adjacent JSON report. Each factor card exposes:
+
+- state-A and state-B words/indices;
+- fold-wise exclusivity and non-factor context similarity;
+- raw and quotient pseudo-state balanced accuracy and quotient efficacy;
+- matched mass, transport gain, word similarity, coverage, and DINO damage;
+- random-contrast and shuffled-state null scores;
+- all hard-gate decisions and null-excess gain;
+- top preserved non-factor words;
+- representative sample-ID pairs with raw distance, quotient distance, word
+  similarity, transport cost, and mass.
+
+These words are part of the scientific output, not unused metadata. Sample IDs are
+label-free; image/hidden-label rendering belongs in a separate post-hoc report.
+
+### 8.9 Why keep SpLiCE rather than add another concept model
+
+SpLiCE supplies three useful properties simultaneously: sparse non-negative
+activations, direct language-readable words, and dictionary directions in the same
+CLIP space used by the intervention. A new SAE would add a layer choice, training
+procedure, naming procedure, and extra architecture without supplying the missing
+task-identification signal. It would also move the contribution closer to DIAL+
+while weakening simple word-level auditability.
+
+CoBalT-style balancing is not interchangeable with this canonical setting when
+its balancing uses target classes. DIAL+ likewise uses a supplied zero-shot class
+set and prediction changes to decide what to edit. They are useful task-anchored
+comparisons, but canonical CQT has no class names. Any future class-name variant
+must be called `CQT-T` and reported separately.
+
+### 8.10 CRP/CQT implementation comparison
+
+| Component | SpLiCE-CRP v2 | SpLiCE-CQT v1 |
+|---|---|---|
+| Candidate | one word group | two mutually exclusive word-group states |
+| CLIP edit | full group-span projection | rank-one state quotient |
+| Relation builder | projected CLIP kNN | partial concept-preserving transport |
+| Word use | group and activation difference | explicit non-factor word-kernel cost |
+| DINO role | raw pair-neighbour hard support | local-geometry damage veto |
+| Hub control | final indegree cap | transport capacities plus final cap |
+| Nulls | random subspaces/shuffled activation | random contrasts/shuffled states |
+| Student | SimCLR + relational KL | unchanged shared student |
+
+CQT can miss continuous, one-sided, or multi-state nuisances. CRP remains runnable
+and is a required baseline rather than dead code.
+
+### 8.11 Running CRP and CQT
+
+The single experiment switch is near the top of `scripts/train.sbatch`:
+
+```bash
+MODE="crp_relational"   # existing CRP v2
+MODE="cqt_relational"   # experimental CQT v1
+```
+
+The default remains CRP. Both modes build/reuse
+`outputs/crp/<dataset>_train_features.pt` and pass a row-stochastic graph to the
+same training entry point. CRP graphs stay in `outputs/crp/<dataset>/`; CQT graphs
+and adjacent human-readable JSON cards are written to `outputs/cqt/<dataset>/`.
+CQT-specific thresholds live in one configuration block. The full resolved graph
+config and artifact type are added to the W&B run config after graph loading.
+
+Scientifically, changing only a CQT audit threshold requires a new graph, not new
+features; the current conservative `CRP_FORCE_REBUILD=true` sbatch switch rebuilds
+both. A genuinely new cache is needed only when frozen encoders, vocabulary,
+dataset order, or cache-producing settings change. Real full training keeps W&B
+enabled as required by `AGENTS.md`; disabling it is for explicit smoke/local debug
+only.
+
+## 9. Rejected or demoted alternatives
 
 ### Crop-diffuseness as the sole nuisance score
 
@@ -474,9 +728,9 @@ mechanism is established. It is not required as part of the contribution.
 **Use:** same-setting baseline; `CRP v2 + Spec` is optional after separate effects
 are measured.
 
-## 9. Frozen audit before any expensive SSL run
+## 10. Frozen audit before any expensive SSL run
 
-Do not launch a multi-seed 500/1000-epoch CRP v2 sweep before the frozen audit.
+Do not launch a multi-seed 500/1000-epoch CRP or CQT sweep before the frozen audit.
 
 ### Interventions to compare
 
@@ -494,9 +748,17 @@ Do not launch a multi-seed 500/1000-epoch CRP v2 sweep before the frozen audit.
 - Jaccard@k before and after intervention;
 - reciprocal-neighbour coverage;
 - DINO semantic agreement;
-- crop/bootstrap stability;
 - graph indegree distribution, Gini coefficient, and effective donor count;
 - selected-group score relative to the random/shuffled null.
+
+For CQT additionally record:
+
+- number and words of cross-reproduced state pairs;
+- raw pseudo-state balanced accuracy and quotient efficacy;
+- requested/feasible transport mass and factor coverage;
+- non-factor word similarity and top preserved words;
+- DINO local damage relative to its candidate quantile;
+- random-contrast and shuffled-state transport nulls.
 
 High random-pair cosine correlation alone is not enough to declare the mechanism
 inactive. If most anchors have `Jaccard@20 > 0.9` and unchanged top neighbours,
@@ -524,13 +786,22 @@ Proceed to SSL only if:
 - coverage is not concentrated in only one target or group;
 - hubness remains controlled after graph balancing;
 - semantic SpLiCE groups outperform random subspaces and shuffled codes;
-- selected factor families are stable across crops/bootstrap samples.
+- selected factor families are reproducible across audit seeds.
+
+Initial CQT-specific conditions, to be frozen before WGA is viewed, are:
+
+- raw pseudo-state balanced accuracy at least 0.70;
+- quotient efficacy at least 0.50;
+- factor gain above a 0.95 combined null quantile;
+- selection in at least two of three audit seeds;
+- at least 10% supported anchors in the final graph;
+- effective donor count at least 25% of supported anchors.
 
 These numeric values are initial falsification thresholds, not reportable results.
 They may be revised once, before observing downstream WGA, and the revision must be
 recorded here.
 
-## 10. Experiment matrix
+## 11. Experiment matrix
 
 ### Stage 1 — frozen mechanism audit
 
@@ -545,10 +816,13 @@ Required configurations:
 2. SimCLR + raw-CLIP relational distillation;
 3. SimCLR + DINO-only relational distillation;
 4. SpLiCE-CRP v2;
-5. SpLiCE-CRP v2 with shuffled concept codes;
-6. SpLiCE-CRP v2 with matched random subspaces;
-7. hard-positive CRP v1;
-8. Ghanooni spectral regularization.
+5. SpLiCE-CQT v1;
+6. SpLiCE-CRP v2 with shuffled concept codes;
+7. SpLiCE-CRP v2 with matched random subspaces;
+8. CQT with shuffled pseudo-states;
+9. CQT with matched random contrasts;
+10. hard-positive CRP v1;
+11. Ghanooni spectral regularization.
 
 Optional only after the main comparison:
 
@@ -600,7 +874,7 @@ Upper bounds and non-comparable references must be labelled as such:
 - GroupDRO;
 - DFR.
 
-## 11. Interpretation rules
+## 12. Interpretation rules
 
 ### Claims that are currently supported
 
@@ -613,10 +887,16 @@ Upper bounds and non-comparable references must be labelled as such:
   improvement.
 - SpLiCE-IU is target-label-assisted and weakly positive only in the frozen CBM
   diagnostic; it is not a demonstrated SSL solution.
+- CRP cache/audit/graph construction and relational SSL training are implemented.
+- CQT cross-reproduced proposal, rank-one quotient, sparse partial transport,
+  DINO local guard, nulls, concept cards, and shared training mode are implemented
+  and covered by synthetic tests.
 
 ### Claims that are not yet supported
 
 - SpLiCE-CRP v2 improves WGA.
+- SpLiCE-CQT improves CRP graph quality or WGA;
+- CQT-selected two-state factors are true nuisances rather than target factors;
 - full projection is better than coefficient subtraction on the available data;
 - DINO consensus reliably preserves target semantics;
 - the proposed label-free group score identifies the true nuisance;
@@ -625,7 +905,7 @@ Upper bounds and non-comparable references must be labelled as such:
 Every one of these statements is a hypothesis until the corresponding control is
 run. New agents must not present the proposal as an achieved result.
 
-## 12. Main risks and falsifiers
+## 13. Main risks and falsifiers
 
 ### Fundamental identifiability
 
@@ -633,6 +913,10 @@ Without task labels, no method can universally know which visual factor is core 
 which is nuisance. CRP v2 introduces an explicit inductive bias: factors whose
 removal restores a relation supported by an independent SSL geometry are treated as
 nuisance candidates. The claim is empirical, not universal.
+
+CQT narrows the bias to exchangeable concept states with shared non-factor
+semantics. This is still not identification: target classes, poses, or viewpoints
+can satisfy the same construction.
 
 ### Shared bias between CLIP and DINO
 
@@ -648,9 +932,15 @@ guard, random-subspace controls, and average-accuracy reporting are essential.
 ### Graph sparsity or hubness
 
 Waterbirds has only 240 minority training images out of 4,795. There are many
-possible pairs but few unique counterfactual donors. The soft graph, degree control,
-and factor-level propagation address this, but low coverage remains a possible
-falsifier.
+possible pairs but few unique counterfactual donors. CRP's indegree cap and CQT's
+transport capacities plus final cap reduce hubness, but low coverage remains a
+possible falsifier.
+
+### CQT misspecification
+
+Continuous, one-sided, multi-state, or entangled nuisances violate CQT v1's
+two-state rank-one model. Sparse word-neighbour support can also omit a valid pair.
+Candidate count and higher-rank variants are audit ablations, not WGA-tuned fixes.
 
 ### Distillation without transfer
 
@@ -663,27 +953,33 @@ keeps its normal projection head.
 Even a better projected CLIP graph may be incompatible with the inductive bias or
 capacity of ResNet18. This requires a matched one-seed pilot before scale-up.
 
-## 13. Implementation roadmap
+## 14. Implementation status and next work
 
-The proposed method is not yet implemented. Work should proceed in this order:
+Implemented now:
 
-1. Add a frozen-feature audit script that consumes cached CLIP/SpLiCE features.
-2. Add DINOv3 feature caching with dataset-index integrity checks.
-3. Implement semantic concept grouping and store versioned group definitions.
-4. Implement coefficient subtraction, full projection, forbidden-group refit, and
-   random-subspace interventions behind one interface.
-5. Implement neighbour-turnover and graph-quality diagnostics.
-6. Implement label-free group scoring with shuffled/random null controls.
-7. Export a versioned sparse teacher graph artifact.
-8. Only after the audit passes, add relational distillation to the SimCLR loop.
-9. Add unit tests for projection, cache alignment, graph normalization, label
-   isolation, and deterministic graph construction.
-10. Run the one-seed control matrix before any multi-seed submission.
+1. a shared label-free CLIP/SpLiCE/DINO cache with dataset-order validation;
+2. CRP concept grouping, full projection, audit nulls, soft graph, graph-aware
+   sampler, relational KL, schedule, and empty-graph fallback;
+3. CQT factor proposal, rank-one quotient, implicit word kernel, exact sparse
+   partial-transport LP, DINO local guard, null controls, and concept-card JSON;
+4. `crp_relational` and `cqt_relational` modes in the unified training entry point
+   and `scripts/train.sbatch`;
+5. W&B-enabled full-training launch with resolved graph artifact/config recorded;
+6. unit tests for label isolation, projections, quotient, deterministic graphs,
+   row stochasticity, batching, loss, and training-loop integration.
+
+Next work is empirical rather than architectural:
+
+1. run the frozen Waterbirds CRP/CQT audits and post-hoc graph falsifiers;
+2. run the required raw-CLIP, DINO-only, random, and shuffled graph controls;
+3. run one shortened paired pilot before any full multi-seed submission;
+4. expose representative images from CQT sample IDs in a diagnostic-only report;
+5. update the paper only after results establish which mode, if either, survives.
 
 Implementation changes should be surgical. Preserve the existing IU, routing, and
 regularization modes as baselines instead of rewriting them in place.
 
-## 14. Files and authority
+## 15. Files and authority
 
 Current important files:
 
@@ -695,16 +991,19 @@ Current important files:
 - `spur_splice.py` — main implemented SSL entry point;
 - `scripts/tools/discover_splice_spurious_concepts.py` — existing discovery code;
 - `splice/ssl_regularization.py` — existing interventions and distillation code;
+- `splice/crp.py` — implemented CRP frozen audit and graph builder;
+- `splice/cqt.py` — implemented CQT frozen audit, transport, and concept cards;
+- `splice/crp_training.py` — shared CRP/CQT graph validation, sampler, and loss;
+- `scripts/train.sbatch` — one-line CRP/CQT mode switch and W&B-enabled launch;
 - `experiments/spurious_eval/` — datasets, models, losses, training, and metrics.
 
-`splice/crp.py` implements the label-free frozen audit and teacher-graph artifact.
-`splice/crp_training.py` and `spur_splice.py --splice_mode crp_relational` implement
-confidence-weighted graph distillation on ResNet backbone features with graph-aware
-sampling, a pure-SimCLR start period, a gradual loss ramp, and empty-graph fallback.
-This is executable infrastructure, not evidence of a positive CRP v2 result; matched
-real-data experiments and the required control matrix remain pending.
+`spur_splice.py --splice_mode crp_relational` and `--splice_mode cqt_relational`
+both implement confidence-weighted graph distillation on ResNet backbone features
+with graph-aware sampling, a pure-SimCLR start period, a gradual loss ramp, and
+empty-graph fallback. This executable infrastructure is not evidence of a positive
+CRP/CQT result; matched real-data experiments remain pending.
 
-## 15. Literature anchors
+## 16. Literature anchors
 
 - SpLiCE: Bhalla et al., *Interpreting CLIP with Sparse Linear Concept Embeddings*,
   NeurIPS 2024: <https://openreview.net/forum?id=7UyBKTFrtd>
@@ -720,19 +1019,21 @@ real-data experiments and the required control matrix remain pending.
 - Waterbirds construction and group imbalance: Sagawa et al., ICLR 2020:
   <https://openreview.net/forum?id=ryxGuJrFvS>
 
-## 16. Instructions for a new chat or agent
+## 17. Instructions for a new chat or agent
 
 Before proposing, implementing, or describing the project:
 
 1. Read this file completely.
-2. State whether the requested work concerns legacy implemented methods or the
-   proposed CRP v2 method.
-3. Inspect the current code before claiming that a CRP v2 component exists.
-4. Preserve the strict information boundary: no `y`, `a`, or group labels in CRP v2
-   discovery/training.
+2. State whether the requested work concerns legacy methods, CRP v2, or CQT v1.
+3. Inspect the current code before claiming that a CRP/CQT component exists.
+4. Preserve the strict information boundary: no `y`, `a`, or group labels in CRP
+   or CQT discovery/training.
 5. Do not tune by WGA and call the method label-free.
 6. Treat DINO-only, raw-CLIP, shuffled-code, and random-subspace controls as required,
    not optional decorations.
-7. Do not claim positive CRP v2 results until real matched experiments exist.
-8. If changing a canonical decision, update this file with the reason, rejected
+7. Do not claim positive CRP/CQT results until real matched experiments exist.
+8. Keep CRP runnable and behaviorally separate from CQT.
+9. Treat an empty selected graph as a valid falsification, not an error to bypass.
+10. Surface CQT concept cards in analysis; interpretability is part of the method.
+11. If changing a canonical decision, update this file with the reason, rejected
    alternative, date, and consequences for experiments and paper claims.

@@ -1,4 +1,5 @@
 import argparse
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,7 @@ from splice.crp import (
     save_feature_cache,
     validate_feature_cache,
 )
+from splice.cqt import CQT_ARTIFACT, CqtAuditConfig, concept_quotient, run_cqt_audit
 from splice.crp_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
@@ -83,6 +85,38 @@ class SplicePipelineTests(unittest.TestCase):
             "dictionary": torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
             "vocabulary": ["forest", "water"],
             "dino_embeddings": torch.nn.functional.normalize(torch.randn(8, 3, generator=generator), dim=1),
+        }
+
+    @staticmethod
+    def _tiny_cqt_cache():
+        sample_count = 24
+        codes = torch.zeros(sample_count, 5)
+        clip = torch.zeros(sample_count, 6)
+        dino = torch.zeros(sample_count, 4)
+        for index in range(sample_count):
+            state = int(index >= sample_count // 2)
+            context = index % 2
+            codes[index, state] = 1.0
+            codes[index, 2] = 1.0
+            codes[index, 3 + context] = 0.8
+            clip[index, state] = 1.4
+            clip[index, 2] = 1.0
+            clip[index, 3 + context] = 0.8
+            clip[index, 5] = 0.02 * (index % 3)
+            dino[index, 0] = 1.0
+            dino[index, 1 + context] = 0.8
+            dino[index, 3] = 0.02 * (index % 3)
+        dictionary = torch.eye(6)[:5]
+        return {
+            "cache_version": 1,
+            "provenance": {"fixture": "tiny-cqt-cache"},
+            "sample_ids": [f"waterbirds:{index}" for index in range(sample_count)],
+            "clip_embeddings": torch.nn.functional.normalize(clip, dim=1),
+            "image_mean": torch.zeros(6),
+            "splice_codes": codes,
+            "dictionary": dictionary,
+            "vocabulary": ["forest", "water", "bird", "striped", "spotted"],
+            "dino_embeddings": torch.nn.functional.normalize(dino, dim=1),
         }
 
     def test_crp_projection_removes_the_full_group_subspace(self):
@@ -151,6 +185,65 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
         self.assertTrue(torch.all((first["anchor_confidence"] >= 0) & (first["anchor_confidence"] <= 1)))
         self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
+
+    def test_cqt_quotient_removes_only_the_rank_one_state_contrast(self):
+        embeddings = torch.nn.functional.normalize(
+            torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]), dim=1
+        )
+        contrast = torch.tensor([1.0, -1.0, 0.0])
+        quotient = concept_quotient(embeddings, contrast)
+        torch.testing.assert_close(
+            quotient @ torch.nn.functional.normalize(contrast, dim=0),
+            torch.zeros(2),
+            atol=1e-6,
+            rtol=0,
+        )
+        self.assertTrue(torch.all(quotient[:, 2] > 0))
+
+    def test_cqt_audit_is_deterministic_interpretable_and_crp_compatible(self):
+        config = CqtAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            text_similarity_threshold=0.99,
+            coactivation_threshold=0.99,
+            max_candidate_groups=8,
+            max_factors=4,
+            min_state_samples=2,
+            min_context_similarity=0.0,
+            min_state_balanced_accuracy=0.5,
+            min_quotient_efficacy=0.0,
+            transport_candidates=6,
+            transport_mass=0.5,
+            min_transport_pairs=2,
+            min_word_similarity=0.0,
+            dino_neighbors=2,
+            dino_damage_quantile=1.0,
+            min_coverage=0.0,
+            null_trials=1,
+            null_quantile=0.0,
+            graph_top_k=2,
+            seed=3,
+        )
+        first = run_cqt_audit(self._tiny_cqt_cache(), config)
+        second = run_cqt_audit(self._tiny_cqt_cache(), config)
+        self.assertEqual(first["artifact"], CQT_ARTIFACT)
+        self.assertGreater(len(first["factors"]), 0)
+        self.assertGreater(len(first["selected_factor_ids"]), 0)
+        self.assertIn("concepts", first["factors"][0]["state_a"])
+        self.assertIn("representative_pairs", first["factors"][0])
+        json.dumps(
+            {
+                "config": first["config"],
+                "factors": first["factors"],
+                "degree_stats": first["degree_stats"],
+            }
+        )
+        torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
+        torch.testing.assert_close(first["weights"], second["weights"])
+        graph = validate_teacher_graph(first, first["sample_ids"])
+        row_sums = graph["weights"].sum(dim=1)
+        supported = row_sums > 0
+        torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
 
     def test_crp_teacher_graph_is_bound_to_exact_training_order(self):
         graph = validate_teacher_graph(

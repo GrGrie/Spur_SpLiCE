@@ -14,6 +14,10 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from splice.crp import GRAPH_VERSION
 
 
+TEACHER_GRAPH_ARTIFACTS = {
+    "splice_crp_v2_teacher_graph",
+    "splice_cqt_v1_teacher_graph",
+}
 REQUIRED_GRAPH_KEYS = {
     "artifact",
     "graph_version",
@@ -56,8 +60,8 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
     missing = REQUIRED_GRAPH_KEYS.difference(graph)
     if missing:
         raise ValueError(f"CRP teacher graph is missing required keys: {sorted(missing)}")
-    if graph["artifact"] != "splice_crp_v2_teacher_graph":
-        raise ValueError(f"Unexpected CRP artifact type: {graph['artifact']!r}.")
+    if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
+        raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
     if graph["graph_version"] != GRAPH_VERSION:
         raise ValueError(
             f"Unsupported CRP graph version {graph['graph_version']!r}; expected {GRAPH_VERSION}."

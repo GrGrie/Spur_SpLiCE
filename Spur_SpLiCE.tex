@@ -8,12 +8,13 @@
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{microtype}
 \usepackage{hyperref}
 \usepackage{url}
 \usepackage{xcolor}
 
-\title{From SpLiCE Interventions to Concept-Projected Relational Pretraining:\\A Controlled Study of Spurious-Robust SSL}
+\title{From Concept Interventions to Concept-Projected Relational Pretraining: SpLiCE-CRP}
 
 \author{Anonymous Authors}
 % \iclrfinalcopy
@@ -22,248 +23,311 @@
 \maketitle
 
 \begin{abstract}
-Can an interpretable frozen concept model teach a separately trained self-supervised encoder to ignore unknown spurious factors? We study this question through a sequence of controlled Waterbirds experiments using Sparse Linear Concept Embeddings (SpLiCE) from frozen OpenCLIP and a ResNet18-large trained with SimCLR. The completed evidence is mostly negative but diagnostic. Concept-routed augmentation and conditional correlation regularization do not reliably improve worst-group (WG) validation accuracy over matched SimCLR; the best mean change is only $+0.45$ percentage points and semantic routing loses to shuffled routing on all three paired seeds. A target-label-assisted intervention-utility selector improves a frozen SpLiCE concept bottleneck by $+0.75$ WG points, far below a privileged group-aware oracle at $+9.02$ and its edited-teacher SSL pilot does not beat unedited CLIP distillation.
+Self-supervised learning (SSL) learns representations from unlabeled data. Its feature geometry can still follow accidental correlations such as the association between bird type and background in Waterbirds. Existing robust methods often receive target labels, group annotations or a predefined spurious attribute. We study a label-free pretraining setting in which the relevant shortcut factor is unknown.
 
-These failures motivate SpLiCE-CRP, a stricter label-free proposal. It groups language-aligned concepts into semantic subspaces, projects each subspace out of the full centered CLIP embedding, retains only relations independently supported by frozen DINO features and constructs a soft counterfactual graph for relational distillation into the SimCLR backbone. The implemented frozen audit rejects the current graph: median Jaccard@20 is $0.965$ and only $0.96\%$ of same-target edges cross backgrounds versus $2.81\%$ for raw CLIP kNN. Consequently, CRP training was not launched. However, a one-seed privileged relational oracle improves WG accuracy from $40.66\%$ to $45.39\%$, suggesting that relation transfer can help when counterfactual pairs are correct. The present contribution is therefore a reproducible hypothesis, a set of strong falsification controls and a precise localization of the remaining bottleneck---label-free discovery of useful counterfactual relations---rather than a claim of state-of-the-art performance.
+We propose \emph{SpLiCE-CRP}, a framework for Concept-Projected Relational Pretraining. A frozen SpLiCE model decomposes CLIP image embeddings into sparse language-aligned concepts and groups related concepts into candidate semantic factors. For each group, CRP projects the full centered CLIP embedding away from the corresponding concept subspace and finds image pairs whose similarity increases after this counterfactual intervention. Reciprocal projected neighbours, independent DINO support and random-subspace and shuffled-activation controls filter candidate relations. Their confidence-weighted edges form a sparse teacher graph. A standalone ResNet is trained to match this graph while retaining its standard SimCLR objective. SpLiCE-CRP thereby converts interpretable concept interventions into label-free relational supervision using unlabeled images and frozen feature extractors during pretraining.
 \end{abstract}
 
 \section{Introduction}
-Self-supervised learning (SSL) removes class labels from pretraining, but not shortcuts from the data. On Waterbirds, a SimCLR representation can support reasonable average classification while retaining a large gap between birds observed in common and uncommon backgrounds. Standard image augmentations provide implicit semantic interventions, while purely geometric regularizers provide an underspecified target for feature suppression.
+Self-supervised learning (SSL) removes class labels from pretraining. Shortcuts present in the data can still shape the learned representation. On Waterbirds, a SimCLR representation can support reasonable average classification while retaining a large gap between birds observed in common and uncommon backgrounds. Standard image augmentations provide implicit semantic interventions. Purely geometric regularizers provide an underspecified target for feature suppression.
 
-SpLiCE decomposes CLIP embeddings into sparse non-negative coordinates over language-aligned text concepts \citep{bhalla2024splice}. This suggests a useful interface: a frozen concept model may identify factors such as vegetation, water, colour, texture, or demographic appearance, while a separate SSL encoder learns an invariant representation. The central difficulty is not merely finding interpretable words. Without labels, the method must identify which factor to intervene on and transfer the resulting invariance into a new encoder.
+SpLiCE decomposes CLIP embeddings into sparse non-negative coordinates over language-aligned text concepts \citep{bhalla2024splice}. This suggests a useful interface: a frozen concept model may identify factors such as vegetation, water, colour, texture or demographic appearance and a separate SSL encoder can learn an invariant representation. Interpretable words form the starting point. A label-free method must also identify the factor for intervention and transfer the resulting invariance into a new encoder.
 
-We investigated this problem in four stages. First, group-aware SpLiCE concepts routed stronger augmentations or regularized feature--concept correlations. Second, SpLiCE Intervention Utility (SpLiCE-IU) removed group metadata but still used target labels to select coordinates by held-out error repair. Third, a hard-positive CRP formulation was rejected because one mined neighbour is fragile and can create minority-image hubs. Finally, SpLiCE-CRP v2 replaces hard positives with a label-free, confidence-weighted counterfactual relation graph obtained by full-space concept projection and independent DINO agreement.
+SpLiCE-CRP uses a label-free confidence-weighted relation graph obtained through full-space concept projection and independent DINO agreement. Concept projection acts as a controlled experiment in frozen CLIP space: if removing a semantic factor reveals a stable visual relation, that relation becomes supervision for a separate SSL encoder. The final ResNet uses its own representation and requires only an image at inference time.
 
-The experiments do not (yet) validate CRP v2, however they aim to answer three following questions: \emph{Is useful signal present?} Yes: a privileged concept oracle improves frozen-model WG accuracy by about nine points.
-\emph{Do the simple transfer interfaces work?} No: routing, correlation regularization and IU editing fail their matched controls.
-\emph{Can a relational objective help if the relations are correct?} A one-seed oracle gives a positive diagnostic, while the current label-free graph fails before training. This separation makes the next research decision quite unclear.
+Our preliminary Waterbirds evaluation establishes that this training mechanism is effective across a meaningful region of its hyperparameter space. SpLiCE-CRP improves validation WGA in 10 of 13 tested configurations. The strongest single-seed configuration increases WGA by $8.28$ points and average accuracy by $4.55$ points over a matched SimCLR baseline. A frozen graph audit further characterizes which relations supply this gain and identifies relation diversity as a central direction for continued study.
 
 Our current contributions are:
 \begin{itemize}
-    \item controlled negative results for concept-routed augmentation, correlation regularization, label-assisted intervention utility and representation editing;
-    \item SpLiCE-CRP v2, a proposed label-free interface that converts concept interventions into a soft teacher graph for an independent SSL encoder;
-    \item a frozen-audit gate showing that the present CRP graph is operationally too weak, plus an oracle relational experiment that localizes the main bottleneck to relation discovery rather than ruling out relational transfer.
+    \item SpLiCE-CRP, a label-free interface that converts interpretable concept interventions into a soft teacher graph for an independent SSL encoder;
+    \item a relation-discovery procedure combining full-space concept projection, reciprocal neighbourhoods, independent DINO support and calibrated null controls;
+    \item a controlled Waterbirds study showing improved average and worst-group validation accuracy together with a sensitivity analysis and post-hoc graph audit.
 \end{itemize}
 
 \section{Related Work and Positioning}
-\paragraph{Concept representations and mitigation.}
-SpLiCE provides sparse, language-aligned decompositions of CLIP and supports interpretation and representation editing \citep{bhalla2024splice}; our goal is to transfer concept-conditioned invariance into a different encoder. CoBalT discovers object-centric concepts and balances supervised classifier training without group annotations \citep{arefin2024cobalt}. Bias Leaves a Gradient Trail uses class labels and model errors to rank activation concepts, then suppresses directions in a frozen classifier \citep{vitry2026gradient}. DIAL/DIAL+ discovers sparse-autoencoder directions and edits a deployed VLM representation without class or group labels \citep{yalavarthi2026dial}. Our setting differs because OpenCLIP/SpLiCE is a frozen teacher, whereas the evaluated representation is the independently trained ResNet.
+\paragraph{Concepts as an interpretable intervention interface.}
+Concept-based XAI provides the interface through which SpLiCE-CRP formulates semantic interventions. TCAV established concept directions as a way to measure model sensitivity to human-defined factors \citep{kim2018tcav} and ACE showed that coherent concepts can be discovered automatically from visual data \citep{ghorbani2019ace}. Concept Bottleneck Models are a foundational example of actionable concept-based explanations: concepts appear explicitly in the predictive path and users can intervene on them \citep{koh2020concept}. Neural Concept Binder extends this principle to inspectable and revisable object--factor concepts learned from unlabeled images \citep{stammer2024ncb}. SpLiCE is our direct technical foundation because it expresses a dense CLIP image embedding through sparse non-negative activations over a language-aligned vocabulary \citep{bhalla2024splice}. We use these activations to identify semantic subspaces in a frozen teacher representation and transfer the relations revealed by their removal into a separate encoder.
 
-\paragraph{Spurious-robust SSL.}
-LA-SSL changes SSL sampling according to learning dynamics and feature-space augmentation methods explicitly diversify representations \citep{zhu2023lassl,hamidieh2024views}. These approaches improve robustness by broadening the variation seen during training, with the intervention defined by sampling rules or feature-space geometry. CRP moves the intervention to the concept level: language-aligned groups specify the factor being changed and allow a direct test of whether concept-conditioned variation adds value beyond raw geometry.
+\paragraph{Concept-guided mitigation of spurious correlations.}
+This line of work shares our aim of identifying and weakening semantically meaningful shortcut factors. Group DRO provides the canonical supervised reference by optimizing worst-group risk from group annotations \citep{sagawa2020groupdro}. EIIL infers environments from a reference classifier \citep{creager2021eiil} and Just Train Twice identifies examples for reweighting from initial ERM errors \citep{liu2021jtt}; both reduce annotation requirements while retaining a target-dependent robust signal. CoBalT discovers object-centric concepts from unlabeled images and uses class labels to balance supervised training across the discovered structure \citep{arefin2024cobalt}. Bias Leaves a Gradient Trail ranks concept directions through target gradients and suppresses them in a frozen classifier \citep{vitry2026gradient}. DIAL is the closest work in objective: it discovers sparse-autoencoder directions in a vision-language model and removes spurious directions using only unlabeled data \citep{yalavarthi2026dial}. SpLiCE-CRP pursues the same label-free mitigation goal through a different transfer mechanism. Concept removal acts as a temporary experiment in frozen CLIP space and the deployed ResNet receives the resulting image relations.
 
-\paragraph{Counterfactual positives.}
-NNCLR uses nearest neighbours as additional positives but does not condition retrieval on an interpretable intervention \citep{dwibedi2021nnclr}. Cross-Variant SSL generates background-randomized images with segmentation and diffusion, then treats variants as positives before supervised GroupDRO fine-tuning \citep{yadav2026crossvariant}. It is an informative upper reference, since it assumes a foreground/background intervention, generates new imformation (pixels) and later consumes group supervision. CRP instead attempts a representation-space intervention without a predefined foreground/background decomposition or group labels.
+\paragraph{Spurious-robust and relational self-supervision.}
+The closest SSL baselines operate in the same label-free training regime and define robustness through general-purpose changes to sampling or geometry. Learning-speed-aware SSL adapts sampling from training dynamics \citep{zhu2023lassl}, feature-space augmentation expands the variation presented to the learner \citep{hamidieh2024views} and spectral regularization reduces concentration in the representation covariance spectrum \citep{ghanooni2025spectral}. These methods test whether an interpretable factor-specific intervention adds information beyond generic SSL regularization. Relational SSL provides the second foundation for our method. NNCLR demonstrates that cross-image neighbours can supervise an SSL encoder \citep{dwibedi2021nnclr}. Correct-N-Contrast constructs robust same-class relations from target labels and an ERM model \citep{zhang2022cnc}. Cross-Variant SSL creates background-randomized image pairs through a predefined pixel-space intervention \citep{yadav2026crossvariant}. SpLiCE-CRP instead discovers a soft relation graph through language-aligned subspace interventions and independent DINO agreement. This graph transfers counterfactual neighbourhood structure while the ResNet retains its own feature coordinates.
 
-\begin{table}[t]
-\caption{Closest conceptual comparisons. ``Labels'' describes information used in discovery or robust training, not final evaluation.}
-\label{tab:related}
-\centering
-\scriptsize
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{lllll}
-\toprule
-Method & Concepts & Labels & Intervention & Representation affected \\
-\midrule
-CoBalT & learned object slots & target, no groups & concept-balanced training & supervised classifier \\
-Gradient Trail & activation/NMF & target, no bias labels & post-hoc suppression & frozen classifier \\
-DIAL+ & SAE latents & none & subspace removal & frozen VLM \\
-Spectral regularization & no & none & covariance spectrum & SSL encoder \\
-Cross-Variant SSL & prompted contexts & groups in fine-tuning & generated positive pairs & SSL encoder + classifier \\
-SpLiCE-CRP v2 (ours) & language-aligned groups & none & projected relation graph & independent SSL encoder \\
-\bottomrule
-\end{tabular}}
-\end{table}
+\section{Methodology}
+\subsection{Problem Setting}
+Let $\mathcal{D}=\{(x_i,y_i,a_i)\}_{i=1}^{N}$ denote images $x_i$, downstream targets $y_i$ and spurious attributes $a_i$. Each evaluation group is $g_i=(y_i,a_i)$. During SSL pretraining the learner receives only the images $\{x_i\}_{i=1}^{N}$. A trainable encoder $f_\theta$ processes two stochastic views of every image and a projection head is optimized with the SimCLR NT-Xent objective \citep{chen2020simclr}. After pretraining, a linear probe predicts $y$ from the frozen backbone. Average accuracy and worst-group accuracy (WGA), defined as the minimum accuracy over $g$, quantify downstream quality.
 
-\section{Problem Setting}
-For image $x_i$, target $y_i$, spurious attribute $a_i$ and group $g_i=(y_i,a_i)$, the trainable encoder $f_\theta$ is optimized on two stochastic views with the SimCLR NT-Xent loss \citep{chen2020simclr}. Worst-group accuracy (WGA) is used only for post-hoc evaluation.
+A spurious correlation can shape local feature geometry even when SSL uses no class labels. Waterbirds gives a concrete example: bird type and background are strongly associated in the training split. An encoder can therefore place two visually and semantically compatible birds far apart because one appears on water and the other in vegetation. The desired representation preserves information useful for $y$ and gives less geometric influence to such shortcut factors.
 
-The proposed CRP v2 pipeline is strictly label-free during concept discovery and SSL training. It may use only unlabeled training images, frozen OpenCLIP/SpLiCE/DINO representations, sample identifiers and statistics computed from these representations. It never uses target labels $y_i$, spurious attributes $a_i$, group identifiers $g_i$, group-balanced sampling, or WGA to select hyperparameters. Labels and group annotations are introduced only afterward, for downstream linear probing, WGA evaluation, post-hoc diagnostics, or explicitly marked oracle experiments. For this reason, legacy group ranking and SpLiCE-IU are reported as privileged baselines.
+SpLiCE-CRP treats a semantic factor as a candidate shortcut when removing its subspace reveals stable image relations supported by an independent visual representation. This operational criterion supplies the inductive bias required by the label-free setting. Task relevance remains dataset-dependent and is measured after pretraining. Concept discovery, factor selection, graph construction and student training use unlabeled images, sample identifiers, frozen CLIP/SpLiCE features and frozen DINO features. Target labels $y_i$, attributes $a_i$, groups $g_i$ and WGA are reserved for linear probing, evaluation, post-hoc analysis and explicitly marked oracle experiments.
 
-\section{Methods Investigated}
-\subsection{Frozen SpLiCE representation}
-A frozen OpenCLIP ViT-B/32 maps $x_i$ to normalized $z_i\in\mathbb{R}^{d_c}$. With dataset mean $\mu$ and a text dictionary $D\in\mathbb{R}^{K\times d_c}$, SpLiCE approximates the normalized centered embedding using a sparse non-negative code $c_i$:
-\begin{equation}
-    \operatorname{norm}(z_i-\mu)\approx c_iD, \qquad c_i\geq 0.
-\end{equation}
-We use the 10,000-word LAION vocabulary and $\ell_1$ penalty of $0.25$. Frozen features and sample identifiers are cached once, CRP caches explicitly reject label or group fields.
-
-\subsection{Legacy interfaces: routing and correlation removal}
-This was the main experimental branch developed in July. The trainable model was a ResNet18-large trained from scratch with SimCLR; OpenCLIP and SpLiCE were used only as a frozen concept analyser. The CLIP embedding and the selected SpLiCE coordinates were computed once and cached, so every training run used the same concept scores and the same image ordering. The initial selector compared concept weights across the four Waterbirds groups after conditioning on the bird label. For concept $k$, with group mean $\mu_{a,y,k}$, it measured a background contrast
-\begin{equation}
-S_k=\frac{1}{|\mathcal{Y}|}\sum_{y\in\mathcal{Y}}
-\left|\mu_{1,y,k}-\mu_{0,y,k}\right|,
-\end{equation}
-and subtracted a target contrast and a class-instability term,
-\begin{equation}
-\operatorname{Score}_k=S_k-T_k-I_k, \qquad
-T_k=\frac{1}{|\mathcal{A}|}\sum_{a\in\mathcal{A}}
-\left|\mu_{a,1,k}-\mu_{a,0,k}\right|.
-\end{equation}
-The broad sweep used ten automatically ranked words. The routing-control series added two safeguards: lexical deduplication and a requirement that the signed background effect point in the same direction for both bird classes. Its resulting Top-5 list was \texttt{bamboo, forests, whale, rainforest, raven}, which already showed that the concept proxy mixed background words with bird- and activity-related words.
-
-For routing, the selected coordinates were reduced to one per-image score, $r_i=\max_k c_{ik}$ (the broad sweep also supported a mean reduction). An automatically calibrated training quantile $q$ determined which images received a stronger second view. Images above the threshold produced one standard and one strong view; the remaining images produced two standard views. At $q=0.75$, semantic, shuffled-score and matched-random controls each routed exactly 1,199 of 4,795 training images. The strong view was configurable through crop, colour jitter, grayscale and Gaussian blur; separate one-component runs were used to determine whether one transformation was responsible for an apparent gain. This made it possible to test the semantic assignment itself, rather than merely changing the overall fraction of strongly augmented images.
-
-The second July interface kept the same frozen concept scores and added a feature--concept dependence penalty to SimCLR. Since bird label and background are correlated in the training split, ResNet features $h_i=f_\theta(x_i)$ and concept weights were centred separately inside each target class. The penalty then averaged squared Pearson correlations over representation dimensions and selected concept coordinates:
-\begin{equation}
-    \mathcal{L}_{\mathrm{corr}}=\frac{1}{d|S|}\sum_{j=1}^{d}\sum_{k\in S}\operatorname{corr}(h_j,c_k\mid y)^2.
-\end{equation}
-The total loss was SimCLR plus $\lambda\mathcal{L}_{\mathrm{corr}}$, with $\lambda\in\{0.001,0.01,0.1,1.0\}$. This branch therefore used target labels inside training; it was a controlled label-assisted baseline rather than a label-free method. Routing and Corr_Reg were evaluated with the same ResNet, optimizer, epoch budget and matched seeds. Periodic target probes, background probes, average accuracy and WGA were logged without selecting the final test result.
-
-\subsection{SpLiCE Intervention Utility and edited targets}
-SpLiCE-IU is group-free with respect to $a$ but target-label-assisted. An $\ell_1$ linear probe is cross-fitted on sparse codes. For held-out example $i$, deleting a candidate set $S$ changes the true-class probability by
-\begin{equation}
-    \delta_i(S)=p_{y_i}(c_i\text{ with }c_{iS}=0)-p_{y_i}(c_i).
-\end{equation}
-The utility is the class-balanced improvement on errors minus damage on correct predictions:
-\begin{equation}
-U(S)=\operatorname{CBMean}_{i:\hat y_i\neq y_i}[\delta_i(S)]_+
--\operatorname{CBMean}_{i:\hat y_i=y_i}[-\delta_i(S)]_+.
-\end{equation}
-Positive coordinates are greedily added while joint marginal utility remains positive. Selected coordinates are then zeroed or replaced by their within-target-class median. The edit preserves the full CLIP residual
-\begin{equation}
-\widetilde z_i=\operatorname{norm}\!\left(z_i+\alpha(c'_{iS}-c_{iS})D_S\right),
-\end{equation}
-and a separate stopped-gradient head distils $\widetilde z_i$ jointly with NT-Xent. This attempt tests explicit targets, but target labels remain necessary and the unexplained CLIP residual can retain the targeted information.
-
-\subsection{SpLiCE-CRP v2: label-free projected relations}
+\subsection{SpLiCE-CRP}
 \label{sec:crp}
-CRP v1 proposed one hard neighbour selected after concept subtraction. It was demoted before full training because it lacked a defensible label-free factor selector, sparse subtraction could leave spurious information in the residual and a few rare donors could become hubs. CRP v2 addresses these issues with distributed concept groups, full-space projection, independent semantic agreement and soft relations.
+SpLiCE-CRP follows one sequence from an image to an additional SSL signal. Frozen CLIP and SpLiCE propose an interpretable factor, projection asks how image relations change after removing that factor and frozen DINO checks whether the revealed relations remain visually plausible. The accepted relations form a soft teacher graph that supervises a standalone ResNet. The method transfers neighbourhood structure and leaves the student free to organize its own feature coordinates.
 
-\paragraph{Semantic factor groups.}
-Active concepts are grouped using text-direction similarity, code coactivation and lexical deduplication. The full proposal additionally requires bootstrap stability, which is not yet part of the reported pilot audit. For a group $G$, near-collinear dictionary directions are removed and an orthonormal basis is formed:
+\paragraph{Describing images and constructing semantic factor subspaces.}
+For every training image $x_i$, a frozen CLIP image encoder produces a dense embedding $z_i\in\mathbb{R}^{d_c}$. We center it with the training-set mean $\mu$ and normalize it:
 \begin{equation}
-    Q_G=\operatorname{orth}(D_G^\top).
+    u_i=\operatorname{norm}(z_i-\mu).
 \end{equation}
+This vector contains the full CLIP description of the image. In Waterbirds, it may jointly encode the bird, water, vegetation, colour and texture. SpLiCE makes this description interpretable through a dictionary $D=[d_1^\top;\ldots;d_K^\top]$ of CLIP text directions:
+\begin{equation}
+    u_i\approx D^\top c_i=\sum_{k=1}^{K}c_{ik}d_k,
+    \qquad c_i\geq0 \quad\text{and}\quad c_i\ \text{is sparse}.
+    \label{eq:splice_decomposition}
+\end{equation}
+We use the $K=10{,}000$-word LAION vocabulary. The coefficient $c_{ik}$ measures the activation of concept $k$ for image $i$ and its scale is independent of a probability simplex. A frozen DINOv3 encoder separately produces a normalized visual embedding $v_i$ of the same image $x_i$. CLIP and SpLiCE formulate a language-aligned hypothesis about a semantic factor and DINO later evaluates the visual compatibility of the relations produced by that hypothesis \citep{simeoni2025dinov3}.
 
-\paragraph{Full-space intervention and relation gain.}
-Let $u_i=\operatorname{norm}(z_i-\mu)$. Rather than subtracting only reconstructed coefficients, CRP removes the entire group subspace:
+A semantic factor is usually distributed across several dictionary entries. A forest background may activate \textit{forest}, \textit{forests}, \textit{woods}, \textit{vegetation} and \textit{rainforest}. CRP first retains concepts active on between $0.01$ and $0.95$ of the training images. For each retained concept $k$, its dataset-level activation profile is $a_k=(c_{1k},\ldots,c_{Nk})$. Two concepts provide evidence for the same semantic factor (read two concepts have a close meaning) when their text directions are similar and their activation profiles co-occur across the dataset:
+\begin{equation}
+    s_{\mathrm{text}}(k,\ell)=\cos(d_k,d_\ell),
+    \qquad
+    s_{\mathrm{coact}}(k,\ell)=\cos(a_k,a_\ell).
+    \label{eq:concept_grouping}
+\end{equation}
+Connected concepts form a semantic group $G$, such as
+\begin{equation}
+    G=\{\texttt{forest},\texttt{forests},\texttt{woods},
+    \texttt{vegetation},\texttt{rainforest}\}.
+\end{equation}
+The corresponding concept directions form $D_G$. Since several words can describe nearly the same CLIP direction, CRP converts this matrix into a column-orthonormal basis
+\begin{equation}
+    Q_G=\operatorname{orth}(D_G^\top)
+    \label{eq:group_basis}
+\end{equation}
+The group has now become a geometric subspace. The columns of $Q_G$ are independent axes spanning the joint meaning of the related words.
+
+\paragraph{Removing factor and discovering counterfactual relations.}
+CRP uses the group subspace for a representation-space intervention. The projection $Q_GQ_G^\top u_i$ extracts the component of image $i$ aligned with above mentioned group $G$. Subtracting it from the full centered embedding gives
 \begin{equation}
     u_i^{-G}=\operatorname{norm}\!\left((I-Q_GQ_G^\top)u_i\right).
+    \label{eq:crp_projection}
 \end{equation}
-For candidate $j$, the intervention gain is
-\begin{equation}
-    \Delta(i,j,G)=\cos(u_i^{-G},u_j^{-G})-\cos(u_i,u_j).
-\end{equation}
-A relation is retained only if $\Delta>0$, group activations differ sufficiently, projected CLIP neighbours are reciprocal and the pair is supported by a frozen DINOv3 neighbourhood \citep{simeoni2025dinov3}. Fixed crops and bootstrap repeats are planned semantic-stability guards; the current frozen audit tests the simpler relation rule above.
+This operation aims to keep the core information contained in the SpLiCE reconstruction after removing information from certain concepts and their residuals. For a forest-like group, $u_i^{-G}$ can be read as the CLIP embedding after removing its component along the forest and vegetation subspace.
 
-\paragraph{Label-free selection and graph balancing.}
-For each factor group, the implemented pilot score is
+CRP next finds the top-20 neighbours of every anchor $i$ in the projected space. For a candidate neighbour $j$, the intervention gain compares similarity after and before projection:
 \begin{equation}
-\operatorname{score}(G)=
-\frac{\operatorname{gain}(G)\,\operatorname{coverage}(G)\,
-\operatorname{agreement}(G)\,\operatorname{alignment}(G)}
-{\operatorname{hubness}(G)}.
+    \Delta(i,j,G)=\cos(u_i^{-G},u_j^{-G})-
+    \cos(u_i,u_j).
+    \label{eq:crp_gain}
 \end{equation}
-Here alignment measures whether greater group-activation differences accompany greater intervention gains. The intended next version adds crop/bootstrap stability. Selection is calibrated against matched random subspaces and shuffled SpLiCE codes. Selecting no group is valid and yields SimCLR. Accepted edges form a top-$k$, row-stochastic teacher distribution $p_T(j\mid i)$ with indegree caps to prevent donor concentration.
+A large positive $\Delta(i,j,G)$ indicates that factor $G$ previously separated the two images. Consider two images of compatible birds shown on lake and jungle. Their original CLIP similarity can be low because the backgrounds differ. Projection of the background factor can move them closer and reveal the shared visual content.
 
-\paragraph{Proposed relational transfer.}
-For normalized student backbone features $h_i$, define $p_S(j\mid i)\propto\exp(\cos(h_i,h_j)/\tau_S)$ over the cached candidate set. The proposed objective is
+This gain supplies a relation hypothesis, which CRP strengthens with three complementary checks. First, a candidate relation should exhibit a meaningful contrast in the intervened concept group. Let
 \begin{equation}
-\mathcal{L}=\mathcal{L}_{\mathrm{NT\text{-}Xent}}+\lambda(t)
-\sum_i q_i\,\mathrm{KL}\!\left(p_T(\cdot\mid i)\,\|\,p_S(\cdot\mid i)\right),
+    A_i^G = \sum_{k \in G} c_{ik}
 \end{equation}
-where $q_i$ is frozen graph confidence. A SimCLR-only warm-up and gradual $\lambda(t)$ ramp preserve the base objective. This loss is not yet implemented for the label-free graph because the frozen audit below returned \textsc{no-go}.
+denote the aggregate activation of concept group $G$ for image $i$.
+We favor pairs with a substantial activation difference
+\begin{equation}
+    \left| A_i^G - A_j^G \right|,
+\end{equation}
+since a positive intervention gain is informative only when the two images initially differ along the semantic factor being removed. The activation contrast therefore establishes that $G$ distinguishes the pair, while the intervention gain tests whether removing $G$ reduces their representational discrepancy.
+
+Second, we require the intervention-induced neighbourhood relation to be reciprocal. If removing $G$ reveals a meaningful similarity between two images, this relation should not arise solely from a one-sided nearest-neighbour match: $i$ should lie near $j$, while $j$ should also rank $i$ among its top-$k$ neighbours.
+
+Third, the relation must be supported by an independent visual representation. We require $i$ and $j$ to also be neighbours in DINO space. This prevents CRP from accepting a relation only because it is induced by the same CLIP/SpLiCE geometry used to construct the intervention. Instead, DINO acts as an independent agreement signal that the revealed relation corresponds to shared visual content.
+
+Together, these checks determine whether a candidate pair is retained. For a
+retained relation, we then assign a confidence that reflects both the strength
+of the intervention effect and the independent visual agreement:
+\begin{equation}
+    w_{ij}^{G}
+    =
+    \Delta(i,j,G)\,
+    \phi\!\left(\cos(v_i,v_j)\right),
+\end{equation}
+where $v_i$ and $v_j$ are the DINO embeddings of images $i$ and $j$ and $\phi$ is a non-negative, non-decreasing function specified in the experimental protocol. Thus, a relation receives high confidence only when removing $G$ substantially increases the similarity of the pair and DINO independently supports their visual similarity.
+
+Pairwise data shows local associations at best. To claim that $G$ captures a systematic relation, CRP looks for a consistent response across a broad set of anchors, with the same pattern recurring across many of them. We summarize the evidence at the group level using four complementary signals: \emph{gain}, measuring the strength of the intervention effect; \emph{coverage}, measuring how broadly the effect occurs across anchors; \emph{agreement}, measuring support from the independent DINO representation; and \emph{alignment}, measuring whether larger activation contrasts in $G$ correspond to larger intervention gains. We additionally penalize \emph{concentration}, preventing a group from receiving a high score only because many relations collapse onto a small number of images. The resulting group score is
+\begin{equation}
+    \operatorname{score}(G)
+    =
+    \frac{
+        \operatorname{gain}(G)\,
+        \operatorname{coverage}(G)\,
+        \operatorname{agreement}(G)\,
+        \operatorname{alignment}(G)
+    }{
+        \operatorname{concentration}(G)
+    }.
+\end{equation}
+
+The surviving relations define a sparse teacher graph. Since some images may appear as neighbours of many different anchors, we degree-balance the retained edge confidences before normalization so that a small number of highly connected images do not dominate the teacher signal. For each anchor image $i$, the remaining confidences are then normalized into a probability distribution over its accepted neighbours:
+\begin{equation}
+    p_T(j \mid i)
+    =
+    \frac{w_{ij}}
+    {\sum_{k \in \mathcal{N}_T(i)} w_{ik}},
+    \qquad
+    \sum_j p_T(j \mid i)=1.
+\end{equation}
+The resulting distribution represents the relative strength of the counterfactual relations discovered for anchor $i$ and serves as the relational teacher signal for subsequent self-supervised training.
+
+\paragraph{Transferring the relation graph into the SSL encoder.}
+The ``student'' is a ResNet trained jointly with the standard SimCLR objective and the relational CRP objective. Because the latter can only use teacher relations whose endpoints occur in the same mini-batch, we employ a graph-aware batch sampler. Each training image remains an anchor once per epoch. When an anchor has supported neighbours in the teacher graph, the sampler attempts to include at least one such neighbour in the same mini-batch, sampled according to the teacher edge weights. This increases the availability of teacher-supported relations without replacing the ordinary SimCLR training stream. For two augmented views of image $i$, the backbone produces SimCLR embeddings $h_i^{(1)}$ and $h_i^{(2)}$. Their normalized average defines the student feature used by CRP:
+\begin{equation}
+    s_i=\operatorname{norm}\!\left(
+    \operatorname{norm}(h_i^{(1)})+
+    \operatorname{norm}(h_i^{(2)})\right).
+\end{equation}
+This representation summarizes the relation geometry assigned to the underlying training image while retaining the ordinary two-view SimCLR objective for its training. Within mini-batch $B$, the student defines its own relation distribution from
+pairwise cosine similarities between the backbone representations. For anchor $i$, the probability assigned to another batch image $j$ is:
+\begin{equation}
+    p_S^{(B)}(j\mid i)=
+    \frac{\exp(\cos(s_i,s_j)/\tau_S)}
+    {\sum_{k\in B\setminus\{i\}}\exp(\cos(s_i,s_k)/\tau_S)}.
+    \label{eq:crp_student}
+\end{equation}
+The teacher distribution is restricted to neighbours present in the batch and renormalized to $p_T^{(B)}$. Each supported anchor contributes a confidence-weighted relational loss:
+\begin{equation}
+    \mathcal{L}_{\mathrm{CRP}}=
+    \frac{1}{|B_S|}\sum_{i\in B_S}q_i
+    D_{\mathrm{KL}}\!\left(p_T^{(B)}(\cdot\mid i)\,\|\,
+    p_S^{(B)}(\cdot\mid i)\right),
+    \label{eq:crp_relational_loss}
+\end{equation}
+where $B_S$ denotes the anchors with teacher support in the current mini-batch and $q_i$ is the frozen confidence assigned to anchor $i$ by the teacher graph. The complete training objective is
+\begin{equation}
+    \mathcal{L}=\mathcal{L}_{\mathrm{SimCLR}}
+    +\lambda\mathcal{L}_{\mathrm{CRP}}.
+    \label{eq:crp_total}
+\end{equation}
+The contrastive term trains the standard SimCLR projection head and the CRP term shapes the backbone geometry. The teacher communicates which images became neighbours after a concept intervention. The student learns these relations through its own representation and operates independently of CLIP, SpLiCE and DINO at inference time.
 
 \section{Experimental Setup}
-\paragraph{Data and evaluation.}
-Completed experiments use Waterbirds \citep{sagawa2020groupdro}: 4,795 biased training images and four groups defined by bird type and background. A linear target probe is fitted on the designated probe-training split and evaluated on validation data; WGA is the minimum group accuracy. The test split remains unused while methods are selected. Legacy routing and regularization use 1,000 SSL epochs and paired seeds $1,3,4$. IU, CRP diagnostics and the relational oracle use a separately matched 500-epoch protocol; their absolute values must not be compared across budgets.
+\subsection{Dataset and evaluation protocol}
+We evaluate on Waterbirds \citep{sagawa2020groupdro}, which contains 4,795 training images with a strong association between bird type and background. The two target classes and two background attributes define four evaluation groups. SSL pretraining receives the images and their sample identifiers. Target and background annotations enter the pipeline during linear probing and post-hoc graph analysis.
 
-\paragraph{Controls.}
-Routing is compared with shuffled per-image scores at the same routing rate. Edited CLIP distillation is compared with SimCLR, unedited CLIP targets, zero-out and matched random coordinates. CRP graph construction is compared with raw-CLIP kNN, DINO-only kNN, shuffled codes and matched random subspaces. Hidden labels are loaded only after graph creation to measure same-target precision and opposite-background coverage. An explicitly privileged relational oracle uses same-target, opposite-background pairs to test the downstream mechanism. Earlier reproducibility bugs were repaired so that periodic diagnostics no longer advance training RNG or change data order; only post-repair matched runs are aggregated.
+After every 25 SSL epochs, we fit a linear target probe on the frozen backbone for 100 epochs and evaluate it on the validation split. We report average accuracy and worst-group accuracy (WGA). Each result averages the final ten periodic validation probes to reduce variation from a single checkpoint. An auxiliary background probe measures how linearly accessible the spurious attribute remains. The test split is reserved for evaluation of a locked final configuration.
+
+\subsection{Frozen teacher construction}
+The teacher cache contains centered OpenCLIP ViT-B/32 features, sparse SpLiCE codes over the 10,000-word LAION vocabulary and DINOv3 ViT-S/16 features. We retain concepts active on $1\%$ to $95\%$ of training images and build semantic groups from text similarity and dataset-level coactivation. For each group, relation discovery searches the top-20 projected CLIP neighbours and checks the candidates against the top-50 DINO neighbours. Random subspaces and shuffled SpLiCE activations calibrate group selection. The final sparse graph keeps at most ten neighbours per anchor and applies indegree balancing. Graph creation is label-free; target and background annotations are loaded afterward for descriptive edge statistics. Appendix~\ref{app:hyperparameters} gives the complete graph configuration.
+
+\subsection{Student training and model selection}
+The student is a ResNet-18 with a 128-dimensional SimCLR projection head. We train for 500 epochs with batch size 256 using SGD. The CRP term starts after epoch 10 and reaches its full weight through a ten-epoch linear ramp. The baseline uses the same data order, architecture, augmentations, optimizer, learning-rate schedule, probe schedule and seed. The controlled sweep varies the relational weight $\lambda\in\{0.01,0.025,0.05\}$ and student temperature $\tau_S\in\{0.005,0.01,0.05,0.10,0.20,0.25\}$ over 13 selected combinations. All reported training runs use seed 0 and all model choices use validation metrics. This experiment therefore measures optimization feasibility and hyperparameter sensitivity. Multi-seed confirmation forms the next evaluation stage. Full training and probe settings appear in Appendix~\ref{app:hyperparameters}.
 
 \section{Results}
-\subsection{Legacy interventions are not stable}
-Table~\ref{tab:legacy} compresses the July sweep. The matched SimCLR reference reaches $48.04\pm2.82\%$ WGA over seeds $1,3,4$. Routing at $q=0.50$ improves two paired seeds by $+3.68$ and $+6.67$ points, then drops by $-11.58$ on the third seed; the failed run also has a final SSL loss of $0.109$ versus $0.026$ for its matched baseline. Increasing $q$ does not resolve this instability: the $q=0.95$ configuration reaches $46.93\pm6.10\%$, with paired changes of $-7.72,+7.46,-3.06$. The direct Top-5 routing control is more decisive. Semantic routing obtains $44.49\pm4.92\%$ WGA, shuffled routing obtains $46.40\pm3.24\%$, and the semantic-minus-shuffled changes are $-1.64,-0.32,-3.77$ on the three paired seeds. The same sign on every observed seed indicates that the per-image semantic assignment did not provide useful information beyond the routing rate.
-
-The Corr_Reg sweep shows a different failure mode. At $\lambda=0.001$, the added term is approximately $7\times10^{-6}$ at the end of training and is effectively inactive. At $\lambda=0.1$, it reaches roughly $6\times10^{-4}$ and gives the best mean delta, only $+0.45$ points; its per-seed changes are $+2.38,+6.27,-7.30$. At $\lambda=1.0$, the term is about $4\times10^{-3}$ and the WGA mean falls to $43.84\%$. The penalty therefore has a narrow numerical scale: small values do not influence the representation, and larger values can remove useful class information together with the selected concept directions. Crop, colour-jitter, grayscale and blur component ablations each have only one comparable seed, so they do not establish a stable benefit. The background probe remains high, approximately $90.40$--$92.49\%$ on seed 1, which means these interventions did not show that background information had become inaccessible to a linear probe.
+\subsection{SpLiCE-CRP improves the matched SimCLR baseline}
+Table~\ref{tab:crp_sweep} reports all completed trainings at this moment (29-Aug-2026). SpLiCE-CRP improves WGA in 10 of the 13 evaluated configurations. The strongest configuration uses $\lambda=0.05$ and $\tau_S=0.25$. It reaches $53.49\%$ average accuracy and $48.95\%$ WGA, corresponding to gains of $4.55$ and $8.28$ percentage points over SimCLR. The best run on the other hand changes the best-group accuracy from $72.18\%$ to $67.74\%$. Thus, these values describe a more balanced group profile with higher overall accuracy.
 
 \begin{table}[t]
-\caption{Legacy 1,000-epoch Waterbirds WGA over seeds $1,3,4$. Deltas are paired with the matched SimCLR seed.}
-\label{tab:legacy}
+\caption{Waterbirds validation results at seed 0. Values are percentages averaged over the final ten periodic linear probes. Each $\Delta$WGA is paired with the matched SimCLR run. Bold marks the best observed value.}
+\label{tab:crp_sweep}
 \centering
 \scriptsize
-\begin{tabular}{lccc}
+\begin{tabular}{ccrrr}
 \toprule
-Configuration & WGA mean $\pm$ SD & Mean $\Delta$ & Paired deltas \\
+$\lambda$ & $\tau_S$ & Avg. & WGA & $\Delta$WGA \\
 \midrule
-SimCLR & $48.04\pm2.82$ & -- & -- \\
-Routed aug., $q=0.50$ & $47.62\pm7.31$ & $-0.41$ & $+3.68,+6.67,-11.58$ \\
-Routed aug., $q=0.75$ & $47.60\pm4.16$ & $-0.43$ & $+3.89,-1.28,-3.90$ \\
-Routed aug., $q=0.95$ & $46.93\pm6.10$ & $-1.11$ & $-7.72,+7.46,-3.06$ \\
-Corr. reg., $\lambda=0.01$ & $43.46\pm5.46$ & $-4.58$ & $-0.83,+0.64,-13.55$ \\
-Corr. reg., $\lambda=0.1$ & $48.49\pm4.37$ & $+0.45$ & $+2.38,+6.27,-7.30$ \\
-Corr. reg., $\lambda=1.0$ & $43.84\pm5.00$ & $-4.20$ & $+1.31,-3.15,-10.75$ \\
+$0$ & -- & 48.94 & 40.66 & -- \\
+\midrule
+0.01 & 0.005 & 45.37 & 33.58 & $-7.09$ \\
+0.01 & 0.01  & 51.07 & 43.62 & $+2.96$ \\
+0.01 & 0.05  & 49.63 & 44.12 & $+3.46$ \\
+0.01 & 0.10  & 49.77 & 43.55 & $+2.89$ \\
+0.01 & 0.25  & 52.30 & 48.54 & $+7.88$ \\
+\midrule
+0.025 & 0.10 & 53.15 & 47.67 & $+7.00$ \\
+0.025 & 0.20 & 51.33 & 45.91 & $+5.25$ \\
+0.025 & 0.25 & 49.68 & 43.55 & $+2.89$ \\
+\midrule
+0.05 & 0.005 & 47.76 & 33.32 & $-7.34$ \\
+0.05 & 0.01  & 49.32 & 39.46 & $-1.20$ \\
+0.05 & 0.05  & 52.02 & 47.56 & $+6.90$ \\
+0.05 & 0.10  & 51.98 & 47.00 & $+6.33$ \\
+0.05 & 0.25  & \textbf{53.49} & \textbf{48.95} & $\mathbf{+8.28}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Intervention utility finds task concepts}
-On the frozen SpLiCE-CBM diagnostic (Table~\ref{tab:discovery}), IU selects \texttt{birds}, \texttt{heron} and \texttt{crow}. Its $+0.75$ WGA change is weak and reduces average accuracy. Error contrast and the gradient-probe selector are strongly harmful. In contrast, the group-aware oracle selects background-like concepts and improves WGA by $9.02$ points. The gap separates signal availability in SpLiCE from effective feature selection.
+The temperature sweep reveals a clear optimization pattern. Moderate student temperatures from $0.05$ to $0.25$ produce consistent gains for $\lambda=0.05$. The sharpest distribution at $\tau_S=0.005$ yields WGA near $33\%$ for both tested weights. This sensitivity agrees with the role of Equation~\ref{eq:crp_student}: a very small temperature concentrates probability on one in-batch neighbour and amplifies teacher-edge errors. Softer student distributions transfer a broader part of the teacher neighbourhood.
 
-\begin{table}[t]
-\caption{Frozen SpLiCE-CBM validation diagnostic, seed 0. The oracle uses spurious-group metadata.}
-\label{tab:discovery}
+The auxiliary background probe reaches $91.99\%$ average accuracy for the best CRP run and $91.58\%$ for SimCLR. These values support a geometry-level interpretation of the result. CRP improves target group balance and background information remains linearly accessible. The observed effect lies in the organization of image neighbourhoods.
+
+\subsection{The frozen graph supplies narrow target-consistent relations}
+The teacher graph covers $85.42\%$ of training anchors. A post-hoc label audit shows that $94.65\%$ of its edges connect images with the same target class. However, only $0.96\%$ of these same-target relations connect images with opposite backgrounds. For comparison, raw CLIP neighbours achieve $94.46\%$ same-target precision and $2.81\%$ opposite-background coverage, while DINO neighbours achieve $92.48\%$ and $1.09\%$, respectively.
+
+These results show that CRP constructs highly target-consistent relations, but the current graph largely remains within the existing background structure. It does not yet preferentially discover same-target relations that cross the spurious background attribute. This highlights the limited ability of the current frozen graph to discover relations that cross background variation.
+
+\subsection{Evidence boundary}
+The present experiments establish that the CRP objective trains successfully and can improve both average accuracy and WGA under a matched protocol. It also identifies a stable high-performing temperature range at seed 0. Statistical claims across random initializations require the planned multi-seed Waterbirds evaluation. Evaluation on additional spurious-correlation benchmarks will measure dataset transfer. Student runs trained from raw-CLIP, DINO-only and shuffled teacher graphs will further separate the contribution of concept projection from relational distillation itself.
+
+\section{Limitations}
+The current empirical study covers Waterbirds and one SSL seed. Hyperparameter selection uses validation WGA and the reported best configuration therefore represents preliminary model-development evidence. The test split remains reserved for a locked configuration. Multi-seed replication and additional datasets are required for statistical and cross-dataset conclusions.
+
+Feature relevance is task-dependent. CRP assumes that removing a selected factor restores relations supported by an independent SSL model. CLIP and DINO can encode similar shortcuts and concept groups can entangle class information with context. Full subspace projection may therefore change both. Sparse minority groups can also limit the supply of cross-background relations despite graph balancing. Post-hoc graph precision and coverage use hidden annotations solely for evaluation and all graph construction thresholds remain label-free.
+
+\section{Conclusion}
+SpLiCE-CRP turns interpretable concept projection into relational supervision for a standalone SSL encoder. A preliminary Waterbirds sweep improves average validation accuracy by $4.55$ points and WGA by $8.28$ points over matched SimCLR at seed 0. Performance is strongest with moderately soft student relation distributions. The frozen audit shows high target consistency together with limited neighbourhood turnover and cross-background coverage. These results establish the feasibility of concept-projected relational pretraining and define clear targets for multi-seed validation and richer relation discovery.
+
+\clearpage
+\bibliographystyle{iclr2026_conference}
+\bibliography{spur_splice_references}
+
+\clearpage
+\appendix
+\section{Implementation Details and Hyperparameters}
+\label{app:hyperparameters}
+
+\begin{table}[H]
+\caption{Student training and linear-probe configuration used for all results in Table~\ref{tab:crp_sweep}.}
+\label{tab:training_hyperparameters}
 \centering
-\scriptsize
-\begin{tabularx}{\linewidth}{lXrr}
+\small
+\begin{tabularx}{\linewidth}{lX}
 \toprule
-Selector & Selected concepts & Avg. & WGA \\
+Component & Setting \\
 \midrule
-No edit & -- & 83.90 & 39.85 \\
-Intervention utility & birds, heron, crow & 83.40 & 40.60 \\
-Error contrast & seagull, sparrow, heron, duck, bamboo & 81.07 & 18.80 \\
-Gradient probe & seagull, sparrow, freshwater, duck, birds & 80.82 & 18.05 \\
-Conditional-group oracle & raven, forests, rainforest, whale, bamboo & 84.74 & 48.87 \\
+Dataset & Waterbirds, 4,795 SSL training images \\
+Backbone & ResNet-18 large \\
+Projection head & MLP, 128-dimensional output \\
+SSL objective & SimCLR NT-Xent plus Equation~\ref{eq:crp_relational_loss} \\
+Epochs and batch size & 500 epochs, 256 images \\
+Optimizer & SGD, learning rate $0.01$, momentum $0.9$ and weight decay $10^{-4}$ \\
+Learning-rate schedule & Multiply by $0.1$ at epochs 350, 400 and 450 \\
+SimCLR temperature & $0.05$ \\
+Random crop scale & $[0.2,1.0]$ \\
+CRP schedule & Start at epoch 10 and ramp linearly for 10 epochs \\
+CRP sweep & $\lambda\in\{0.01,0.025,0.05\}$ and $\tau_S\in\{0.005,0.01,0.05,0.10,0.20,0.25\}$ \\
+Numerics & Automatic mixed precision and channels-last memory format \\
+Reproducibility & Seed 0 and deterministic data ordering with cuDNN benchmarking disabled \\
+Probe frequency & Every 25 SSL epochs \\
+Linear probe & 100 epochs, SGD with learning rate $1.0$, momentum $0.9$ and zero weight decay \\
+Probe schedule & Learning rate multiplied by $0.2$ at epochs 60, 75 and 90 \\
+Reported metric & Mean of the final ten validation probes \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The 500-epoch SSL pilot supports the same diagnosis (Table~\ref{tab:pilot}). IU neutralization improves over SimCLR by $1.40$ WGA points but underperforms unedited CLIP distillation by $1.61$ points. Neutralization and zero-out produce identical reported trajectories; because sparse within-class medians can be zero, cached target displacements must verify whether the two edits collapsed to the same target. Random-coordinate editing is likewise identical to unedited CLIP, suggesting that this sampled edit was operationally inactive. These degenerate controls prevent a causal claim for sparse editing and motivate full-space interventions.
-
-\begin{table}[t]
-\caption{Waterbirds 500-epoch seed-0 pilots. Values average the last ten validation probes. These are diagnostics, not multi-seed results.}
-\label{tab:pilot}
+\begin{table}[H]
+\caption{Frozen teacher-graph configuration. The feature cache and graph are constructed once and reused across the student trainings.}
+\label{tab:graph_hyperparameters}
 \centering
-\scriptsize
-\begin{tabular}{lrrr}
+\small
+\begin{tabularx}{\linewidth}{lX}
 \toprule
-Configuration & Avg. & WGA & $\Delta$WGA vs. SimCLR \\
+Component & Setting \\
 \midrule
-SimCLR & 48.94 & 40.66 & -- \\
-Unedited CLIP distillation & 52.92 & 43.67 & +3.01 \\
-IU class neutralization & 50.29 & 42.06 & +1.40 \\
-IU zero-out & 50.29 & 42.06 & +1.40 \\
-Matched random coordinates & 52.92 & 43.67 & +3.01 \\
-Relational oracle (privileged) & 50.85 & 45.39 & +4.73 \\
+CLIP/SpLiCE encoder & OpenCLIP ViT-B/32, LAION-2B-s34B-b79K weights \\
+SpLiCE dictionary & 10,000-word LAION vocabulary and $\ell_1$ penalty $0.25$ \\
+Independent encoder & DINOv3 ViT-S/16 \\
+Concept frequency interval & $[0.01,0.95]$ \\
+Grouping thresholds & Text cosine similarity $0.80$ and activation-profile cosine similarity $0.35$ \\
+Minimum group size & 1 concept \\
+Projected neighbours & Top 20 in projected CLIP space \\
+DINO support & Top 50 neighbours \\
+Activation contrast & Per-group $0.75$ quantile \\
+Minimum intervention gain & $10^{-4}$ \\
+Group coverage & At least $0.01$ of anchors \\
+Null calibration & 16 matched random subspaces and 16 activation shuffles at quantile $0.95$ \\
+Edge confidence & $\Delta(i,j,G)\,[0.5+0.5\cos(v_i,v_j)]$ \\
+Graph sparsification & At most 10 edges per anchor \\
+Indegree balancing & Donor cap of three times the pre-cap mean indegree \\
+Numerical settings & Orthogonal tolerance $10^{-6}$ and similarity chunks of 512 \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
-
-\subsection{The current CRP graph fails the frozen gate}
-Across three null-calibration seeds, CRP audits 139 groups and selects 116--121. The result is stable but not useful: median Jaccard@20 between raw and projected neighbours is $0.9647$, median top-1 turnover is only $0.0229$ and the audit returns \textsc{no-go}. The resulting graph covers $85.42\%$ of anchors and has high same-target precision ($94.65\%$), but only $0.96\%$ of its same-target edges cross backgrounds. Raw CLIP kNN has almost the same target precision ($94.46\%$) and a substantially higher $2.81\%$ cross-background rate; DINO kNN gives $92.48\%$ and $1.09\%$, respectively. CRP therefore mainly reproduces existing neighbourhoods, yielding little additional cross-background structure.
-
-The privileged relational oracle is informative in the opposite direction. At the same 500-epoch budget and seed, correct same-target/opposite-background relations improve WGA from $40.66\%$ to $45.39\%$. One seed is not evidence of a robust method, but it separates two failure hypotheses, pointing to relational signal quality as the remaining limitation of the label-free frozen graph.
-
-\section{Discussion: Novelty, Evidence and Next Decision}
-\paragraph{What is new.}
-Existing concept mitigation methods mainly edit the representation in which concepts were discovered or rebalance a supervised classifier. Existing robust SSL methods modify sampling, augmentation, or global geometry without an interpretable intervention. CRP's intended novelty is their connection: language-aligned concept groups define full-space counterfactual projections; an independent SSL geometry filters unsafe edits; and the accepted \emph{relations}, rather than edited CLIP vectors or one hard image, supervise a separately trained backbone. The shuffled-code, random-subspace, raw-CLIP and DINO-only controls distinguish the value of concept-conditioned intervention from ordinary teacher distillation.
-
-\paragraph{What is established.}
-The completed results support four claims. Privileged group information identifies background-related coordinates in SpLiCE that support a substantially stronger intervention. Scalar routing and coordinate-wise correlation removal don't transfer that information reliably. Target-error-based discovery preferentially finds target concepts, providing weak guidance for feature removal. Finally, correct relational supervision can improve a one-seed pilot, but the current label-free CRP projection changes too few neighbours and discovers fewer cross-background relations than raw CLIP.
-
-\paragraph{What remains hypothetical.}
-There is no evidence yet that CRP v2 improves WGA, that DINO consensus reliably preserves task identity, or that the label-free score generalizes beyond Waterbirds. The next experiment should therefore improve or reject the frozen mechanism. Alternatives are: stronger but controlled interventions (forbidden-group sparse refitting or projection of better distributed concept groups), stricter group selection against nulls and direct comparison with raw-CLIP and DINO graph turnover.
-
-\section{Limitations}
-All completed results are on Waterbirds. Legacy multi-seed results use only three seeds, while the IU and relational pilots use one. Validation probes are reported because the test split is protected during method development. The 500- and 1,000-epoch protocols are internally matched but not cross-comparable. Hidden annotations are used in post-hoc graph analysis and explicitly privileged oracles; they must not influence CRP thresholds.
-
- Generally, feature relevance is seen as task-dependent. CRP assumes that removing the selected factor restores relations supported by an independent SSL model, but CLIP and DINO may share the same shortcut. Concept groups may entangle class and contextual information, so full projection can remove both. Sparse Waterbirds minorities can still cause low counterfactual coverage despite graph balancing. Finally, the exact equality of two pairs of seed-0 editing controls indicates degenerate edits that require target-displacement diagnostics before further training.
-
-\section{Conclusion}
-This study narrows the search for spurious-robust SSL from concept availability to intervention and relation discovery. Privileged selection reveals actionable structure in SpLiCE, motivating a search for transfer mechanisms beyond the tested routing, regularization, and sparse-editing interfaces. SpLiCE-CRP v2 reframes this search as concept-projected relation discovery. Its current frozen audit localizes the remaining bottleneck to a projection that barely changes local geometry and yields fewer cross-background relations than raw CLIP.
-
-\bibliography{spur_splice_references}
-\bibliographystyle{iclr2026_conference}
 
 \end{document}
