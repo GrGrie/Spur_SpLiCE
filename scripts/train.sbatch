@@ -32,23 +32,22 @@ set -euo pipefail
 # Ordered approximately by expected impact on WG/average accuracy.
 # Start a sweep from the top; parameters lower in the file usually need fewer changes.
 # =============================================================================
-MODE="crp_relational"             # Change only this to "cqt_relational" for CQT.
-SPLICE_WEIGHT="0.05"              # First CRP sweep axis: try 0.025 and 0.05.
-CRP_TEMPERATURE="0.1"             # Second CRP sweep axis: try 0.1 and 0.2.
-LEARNING_RATE="0.01"
-EPOCHS="500"
+MODE="cqt_relational"             # cqt_relational | crp_relational | none | legacy modes
+SPLICE_WEIGHT="0.05"              # Relational-loss weight; try 0.025, 0.05, 0.1.
+CRP_TEMPERATURE="0.1"             # Student relation temperature; try 0.05, 0.1, 0.2.
+LEARNING_RATE="0.01"             # SSL learning rate; try 0.005, 0.01, 0.03.
+EPOCHS="500"                     # 250 for pilot, 500 default, 1000 final if justified.
 LR_DECAY_EPOCHS="auto"            # At 500 epochs: 350,400,450.
 LR_DECAY_RATE="0.1"
-CRP_START_EPOCH="10"
-CRP_WARMUP_EPOCHS="10"
-BATCH_SIZE="256"
-SEED="0"
+CRP_START_EPOCH="10"              # Pure-SimCLR epochs before CRP/CQT loss; try 5, 10, 20.
+CRP_WARMUP_EPOCHS="10"            # Linear CRP/CQT loss ramp; try 5, 10, 20.
+BATCH_SIZE="256"                 # SimCLR batch size; try 128 or 256 within GPU memory.
+SEED="0"                         # Controls cache-independent folds, nulls, and training RNG.
 
-# CRP frozen-artifact preparation.  When enabled, this same Slurm job first
-# builds the dataset-ordered feature cache and then runs the label-free audit.
-# Set CRP_FORCE_REBUILD=true after changing any audit setting below.
-CRP_AUTO_BUILD_GRAPH="true"
-CRP_FORCE_REBUILD="false"
+# Shared CRP/CQT artifact preparation. This Slurm job builds/reuses the frozen
+# cache and automatically builds a missing or configuration-mismatched graph.
+CRP_AUTO_BUILD_GRAPH="true"       # Keep true: one sbatch command prepares the graph and trains.
+CRP_FORCE_REBUILD="false"         # true forces both frozen-cache and graph reconstruction.
 CRP_CACHE_BATCH_SIZE="64"
 CRP_CACHE_NUM_WORKERS="4"
 CRP_DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
@@ -71,21 +70,32 @@ CRP_NULL_QUANTILE="0.95"
 CRP_SIMILARITY_CHUNK_SIZE="512"
 CRP_ORTHOGONAL_TOLERANCE="1e-6"
 
-# CQT factor proposal and quotient-transport audit. CQT reuses the CRP cache.
-CQT_MAX_CANDIDATE_GROUPS="128"
-CQT_MAX_FACTORS="8"
-CQT_MIN_STATE_SAMPLES="16"
-CQT_MIN_EXCLUSIVITY="0.8"
-CQT_MIN_CONTEXT_SIMILARITY="0.2"
-CQT_MIN_STATE_BALANCED_ACCURACY="0.7"
-CQT_MIN_QUOTIENT_EFFICACY="0.5"
-CQT_TRANSPORT_CANDIDATES="32"
-CQT_TRANSPORT_MASS="0.25"
-CQT_MIN_TRANSPORT_PAIRS="8"
-CQT_MIN_WORD_SIMILARITY="0.2"
-CQT_DINO_NEIGHBORS="10"
-CQT_DINO_DAMAGE_QUANTILE="0.5"
-CQT_NULL_TRIALS="4"
+# CQT frozen-audit hyperparameters. These are independent from the CRP block.
+CQT_MIN_CONCEPT_FREQUENCY="0.01"  # Ignore rarer words; try 0.005, 0.01, 0.02.
+CQT_MAX_CONCEPT_FREQUENCY="0.95"  # Ignore near-universal words; try 0.90, 0.95, 0.98.
+CQT_TEXT_SIMILARITY_THRESHOLD="0.8" # Merge close word directions; try 0.75, 0.8, 0.85.
+CQT_COACTIVATION_THRESHOLD="0.35" # Merge jointly active words; try 0.25, 0.35, 0.5.
+CQT_MIN_GROUP_SIZE="1"            # Minimum words per state group; usually 1 or 2.
+CQT_MAX_CANDIDATE_GROUPS="128"    # Pair-search breadth; try 64, 128, 256 (cost increases).
+CQT_MAX_FACTORS="8"               # Most factor pairs audited; try 4, 8, 16 (cost increases).
+CQT_MIN_STATE_SAMPLES="16"        # Minimum exclusive samples/state/fold; try 8, 16, 32.
+CQT_MIN_EXCLUSIVITY="0.8"         # Reject coactive state pairs; try 0.7, 0.8, 0.9.
+CQT_MIN_CONTEXT_SIMILARITY="0.2"  # Required shared non-factor semantics; try 0.1, 0.2, 0.3.
+CQT_MIN_STATE_BALANCED_ACCURACY="0.7" # Raw state predictability; try 0.65, 0.7, 0.75.
+CQT_MIN_QUOTIENT_EFFICACY="0.5"   # Fraction of state signal removed; try 0.3, 0.5, 0.7.
+CQT_TRANSPORT_CANDIDATES="32"     # Word-neighbour support per node; try 16, 32, 64.
+CQT_TRANSPORT_MASS="0.25"         # Fraction of smaller state matched; try 0.1, 0.25, 0.5.
+CQT_MIN_TRANSPORT_PAIRS="8"       # Minimum fixed transport mass; try 4, 8, 16.
+CQT_MIN_WORD_SIMILARITY="0.2"     # Preserved-word compatibility gate; try 0.1, 0.2, 0.3.
+CQT_DINO_NEIGHBORS="10"           # Local DINO profile width; try 5, 10, 20.
+CQT_DINO_DAMAGE_QUANTILE="0.5"    # Local-damage tolerance; try 0.25, 0.5, 0.75 (higher looser).
+CQT_MIN_INTERVENTION_GAIN="1e-4"  # Minimum quotient cosine gain; try 0, 1e-4, 1e-3.
+CQT_MIN_COVERAGE="0.01"           # Minimum supported-anchor fraction; try 0.01, 0.05, 0.1.
+CQT_NULL_TRIALS="4"               # Random/shuffled controls; use 4 pilot, 8 or 16 final audit.
+CQT_NULL_QUANTILE="0.95"          # Required null exceedance; try 0.90, 0.95, 0.99.
+CQT_GRAPH_TOP_K="10"              # Teacher neighbours per anchor; try 5, 10, 20.
+CQT_INDEGREE_FACTOR="3.0"         # Donor-hub cap multiplier; try 2, 3, 5.
+CQT_SIMILARITY_CHUNK_SIZE="512"   # Audit speed/memory tradeoff; try 256, 512, 1024.
 
 # =============================================================================
 # LEGACY METHODS: augment / corr_reg / augment_corr_reg
@@ -142,7 +152,7 @@ LR_WARMUP="false"
 MODEL="resnet18_large"            # spur_cifar10 should use resnet18, not *_large.
 HEAD="mlp"
 FEAT_DIM="128"
-DATASET="waterbirds"              # waterbirds | celeba | spur_cifar10
+DATASET="waterbirds"              # Default; alternatives: celeba | spur_cifar10
 TRIAL="0"
 
 # SAM-only settings (ignored by SGD/AdamW)
@@ -250,7 +260,26 @@ validate_crp_feature_cache() {
         "${CRP_CACHE_PATH}" >/dev/null 2>&1
 }
 
-prepare_crp_teacher_graph() {
+resolve_relational_graph_config() {
+    if [[ "${MODE}" == "crp_relational" ]]; then
+        RELATIONAL_LABEL="CRP"
+        RELATIONAL_ARTIFACT="splice_crp_v2_teacher_graph"
+        RELATIONAL_MODULE="splice.crp"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED}}"
+    else
+        RELATIONAL_LABEL="CQT"
+        RELATIONAL_ARTIFACT="splice_cqt_v1_teacher_graph"
+        RELATIONAL_MODULE="splice.cqt"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CQT_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CQT_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CQT_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CQT_COACTIVATION_THRESHOLD},\"min_group_size\":${CQT_MIN_GROUP_SIZE},\"max_candidate_groups\":${CQT_MAX_CANDIDATE_GROUPS},\"max_factors\":${CQT_MAX_FACTORS},\"min_state_samples\":${CQT_MIN_STATE_SAMPLES},\"min_exclusivity\":${CQT_MIN_EXCLUSIVITY},\"min_context_similarity\":${CQT_MIN_CONTEXT_SIMILARITY},\"min_state_balanced_accuracy\":${CQT_MIN_STATE_BALANCED_ACCURACY},\"min_quotient_efficacy\":${CQT_MIN_QUOTIENT_EFFICACY},\"transport_candidates\":${CQT_TRANSPORT_CANDIDATES},\"transport_mass\":${CQT_TRANSPORT_MASS},\"min_transport_pairs\":${CQT_MIN_TRANSPORT_PAIRS},\"min_word_similarity\":${CQT_MIN_WORD_SIMILARITY},\"dino_neighbors\":${CQT_DINO_NEIGHBORS},\"dino_damage_quantile\":${CQT_DINO_DAMAGE_QUANTILE},\"min_intervention_gain\":${CQT_MIN_INTERVENTION_GAIN},\"min_coverage\":${CQT_MIN_COVERAGE},\"null_trials\":${CQT_NULL_TRIALS},\"null_quantile\":${CQT_NULL_QUANTILE},\"graph_top_k\":${CQT_GRAPH_TOP_K},\"indegree_factor\":${CQT_INDEGREE_FACTOR},\"similarity_chunk_size\":${CQT_SIMILARITY_CHUNK_SIZE},\"seed\":${SEED}}"
+    fi
+}
+
+teacher_graph_matches_config() {
+    python -c 'import json, sys, torch; graph=torch.load(sys.argv[1], map_location="cpu", weights_only=True); expected=json.loads(sys.argv[3]); raise SystemExit(0 if graph.get("artifact")==sys.argv[2] and graph.get("config")==expected else 1)' \
+        "${RELATIONAL_TEACHER_GRAPH}" "${RELATIONAL_ARTIFACT}" "${RELATIONAL_CONFIG_JSON}" >/dev/null 2>&1
+}
+
+prepare_relational_teacher_graph() {
     [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]] || return 0
 
     if [[ "${CRP_AUTO_BUILD_GRAPH}" != "true" ]]; then
@@ -259,11 +288,14 @@ prepare_crp_teacher_graph() {
     fi
 
     mkdir -p "$(dirname "${RELATIONAL_TEACHER_GRAPH}")" "$(dirname "${CRP_CACHE_PATH}")"
+    resolve_relational_graph_config
 
     if [[ "${CRP_FORCE_REBUILD}" != "true" && -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
-        echo "[${MODE}] Reusing existing teacher graph: ${RELATIONAL_TEACHER_GRAPH}"
-        echo "[${MODE}] Set CRP_FORCE_REBUILD=true after changing graph-audit settings."
-        return 0
+        if teacher_graph_matches_config; then
+            echo "[${RELATIONAL_LABEL}] Reusing matching teacher graph: ${RELATIONAL_TEACHER_GRAPH}"
+            return 0
+        fi
+        echo "[${RELATIONAL_LABEL}] Existing graph config differs; rebuilding graph automatically."
     fi
 
     cache_is_valid="false"
@@ -297,30 +329,17 @@ prepare_crp_teacher_graph() {
         fail "CRP feature cache is invalid after preparation: ${CRP_CACHE_PATH}"
     fi
 
-    if [[ "${MODE}" == "crp_relational" ]]; then
-        CRP_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED}}"
-        echo "=== Building CRP teacher graph ==="
-        echo "[CRP] cache=${CRP_CACHE_PATH} graph=${RELATIONAL_TEACHER_GRAPH}"
-        echo "[CRP] config=${CRP_CONFIG_JSON}"
-        python -u -m splice.crp \
-            --cache "${CRP_CACHE_PATH}" \
-            --output "${RELATIONAL_TEACHER_GRAPH}" \
-            --seed "${SEED}" \
-            --config "${CRP_CONFIG_JSON}"
-    else
-        CQT_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_candidate_groups\":${CQT_MAX_CANDIDATE_GROUPS},\"max_factors\":${CQT_MAX_FACTORS},\"min_state_samples\":${CQT_MIN_STATE_SAMPLES},\"min_exclusivity\":${CQT_MIN_EXCLUSIVITY},\"min_context_similarity\":${CQT_MIN_CONTEXT_SIMILARITY},\"min_state_balanced_accuracy\":${CQT_MIN_STATE_BALANCED_ACCURACY},\"min_quotient_efficacy\":${CQT_MIN_QUOTIENT_EFFICACY},\"transport_candidates\":${CQT_TRANSPORT_CANDIDATES},\"transport_mass\":${CQT_TRANSPORT_MASS},\"min_transport_pairs\":${CQT_MIN_TRANSPORT_PAIRS},\"min_word_similarity\":${CQT_MIN_WORD_SIMILARITY},\"dino_neighbors\":${CQT_DINO_NEIGHBORS},\"dino_damage_quantile\":${CQT_DINO_DAMAGE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"null_trials\":${CQT_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"seed\":${SEED}}"
-        echo "=== Building CQT teacher graph ==="
-        echo "[CQT] cache=${CRP_CACHE_PATH} graph=${RELATIONAL_TEACHER_GRAPH}"
-        echo "[CQT] config=${CQT_CONFIG_JSON}"
-        python -u -m splice.cqt \
-            --cache "${CRP_CACHE_PATH}" \
-            --output "${RELATIONAL_TEACHER_GRAPH}" \
-            --seed "${SEED}" \
-            --config "${CQT_CONFIG_JSON}"
-    fi
+    echo "=== Building ${RELATIONAL_LABEL} teacher graph ==="
+    echo "[${RELATIONAL_LABEL}] cache=${CRP_CACHE_PATH} graph=${RELATIONAL_TEACHER_GRAPH}"
+    echo "[${RELATIONAL_LABEL}] config=${RELATIONAL_CONFIG_JSON}"
+    python -u -m "${RELATIONAL_MODULE}" \
+        --cache "${CRP_CACHE_PATH}" \
+        --output "${RELATIONAL_TEACHER_GRAPH}" \
+        --seed "${SEED}" \
+        --config "${RELATIONAL_CONFIG_JSON}"
 }
 
-prepare_crp_teacher_graph
+prepare_relational_teacher_graph
 
 if [[ ( "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ) && ! -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
     fail "Relational teacher graph does not exist after preparation: ${RELATIONAL_TEACHER_GRAPH}"

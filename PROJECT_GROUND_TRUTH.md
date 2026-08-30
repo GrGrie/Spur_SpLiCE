@@ -643,21 +643,25 @@ and is a required baseline rather than dead code.
 The single experiment switch is near the top of `scripts/train.sbatch`:
 
 ```bash
-MODE="crp_relational"   # existing CRP v2
-MODE="cqt_relational"   # experimental CQT v1
+MODE="cqt_relational"   # current Waterbirds default: experimental CQT v1
+MODE="crp_relational"   # switch back to existing CRP v2
 ```
 
-The default remains CRP. Both modes build/reuse
+The launch default is CQT on `waterbirds`; changing `MODE` back to
+`crp_relational` preserves the CRP path. Both modes build/reuse
 `outputs/crp/<dataset>_train_features.pt` and pass a row-stochastic graph to the
 same training entry point. CRP graphs stay in `outputs/crp/<dataset>/`; CQT graphs
 and adjacent human-readable JSON cards are written to `outputs/cqt/<dataset>/`.
-CQT-specific thresholds live in one configuration block. The full resolved graph
-config and artifact type are added to the W&B run config after graph loading.
+CQT-specific thresholds live in one commented configuration block and do not
+borrow CRP audit variables. The full resolved graph config and artifact type are
+added to the W&B run config after graph loading.
 
-Scientifically, changing only a CQT audit threshold requires a new graph, not new
-features; the current conservative `CRP_FORCE_REBUILD=true` sbatch switch rebuilds
-both. A genuinely new cache is needed only when frozen encoders, vocabulary,
-dataset order, or cache-producing settings change. Real full training keeps W&B
+The sbatch script compares an existing artifact's stored config with the resolved
+CRP/CQT config. A missing, unreadable, wrong-type, or configuration-mismatched graph
+is rebuilt automatically while a valid frozen feature cache is reused. Therefore a
+normal CQT run needs only `sbatch scripts/train.sbatch`; no separate graph command
+or manual invalidation is required. `CRP_FORCE_REBUILD=true` remains available when
+the frozen cache itself must also be reconstructed. Real full training keeps W&B
 enabled as required by `AGENTS.md`; disabling it is for explicit smoke/local debug
 only.
 
