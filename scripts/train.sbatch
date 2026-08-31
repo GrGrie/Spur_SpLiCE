@@ -284,8 +284,7 @@ prepare_relational_teacher_graph() {
 
     resolve_relational_graph_config
     if [[ "${MODE}" == "cqt_relational" ]]; then
-        CQT_CONFIG_DIGEST="$(printf '%s' "${RELATIONAL_CONFIG_JSON}" | sha256sum | cut -c1-12)"
-        CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}_cfg${CQT_CONFIG_DIGEST}"
+        CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}"
         CQT_GRAPH_DIR="outputs/cqt/${DATASET}/${CQT_GRAPH_VARIANT}"
         CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
         RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
