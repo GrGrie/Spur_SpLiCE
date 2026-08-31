@@ -282,13 +282,21 @@ teacher_graph_matches_config() {
 prepare_relational_teacher_graph() {
     [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]] || return 0
 
+    resolve_relational_graph_config
+    if [[ "${MODE}" == "cqt_relational" ]]; then
+        CQT_CONFIG_DIGEST="$(printf '%s' "${RELATIONAL_CONFIG_JSON}" | sha256sum | cut -c1-12)"
+        CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}_cfg${CQT_CONFIG_DIGEST}"
+        CQT_GRAPH_DIR="outputs/cqt/${DATASET}/${CQT_GRAPH_VARIANT}"
+        CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
+        RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
+    fi
+
     if [[ "${CRP_AUTO_BUILD_GRAPH}" != "true" ]]; then
         echo "[${MODE}] Automatic cache/graph preparation disabled."
         return 0
     fi
 
     mkdir -p "$(dirname "${RELATIONAL_TEACHER_GRAPH}")" "$(dirname "${CRP_CACHE_PATH}")"
-    resolve_relational_graph_config
 
     if [[ "${CRP_FORCE_REBUILD}" != "true" && -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
         if teacher_graph_matches_config; then
@@ -348,7 +356,7 @@ fi
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
     crp_relational) RUN_LABEL="CRP_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
-    cqt_relational) RUN_LABEL="CQT_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
+    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
     augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
