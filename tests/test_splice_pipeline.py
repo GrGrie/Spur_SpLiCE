@@ -3,6 +3,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import scipy.sparse as sparse
@@ -44,6 +46,7 @@ from splice.crp_training import (
     validate_teacher_graph,
 )
 from splice.model import SPLICE
+import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.discover_splice_spurious_concepts import (
     SparseConceptWeights,
@@ -328,27 +331,58 @@ class SplicePipelineTests(unittest.TestCase):
         regularizer.set_epoch(4)
         self.assertAlmostEqual(regularizer.scheduled_weight, 0.2)
 
-    def test_empty_crp_graph_uses_plain_simclr_batches_and_zero_loss(self):
+    def test_empty_crp_graph_regularizer_has_zero_loss(self):
         graph = self._tiny_teacher_graph()
         graph["neighbor_indices"] = torch.full((4, 2), -1)
         graph["weights"] = torch.zeros(4, 2)
         graph["confidence"] = torch.zeros(4)
         graph["anchor_confidence"] = torch.zeros(4)
         graph = validate_teacher_graph(graph)
-        sampler = CrpGraphBatchSampler(
-            graph["neighbor_indices"],
-            graph["weights"],
-            batch_size=3,
-            generator=torch.Generator().manual_seed(3),
-        )
-        batches = list(sampler)
-        self.assertEqual(sorted(index for batch in batches for index in batch), [0, 1, 2, 3])
         regularizer = CrpRelationalRegularizer(
             graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         regularizer.set_epoch(1)
         loss = regularizer(torch.randn(8, 3), torch.arange(4))
         self.assertEqual(float(loss), 0.0)
+
+    def test_empty_relational_graph_returns_original_simclr_loader(self):
+        loader = SimpleNamespace(
+            dataset=SimpleNamespace(indices=np.asarray([0, 1])),
+            generator=torch.Generator().manual_seed(0),
+        )
+        graph = {
+            "artifact": "splice_cqt_v1_teacher_graph",
+            "config": {},
+            "neighbor_indices": torch.full((2, 1), -1),
+            "weights": torch.zeros(2, 1),
+            "degree_stats": {"edge_count": 0, "coverage": 0.0},
+        }
+        args = argparse.Namespace(
+            dataset="waterbirds",
+            splice_mode="cqt_relational",
+            batch_size=2,
+            num_workers=0,
+            seed=0,
+            crp_teacher_graph="teacher_graph.pt",
+            crp_graph_sha256="digest",
+        )
+
+        with (
+            patch.object(
+                spur_splice,
+                "DATASET_REGISTRY",
+                {"waterbirds": {"ssl_loader": lambda *args, **kwargs: loader}},
+            ),
+            patch.object(spur_splice, "build_dataset_config", return_value={}),
+            patch.object(spur_splice, "make_dataloader_kwargs", return_value={}),
+            patch.object(spur_splice, "load_teacher_graph", return_value=(graph, "digest")),
+            patch.object(spur_splice, "build_crp_training_loader") as build_crp_loader,
+        ):
+            result = spur_splice.build_ssl_loader(args)
+
+        self.assertIs(result, loader)
+        self.assertTrue(args.relational_graph_empty)
+        build_crp_loader.assert_not_called()
 
     def test_crp_relational_loss_reaches_simclr_encoder(self):
         class TinyEncoder(torch.nn.Module):

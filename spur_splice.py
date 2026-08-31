@@ -1160,6 +1160,7 @@ def build_ssl_loader(args: argparse.Namespace):
     if args.splice_mode not in RELATIONAL_GRAPH_MODES:
         return loader
 
+    args.relational_graph_empty = False
     source_indices = getattr(loader.dataset, "indices", None)
     if source_indices is None:
         raise ValueError("CRP training requires an SSL dataset with stable source indices.")
@@ -1173,14 +1174,6 @@ def build_ssl_loader(args: argparse.Namespace):
     args.crp_graph_sha256 = graph_sha256
     args.teacher_graph_artifact = graph["artifact"]
     args.teacher_graph_config = graph.get("config", {})
-    crp_loader = build_crp_training_loader(
-        loader.dataset,
-        graph,
-        args.batch_size,
-        args.num_workers,
-        loader.generator,
-        worker_init_fn=seed_worker,
-    )
     stats = graph.get("degree_stats", {})
     print(
         f"[INFO] Loaded {graph['artifact']} teacher graph: "
@@ -1190,7 +1183,22 @@ def build_ssl_loader(args: argparse.Namespace):
         flush=True,
     )
     if not torch.any(graph["weights"].sum(dim=1) > 0):
-        print("[WARNING] CRP graph is empty; training falls back to pure SimCLR.", flush=True)
+        args.relational_graph_empty = True
+        print(
+            "[WARNING] Relational teacher graph is empty; using the standard SimCLR "
+            "DataLoader and disabling relational regularization.",
+            flush=True,
+        )
+        return loader
+
+    crp_loader = build_crp_training_loader(
+        loader.dataset,
+        graph,
+        args.batch_size,
+        args.num_workers,
+        loader.generator,
+        worker_init_fn=seed_worker,
+    )
     return crp_loader
 
 
@@ -1331,13 +1339,16 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     optimizer = build_optimizer(args, model)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
-        splice_regularizer = CrpRelationalRegularizer(
-            train_loader.crp_graph,
-            weight=args.splice_weight,
-            temperature=args.crp_temperature,
-            start_epoch=args.crp_start_epoch,
-            warmup_epochs=args.crp_warmup_epochs,
-        )
+        if getattr(args, "relational_graph_empty", False):
+            splice_regularizer = None
+        else:
+            splice_regularizer = CrpRelationalRegularizer(
+                train_loader.crp_graph,
+                weight=args.splice_weight,
+                temperature=args.crp_temperature,
+                start_epoch=args.crp_start_epoch,
+                warmup_epochs=args.crp_warmup_epochs,
+            )
     else:
         splice_regularizer = build_splice_regularizer(build_splice_config(args))
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
@@ -1368,6 +1379,7 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 {
                     "teacher_graph_artifact": args.teacher_graph_artifact,
                     "teacher_graph_config": args.teacher_graph_config,
+                    "relational_graph_empty": getattr(args, "relational_graph_empty", False),
                 }
             )
         wandb_run.config.update(resolved, allow_val_change=True)
