@@ -25,6 +25,7 @@ from experiments.spurious_eval import linear_probe
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
+from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
@@ -331,7 +332,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--dataset", type=str, default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", type=str, default="./datasets")
-    parser.add_argument("--model", type=str, default="resnet18_large", choices=["resnet18", "resnet18_large", "resnet50", "resnet50_large"])
+    parser.add_argument("--model", type=str, default="resnet18_large", choices=SSL_RESNET_MODEL_NAMES)
     parser.add_argument("--method", type=str, default="SimCLR", choices=["SimCLR"])
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
@@ -730,7 +731,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_strong_blur_kernel_size must be positive.")
     if args.splice_strong_blur_sigma is not None and args.splice_strong_blur_sigma[0] > args.splice_strong_blur_sigma[1]:
         parser.error("--splice_strong_blur_sigma min must be <= max.")
-    if args.dataset == "spur_cifar10" and args.model.endswith("_large"):
+    if args.dataset == "spur_cifar10" and (
+        args.model.endswith("_large") or args.model == "resnet50_pretrained"
+    ):
         parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
     if args.amp and args.optimizer == "SAM":
         parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
@@ -842,7 +845,7 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         "celebA": "CelebA",
         "CelebA": "CelebA",
     }.get(args.dataset, args.dataset)
-    prefix = f"{dataset}_S{args.seed:g}"
+    prefix = f"{dataset}_S{args.seed:g}_{args.model}"
     suffix = f"_e{args.epochs}"
     if not args.use_splice:
         return f"{prefix}_Baseline{suffix}"

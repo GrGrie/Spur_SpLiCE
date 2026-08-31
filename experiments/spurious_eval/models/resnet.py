@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models
 
 
 class BasicBlock(nn.Module):
@@ -102,6 +103,12 @@ class ResNet(nn.Module):
         return torch.flatten(x, 1)
 
 
+def _build_pretrained_resnet50() -> nn.Module:
+    encoder = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+    encoder.fc = nn.Identity()
+    return encoder
+
+
 MODEL_SPECS = {
     "resnet18": (lambda: ResNet(BasicBlock, [2, 2, 2, 2], large_input=False), 512),
     "resnet34": (lambda: ResNet(BasicBlock, [3, 4, 6, 3], large_input=False), 512),
@@ -109,12 +116,29 @@ MODEL_SPECS = {
     "resnet101": (lambda: ResNet(Bottleneck, [3, 4, 23, 3], large_input=False), 2048),
     "resnet18_large": (lambda: ResNet(BasicBlock, [2, 2, 2, 2], large_input=True), 512),
     "resnet50_large": (lambda: ResNet(Bottleneck, [3, 4, 6, 3], large_input=True), 2048),
+    "resnet50_pretrained": (_build_pretrained_resnet50, 2048),
 }
 
+RESNET_MODEL_NAMES = tuple(MODEL_SPECS)
+SSL_RESNET_MODEL_NAMES = (
+    "resnet18",
+    "resnet18_large",
+    "resnet50",
+    "resnet50_large",
+    "resnet50_pretrained",
+)
 
-def build_resnet_encoder(name: str) -> tuple[nn.Module, int]:
+
+def build_resnet_encoder(
+    name: str,
+    load_pretrained_weights: bool = True,
+) -> tuple[nn.Module, int]:
     if name not in MODEL_SPECS:
         raise ValueError(f"Unsupported ResNet model '{name}'. Choices: {sorted(MODEL_SPECS)}")
+    if name == "resnet50_pretrained" and not load_pretrained_weights:
+        encoder = models.resnet50(weights=None)
+        encoder.fc = nn.Identity()
+        return encoder, 2048
     factory, dim = MODEL_SPECS[name]
     return factory(), dim
 

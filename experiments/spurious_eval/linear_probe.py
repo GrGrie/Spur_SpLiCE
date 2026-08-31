@@ -14,7 +14,11 @@ from torch.utils.data import TensorDataset
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
-from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
+from experiments.spurious_eval.models.resnet import (
+    RESNET_MODEL_NAMES,
+    LinearClassifier,
+    build_resnet_encoder,
+)
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 
@@ -61,7 +65,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate a locked final configuration on test instead of the validation default.",
     )
-    parser.add_argument("--model", default="resnet18", choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet18_large", "resnet50_large"])
+    parser.add_argument("--model", default="resnet18", choices=RESNET_MODEL_NAMES)
     parser.add_argument("--ckpt", default="", help="SpurSSL checkpoint containing encoder.* weights")
     parser.add_argument("--method", default="SimCLR", help="Accepted for SpurSSL command compatibility")
     parser.add_argument("--head", default="mlp", choices=["mlp", "linear", "fixed", "identity"], help="Accepted for SpurSSL command compatibility")
@@ -272,10 +276,15 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         eval_loader_kwargs=val_loader_kwargs,
     )
 
-    encoder, feature_dim = build_resnet_encoder(args.model)
+    encoder, feature_dim = build_resnet_encoder(
+        args.model,
+        load_pretrained_weights=not bool(args.ckpt),
+    )
     if args.ckpt:
         print(f"[INFO] Loading encoder checkpoint from {args.ckpt}")
         load_encoder_checkpoint(encoder, args.ckpt)
+    elif args.model == "resnet50_pretrained":
+        print("[INFO] No checkpoint provided. Using the frozen ImageNet-pretrained encoder.")
     else:
         print("[INFO] No checkpoint provided. Using randomly initialized frozen encoder.")
 

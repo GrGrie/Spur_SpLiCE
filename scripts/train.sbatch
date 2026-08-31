@@ -149,7 +149,7 @@ SIMCLR_TEMPERATURE="0.05"
 SSL_CROP_MIN="0.2"
 COSINE="false"
 LR_WARMUP="false"
-MODEL="resnet18_large"            # spur_cifar10 should use resnet18, not *_large.
+MODEL="resnet18_large"            # Use resnet50_pretrained for ImageNet-pretrained ResNet-50.
 HEAD="mlp"
 FEAT_DIM="128"
 DATASET="waterbirds"              # Default; alternatives: celeba | spur_cifar10
@@ -240,7 +240,7 @@ if [[ "${MODE}" == "cqt_relational" ]]; then
     RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
 fi
 
-if [[ "${DATASET}" == "spur_cifar10" && "${MODEL}" == *_large ]]; then
+if [[ "${DATASET}" == "spur_cifar10" && ( "${MODEL}" == *_large || "${MODEL}" == "resnet50_pretrained" ) ]]; then
     fail "spur_cifar10 requires resnet18 or resnet50, not ${MODEL}."
 fi
 if [[ "${FINAL_TEST}" == "true" && "${LINEAR_PROBE_MODE}" != "final" ]]; then
@@ -361,9 +361,9 @@ case "${MODE}" in
     augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
 esac
 
-WANDB_RUN_NAME="${DATASET}_S${SEED}_${RUN_LABEL}_e${EPOCHS}"
-WANDB_GROUP="${DATASET}_${MODE}_e${EPOCHS}_seed${SEED}"
-WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},protocol_e${EPOCHS},${WANDB_EXTRA_TAGS}"
+WANDB_RUN_NAME="${DATASET}_S${SEED}_${MODEL}_${RUN_LABEL}_e${EPOCHS}"
+WANDB_GROUP="${DATASET}_${MODE}_${MODEL}_e${EPOCHS}_seed${SEED}"
+WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},model_${MODEL},protocol_e${EPOCHS},${WANDB_EXTRA_TAGS}"
 
 ARGS=(
     spur_splice.py

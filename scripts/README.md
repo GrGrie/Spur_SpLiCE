@@ -40,6 +40,20 @@ CRP_WARMUP_EPOCHS="10"
 MODE="none"
 ```
 
+Для CRP/CQT с ImageNet-предобученной ResNet-50 оставьте нужный `MODE` и
+измените общий encoder:
+
+```bash
+MODEL="resnet50_pretrained"
+```
+
+При первом запуске torchvision автоматически скачает веса
+`ResNet50_Weights.IMAGENET1K_V2` в PyTorch cache. Encoder использует тот же
+ImageNet stem (`7x7`, stride 2, max-pool) и те же 224x224 transforms, что и
+`resnet18_large`; во время SSL все его веса продолжают обучаться. Для
+контроля той же архитектуры без предобучения используйте
+`MODEL="resnet50_large"`.
+
 В конфигурации сначала расположены наиболее важные параметры текущего CRPv2,
 затем отдельный legacy-блок для `augment/corr_reg/augment_corr_reg`. Общие,
 evaluation- и инфраструктурные настройки находятся ниже. `EPOCHS` по умолчанию
@@ -52,7 +66,7 @@ evaluation- и инфраструктурные настройки находя�
 выше получит имя:
 
 ```text
-waterbirds_S0_CRP_splWei_0.05_crpTemp_0.1_lr_0.01_e500
+waterbirds_S0_resnet18_large_CRP_splWei_0.05_crpTemp_0.1_lr_0.01_e500
 ```
 
 Для legacy-режимов имя аналогично содержит `q`, routing, `splWei` и `lr`, если

@@ -117,7 +117,11 @@ SpLiCE-IU method: SpLiCE-IU uses target labels, whereas CRP and CQT do not.
 ### Trainable model
 
 - **Default:** ResNet18-large trained from scratch with SimCLR.
-- **Scale check:** ResNet50, only after the mechanism works on ResNet18-large.
+- **Scale check:** ResNet50-large from scratch, only after the mechanism works
+  on ResNet18-large.
+- **Pretraining check:** `resnet50_pretrained` initializes the same standard
+  large-input ResNet50 architecture from torchvision ImageNet-1K V2 weights;
+  the full encoder remains trainable during SimCLR plus CRP/CQT training.
 - The downstream representation is the ResNet backbone feature, not the frozen
   CLIP or DINO representation.
 
@@ -645,6 +649,7 @@ The single experiment switch is near the top of `scripts/train.sbatch`:
 ```bash
 MODE="cqt_relational"   # current Waterbirds default: experimental CQT v1
 MODE="crp_relational"   # switch back to existing CRP v2
+MODEL="resnet50_pretrained"  # optional ImageNet-pretrained ResNet-50 student
 ```
 
 The launch default is CQT on `waterbirds`; changing `MODE` back to
@@ -882,8 +887,9 @@ Upper bounds and non-comparable references must be labelled as such:
 
 ### Claims that are currently supported
 
-- The repository trains a ResNet18-large SSL encoder; ViT-B/32 is the frozen
-  OpenCLIP/SpLiCE extractor, not the trainable backbone.
+- The repository defaults to a from-scratch ResNet18-large SSL encoder and also
+  supports from-scratch or ImageNet-pretrained ResNet50 students; ViT-B/32 is
+  the frozen OpenCLIP/SpLiCE extractor, not the trainable backbone.
 - SpLiCE contains useful nuisance-related concepts: the privileged Waterbirds
   oracle improved frozen-CBM WGA by about 9 points.
 - Existing automatic selectors have not found those nuisance concepts reliably.
