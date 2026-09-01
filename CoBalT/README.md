@@ -24,8 +24,9 @@ needed for a matched comparison: **Waterbirds** and **CelebA**.
    average validation accuracy (`avg`, CoBalT_avg), inferred worst-group
    accuracy (`ig`, CoBalT_ig), and human worst-group accuracy (`hg`, CoBalT_hg).
 
-No target or spurious-attribute label enters concept discovery or the sampler.
-Human group metadata is used only for `hg` model selection and final reporting.
+No target or spurious-attribute label enters concept discovery. The later
+classifier is supervised, and human group metadata is used only for `hg` model
+selection and final reporting.
 
 ## Paper defaults
 
@@ -74,3 +75,20 @@ following targets:
 
 W&B can be disabled only for an explicit smoke test by passing both `--smoke`
 and `--no-wandb`. Full runs reject `--no-wandb`.
+
+## Label-free check inside CRP/CQT grouping
+
+To use only Stage 1 concepts as an optional balance check while building SpLiCE
+concept groups, run:
+
+```bash
+sbatch CoBalT/scripts/prepare_concepts.sbatch
+sbatch --export=ALL,COBALT=true scripts/train_crp.sbatch
+```
+
+The preparation job runs discovery and fixed concept extraction, but does not
+train the CoBalT classifier. CRP/CQT converts memberships into mean-one sample
+weights proportional to the sum of inverse concept frequencies. Those weights
+change concept frequency filtering and coactivation during grouping only. This
+preserves the project's label-free graph boundary and should be reported as a
+CoBalT-inspired concept-balance check, not as the full CoBalT Stage 2 method.

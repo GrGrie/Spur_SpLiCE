@@ -285,8 +285,11 @@ def generate_report(
     scope: str = "selected",
     selection_chunk_size: int = 512,
 ) -> Path:
-    cache = validate_feature_cache(torch.load(cache_path, map_location="cpu", weights_only=True))
     graph = load_graph_json(graph_path)
+    cache = validate_feature_cache(
+        torch.load(cache_path, map_location="cpu", weights_only=True),
+        require_dino=False,
+    )
     if list(map(str, graph.get("sample_ids", []))) != list(map(str, cache["sample_ids"])):
         raise ValueError("Teacher graph and feature cache sample IDs are not aligned.")
     if scope not in {"selected", "all"}:

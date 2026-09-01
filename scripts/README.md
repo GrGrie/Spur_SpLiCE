@@ -27,6 +27,42 @@ sbatch scripts/train_crp.sbatch
 sbatch scripts/train_cqt.sbatch
 ```
 
+### DINO-абляция и CoBalT concept check
+
+Оба training entry point поддерживают два независимых переключателя:
+
+```bash
+sbatch --export=ALL,USE_DINO=false scripts/train_crp.sbatch
+sbatch --export=ALL,USE_DINO=false scripts/train_cqt.sbatch
+```
+
+При `USE_DINO=false` DINO-модель не загружается, её признаки не кешируются, а
+DINO gate в CRP/CQT отключается. CRP в этом режиме сохраняет reciprocal
+projected-neighbour check и использует intervention delta для confidence; CQT
+пропускает DINO local-damage gate. No-DINO cache и graphs пишутся в отдельные
+пути, поэтому обычные результаты не перезаписываются.
+
+Для CoBalT-проверки сначала один раз обучите label-free discovery stage и
+выгрузите фиксированные concept memberships:
+
+```bash
+sbatch CoBalT/scripts/prepare_concepts.sbatch
+sbatch --export=ALL,COBALT=true scripts/train_crp.sbatch
+sbatch --export=ALL,COBALT=true scripts/train_cqt.sbatch
+```
+
+`COBALT=true` балансирует частоты и coactivation при составлении SpLiCE concept
+groups весами, полученными только из CoBalT memberships. Target label и
+spurious attribute для этого не читаются. Это label-free concept-balance check,
+а не supervised classifier-balancing stage из статьи. Для другого артефакта
+задайте `COBALT_CONCEPTS_PATH=/path/to/concepts.pt`.
+При `COBALT=true` teacher graph пересобирается из текущего concept artifact,
+даже если файл графа уже существует; frozen SpLiCE cache при этом переиспользуется.
+
+При прямом Python-запуске доступны запрошенные CLI-формы
+`--use_dino true|false`, `--cobalt true|false` и
+`--cobalt-concepts /path/to/concepts.pt`.
+
 Для CRP/CQT с ImageNet-предобученной ResNet-50 измените `MODEL` в нужном
 скрипте:
 
@@ -110,6 +146,7 @@ graph:
 | `SpLiCE_CRP_v2_baselines_posthoc.sbatch` | сравнивает CRP и baseline graphs |
 | `SpLiCE_CRP_v2_baseline_compare.sbatch` | объединённый baseline diagnostic job |
 | `concept_ablation_examples.sbatch` | создаёт один HTML с изображениями и cosine ablations |
+| `../CoBalT/scripts/prepare_concepts.sbatch` | обучает label-free CoBalT discovery и сохраняет memberships для `COBALT=true` |
 
 CRP-обучение запускается через `train_crp.sbatch`, CQT — через
 `train_cqt.sbatch`; оба entry point умеют автоматически подготовить graph.

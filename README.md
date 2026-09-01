@@ -185,7 +185,7 @@ See `experiments/spurious_eval/README.md` for implementation-level details and
 The first canonical CRP v2 implementation is deliberately separated from SSL
 training. It consumes one `.pt` cache with dataset-ordered `sample_ids`, normalized
 `clip_embeddings`, `image_mean`, dense non-negative `splice_codes`, `dictionary`,
-`vocabulary`, normalized `dino_embeddings`, and `cache_version: 1`. An optional
+`vocabulary`, optional normalized `dino_embeddings`, and `cache_version: 1`. An optional
 `provenance` mapping may record checkpoint and dataset identifiers; users do not
 need to calculate hashes manually. Annotation keys such as `labels`,
 `targets`, `metadata`, or `groups` are rejected at the cache boundary.
@@ -197,11 +197,20 @@ python -m splice.crp \
 ```
 
 The command clusters active concepts, projects the full centered CLIP embedding,
-keeps reciprocal relations supported by DINO, calibrates group selection against
+keeps reciprocal relations supported by DINO by default, calibrates group selection against
 matched random-subspace and shuffled-code nulls, caps donor indegree, and writes one
 complete, readable JSON teacher graph. Selecting no group
 is valid and produces an empty graph, in which case training automatically reduces
 to SimCLR.
+
+Two explicit graph-construction checks are available for both CRP and CQT. Set
+`USE_DINO=false` in the corresponding Slurm entry point to avoid loading DINO,
+omit its cache tensor, and disable the DINO-specific gate. Set `COBALT=true`
+after running `CoBalT/scripts/prepare_concepts.sbatch` to reweight concept
+frequency/coactivation by fixed label-free CoBalT memberships. This second mode
+implements only the label-free concept-balancing marginal during group discovery;
+it does not import CoBalT's supervised classifier-balancing stage. Variant caches,
+graphs, run names, and W&B tags record these choices separately.
 
 ## SpLiCE-CRP v2 student training
 

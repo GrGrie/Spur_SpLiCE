@@ -31,7 +31,6 @@ REQUIRED_CACHE_KEYS = {
     "splice_codes",
     "dictionary",
     "vocabulary",
-    "dino_embeddings",
 }
 FORBIDDEN_CACHE_KEYS = {
     "a",
@@ -69,9 +68,13 @@ class CrpAuditConfig:
     seed: int = 0
     similarity_chunk_size: int = 512
     orthogonal_tolerance: float = 1e-6
+    use_dino: bool = True
+    cobalt: bool = False
 
 
 def _validate_config(config: CrpAuditConfig) -> None:
+    if not isinstance(config.use_dino, bool) or not isinstance(config.cobalt, bool):
+        raise ValueError("use_dino and cobalt must be booleans.")
     probabilities = {
         "min_concept_frequency": config.min_concept_frequency,
         "max_concept_frequency": config.max_concept_frequency,
@@ -109,7 +112,7 @@ def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
     return F.normalize(values, dim=1)
 
 
-def validate_feature_cache(cache: dict) -> dict:
+def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
     """Validate and normalize the frozen cache without accepting hidden labels."""
 
     if not isinstance(cache, dict):
@@ -126,6 +129,8 @@ def validate_feature_cache(cache: dict) -> dict:
     if forbidden:
         raise ValueError(f"CRP discovery cache contains forbidden annotation keys: {sorted(forbidden)}")
     missing = REQUIRED_CACHE_KEYS.difference(cache)
+    if require_dino and "dino_embeddings" not in cache:
+        missing.add("dino_embeddings")
     if missing:
         raise ValueError(f"CRP cache is missing required keys: {sorted(missing)}")
     if cache["cache_version"] != CACHE_VERSION:
@@ -138,7 +143,11 @@ def validate_feature_cache(cache: dict) -> dict:
         raise ValueError("sample_ids must be non-empty and unique.")
     n_samples = len(sample_ids)
     clip = _normalized_rows(cache["clip_embeddings"], "clip_embeddings")
-    dino = _normalized_rows(cache["dino_embeddings"], "dino_embeddings")
+    dino = (
+        _normalized_rows(cache["dino_embeddings"], "dino_embeddings")
+        if "dino_embeddings" in cache
+        else None
+    )
     codes = cache["splice_codes"]
     dictionary = cache["dictionary"]
     mean = cache["image_mean"]
@@ -149,8 +158,10 @@ def validate_feature_cache(cache: dict) -> dict:
     codes = codes.detach().float().cpu()
     dictionary = _normalized_rows(dictionary, "dictionary")
     mean = torch.as_tensor(mean).detach().float().cpu().view(-1)
-    if clip.shape[0] != n_samples or dino.shape[0] != n_samples or codes.shape[0] != n_samples:
+    if clip.shape[0] != n_samples or codes.shape[0] != n_samples:
         raise ValueError("All cached representations must have one row per sample_id in the same order.")
+    if dino is not None and dino.shape[0] != n_samples:
+        raise ValueError("DINO embeddings must have one row per sample_id in the same order.")
     if clip.shape[1] != dictionary.shape[1] or mean.numel() != clip.shape[1]:
         raise ValueError("CLIP embeddings, image_mean, and dictionary directions must share a dimension.")
     if codes.shape[1] != dictionary.shape[0] or len(vocabulary) != dictionary.shape[0]:
@@ -209,10 +220,27 @@ def group_concepts(
     dictionary: torch.Tensor,
     vocabulary: Sequence[str],
     config: CrpAuditConfig,
+    sample_weights: torch.Tensor | None = None,
 ) -> list[list[int]]:
     """Group active concepts using text, coactivation, and lexical evidence."""
 
-    frequency = (codes > 0).float().mean(dim=0)
+    sample_weights_tensor = None
+    if sample_weights is not None:
+        sample_weights_tensor = torch.as_tensor(sample_weights, dtype=torch.float32).cpu().view(-1)
+        if sample_weights_tensor.shape != (codes.shape[0],):
+            raise ValueError("sample_weights must contain one value per cached sample.")
+        if not torch.isfinite(sample_weights_tensor).all() or torch.any(sample_weights_tensor < 0):
+            raise ValueError("sample_weights must contain finite non-negative values.")
+        if float(sample_weights_tensor.sum()) <= 0:
+            raise ValueError("sample_weights must have positive total mass.")
+        sample_weights_tensor = sample_weights_tensor / sample_weights_tensor.mean()
+
+    occurrences = (codes > 0).float()
+    frequency = (
+        occurrences.mean(dim=0)
+        if sample_weights_tensor is None
+        else (occurrences * sample_weights_tensor.unsqueeze(1)).mean(dim=0)
+    )
     active = torch.where(
         (frequency >= config.min_concept_frequency) & (frequency <= config.max_concept_frequency)
     )[0]
@@ -221,6 +249,8 @@ def group_concepts(
         return []
 
     active_codes = codes[:, active].T
+    if sample_weights_tensor is not None:
+        active_codes = active_codes * sample_weights_tensor.sqrt().unsqueeze(0)
     active_codes = F.normalize(active_codes, dim=1)
     active_dictionary = F.normalize(dictionary[active], dim=1)
     families: dict[str, int] = {}
@@ -327,8 +357,8 @@ def _gini(values: torch.Tensor) -> float:
 class _AuditGeometry:
     centered_clip: torch.Tensor
     raw_neighbours: torch.Tensor
-    dino_embeddings: torch.Tensor
-    dino_neighbours: torch.Tensor
+    dino_embeddings: torch.Tensor | None
+    dino_neighbours: torch.Tensor | None
 
 
 def _relation_geometry(
@@ -344,10 +374,16 @@ def _relation_geometry(
     raw_similarity = (audit.centered_clip[anchors] * audit.centered_clip[neighbours]).sum(dim=2)
     gain = projected_similarity - raw_similarity
     reciprocal = _edge_membership(neighbours, neighbours, anchors)
-    dino_support = _edge_membership(audit.dino_neighbours, anchors, neighbours)
-    dino_similarity = (
-        audit.dino_embeddings[anchors] * audit.dino_embeddings[neighbours]
-    ).sum(dim=2).clamp_min(0)
+    if config.use_dino:
+        if audit.dino_embeddings is None or audit.dino_neighbours is None:
+            raise ValueError("use_dino=true requires DINO embeddings in the frozen cache.")
+        dino_support = _edge_membership(audit.dino_neighbours, anchors, neighbours)
+        dino_similarity = (
+            audit.dino_embeddings[anchors] * audit.dino_embeddings[neighbours]
+        ).sum(dim=2).clamp_min(0)
+    else:
+        dino_support = torch.ones_like(reciprocal)
+        dino_similarity = torch.ones_like(projected_similarity)
     raw_overlap = (
         neighbours.unsqueeze(2) == audit.raw_neighbours.unsqueeze(1)
     ).any(dim=2).float().mean(dim=1)
@@ -541,18 +577,38 @@ def _build_teacher_graph(
     }
 
 
-def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
+def run_frozen_audit(
+    cache: dict,
+    config: CrpAuditConfig,
+    cobalt_concepts: torch.Tensor | None = None,
+) -> dict:
     """Run the label-free audit and return a versioned sparse teacher graph."""
 
     _validate_config(config)
-    cache = validate_feature_cache(cache)
-    groups = group_concepts(cache["splice_codes"], cache["dictionary"], cache["vocabulary"], config)
+    cache = validate_feature_cache(cache, require_dino=config.use_dino)
+    cobalt_check = None
+    sample_weights = None
+    if config.cobalt:
+        if cobalt_concepts is None:
+            raise ValueError("cobalt=true requires aligned CoBalT train concepts.")
+        from splice.cobalt_check import concept_balanced_sample_weights
+
+        sample_weights, cobalt_check = concept_balanced_sample_weights(cobalt_concepts)
+    groups = group_concepts(
+        cache["splice_codes"],
+        cache["dictionary"],
+        cache["vocabulary"],
+        config,
+        sample_weights=sample_weights,
+    )
     raw_neighbours, _ = topk_neighbors(
         cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
     )
-    dino_neighbours, _ = topk_neighbors(
-        cache["dino_embeddings"], config.dino_neighbors, config.similarity_chunk_size
-    )
+    dino_neighbours = None
+    if config.use_dino:
+        dino_neighbours, _ = topk_neighbors(
+            cache["dino_embeddings"], config.dino_neighbors, config.similarity_chunk_size
+        )
     n_samples = len(cache["sample_ids"])
     generator = torch.Generator().manual_seed(config.seed)
     audit_geometry = _AuditGeometry(
@@ -614,6 +670,7 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
             "coverage": evidence["coverage"],
             "robust_positive_gain": evidence["positive_gain"],
             "semantic_agreement": evidence["semantic_agreement"],
+            "dino_guard_enabled": config.use_dino,
             "hubness_penalty": evidence["hubness_penalty"],
             "activation_gain_alignment": evidence["activation_gain_alignment"],
             "accepted_edges": len(evidence["rows"]),
@@ -651,6 +708,7 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
         "sample_ids": cache["sample_ids"],
         "config": config_payload,
         "provenance": dict(cache.get("provenance", {})),
+        "cobalt_check": cobalt_check,
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
         **graph,
@@ -664,11 +722,22 @@ def _atomic_torch_save(payload: dict, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def save_feature_cache(cache: dict, path: str | Path) -> None:
+def save_feature_cache(cache: dict, path: str | Path, require_dino: bool = True) -> None:
     """Validate and atomically save a CRP cache produced by frozen encoders."""
 
-    validate_feature_cache(cache)
+    validate_feature_cache(cache, require_dino=require_dino)
     _atomic_torch_save(cache, Path(path))
+
+
+def _parse_bool(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected true/false, got {value!r}.")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -677,6 +746,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
+    parser.add_argument("--use-dino", "--use_dino", type=_parse_bool, nargs="?", const=True)
+    parser.add_argument("--cobalt", type=_parse_bool, nargs="?", const=True)
+    parser.add_argument("--cobalt-concepts", default="", help="Fixed CoBalT Stage-1 concept artifact.")
     return parser.parse_args(argv)
 
 
@@ -688,10 +760,28 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CRP audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
+    if args.use_dino is not None:
+        config_values["use_dino"] = args.use_dino
+    if args.cobalt is not None:
+        config_values["cobalt"] = args.cobalt
     config = CrpAuditConfig(**config_values)
     cache_path, output_path = Path(args.cache), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
-    artifact = run_frozen_audit(cache, config)
+    cobalt_concepts = None
+    cobalt_provenance = None
+    if config.cobalt:
+        if not args.cobalt_concepts:
+            raise ValueError("--cobalt-concepts is required when --cobalt true.")
+        from splice.cobalt_check import load_cobalt_train_concepts
+
+        cobalt_concepts, cobalt_provenance = load_cobalt_train_concepts(
+            args.cobalt_concepts,
+            str(cache.get("provenance", {}).get("dataset", "")),
+            cache["sample_ids"],
+        )
+    artifact = run_frozen_audit(cache, config, cobalt_concepts=cobalt_concepts)
+    if cobalt_provenance is not None:
+        artifact["cobalt_check"].update(cobalt_provenance)
     save_graph_json(artifact, output_path)
     print(f"[INFO] Wrote CRP v2 teacher graph to {output_path}")
     print(f"[INFO] Selected {len(artifact['selected_group_ids'])}/{len(artifact['groups'])} groups")

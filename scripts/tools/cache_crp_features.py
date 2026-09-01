@@ -31,8 +31,19 @@ def identity_collate(batch):
     return batch
 
 
+def parse_bool(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected true/false, got {value!r}.")
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Cache frozen CLIP, SpLiCE, and DINOv3 features.")
+    parser = argparse.ArgumentParser(description="Cache frozen CLIP/SpLiCE and optional DINOv3 features.")
     parser.add_argument("--dataset", choices=("waterbirds", "celeba", "spur_cifar10"), required=True)
     parser.add_argument("--data-folder", required=True)
     parser.add_argument("--output", required=True)
@@ -45,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice-vocab-size", type=int, default=10000)
     parser.add_argument("--splice-l1-penalty", type=float, default=0.25)
     parser.add_argument("--dino-model", default="vit_small_patch16_dinov3.lvd1689m")
+    parser.add_argument("--use-dino", "--use_dino", type=parse_bool, nargs="?", const=True, default=True)
     return parser.parse_args()
 
 
@@ -75,27 +87,39 @@ def main() -> None:
         return_weights=True,
     ).eval()
 
-    import timm
-    from timm.data import create_transform, resolve_model_data_config
+    dino_model = None
+    dino_preprocess = None
+    if args.use_dino:
+        import timm
+        from timm.data import create_transform, resolve_model_data_config
 
-    dino_model = timm.create_model(args.dino_model, pretrained=True, num_classes=0).to(device).eval()
-    dino_preprocess = create_transform(**resolve_model_data_config(dino_model), is_training=False)
+        dino_model = timm.create_model(args.dino_model, pretrained=True, num_classes=0).to(device).eval()
+        dino_preprocess = create_transform(**resolve_model_data_config(dino_model), is_training=False)
 
     sample_ids, clip_embeddings, splice_codes, dino_embeddings = [], [], [], []
     for batch_number, batch in enumerate(loader, start=1):
         indices = [item[0] for item in batch]
         raw_images = [item[1] for item in batch]
         clip_input = torch.stack([clip_preprocess(image) for image in raw_images]).to(device)
-        dino_input = torch.stack([dino_preprocess(image) for image in raw_images]).to(device)
+        dino_input = (
+            torch.stack([dino_preprocess(image) for image in raw_images]).to(device)
+            if dino_preprocess is not None
+            else None
+        )
         with torch.inference_mode():
             clip_batch = F.normalize(splice_model.clip.encode_image(clip_input).float(), dim=1)
             centered = F.normalize(clip_batch - splice_model.image_mean, dim=1)
             code_batch = splice_model.decompose(centered)
-            dino_batch = F.normalize(dino_model(dino_input).float(), dim=1)
+            dino_batch = (
+                F.normalize(dino_model(dino_input).float(), dim=1)
+                if dino_model is not None and dino_input is not None
+                else None
+            )
         sample_ids.extend(f"{args.dataset}:{index}" for index in indices)
         clip_embeddings.append(clip_batch.cpu())
         splice_codes.append(code_batch.cpu())
-        dino_embeddings.append(dino_batch.cpu())
+        if dino_batch is not None:
+            dino_embeddings.append(dino_batch.cpu())
         print(f"[INFO] Cached batch {batch_number}/{len(loader)}", flush=True)
 
     cache = {
@@ -106,7 +130,6 @@ def main() -> None:
         "splice_codes": torch.cat(splice_codes),
         "dictionary": splice_model.dictionary.detach().cpu(),
         "vocabulary": splice.get_vocabulary(args.splice_vocab, args.splice_vocab_size),
-        "dino_embeddings": torch.cat(dino_embeddings),
         "provenance": {
             "dataset": args.dataset,
             "split": "train",
@@ -115,10 +138,13 @@ def main() -> None:
             "splice_vocab": args.splice_vocab,
             "splice_vocab_size": args.splice_vocab_size,
             "splice_l1_penalty": args.splice_l1_penalty,
-            "dino_model": args.dino_model,
+            "use_dino": args.use_dino,
         },
     }
-    save_feature_cache(cache, Path(args.output))
+    if args.use_dino:
+        cache["dino_embeddings"] = torch.cat(dino_embeddings)
+        cache["provenance"]["dino_model"] = args.dino_model
+    save_feature_cache(cache, Path(args.output), require_dino=args.use_dino)
     print(f"[INFO] Wrote {len(sample_ids)} aligned frozen samples to {args.output}")
 
 

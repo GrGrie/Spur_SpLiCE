@@ -28,6 +28,7 @@ from splice.crp import (
     GRAPH_VERSION,
     CrpAuditConfig,
     _build_teacher_graph,
+    _parse_bool,
     group_concepts,
     topk_neighbors,
     validate_feature_cache,
@@ -67,9 +68,13 @@ class CqtAuditConfig:
     indegree_factor: float = 3.0
     similarity_chunk_size: int = 512
     seed: int = 0
+    use_dino: bool = True
+    cobalt: bool = False
 
 
 def _validate_config(config: CqtAuditConfig) -> None:
+    if not isinstance(config.use_dino, bool) or not isinstance(config.cobalt, bool):
+        raise ValueError("use_dino and cobalt must be booleans.")
     probabilities = {
         "min_concept_frequency": config.min_concept_frequency,
         "max_concept_frequency": config.max_concept_frequency,
@@ -617,13 +622,29 @@ def _representative_pairs(
     return representatives[:limit]
 
 
-def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
+def run_cqt_audit(
+    cache: dict,
+    config: CqtAuditConfig,
+    cobalt_concepts: torch.Tensor | None = None,
+) -> dict:
     """Discover CQT factors and return a CRP-compatible sparse teacher graph."""
 
     _validate_config(config)
-    cache = validate_feature_cache(cache)
+    cache = validate_feature_cache(cache, require_dino=config.use_dino)
+    cobalt_check = None
+    sample_weights = None
+    if config.cobalt:
+        if cobalt_concepts is None:
+            raise ValueError("cobalt=true requires aligned CoBalT train concepts.")
+        from splice.cobalt_check import concept_balanced_sample_weights
+
+        sample_weights, cobalt_check = concept_balanced_sample_weights(cobalt_concepts)
     all_groups = group_concepts(
-        cache["splice_codes"], cache["dictionary"], cache["vocabulary"], _grouping_config(config)
+        cache["splice_codes"],
+        cache["dictionary"],
+        cache["vocabulary"],
+        _grouping_config(config),
+        sample_weights=sample_weights,
     )
     all_activations = (
         _group_activations(cache["splice_codes"], all_groups)
@@ -725,6 +746,7 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
                 evaluation_a,
                 evaluation_b,
                 config,
+                include_dino=config.use_dino,
             )
             if plan is None:
                 failed_evaluation_fold = evaluation_fold
@@ -740,8 +762,8 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
                     "matched_pairs": plan["matched_pairs"],
                     "intervention_gain": plan["intervention_gain"],
                     "word_similarity": plan["word_similarity"],
-                    "dino_local_damage": plan["dino_damage"],
-                    "dino_damage_threshold": plan["dino_damage_threshold"],
+                    "dino_local_damage": plan.get("dino_damage"),
+                    "dino_damage_threshold": plan.get("dino_damage_threshold"),
                     "coverage": plan["coverage"],
                 }
             )
@@ -786,7 +808,7 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
         gain = float(np.mean([metric["intervention_gain"] for metric in fold_metrics]))
         word_similarity = float(np.mean([metric["word_similarity"] for metric in fold_metrics]))
         coverage = float(np.mean([metric["coverage"] for metric in fold_metrics]))
-        dino_safe = all(
+        dino_safe = not config.use_dino or all(
             metric["dino_local_damage"] <= metric["dino_damage_threshold"]
             for metric in fold_metrics
         )
@@ -816,6 +838,7 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
             "word_similarity": word_similarity,
             "coverage": coverage,
             "matched_pairs": sum(plan["matched_pairs"] for plan in plans),
+            "dino_guard_enabled": config.use_dino,
             "gates": gates,
             "preserved_concepts": _preserved_concepts(
                 plans, cache["splice_codes"], cache["vocabulary"], excluded
@@ -864,6 +887,7 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
         "sample_ids": cache["sample_ids"],
         "config": asdict(config),
         "provenance": dict(cache.get("provenance", {})),
+        "cobalt_check": cobalt_check,
         "factors": audited_factors,
         "selected_factor_ids": [factor["factor_id"] for factor in audited_factors if factor["selected"]],
         **graph,
@@ -876,6 +900,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Complete CQT teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CqtAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the proposal/null seed.")
+    parser.add_argument("--use-dino", "--use_dino", type=_parse_bool, nargs="?", const=True)
+    parser.add_argument("--cobalt", type=_parse_bool, nargs="?", const=True)
+    parser.add_argument("--cobalt-concepts", default="", help="Fixed CoBalT Stage-1 concept artifact.")
     return parser.parse_args(argv)
 
 
@@ -887,10 +914,28 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CQT audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
+    if args.use_dino is not None:
+        config_values["use_dino"] = args.use_dino
+    if args.cobalt is not None:
+        config_values["cobalt"] = args.cobalt
     config = CqtAuditConfig(**config_values)
     cache_path, output_path = Path(args.cache), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
-    artifact = run_cqt_audit(cache, config)
+    cobalt_concepts = None
+    cobalt_provenance = None
+    if config.cobalt:
+        if not args.cobalt_concepts:
+            raise ValueError("--cobalt-concepts is required when --cobalt true.")
+        from splice.cobalt_check import load_cobalt_train_concepts
+
+        cobalt_concepts, cobalt_provenance = load_cobalt_train_concepts(
+            args.cobalt_concepts,
+            str(cache.get("provenance", {}).get("dataset", "")),
+            cache["sample_ids"],
+        )
+    artifact = run_cqt_audit(cache, config, cobalt_concepts=cobalt_concepts)
+    if cobalt_provenance is not None:
+        artifact["cobalt_check"].update(cobalt_provenance)
     save_graph_json(artifact, output_path)
     print(f"[INFO] Wrote CQT teacher graph to {output_path}")
     print(

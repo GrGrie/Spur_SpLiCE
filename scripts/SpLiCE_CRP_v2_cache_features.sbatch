@@ -18,9 +18,22 @@ PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-./datasets}"
 DATASET="${DATASET:-waterbirds}"
-OUTPUT_PATH="${OUTPUT_PATH:-outputs/crp/${DATASET}_train_features.pt}"
+OUTPUT_PATH="${OUTPUT_PATH:-}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
+USE_DINO="${USE_DINO:-true}"
+
+if [[ "${USE_DINO}" != "true" && "${USE_DINO}" != "false" ]]; then
+    echo "USE_DINO must be true or false, got: ${USE_DINO}" >&2
+    exit 2
+fi
+if [[ -z "${OUTPUT_PATH}" ]]; then
+    if [[ "${USE_DINO}" == "true" ]]; then
+        OUTPUT_PATH="outputs/crp/${DATASET}_train_features.pt"
+    else
+        OUTPUT_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
+    fi
+fi
 
 # Frozen feature settings. This job is a one-time preparation step and is not
 # submitted by the graph/training sweep pipeline.
@@ -46,7 +59,7 @@ module load miniforge3/latest
 conda activate "${CONDA_ENV}"
 
 echo "=== SpLiCE-CRP v2 frozen feature cache ==="
-echo "dataset=${DATASET} data=${DATA_FOLDER} output=${OUTPUT_PATH} dino=${DINO_MODEL}"
+echo "dataset=${DATASET} data=${DATA_FOLDER} output=${OUTPUT_PATH} use_dino=${USE_DINO} dino=${DINO_MODEL}"
 echo "splice_model=${SPLICE_MODEL} pretrained=${SPLICE_PRETRAINED} vocab=${SPLICE_VOCAB}:${SPLICE_VOCAB_SIZE} l1=${SPLICE_L1_PENALTY}"
 
 ARGS=(
@@ -61,6 +74,7 @@ ARGS=(
     --splice-vocab-size "${SPLICE_VOCAB_SIZE}"
     --splice-l1-penalty "${SPLICE_L1_PENALTY}"
     --dino-model "${DINO_MODEL}"
+    --use-dino "${USE_DINO}"
 )
 
 python -u -m scripts.tools.cache_crp_features "${ARGS[@]}"

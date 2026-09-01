@@ -1321,6 +1321,44 @@ semantics, or update the CRP-only 2026-08-30 reporting snapshot. Its result can 
 whether KL alone is sufficient in a particular graph/model setting, but it cannot
 by itself establish that SimCLR or the ResNet architecture is generally unnecessary.
 
+### 2026-09-01 — Optional DINO guard and label-free CoBalT balance check
+
+**Track:** CRP and CQT graph construction; baseline/ablation protocol; experiment
+infrastructure.
+
+Before this change, every CRP/CQT frozen cache and graph audit required DINO
+features. DINO neighbour support was mandatory for CRP relations and DINO local
+damage was a mandatory CQT factor gate. Concept frequency and coactivation used
+the empirical training distribution directly, and the independent CoBalT
+reproduction was not connected to CRP/CQT group construction.
+
+Both audit configurations and their Slurm entry points now expose independent
+`use_dino` and `cobalt` booleans. With `use_dino=false`, cache construction does
+not import or run DINO. CRP retains reciprocal projected-neighbour support and
+delta-based intervention confidence but removes DINO support/similarity from its
+gate; CQT omits the DINO local-damage calculation and gate. The canonical default
+remains `use_dino=true`. No-DINO caches and teacher graphs have distinct paths,
+and run names, graph configuration, and W&B metadata record the ablation.
+
+With `cobalt=true`, a separately trained, fixed CoBalT Stage-1 artifact is aligned
+to the frozen cache by source sample index. Its discovered memberships produce
+mean-one sample weights proportional to summed inverse concept frequency. These
+weights affect only SpLiCE concept-frequency filtering and coactivation used to
+form candidate groups. No target, spurious-attribute, or group annotation crosses
+the graph-discovery boundary. A dedicated W&B-enabled Slurm job performs the
+label-free CoBalT discovery and membership extraction. The supervised
+class-balancing/classifier stage from CoBalT is deliberately not inserted into
+CRP/CQT.
+
+These switches were added to test whether DINO contributes enough validation to
+justify the extra frozen model and whether an independently discovered concept
+partition stabilizes group formation under imbalance. Results with either switch
+must be identified as ablations. In particular, `use_dino=false` has a weaker
+semantic-preservation check, while `cobalt=true` is a CoBalT-inspired label-free
+grouping check rather than a reproduction of the complete supervised CoBalT
+training protocol. Neither changes the shared SSL trainer or the current
+canonical CRP/CQT defaults.
+
 ### Reporting snapshots currently available
 
 - **CRP-only report dated 2026-08-30:** use the CRP formulation and results recorded

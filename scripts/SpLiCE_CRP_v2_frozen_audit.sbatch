@@ -25,9 +25,38 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATASET="${DATASET:-waterbirds}"
-CACHE_PATH="${CACHE_PATH:-outputs/crp/${DATASET}_train_features.pt}"
-OUT_DIR="${OUT_DIR:-outputs/crp/${DATASET}}"
+CACHE_PATH="${CACHE_PATH:-}"
+OUT_DIR="${OUT_DIR:-}"
 SEED_BASE="${SEED_BASE:-0}"
+USE_DINO="${USE_DINO:-true}"
+COBALT="${COBALT:-false}"
+COBALT_CONCEPTS_PATH="${COBALT_CONCEPTS_PATH:-}"
+
+if [[ "${USE_DINO}" != "true" && "${USE_DINO}" != "false" ]]; then
+    echo "USE_DINO must be true or false, got: ${USE_DINO}" >&2
+    exit 2
+fi
+if [[ "${COBALT}" != "true" && "${COBALT}" != "false" ]]; then
+    echo "COBALT must be true or false, got: ${COBALT}" >&2
+    exit 2
+fi
+if [[ "${COBALT}" == "true" && "${DATASET}" == "spur_cifar10" ]]; then
+    echo "COBALT=true currently supports waterbirds and celeba only." >&2
+    exit 2
+fi
+if [[ -z "${CACHE_PATH}" ]]; then
+    if [[ "${USE_DINO}" == "true" ]]; then
+        CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
+    else
+        CACHE_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
+    fi
+fi
+if [[ -z "${OUT_DIR}" ]]; then
+    OUT_DIR="outputs/crp/${DATASET}"
+    if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
+        OUT_DIR="${OUT_DIR}/use_dino_${USE_DINO}_cobalt_${COBALT}"
+    fi
+fi
 
 # Concept filtering and grouping. These are the first settings to tune when
 # the frozen audit reports that the projection is too weak.
@@ -52,10 +81,13 @@ NULL_QUANTILE="0.95"
 SIMILARITY_CHUNK_SIZE="512"
 ORTHOGONAL_TOLERANCE="1e-6"
 
-CRP_CONFIG_JSON="{\"min_concept_frequency\":${MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${COACTIVATION_THRESHOLD},\"min_group_size\":${MIN_GROUP_SIZE},\"projected_neighbors\":${PROJECTED_NEIGHBORS},\"dino_neighbors\":${DINO_NEIGHBORS},\"activation_difference_quantile\":${ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${MIN_INTERVENTION_GAIN},\"min_coverage\":${MIN_COVERAGE},\"graph_top_k\":${GRAPH_TOP_K},\"indegree_factor\":${INDEGREE_FACTOR},\"null_trials\":${NULL_TRIALS},\"null_quantile\":${NULL_QUANTILE},\"similarity_chunk_size\":${SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${ORTHOGONAL_TOLERANCE}}"
+CRP_CONFIG_JSON="{\"use_dino\":${USE_DINO},\"cobalt\":${COBALT},\"min_concept_frequency\":${MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${COACTIVATION_THRESHOLD},\"min_group_size\":${MIN_GROUP_SIZE},\"projected_neighbors\":${PROJECTED_NEIGHBORS},\"dino_neighbors\":${DINO_NEIGHBORS},\"activation_difference_quantile\":${ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${MIN_INTERVENTION_GAIN},\"min_coverage\":${MIN_COVERAGE},\"graph_top_k\":${GRAPH_TOP_K},\"indegree_factor\":${INDEGREE_FACTOR},\"null_trials\":${NULL_TRIALS},\"null_quantile\":${NULL_QUANTILE},\"similarity_chunk_size\":${SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${ORTHOGONAL_TOLERANCE}}"
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 SEED=$((SEED_BASE + TASK_ID))
+if [[ -z "${COBALT_CONCEPTS_PATH}" ]]; then
+    COBALT_CONCEPTS_PATH="output/CoBalT/${DATASET}/seed${SEED}/concepts.pt"
+fi
 OUTPUT_PATH="${OUTPUT_PATH:-${OUT_DIR}/teacher_graph_seed${SEED}.json}"
 
 cd "${PROJECT_DIR}"
@@ -64,6 +96,11 @@ mkdir -p "${OUT_DIR}" ./output
 if [[ ! -f "${CACHE_PATH}" ]]; then
     echo "CRP feature cache not found: ${CACHE_PATH}" >&2
     echo "Set CACHE_PATH to a version-1 cache described in README.md." >&2
+    exit 2
+fi
+if [[ "${COBALT}" == "true" && ! -f "${COBALT_CONCEPTS_PATH}" ]]; then
+    echo "CoBalT concept artifact not found: ${COBALT_CONCEPTS_PATH}" >&2
+    echo "Run CoBalT/scripts/prepare_concepts.sbatch first or set COBALT_CONCEPTS_PATH." >&2
     exit 2
 fi
 
@@ -77,10 +114,16 @@ ARGS=(
     --output "${OUTPUT_PATH}"
     --seed "${SEED}"
     --config "${CRP_CONFIG_JSON}"
+    --use-dino "${USE_DINO}"
+    --cobalt "${COBALT}"
 )
+if [[ "${COBALT}" == "true" ]]; then
+    ARGS+=(--cobalt-concepts "${COBALT_CONCEPTS_PATH}")
+fi
 
 echo "=== SpLiCE-CRP v2 frozen audit ==="
 echo "dataset=${DATASET} seed=${SEED} cache=${CACHE_PATH}"
+echo "use_dino=${USE_DINO} cobalt=${COBALT} cobalt_concepts=${COBALT_CONCEPTS_PATH}"
 echo "output=${OUTPUT_PATH}"
 echo "config=${CRP_CONFIG_JSON}"
 
