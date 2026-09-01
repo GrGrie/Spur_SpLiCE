@@ -115,6 +115,13 @@ def train_one_epoch(
     decor_losses = AverageMeter()
     entropy_losses = AverageMeter()
     splice_losses = AverageMeter()
+    relational_diagnostics = {
+        "scheduled_weight": AverageMeter(),
+        "supported_anchor_fraction": AverageMeter(),
+        "mean_anchor_confidence": AverageMeter(),
+        "unweighted_kl": AverageMeter(),
+        "confidence_weighted_kl": AverageMeter(),
+    }
 
     if hasattr(splice_regularizer, "set_epoch"):
         splice_regularizer.set_epoch(epoch)
@@ -164,6 +171,10 @@ def train_one_epoch(
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
         splice_losses.update(parts["splice"].item(), bsz)
+        for name, meter in relational_diagnostics.items():
+            value = getattr(splice_regularizer, "last_diagnostics", {}).get(name)
+            if value is not None:
+                meter.update(float(value), bsz)
 
         if args.optimizer == "SAM":
             optimizer.zero_grad()
@@ -210,13 +221,21 @@ def train_one_epoch(
             )
             sys.stdout.flush()
 
-    return {
+    metrics = {
         "loss": losses.avg,
         "simclr_loss": simclr_losses.avg,
         "decor_loss": decor_losses.avg,
         "entropy_loss": entropy_losses.avg,
         "splice_loss": splice_losses.avg,
     }
+    metrics.update(
+        {
+            f"relational_{name}": meter.avg
+            for name, meter in relational_diagnostics.items()
+            if meter.count
+        }
+    )
+    return metrics
 
 
 def extract_normalized_train_features(model: SimCLRModel, rank_loader, args) -> torch.Tensor:
@@ -274,6 +293,21 @@ def log_rank_metrics(
                 "SSL entropy loss": train_metrics["entropy_loss"],
                 "SSL splice loss": train_metrics["splice_loss"],
                 "SSL learning rate": optimizer.param_groups[0]["lr"],
+                "SSL relational scheduled weight": train_metrics.get(
+                    "relational_scheduled_weight", 0.0
+                ),
+                "SSL relational supported anchor fraction": train_metrics.get(
+                    "relational_supported_anchor_fraction", 0.0
+                ),
+                "SSL relational mean anchor confidence": train_metrics.get(
+                    "relational_mean_anchor_confidence", 0.0
+                ),
+                "SSL relational unweighted KL": train_metrics.get(
+                    "relational_unweighted_kl", 0.0
+                ),
+                "SSL relational confidence-weighted KL": train_metrics.get(
+                    "relational_confidence_weighted_kl", 0.0
+                ),
             },
             step=epoch,
         )

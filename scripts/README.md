@@ -83,6 +83,30 @@ ImageNet stem (`7x7`, stride 2, max-pool) и те же 224x224 transforms, чт�
 Имена W&B runs и checkpoint-папок строятся автоматически из режима, seed и
 ключевых гиперпараметров.
 
+### Seed-0 CRP/CQT sweeps
+
+Сначала строятся label-free graph variants; этот шаг не обучает ResNet и не
+выбирает конфигурацию по downstream WGA:
+
+```bash
+sbatch scripts/prepare_crp_group_sweep.sbatch
+sbatch scripts/prepare_cqt_graph_sweep.sbatch
+```
+
+После проверки слов, размера групп, coverage, null margin и hubness запускаются
+полные W&B-tracked обучения:
+
+```bash
+sbatch scripts/train_crp_seed0_sweep.sbatch
+sbatch scripts/train_cqt_seed0_sweep.sbatch
+```
+
+CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12`. Другой
+прошедший frozen audit вариант задаётся через
+`--export=ALL,CRP_SWEEP_GRAPH_VARIANT=<variant>`. CQT sweep сначала отделяет
+эффект graph-aware sampler, graph positives и KL на одном и том же graph, затем
+сравнивает два более широких frozen graph variants.
+
 Основные значения видны прямо в W&B run name. Например, CRPv2-конфигурация
 выше получит имя:
 
@@ -92,15 +116,20 @@ waterbirds_S0_resnet18_large_CRP_precision_simclrWei_1.0_splWei_0.01_crpTemp_0.2
 
 ## Sanity-check конкретных изображений
 
-Один самодостаточный HTML с двумя требуемыми Waterbirds-парами, найденными
-concept groups/factors и всеми `cosine before / after / delta` создаётся так:
+Один самодостаточный HTML с двумя изображениями, наиболее значимыми выбранными
+concept groups/factors и `cosine before / after / delta` создаётся так:
 
 ```bash
 sbatch scripts/concept_ablation_examples.sbatch
 ```
 
-По умолчанию отчёт использует выбранные CRP groups и сохраняется в
-`outputs/diagnostics/concept_ablation_crp_seed0.html`. Для CQT:
+По умолчанию отчёт показывает пару waterbird-on-land / landbird-on-land и не
+более 12 выбранных interventions, отсортированных по реальному использованию в
+teacher graph. Ограничение влияет только на HTML. Чтобы показать обе
+диагностические пары или все eligible interventions, задайте соответственно
+`REPORT_PAIR_SCOPE=both` или `REPORT_MAX_INTERVENTIONS=0`.
+
+Отчёт сохраняется в `outputs/diagnostics/concept_ablation_crp_seed0.html`. Для CQT:
 
 ```bash
 sbatch --export=ALL,REPORT_METHOD=cqt scripts/concept_ablation_examples.sbatch

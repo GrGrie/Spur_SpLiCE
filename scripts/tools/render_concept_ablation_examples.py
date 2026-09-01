@@ -73,12 +73,35 @@ def _apply(values: torch.Tensor, intervention: Intervention) -> torch.Tensor:
     raise ValueError(f"Unknown intervention kind: {intervention.kind}")
 
 
-def _interventions(graph: dict, cache: dict, scope: str) -> list[Intervention]:
+def _interventions(
+    graph: dict,
+    cache: dict,
+    scope: str,
+    max_interventions: int = 0,
+) -> list[Intervention]:
     selected_only = scope == "selected"
     interventions: list[Intervention] = []
+    group_ids = torch.as_tensor(graph.get("group_ids", []), dtype=torch.long)
+    weights = torch.as_tensor(graph.get("weights", []), dtype=torch.float32)
+
+    def retained_edge_count(identifier: int) -> int:
+        if group_ids.shape != weights.shape or group_ids.numel() == 0:
+            return 0
+        return int(((group_ids == identifier) & (weights > 0)).sum())
+
     if graph.get("artifact") == CRP_ARTIFACT:
         tolerance = float(graph.get("config", {}).get("orthogonal_tolerance", 1e-6))
-        for group in graph.get("groups", []):
+        groups = sorted(
+            graph.get("groups", []),
+            key=lambda group: (
+                -int(bool(group.get("selected", False))),
+                -retained_edge_count(int(group["group_id"])),
+                -float(group.get("null_excess_score", 0.0)),
+                -float(group.get("score", 0.0)),
+                int(group["group_id"]),
+            ),
+        )
+        for group in groups:
             selected = bool(group.get("selected", False))
             if selected_only and not selected:
                 continue
@@ -96,12 +119,23 @@ def _interventions(graph: dict, cache: dict, scope: str) -> list[Intervention]:
                         f"rank={int(group.get('basis_rank', len(indices)))}, "
                         f"score={float(group.get('score', 0.0)):.6g}, "
                         f"null threshold={float(group.get('null_threshold', 0.0)):.6g}, "
-                        f"coverage={float(group.get('coverage', 0.0)):.2%}"
+                        f"coverage={float(group.get('coverage', 0.0)):.2%}, "
+                        f"retained edges={retained_edge_count(int(group['group_id']))}"
                     ),
                 )
             )
     elif graph.get("artifact") == CQT_ARTIFACT:
-        for factor in graph.get("factors", []):
+        factors = sorted(
+            graph.get("factors", []),
+            key=lambda factor: (
+                -int(bool(factor.get("selected", False))),
+                -retained_edge_count(int(factor["factor_id"])),
+                -float(factor.get("null_excess_gain", 0.0)),
+                -float(factor.get("intervention_gain", 0.0)),
+                int(factor["factor_id"]),
+            ),
+        )
+        for factor in factors:
             selected = bool(factor.get("selected", False))
             if selected_only and not selected:
                 continue
@@ -125,13 +159,14 @@ def _interventions(graph: dict, cache: dict, scope: str) -> list[Intervention]:
                     evidence=(
                         f"gain={float(factor.get('intervention_gain', 0.0)):.6g}, "
                         f"null threshold={float(factor.get('null_threshold', 0.0)):.6g}, "
-                        f"coverage={float(factor.get('coverage', 0.0)):.2%}"
+                        f"coverage={float(factor.get('coverage', 0.0)):.2%}, "
+                        f"retained edges={retained_edge_count(factor_id)}"
                     ),
                 )
             )
     else:
         raise ValueError(f"Unsupported teacher graph artifact: {graph.get('artifact')!r}")
-    return interventions
+    return interventions[:max_interventions] if max_interventions else interventions
 
 
 def _source_index(sample_id: str) -> int:
@@ -284,6 +319,8 @@ def generate_report(
     output_path: Path,
     scope: str = "selected",
     selection_chunk_size: int = 512,
+    max_interventions: int = 0,
+    pair_scope: str = "both",
 ) -> Path:
     graph = load_graph_json(graph_path)
     cache = validate_feature_cache(
@@ -296,13 +333,22 @@ def generate_report(
         raise ValueError("scope must be selected or all.")
     if selection_chunk_size <= 0:
         raise ValueError("selection_chunk_size must be positive.")
+    if max_interventions < 0:
+        raise ValueError("max_interventions must be non-negative; 0 shows every eligible item.")
+    pair_scopes = {
+        "same-target": (PAIR_SPECS[0],),
+        "same-background": (PAIR_SPECS[1],),
+        "both": PAIR_SPECS,
+    }
+    if pair_scope not in pair_scopes:
+        raise ValueError("pair_scope must be same-target, same-background, or both.")
 
     dataset = WaterbirdsDataset(str(data_folder))
     metadata_rows = dataset.metadata_df.to_dict(orient="records")
     image_root = Path(dataset.data_dir)
-    interventions = _interventions(graph, cache, scope)
+    interventions = _interventions(graph, cache, scope, max_interventions=max_interventions)
     pair_sections = []
-    for spec in PAIR_SPECS:
+    for spec in pair_scopes[pair_scope]:
         left_candidates = _candidate_positions(
             cache["sample_ids"], metadata_rows, spec.left_label, spec.left_background
         )
@@ -342,7 +388,8 @@ def generate_report(
 
     mode_name = "CRP full-subspace projection" if graph["artifact"] == CRP_ARTIFACT else "CQT rank-one quotient"
     audited_count = len(graph.get("groups", graph.get("factors", [])))
-    selected_count = len(interventions) if scope == "selected" else sum(item.selected for item in interventions)
+    all_items = graph.get("groups", graph.get("factors", []))
+    selected_count = sum(bool(item.get("selected", False)) for item in all_items)
     document = f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -372,7 +419,8 @@ def generate_report(
   <header>
     <h1>Spur SpLiCE: concept-ablation sanity-check</h1>
     <p><strong>Intervention:</strong> {html.escape(mode_name)}.</p>
-    <p><strong>Scope:</strong> {html.escape(scope)}; audited={audited_count}, selected={selected_count}, shown={len(interventions)}.</p>
+    <p><strong>Scope:</strong> {html.escape(scope)}; pair view={html.escape(pair_scope)}; audited={audited_count}, selected={selected_count}, shown={len(interventions)}.</p>
+    <p class="muted">Показанные interventions отсортированы по числу реально сохранённых teacher edges, затем по label-free null margin. Ограничение показа не меняет teacher graph.</p>
     <p>Все числа вычислены по полным centered CLIP embeddings из frozen cache. Метаданные Waterbirds используются только после graph discovery, чтобы выбрать две диагностические пары и подписать изображения.</p>
   </header>
   {''.join(pair_sections)}
@@ -390,6 +438,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--scope", choices=("selected", "all"), default="selected")
     parser.add_argument("--selection-chunk-size", type=int, default=512)
+    parser.add_argument("--max-interventions", type=int, default=0)
+    parser.add_argument(
+        "--pair-scope",
+        choices=("same-target", "same-background", "both"),
+        default="both",
+    )
     return parser.parse_args()
 
 
@@ -402,6 +456,8 @@ def main() -> None:
         args.output,
         scope=args.scope,
         selection_chunk_size=args.selection_chunk_size,
+        max_interventions=args.max_interventions,
+        pair_scope=args.pair_scope,
     )
     print(f"[INFO] Wrote self-contained concept-ablation report to {path}")
 

@@ -323,6 +323,10 @@ Selection must be calibrated against a label-free null distribution made from
 matched random subspaces and shuffled SpLiCE codes. Prefer significance/stability
 thresholds over an unconditional fixed top-K. Returning no selected group is a
 valid outcome and must reduce the downstream method to the SimCLR baseline.
+An optional `max_selected_groups` cap is applied only after the null and coverage
+gates, ranked by label-free null excess; zero disables the cap. The cap is an audit
+and interpretability control, not permission to choose group count from downstream
+WGA.
 
 The exact score exponents and thresholds are not yet empirical facts. They must be
 fixed by the frozen unlabeled audit and then held constant across datasets where
@@ -1358,6 +1362,42 @@ semantic-preservation check, while `cobalt=true` is a CoBalT-inspired label-free
 grouping check rather than a reproduction of the complete supervised CoBalT
 training protocol. Neither changes the shared SSL trainer or the current
 canonical CRP/CQT defaults.
+
+### 2026-09-01 — Seed-0 tuning protocol, bounded concept view, and relational diagnostics
+
+**Track:** CRP/CQT frozen audit, shared trainer diagnostics, experiment protocol,
+and reporting.
+
+Before this change, the cluster entry points hard-coded most frozen graph
+parameters, so controlled Slurm arrays could not override them. CRP allowed every
+null-passing group into the graph and `min_group_size=1` produced a diagnostic
+artifact with 139 audited groups, 119 selected groups, and mostly singleton words.
+The HTML could display all of them and always contained both diagnostic pairs.
+Training logged only the already scheduled relational loss, which hid whether a
+small value came from sparse batch support, low anchor confidence, or an already
+small unweighted KL.
+
+CRP now supports an optional post-gate, label-free `max_selected_groups` cap ranked
+by null-excess score. CRP and CQT graph settings are environment-overridable and
+variant-tagged paths prevent graph sweeps from overwriting one another. Separate
+Slurm arrays were added for frozen CRP grouping and CQT graph audits and for seed-0
+full-training sweeps. The training arrays explicitly separate graph-aware sampling,
+graph positives, relational-weight scale, and student temperature. Full SSL jobs
+retain mandatory W&B tracking; frozen preparation jobs remain diagnostics.
+
+The concept-ablation HTML now supports one requested pair or both pairs and a
+display-only intervention limit. Its default Slurm view shows the
+waterbird-on-land/landbird-on-land pair and the twelve interventions most used by
+retained teacher edges, with an explicit statement that display truncation does not
+alter the graph. The relational trainer now logs scheduled weight, supported-anchor
+fraction, mean supported-anchor confidence, unweighted KL, and confidence-weighted
+KL. These additions do not change the KL formula.
+
+Consequences: graph grouping must be chosen from words, size distribution,
+coverage, null margin, and hubness before downstream WGA is inspected. The new
+seed-0 arrays are mechanism-finding pilots, not evidence of seed stability. Existing
+CRP/CQT results and the 2026-08-30 CRP-only reporting snapshot are unchanged; no new
+performance claim follows from this infrastructure and diagnostic update.
 
 ### Reporting snapshots currently available
 

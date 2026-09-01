@@ -75,6 +75,15 @@ class ConceptAblationReportTests(unittest.TestCase):
 
             output_path = generate_report(cache_path, graph_path, root, root / "report.html")
             report = output_path.read_text(encoding="utf-8")
+            compact_path = generate_report(
+                cache_path,
+                graph_path,
+                root,
+                root / "compact.html",
+                max_interventions=1,
+                pair_scope="same-background",
+            )
+            compact_report = compact_path.read_text(encoding="utf-8")
 
         self.assertIn("Пара 1: одинаковый label", report)
         self.assertIn("Пара 2: разные labels", report)
@@ -83,6 +92,9 @@ class ConceptAblationReportTests(unittest.TestCase):
         self.assertIn("background direction", report)
         self.assertIn("data:image/jpeg;base64,", report)
         self.assertIn("+1.000000", report)
+        self.assertEqual(report.count('<figure class="card">'), 4)
+        self.assertEqual(compact_report.count('<figure class="card">'), 2)
+        self.assertIn("pair view=same-background", compact_report)
 
 
 if __name__ == "__main__":

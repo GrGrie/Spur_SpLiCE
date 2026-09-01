@@ -396,6 +396,23 @@ class CrpRelationalRegularizer:
         self.decay_end_epoch = int(decay_end_epoch)
         self.uses_graph_positives = bool(use_graph_positives)
         self.epoch = 0
+        self.last_diagnostics: dict[str, float] = {}
+
+    def _set_diagnostics(
+        self,
+        *,
+        supported_fraction: float = 0.0,
+        mean_confidence: float = 0.0,
+        unweighted_kl: float = 0.0,
+        weighted_kl: float = 0.0,
+    ) -> None:
+        self.last_diagnostics = {
+            "scheduled_weight": self.scheduled_weight,
+            "supported_anchor_fraction": supported_fraction,
+            "mean_anchor_confidence": mean_confidence,
+            "unweighted_kl": unweighted_kl,
+            "confidence_weighted_kl": weighted_kl,
+        }
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = int(epoch)
@@ -450,6 +467,7 @@ class CrpRelationalRegularizer:
         if sample_indices.shape != (batch_size,):
             raise ValueError("CRP regularization requires one graph-row index per batch sample.")
         if batch_size < 2 or self.scheduled_weight <= 0:
+            self._set_diagnostics()
             return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
 
         first, second = embeddings.float().split(batch_size, dim=0)
@@ -476,6 +494,7 @@ class CrpRelationalRegularizer:
         row_sums = teacher.sum(dim=1)
         supported = row_sums > 0
         if not torch.any(supported):
+            self._set_diagnostics()
             return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
         teacher[supported] /= row_sums[supported].unsqueeze(1)
 
@@ -492,5 +511,12 @@ class CrpRelationalRegularizer:
         kl_terms = torch.zeros_like(teacher)
         kl_terms[positive] = teacher[positive] * (log_teacher[positive] - log_student[positive])
         per_anchor_kl = kl_terms.sum(dim=1)
+        unweighted_kl = per_anchor_kl[supported].mean()
         loss = (confidence[supported] * per_anchor_kl[supported]).mean()
+        self._set_diagnostics(
+            supported_fraction=float(supported.float().mean()),
+            mean_confidence=float(confidence[supported].mean()),
+            unweighted_kl=float(unweighted_kl.detach()),
+            weighted_kl=float(loss.detach()),
+        )
         return (self.scheduled_weight * loss).to(dtype=embeddings.dtype)

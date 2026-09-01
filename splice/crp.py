@@ -56,6 +56,7 @@ class CrpAuditConfig:
     text_similarity_threshold: float = 0.82
     coactivation_threshold: float = 0.35
     min_group_size: int = 1
+    max_selected_groups: int = 0
     projected_neighbors: int = 20
     dino_neighbors: int = 50
     activation_difference_quantile: float = 0.75
@@ -98,6 +99,8 @@ def _validate_config(config: CrpAuditConfig) -> None:
     for name, value in integer_fields.items():
         if value <= 0:
             raise ValueError(f"{name} must be positive, got {value}.")
+    if config.max_selected_groups < 0:
+        raise ValueError("max_selected_groups must be non-negative; 0 disables the cap.")
 
 
 def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
@@ -619,7 +622,7 @@ def run_frozen_audit(
     )
     random_geometries_by_rank: dict[int, list[dict]] = {}
 
-    audited_groups, selected_evidence = [], []
+    audited_groups, candidate_evidence = [], []
     print(f"[INFO] Auditing {len(groups)} concept groups over {n_samples} samples", flush=True)
     report_every = max(1, len(groups) // 20)
     for group_id, concept_indices in enumerate(groups):
@@ -683,7 +686,7 @@ def run_frozen_audit(
         }
         audited_groups.append(group_payload)
         if selected:
-            selected_evidence.append(
+            candidate_evidence.append(
                 (
                     group_id,
                     {
@@ -695,9 +698,27 @@ def run_frozen_audit(
         if (group_id + 1) % report_every == 0 or group_id + 1 == len(groups):
             print(
                 f"[INFO] Audited {group_id + 1}/{len(groups)} groups; "
-                f"selected={len(selected_evidence)}",
+                f"passing_null={len(candidate_evidence)}",
                 flush=True,
             )
+
+    candidate_evidence.sort(
+        key=lambda item: (
+            -float(audited_groups[item[0]]["null_excess_score"]),
+            -float(audited_groups[item[0]]["score"]),
+            item[0],
+        )
+    )
+    selected_evidence = (
+        candidate_evidence[: config.max_selected_groups]
+        if config.max_selected_groups
+        else candidate_evidence
+    )
+    retained_group_ids = {group_id for group_id, _ in selected_evidence}
+    for group in audited_groups:
+        if group["selected"] and group["group_id"] not in retained_group_ids:
+            group["selected"] = False
+            group["rejection_reason"] = "max_selected_groups_cap"
 
     graph = _build_teacher_graph(n_samples, selected_evidence, config)
     config_payload = asdict(config)

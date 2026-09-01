@@ -34,9 +34,17 @@ def summarize(path: Path) -> int:
         beats_shuffled.append(score > max(shuffled_scores, default=float("-inf")))
 
     degree = report.get("degree_stats", {})
+    group_sizes = [len(group.get("concepts", [])) for group in groups]
+    selected_sizes = [len(group.get("concepts", [])) for group in selected]
     print(f"file={path}")
     print(f"graph_version={graph_version} samples={report.get('sample_count')} candidates={len(groups)}")
     print(f"selected={len(selected)} concepts={[word for group in selected for word in group.get('concepts', [])]}")
+    print(
+        "grouping="
+        f"singletons={sum(size == 1 for size in group_sizes)}/{len(group_sizes)} "
+        f"median_size={statistics.median(group_sizes) if group_sizes else float('nan'):.1f} "
+        f"selected_median_size={statistics.median(selected_sizes) if selected_sizes else float('nan'):.1f}"
+    )
     print(
         "projection="
         f"median_jaccard={_median(groups, 'mean_jaccard_at_k'):.4f} "

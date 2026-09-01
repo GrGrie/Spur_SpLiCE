@@ -40,22 +40,24 @@ COBALT="${COBALT:-false}"
 COBALT_CONCEPTS_PATH="${COBALT_CONCEPTS_PATH:-}"
 
 # CRP frozen-audit hyperparameters.
-CRP_MIN_CONCEPT_FREQUENCY="0.01"
-CRP_MAX_CONCEPT_FREQUENCY="0.95"
-CRP_TEXT_SIMILARITY_THRESHOLD="0.8"
-CRP_COACTIVATION_THRESHOLD="0.35"
-CRP_MIN_GROUP_SIZE="1"
-CRP_PROJECTED_NEIGHBORS="20"
-CRP_DINO_NEIGHBORS="50"
-CRP_ACTIVATION_DIFFERENCE_QUANTILE="0.85"
-CRP_MIN_INTERVENTION_GAIN="5e-4"
-CRP_MIN_COVERAGE="0.01"
-CRP_GRAPH_TOP_K="5"
-CRP_INDEGREE_FACTOR="3.0"
-CRP_NULL_TRIALS="32"
-CRP_NULL_QUANTILE="0.95"
-CRP_SIMILARITY_CHUNK_SIZE="512"
-CRP_ORTHOGONAL_TOLERANCE="1e-6"
+CRP_MIN_CONCEPT_FREQUENCY="${CRP_MIN_CONCEPT_FREQUENCY:-0.01}"
+CRP_MAX_CONCEPT_FREQUENCY="${CRP_MAX_CONCEPT_FREQUENCY:-0.95}"
+CRP_TEXT_SIMILARITY_THRESHOLD="${CRP_TEXT_SIMILARITY_THRESHOLD:-0.8}"
+CRP_COACTIVATION_THRESHOLD="${CRP_COACTIVATION_THRESHOLD:-0.35}"
+CRP_MIN_GROUP_SIZE="${CRP_MIN_GROUP_SIZE:-1}"
+CRP_MAX_SELECTED_GROUPS="${CRP_MAX_SELECTED_GROUPS:-0}" # 0 = retain every null-passing group.
+CRP_PROJECTED_NEIGHBORS="${CRP_PROJECTED_NEIGHBORS:-20}"
+CRP_DINO_NEIGHBORS="${CRP_DINO_NEIGHBORS:-50}"
+CRP_ACTIVATION_DIFFERENCE_QUANTILE="${CRP_ACTIVATION_DIFFERENCE_QUANTILE:-0.85}"
+CRP_MIN_INTERVENTION_GAIN="${CRP_MIN_INTERVENTION_GAIN:-5e-4}"
+CRP_MIN_COVERAGE="${CRP_MIN_COVERAGE:-0.01}"
+CRP_GRAPH_TOP_K="${CRP_GRAPH_TOP_K:-5}"
+CRP_INDEGREE_FACTOR="${CRP_INDEGREE_FACTOR:-3.0}"
+CRP_NULL_TRIALS="${CRP_NULL_TRIALS:-32}"
+CRP_NULL_QUANTILE="${CRP_NULL_QUANTILE:-0.95}"
+CRP_SIMILARITY_CHUNK_SIZE="${CRP_SIMILARITY_CHUNK_SIZE:-512}"
+CRP_ORTHOGONAL_TOLERANCE="${CRP_ORTHOGONAL_TOLERANCE:-1e-6}"
+RELATIONAL_GRAPH_VARIANT="${RELATIONAL_GRAPH_VARIANT:-}"
 
 # Graph/cache preparation.
 CRP_AUTO_BUILD_GRAPH="${CRP_AUTO_BUILD_GRAPH:-true}"
@@ -170,6 +172,9 @@ CRP_GRAPH_DIR="outputs/crp/${DATASET}"
 if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
     CRP_GRAPH_DIR="${CRP_GRAPH_DIR}/use_dino_${USE_DINO}_cobalt_${COBALT}"
 fi
+if [[ -n "${RELATIONAL_GRAPH_VARIANT}" ]]; then
+    CRP_GRAPH_DIR="${CRP_GRAPH_DIR}/variants/${RELATIONAL_GRAPH_VARIANT}"
+fi
 CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
 CQT_GRAPH_DIR="outputs/cqt/${DATASET}"
 CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
@@ -209,7 +214,7 @@ resolve_relational_graph_config() {
         RELATIONAL_LABEL="CRP"
         RELATIONAL_ARTIFACT="splice_crp_v2_teacher_graph"
         RELATIONAL_MODULE="splice.crp"
-        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
     else
         RELATIONAL_LABEL="CQT"
         RELATIONAL_ARTIFACT="splice_cqt_v1_teacher_graph"
@@ -231,6 +236,9 @@ prepare_relational_teacher_graph() {
         CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}"
         if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
             CQT_GRAPH_VARIANT="${CQT_GRAPH_VARIANT}_useDino${USE_DINO}_cobalt${COBALT}"
+        fi
+        if [[ -n "${RELATIONAL_GRAPH_VARIANT}" ]]; then
+            CQT_GRAPH_VARIANT="${CQT_GRAPH_VARIANT}_${RELATIONAL_GRAPH_VARIANT}"
         fi
         CQT_GRAPH_DIR="outputs/cqt/${DATASET}/${CQT_GRAPH_VARIANT}"
         CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
@@ -328,7 +336,7 @@ fi
 
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
-    crp_relational) RUN_LABEL="CRP_precision_useDino_${USE_DINO}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_useDino_${USE_DINO}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_useDino_${USE_DINO}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
@@ -337,7 +345,7 @@ esac
 
 WANDB_RUN_NAME="${DATASET}_S${SEED}_${MODEL}_${RUN_LABEL}_e${EPOCHS}"
 WANDB_GROUP="${DATASET}_${MODE}_${MODEL}_e${EPOCHS}_seed${SEED}_useDino${USE_DINO}_cobalt${COBALT}"
-WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},model_${MODEL},protocol_e${EPOCHS},use_dino_${USE_DINO},cobalt_${COBALT},${WANDB_EXTRA_TAGS}"
+WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},model_${MODEL},protocol_e${EPOCHS},graph_${RELATIONAL_GRAPH_VARIANT:-default},use_dino_${USE_DINO},cobalt_${COBALT},${WANDB_EXTRA_TAGS}"
 
 ARGS=(
     spur_splice.py

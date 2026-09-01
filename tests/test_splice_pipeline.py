@@ -202,6 +202,23 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(torch.all((first["anchor_confidence"] >= 0) & (first["anchor_confidence"] <= 1)))
         self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
 
+    def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            projected_neighbors=3,
+            dino_neighbors=4,
+            graph_top_k=2,
+            null_trials=1,
+            null_quantile=0.0,
+            min_coverage=0.0,
+            max_selected_groups=1,
+            seed=7,
+        )
+        graph = run_frozen_audit(self._tiny_crp_cache(), config)
+        self.assertLessEqual(len(graph["selected_group_ids"]), 1)
+        self.assertEqual(graph["config"]["max_selected_groups"], 1)
+
     def test_crp_audit_without_dino_uses_delta_and_reciprocal_support(self):
         cache = self._tiny_crp_cache()
         cache.pop("dino_embeddings")
@@ -679,6 +696,8 @@ class SplicePipelineTests(unittest.TestCase):
         loss.backward()
         self.assertIsNone(model.head.weight.grad)
         self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
+        self.assertGreater(regularizer.last_diagnostics["supported_anchor_fraction"], 0.0)
+        self.assertGreaterEqual(regularizer.last_diagnostics["unweighted_kl"], 0.0)
 
     def test_crp_label_free_batch_runs_through_training_loop(self):
         class TinyEncoder(torch.nn.Module):

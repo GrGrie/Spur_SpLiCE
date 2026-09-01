@@ -18,6 +18,8 @@ set -euo pipefail
 #   sbatch --export=ALL,REPORT_METHOD=cqt scripts/concept_ablation_examples.sbatch
 REPORT_METHOD="${REPORT_METHOD:-crp}" # crp | cqt
 REPORT_SCOPE="${REPORT_SCOPE:-selected}" # selected | all
+REPORT_MAX_INTERVENTIONS="${REPORT_MAX_INTERVENTIONS:-12}" # 0 = show every eligible item.
+REPORT_PAIR_SCOPE="${REPORT_PAIR_SCOPE:-same-background}" # same-target | same-background | both
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}"
 PREPARE_ONLY="true"
@@ -48,6 +50,8 @@ python -u -m scripts.tools.render_concept_ablation_examples \
     --graph "${RELATIONAL_TEACHER_GRAPH}" \
     --data-folder "${DATA_FOLDER}" \
     --scope "${REPORT_SCOPE}" \
+    --max-interventions "${REPORT_MAX_INTERVENTIONS}" \
+    --pair-scope "${REPORT_PAIR_SCOPE}" \
     --output "${REPORT_PATH}"
 
 echo "[INFO] Copy or open this single report file: ${PROJECT_DIR}/${REPORT_PATH}"
