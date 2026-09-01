@@ -51,8 +51,48 @@ ImageNet stem (`7x7`, stride 2, max-pool) и те же 224x224 transforms, чт�
 выше получит имя:
 
 ```text
-waterbirds_S0_resnet18_large_CRP_precision_splWei_0.01_crpTemp_0.25_graphPos_true_decay_200-350_lr_0.01_e500
+waterbirds_S0_resnet18_large_CRP_precision_simclrWei_1.0_splWei_0.01_crpTemp_0.25_graphPos_true_decay_200-350_lr_0.01_e500
 ```
+
+## Sanity-check конкретных изображений
+
+Один самодостаточный HTML с двумя требуемыми Waterbirds-парами, найденными
+concept groups/factors и всеми `cosine before / after / delta` создаётся так:
+
+```bash
+sbatch scripts/concept_ablation_examples.sbatch
+```
+
+По умолчанию отчёт использует выбранные CRP groups и сохраняется в
+`outputs/diagnostics/concept_ablation_crp_seed0.html`. Для CQT:
+
+```bash
+sbatch --export=ALL,REPORT_METHOD=cqt scripts/concept_ablation_examples.sbatch
+```
+
+Скрытые Waterbirds labels/background используются только в этом post-hoc
+diagnostic для выбора и подписи двух пар. Frozen cache и teacher graph строятся
+тем же preparation path, что и у соответствующего training entry point.
+
+## KL-only ablation
+
+Обучение backbone только confidence-weighted relational KL, с нулевым весом
+SimCLR/NT-Xent и штатным downstream linear classifier:
+
+```bash
+sbatch scripts/train_kl_only.sbatch
+```
+
+По умолчанию это CRP; для CQT:
+
+```bash
+sbatch --export=ALL,KL_METHOD=cqt scripts/train_kl_only.sbatch
+```
+
+Запуск включает W&B, начинает KL с первой эпохи, не применяет поздний decay и
+не включает graph positives. Пустой teacher graph считается ошибкой, поскольку
+при нулевом SimCLR он оставил бы модель без обучающего сигнала. Avg Accuracy и
+Worst-Group Accuracy вычисляются существующим periodic linear-probe pipeline.
 
 ## CRP-подготовка и диагностика
 
@@ -69,6 +109,7 @@ graph:
 | `SpLiCE_CRP_v2_baseline_graphs.sbatch` | строит raw-CLIP/DINO baseline graphs |
 | `SpLiCE_CRP_v2_baselines_posthoc.sbatch` | сравнивает CRP и baseline graphs |
 | `SpLiCE_CRP_v2_baseline_compare.sbatch` | объединённый baseline diagnostic job |
+| `concept_ablation_examples.sbatch` | создаёт один HTML с изображениями и cosine ablations |
 
 CRP-обучение запускается через `train_crp.sbatch`, CQT — через
 `train_cqt.sbatch`; оба entry point умеют автоматически подготовить graph.

@@ -339,6 +339,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
     parser.add_argument("--temp", type=float, default=0.5)
+    parser.add_argument(
+        "--simclr_weight",
+        type=float,
+        default=1.0,
+        help="Weight of the SimCLR/NT-Xent objective. Set to 0 only for relational KL-only ablations.",
+    )
     parser.add_argument("--ssl_crop_min", "--ssl-crop-min", dest="ssl_crop_min", type=float, default=0.2)
 
     parser.add_argument("--cosine", action="store_true")
@@ -693,6 +699,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--epochs must be positive.")
     if args.linear_probe_epochs <= 0:
         parser.error("--linear_probe_epochs must be positive.")
+    if args.simclr_weight < 0:
+        parser.error("--simclr_weight must be non-negative.")
     try:
         args.lr_decay_epochs = resolve_epoch_schedule(args.lr_decay_epochs, args.epochs, (0.70, 0.80, 0.90))
         args.linear_lr_decay_epochs = resolve_epoch_schedule(
@@ -718,6 +726,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
+    if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
+        parser.error("--simclr_weight 0 is supported only for CRP/CQT relational ablations.")
+    if args.simclr_weight == 0 and args.splice_weight <= 0:
+        parser.error("KL-only relational training requires --splice_weight to be positive.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.crp_teacher_graph.strip():
         parser.error("--crp_teacher_graph is required for relational graph modes.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
@@ -1239,6 +1251,11 @@ def build_ssl_loader(args: argparse.Namespace):
         flush=True,
     )
     if not torch.any(graph["weights"].sum(dim=1) > 0):
+        if getattr(args, "simclr_weight", 1.0) == 0:
+            raise ValueError(
+                "KL-only relational training requires a non-empty teacher graph; "
+                "the resolved graph contains no supported anchors."
+            )
         args.relational_graph_empty = True
         print(
             "[WARNING] Relational teacher graph is empty; using the standard SimCLR "

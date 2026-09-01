@@ -235,3 +235,17 @@ Both training scripts enable Weights & Biases by default. CRP v2 runs use
 project `Spur_SpLiCE` and group by dataset/seed/protocol. A persistent W&B login
 must already exist on the cluster account; API keys are deliberately not stored
 in the repository.
+
+Two dedicated sanity-check entry points are also available. The first produces a
+self-contained post-hoc HTML with representative Waterbirds image pairs and exact
+cosine changes for every selected CRP group (or CQT factor). The second disables
+the SimCLR term and trains with relational KL alone while retaining the normal
+linear evaluation:
+
+```bash
+sbatch scripts/concept_ablation_examples.sbatch
+sbatch scripts/train_kl_only.sbatch
+```
+
+Set `REPORT_METHOD=cqt` or `KL_METHOD=cqt`, respectively, through Slurm exports to
+run the CQT variant. See `scripts/README.md` for the exact commands and output path.

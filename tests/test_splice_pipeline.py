@@ -520,6 +520,34 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
         self.assertGreaterEqual(float(parts["splice"]), 0.0)
 
+    def test_zero_simclr_weight_uses_only_relational_kl(self):
+        class TinyEncoder(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Linear(2, 3)
+                self.head = torch.nn.Linear(3, 2)
+
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=1.0, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        regularizer.set_epoch(1)
+        model = TinyEncoder()
+        images = [torch.randn(4, 2), torch.randn(4, 2)]
+        loss, parts, _ = simclr_forward_loss(
+            model,
+            SimCLRLoss(temperature=0.1),
+            images,
+            splice_regularizer=regularizer,
+            sample_indices=torch.arange(4),
+            simclr_weight=0.0,
+        )
+        self.assertEqual(float(parts["simclr"]), 0.0)
+        self.assertAlmostEqual(float(loss), float(parts["splice"]), places=7)
+        loss.backward()
+        self.assertIsNone(model.head.weight.grad)
+        self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
+
     def test_crp_label_free_batch_runs_through_training_loop(self):
         class TinyEncoder(torch.nn.Module):
             def __init__(self):

@@ -24,16 +24,16 @@ MODEL="resnet18_large"
 SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # sbatch --array=0-2 for three seeds.
 
 # Main SSL/CQT sweep parameters.
-EPOCHS="500"
-BATCH_SIZE="256"
-LEARNING_RATE="0.01"
-SPLICE_WEIGHT="0.01"
-CRP_TEMPERATURE="0.25"           # Student relational temperature, shared trainer name.
-CRP_START_EPOCH="10"
-CRP_WARMUP_EPOCHS="10"
-CRP_DECAY_START_EPOCH="200"
-CRP_DECAY_END_EPOCH="350"
-CRP_GRAPH_POSITIVES="true"
+EPOCHS="${EPOCHS:-500}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+LEARNING_RATE="${LEARNING_RATE:-0.01}"
+SPLICE_WEIGHT="${SPLICE_WEIGHT:-0.01}"
+CRP_TEMPERATURE="${CRP_TEMPERATURE:-0.25}" # Student relational temperature, shared trainer name.
+CRP_START_EPOCH="${CRP_START_EPOCH:-10}"
+CRP_WARMUP_EPOCHS="${CRP_WARMUP_EPOCHS:-10}"
+CRP_DECAY_START_EPOCH="${CRP_DECAY_START_EPOCH:-200}"
+CRP_DECAY_END_EPOCH="${CRP_DECAY_END_EPOCH:-350}"
+CRP_GRAPH_POSITIVES="${CRP_GRAPH_POSITIVES:-true}"
 
 # CQT factor proposal and quotient-transport hyperparameters.
 CQT_MIN_CONCEPT_FREQUENCY="0.01"   # Try 0.005, 0.01, 0.02.
@@ -72,7 +72,7 @@ CRP_CACHE_NUM_WORKERS="4"
 CRP_DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
 
 # Cluster checkout containing the shared training implementation.
-PROJECT_DIR="/home/xar68reb/Spur_SpLiCE"
+PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 
 # The renamed CRP script contains the shared, W&B-enabled relational pipeline.
 # Variables above remain set when it is sourced, so it executes CQT only.

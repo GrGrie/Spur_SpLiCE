@@ -1286,6 +1286,41 @@ the observed loss ratio rather than by downstream WGA. Initial safe candidates a
 a higher-risk follow-up. Selection still requires matched seeds and must not be
 presented as label-free hyperparameter selection if WGA is used to choose it.
 
+### 2026-09-01 — Concrete concept-ablation report and KL-only training ablation
+
+**Track:** CRP and CQT diagnostics; shared trainer; experiment protocol.
+
+Before this change, graph artifacts recorded group-level intervention statistics
+but there was no single human-readable file showing the actual Waterbirds images,
+their hidden diagnostic annotations, and pairwise cosine similarity before and
+after every selected intervention. The shared trainer also fixed the SimCLR term at
+unit weight, so it could not isolate whether relational KL can train a useful
+backbone without contrastive supervision.
+
+A diagnostic-only Slurm entry point now builds or reuses the normal frozen cache
+and teacher graph, chooses two explicitly labelled Waterbirds pairs, and writes one
+self-contained HTML. One pair holds the waterbird target fixed while changing the
+background; the other holds the land background fixed while changing the target.
+For every selected CRP group it applies the canonical full-subspace projection; in
+CQT mode it applies the selected factor's canonical rank-one quotient. The report
+shows group words, graph evidence, cosine before/after, and `delta = after - before`.
+Hidden annotations affect only post-hoc pair selection and rendering, never graph
+discovery or training. Example selection maximizes absolute displayed cosine change
+within each required metadata constraint and is explicitly labelled illustrative,
+so it cannot support aggregate or causal claims by itself.
+
+The trainer now exposes an explicit non-negative SimCLR loss weight, defaulting to
+one so canonical CRP/CQT behaviour is unchanged. A separate W&B-enabled KL-only
+Slurm entry point sets that weight to zero, activates relational KL from epoch one,
+disables its late decay and graph-positive SimCLR modification, and retains the
+standard downstream linear classifier with average and worst-group accuracy. A
+non-empty teacher graph is required because an empty graph would leave this
+ablation without any training objective. This is a shared-trainer ablation for both
+CRP and CQT; it does not replace the canonical combined objective, change graph
+semantics, or update the CRP-only 2026-08-30 reporting snapshot. Its result can test
+whether KL alone is sufficient in a particular graph/model setting, but it cannot
+by itself establish that SimCLR or the ResNet architecture is generally unnecessary.
+
 ### Reporting snapshots currently available
 
 - **CRP-only report dated 2026-08-30:** use the CRP formulation and results recorded

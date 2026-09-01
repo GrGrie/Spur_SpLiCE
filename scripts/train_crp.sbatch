@@ -34,6 +34,7 @@ CRP_WARMUP_EPOCHS="${CRP_WARMUP_EPOCHS:-10}"
 CRP_DECAY_START_EPOCH="${CRP_DECAY_START_EPOCH:-200}"
 CRP_DECAY_END_EPOCH="${CRP_DECAY_END_EPOCH:-350}"
 CRP_GRAPH_POSITIVES="${CRP_GRAPH_POSITIVES:-true}"
+SIMCLR_WEIGHT="${SIMCLR_WEIGHT:-1.0}"
 
 # CRP frozen-audit hyperparameters.
 CRP_MIN_CONCEPT_FREQUENCY="0.01"
@@ -127,7 +128,10 @@ CUDNN_BENCHMARK="false"           # Must remain false for reproducibility.
 USE_WANDB="true"
 WANDB_PROJECT="Spur_SpLiCE"
 WANDB_ENTITY="gsgrechkin-rptu"
-WANDB_EXTRA_TAGS="machine_cluster"
+WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS:-machine_cluster}"
+
+# Diagnostic jobs may reuse the exact cache/graph preparation path without training.
+PREPARE_ONLY="${PREPARE_ONLY:-false}"
 
 # =============================================================================
 # IMPLEMENTATION BELOW. Normal experiment changes should not require edits here.
@@ -281,10 +285,15 @@ if [[ ( "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ) && ! -f
     fail "Relational teacher graph does not exist after preparation: ${RELATIONAL_TEACHER_GRAPH}"
 fi
 
+if [[ "${PREPARE_ONLY}" == "true" ]]; then
+    echo "[INFO] Frozen cache/graph preparation complete; PREPARE_ONLY=true."
+    return 0 2>/dev/null || exit 0
+fi
+
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
-    crp_relational) RUN_LABEL="CRP_precision_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
-    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_precision_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
+    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
     augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
@@ -311,6 +320,7 @@ ARGS=(
     --weight_decay "${WEIGHT_DECAY}"
     --momentum "${MOMENTUM}"
     --temp "${SIMCLR_TEMPERATURE}"
+    --simclr_weight "${SIMCLR_WEIGHT}"
     --ssl_crop_min "${SSL_CROP_MIN}"
     --head "${HEAD}"
     --feat_dim "${FEAT_DIM}"

@@ -38,21 +38,32 @@ def simclr_forward_loss(
     splice_regularizer=None,
     metadata=None,
     sample_indices=None,
+    simclr_weight: float = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
+    if simclr_weight < 0:
+        raise ValueError("simclr_weight must be non-negative.")
     bsz = image[0].size(0)
     images = torch.cat([image[0], image[1]], dim=0)
     embeddings = model.encoder(images)
-    projections = F.normalize(model.head(embeddings), dim=1)
-    f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
-    features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-    extra_positive_mask = None
-    if splice_regularizer is not None and getattr(splice_regularizer, "uses_graph_positives", False):
-        if sample_indices is None:
-            raise ValueError("Graph-positive contrastive learning requires graph-row sample indices.")
-        extra_positive_mask = splice_regularizer.batch_positive_mask(sample_indices)
-    loss, decor_loss, entropy_loss, _, _ = criterion(
-        features, extra_positive_mask=extra_positive_mask
-    )
+    if simclr_weight > 0:
+        projections = F.normalize(model.head(embeddings), dim=1)
+        f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
+        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        extra_positive_mask = None
+        if splice_regularizer is not None and getattr(splice_regularizer, "uses_graph_positives", False):
+            if sample_indices is None:
+                raise ValueError("Graph-positive contrastive learning requires graph-row sample indices.")
+            extra_positive_mask = splice_regularizer.batch_positive_mask(sample_indices)
+        simclr_loss, decor_loss, entropy_loss, _, _ = criterion(
+            features, extra_positive_mask=extra_positive_mask
+        )
+        loss = simclr_weight * simclr_loss
+    else:
+        # Keep a differentiable zero so an unsupported relational batch is still safe to backpropagate.
+        simclr_loss = embeddings.sum() * 0.0
+        decor_loss = simclr_loss
+        entropy_loss = simclr_loss
+        loss = simclr_loss
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
         if getattr(splice_regularizer, "requires_crp_indices", False):
@@ -61,6 +72,7 @@ def simclr_forward_loss(
             splice_loss = splice_regularizer(embeddings, sample_indices)
             loss = loss + splice_loss
             parts = {
+                "simclr": simclr_loss,
                 "decor": decor_loss,
                 "entropy": entropy_loss,
                 "splice": splice_loss,
@@ -84,6 +96,7 @@ def simclr_forward_loss(
         splice_loss = splice_regularizer(regularized_embeddings, repeated_concepts, repeated_targets)
         loss = loss + splice_loss
     parts = {
+        "simclr": simclr_loss,
         "decor": decor_loss,
         "entropy": entropy_loss,
         "splice": splice_loss,
@@ -98,6 +111,7 @@ def train_one_epoch(
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    simclr_losses = AverageMeter()
     decor_losses = AverageMeter()
     entropy_losses = AverageMeter()
     splice_losses = AverageMeter()
@@ -143,8 +157,10 @@ def train_one_epoch(
                 splice_regularizer,
                 metadata=metadata,
                 sample_indices=sample_indices,
+                simclr_weight=getattr(args, "simclr_weight", 1.0),
             )
         losses.update(loss.item(), bsz)
+        simclr_losses.update(parts["simclr"].item(), bsz)
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
         splice_losses.update(parts["splice"].item(), bsz)
@@ -162,6 +178,7 @@ def train_one_epoch(
                 splice_regularizer,
                 metadata=metadata,
                 sample_indices=sample_indices,
+                simclr_weight=getattr(args, "simclr_weight", 1.0),
             )
             optimizer.zero_grad()
             loss.backward()
@@ -195,6 +212,7 @@ def train_one_epoch(
 
     return {
         "loss": losses.avg,
+        "simclr_loss": simclr_losses.avg,
         "decor_loss": decor_losses.avg,
         "entropy_loss": entropy_losses.avg,
         "splice_loss": splice_losses.avg,
@@ -251,6 +269,7 @@ def log_rank_metrics(
             {
                 **rank_metrics,
                 "SSL train loss": train_metrics["loss"],
+                "SSL SimCLR loss": train_metrics["simclr_loss"],
                 "SSL decor loss": train_metrics["decor_loss"],
                 "SSL entropy loss": train_metrics["entropy_loss"],
                 "SSL splice loss": train_metrics["splice_loss"],
