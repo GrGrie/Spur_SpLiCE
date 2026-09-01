@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --time=16:00:00
-#SBATCH --job-name=SpurSpLiCE_train
+#SBATCH --time=08:00:00
+#SBATCH --job-name=SpurSpLiCE_CRP
 #SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1
@@ -15,45 +15,25 @@
 set -euo pipefail
 
 # =============================================================================
-# EDIT ONLY THIS CONFIGURATION BLOCK
-# Submit with: sbatch scripts/train.sbatch
-#
-# MODE selects the experiment:
-#   none               plain SimCLR baseline
-#   crp_relational     label-free CRP teacher-graph distillation
-#   cqt_relational     label-free CQT quotient-transport distillation
-#   augment            concept-routed strong augmentation
-#   corr_reg           SpLiCE/feature correlation regularization
-#   augment_corr_reg   routed augmentation + correlation regularization
+# CRP CONFIGURATION — normally edit only this block.
+# Submit with: sbatch scripts/train_crp.sbatch
 # =============================================================================
+MODE="${MODE:-crp_relational}"    # Fixed by this entry point; CQT uses train_cqt.sbatch.
+DATASET="${DATASET:-waterbirds}" # waterbirds | celeba | spur_cifar10
+MODEL="${MODEL:-resnet18_large}"
+SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # sbatch --array=0-2 for three seeds.
 
-# =============================================================================
-# CURRENT GRAPH METHODS: CRPv2 / CQT
-# Ordered approximately by expected impact on WG/average accuracy.
-# Start a sweep from the top; parameters lower in the file usually need fewer changes.
-# =============================================================================
-MODE="crp_relational"             # Improved CRP precision run; switch back to CQT when needed.
-SPLICE_WEIGHT="0.01"              # Safer CQT pilot after the previous loss dominated late training.
-CRP_TEMPERATURE="0.25"            # Matches the most promising completed CQT pilot.
-LEARNING_RATE="0.01"             # SSL learning rate; try 0.005, 0.01, 0.03.
-EPOCHS="500"                     # 250 for pilot, 500 default, 1000 final if justified.
-LR_DECAY_EPOCHS="auto"            # At 500 epochs: 350,400,450.
-LR_DECAY_RATE="0.1"
-CRP_START_EPOCH="10"              # Pure-SimCLR epochs before CRP/CQT loss; try 5, 10, 20.
-CRP_WARMUP_EPOCHS="10"            # Linear CRP/CQT loss ramp; try 5, 10, 20.
-CRP_DECAY_START_EPOCH="200"        # Begin removing graph pressure after representation shaping.
-CRP_DECAY_END_EPOCH="350"          # Return to pure SimCLR for the final training phase.
-CRP_GRAPH_POSITIVES="true"         # Graph donors are positives, not simultaneous negatives.
-BATCH_SIZE="256"                 # SimCLR batch size; try 128 or 256 within GPU memory.
-SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # `sbatch --array=0-2` runs three independent seeds.
-
-# Shared CRP/CQT artifact preparation. This Slurm job builds/reuses the frozen
-# cache and automatically builds a missing or configuration-mismatched graph.
-CRP_AUTO_BUILD_GRAPH="true"       # Keep true: one sbatch command prepares the graph and trains.
-CRP_FORCE_REBUILD="false"         # true forces both frozen-cache and graph reconstruction.
-CRP_CACHE_BATCH_SIZE="64"
-CRP_CACHE_NUM_WORKERS="4"
-CRP_DINO_MODEL="vit_small_patch16_dinov3.lvd1689m"
+# Main SSL/CRP sweep parameters.
+EPOCHS="${EPOCHS:-500}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+LEARNING_RATE="${LEARNING_RATE:-0.01}"
+SPLICE_WEIGHT="${SPLICE_WEIGHT:-0.01}"
+CRP_TEMPERATURE="${CRP_TEMPERATURE:-0.25}"
+CRP_START_EPOCH="${CRP_START_EPOCH:-10}"
+CRP_WARMUP_EPOCHS="${CRP_WARMUP_EPOCHS:-10}"
+CRP_DECAY_START_EPOCH="${CRP_DECAY_START_EPOCH:-200}"
+CRP_DECAY_END_EPOCH="${CRP_DECAY_END_EPOCH:-350}"
+CRP_GRAPH_POSITIVES="${CRP_GRAPH_POSITIVES:-true}"
 
 # CRP frozen-audit hyperparameters.
 CRP_MIN_CONCEPT_FREQUENCY="0.01"
@@ -73,79 +53,15 @@ CRP_NULL_QUANTILE="0.95"
 CRP_SIMILARITY_CHUNK_SIZE="512"
 CRP_ORTHOGONAL_TOLERANCE="1e-6"
 
-# CQT frozen-audit hyperparameters. These are independent from the CRP block.
-CQT_MIN_CONCEPT_FREQUENCY="0.01"  # Ignore rarer words; try 0.005, 0.01, 0.02.
-CQT_MAX_CONCEPT_FREQUENCY="0.95"  # Ignore near-universal words; try 0.90, 0.95, 0.98.
-CQT_TEXT_SIMILARITY_THRESHOLD="0.8" # Merge close word directions; try 0.75, 0.8, 0.85.
-CQT_COACTIVATION_THRESHOLD="0.35" # Merge jointly active words; try 0.25, 0.35, 0.5.
-CQT_MIN_GROUP_SIZE="1"            # Minimum words per state group; usually 1 or 2.
-CQT_MAX_CANDIDATE_GROUPS="128"    # Pair-search breadth; try 64, 128, 256 (cost increases).
-CQT_MAX_FACTORS="8"               # Most factor pairs audited; try 4, 8, 16 (cost increases).
-CQT_MIN_STATE_SAMPLES="16"        # Minimum exclusive samples/state/fold; try 8, 16, 32.
-CQT_MIN_EXCLUSIVITY="0.8"         # Reject coactive state pairs; try 0.7, 0.8, 0.9.
-CQT_MIN_CONTEXT_SIMILARITY="0.2"  # Required shared non-factor semantics; try 0.1, 0.2, 0.3.
-CQT_MIN_STATE_BALANCED_ACCURACY="0.7" # Raw state predictability; try 0.65, 0.7, 0.75.
-CQT_MIN_QUOTIENT_EFFICACY="0.04"  # Candidate from the best completed pilot; audit before promotion.
-CQT_TRANSPORT_CANDIDATES="32"     # Word-neighbour support per node; try 16, 32, 64.
-CQT_TRANSPORT_MASS="0.25"         # Fraction of smaller state matched; try 0.1, 0.25, 0.5.
-CQT_MIN_TRANSPORT_PAIRS="8"       # Minimum fixed transport mass; try 4, 8, 16.
-CQT_MIN_WORD_SIMILARITY="0.2"     # Preserved-word compatibility gate; try 0.1, 0.2, 0.3.
-CQT_DINO_NEIGHBORS="10"           # Local DINO profile width; try 5, 10, 20.
-CQT_DINO_DAMAGE_QUANTILE="0.6"    # Candidate from the best completed pilot.
-CQT_MIN_INTERVENTION_GAIN="1e-4"  # Minimum quotient cosine gain; try 0, 1e-4, 1e-3.
-CQT_MIN_COVERAGE="0.01"           # Minimum supported-anchor fraction; try 0.01, 0.05, 0.1.
-CQT_NULL_TRIALS="32"              # More reliable null estimate than the earlier four-trial pilot.
-CQT_NULL_QUANTILE="0.95"          # Required null exceedance; try 0.90, 0.95, 0.99.
-CQT_GRAPH_TOP_K="10"              # Teacher neighbours per anchor; try 5, 10, 20.
-CQT_INDEGREE_FACTOR="3.0"         # Donor-hub cap multiplier; try 2, 3, 5.
-CQT_SIMILARITY_CHUNK_SIZE="512"   # Audit speed/memory tradeoff; try 256, 512, 1024.
-CQT_ORACLE_AUDIT="true"            # Waterbirds-only post-hoc check; never used to build the graph.
-WATERBIRDS_METADATA_CSV="./datasets/waterbirds/metadata.csv"
-
-# =============================================================================
-# LEGACY METHODS: augment / corr_reg / augment_corr_reg
-# These settings are ignored by CRPv2/CQT. SPLICE_WEIGHT above is also the corr-reg
-# weight, so it remains near the top rather than being duplicated here.
-# =============================================================================
-SPLICE_SCORE_QUANTILE="0.75"      # Main augment sweep axis: 0.50/0.75/0.90/0.95.
-SPLICE_ROUTING_MODE="semantic"    # semantic | shuffled | random | all
-SPLICE_CONDITIONAL_ON_TARGET="true"
-SPLICE_CONCEPTS="auto"            # "auto" or comma-separated names/indices.
-SPLICE_AUTO_TOP_K="5"
-SPLICE_SCORE_REDUCTION="max"      # mean | max
-SPLICE_L1_PENALTY="0.25"
-
-# Strong augmentation components; use "false" to disable one.
-SPLICE_STRONG_CROP="0.08"
-SPLICE_STRONG_COLOR_JITTER="0.8,0.8,0.8,0.2"
-SPLICE_STRONG_COLOR_JITTER_P="0.9"
-SPLICE_STRONG_GRAYSCALE_P="0.3"
-SPLICE_STRONG_BLUR_P="0.5"
-SPLICE_STRONG_BLUR_KERNEL_SIZE="" # Empty = automatic kernel size.
-SPLICE_STRONG_BLUR_SIGMA="0.1,2.0"
-SPLICE_STRONG_LINE_RECOLOR="false"
-SPLICE_SCORE_THRESHOLD="auto"
-
-# Automatic concept discovery (normally leave fixed while sweeping training).
-SPLICE_AUTO_RANKING_METHOD="intervention_utility"
-SPLICE_AUTO_SPLIT="train"
-SPLICE_AUTO_PROBE_C="1.0"
-SPLICE_AUTO_PROBE_MAX_ITER="5000"
-SPLICE_AUTO_PROBE_CV_FOLDS="5"
-SPLICE_AUTO_UTILITY_MAX_SAMPLES="20000"
-SPLICE_AUTO_UTILITY_CANDIDATE_POOL="100"
-SPLICE_AUTO_UTILITY_MIN_REPAIR="1"
-SPLICE_AUTO_UTILITY_MIN_MARGINAL="0.0"
-SPLICE_AUTO_MIN_MEAN_WEIGHT="0.0"
-SPLICE_AUTO_LABEL_PENALTY="1.0"
-SPLICE_AUTO_INSTABILITY_PENALTY="1.0"
-SPLICE_AUTO_USE_ABS_SCORE="false"
-SPLICE_AUTO_REQUIRE_CONSISTENT_DIRECTION="true"
-SPLICE_AUTO_DEDUPLICATE_CONCEPTS="true"
+# Graph/cache preparation.
+CRP_AUTO_BUILD_GRAPH="${CRP_AUTO_BUILD_GRAPH:-true}"
+CRP_FORCE_REBUILD="${CRP_FORCE_REBUILD:-false}"
+CRP_CACHE_BATCH_SIZE="${CRP_CACHE_BATCH_SIZE:-64}"
+CRP_CACHE_NUM_WORKERS="${CRP_CACHE_NUM_WORKERS:-4}"
+CRP_DINO_MODEL="${CRP_DINO_MODEL:-vit_small_patch16_dinov3.lvd1689m}"
 
 # =============================================================================
 # SHARED LOWER-PRIORITY TRAINING SETTINGS
-# Change these only after the high-impact CRP/legacy parameters above.
 # =============================================================================
 OPTIMIZER="SGD"                   # SGD | AdamW | SAM
 WEIGHT_DECAY="1e-4"
@@ -154,11 +70,11 @@ SIMCLR_TEMPERATURE="0.05"
 SSL_CROP_MIN="0.2"
 COSINE="false"
 LR_WARMUP="false"
-MODEL="resnet18_large"            # Use resnet50_pretrained for ImageNet-pretrained ResNet-50.
 HEAD="mlp"
 FEAT_DIM="128"
-DATASET="waterbirds"              # Default; alternatives: celeba | spur_cifar10
 TRIAL="0"
+LR_DECAY_EPOCHS="auto"
+LR_DECAY_RATE="0.1"
 
 # SAM-only settings (ignored by SGD/AdamW)
 SAM_BASE_OPTIMIZER="SGD"
@@ -166,11 +82,12 @@ SAM_RHO="0.05"
 SAM_NO_GRAD_NORM="false"
 ONLY_SAM_STEP_SIZE="false"
 
-# Frozen SpLiCE/OpenCLIP backend (legacy methods only)
+# Frozen SpLiCE/OpenCLIP backend used to construct the relational cache.
 SPLICE_MODEL="open_clip:ViT-B-32"
 SPLICE_PRETRAINED="laion2b_s34b_b79k"
 SPLICE_VOCAB="laion"
 SPLICE_VOCAB_SIZE="10000"
+SPLICE_L1_PENALTY="0.25"
 SPLICE_BATCH_SIZE="128"
 SPLICE_NUM_WORKERS="1"
 
@@ -194,7 +111,7 @@ PRINT_FREQ="25"
 RANK_EVAL_FREQ="0"
 
 # Cluster paths and runtime (rarely changed)
-PROJECT_DIR="/home/xar68reb/Spur_SpLiCE"
+PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="grgrie-train"
 DATA_FOLDER="/home/xar68reb/Datasets"
 CHECKPOINT_DIR="outputs/training"
@@ -224,8 +141,8 @@ fail() {
 [[ -d "${PROJECT_DIR}" ]] || fail "PROJECT_DIR does not exist: ${PROJECT_DIR}"
 
 case "${MODE}" in
-    none|crp_relational|cqt_relational|corr_reg|augment|augment_corr_reg) ;;
-    *) fail "Unknown MODE=${MODE}" ;;
+    crp_relational|cqt_relational) ;;
+    *) fail "Relational entry points support only crp_relational or cqt_relational; got MODE=${MODE}" ;;
 esac
 
 # The root training CLI accepts a few historical CelebA spellings, while the
@@ -508,7 +425,7 @@ elif [[ "${MODE}" == "augment" || "${MODE}" == "augment_corr_reg" ]]; then
     fi
 fi
 
-echo "=== Spur SpLiCE unified training ==="
+echo "=== Spur SpLiCE relational training ==="
 echo "mode=${MODE} dataset=${DATASET} seed=${SEED} epochs=${EPOCHS}"
 echo "run=${WANDB_RUN_NAME} checkpoints=${CHECKPOINT_DIR}"
 echo "started=$(date --iso-8601=seconds) host=$(hostname)"

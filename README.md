@@ -50,7 +50,8 @@ with `--data_folder` or `-DataFolder`.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
 - `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
-- `scripts/train.sbatch` — единственная точка входа для обучения на Slurm.
+- `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
+- `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
 
 ## Training length and learning-rate schedules
 
@@ -122,11 +123,12 @@ Tasks `0..4` are All, Crop, ColorJitter, Grayscale, and Blur.
 Tasks `0..8` are baseline, augmentation quantiles
 `.50/.75/.90/.95`, and correlation weights `.001/.01/.1/1.0`.
 
-Cluster sweeps use the same entry point: edit one configuration at a time in
-the top block and submit it. W&B names include the relevant values.
+Cluster sweeps use the method-specific entry point. Edit one configuration at a
+time in its top block; W&B names include the relevant values.
 
 ```bash
-sbatch scripts/train.sbatch
+sbatch scripts/train_crp.sbatch
+sbatch scripts/train_cqt.sbatch
 ```
 
 ### SpLiCE synthesis and distillation
@@ -209,27 +211,27 @@ row-stochastic teacher distribution. The backbone relation distribution is match
 with confidence-weighted KL while the ordinary SimCLR projection-head loss remains
 active. Target labels, spurious attributes, and groups are not passed to this loss.
 
-After a teacher graph exists, set `MODE="crp_relational"` and
-`CRP_TEACHER_GRAPH` in the top block of the unified training script:
+The CRP entry point builds or reuses its teacher graph automatically:
 
 ```bash
-sbatch scripts/train.sbatch
+sbatch scripts/train_crp.sbatch
 ```
 
-All training paths and hyperparameters are declared once in
-`scripts/train.sbatch`; no terminal-side environment variables are required.
+CRP training and graph hyperparameters are grouped near the top of
+`scripts/train_crp.sbatch`. CQT has an independent top-level configuration in
+`scripts/train_cqt.sbatch`; no terminal-side environment variables are required.
 
 For CRP graph sweeps, edit the named numeric variables near the top of
 `scripts/SpLiCE_CRP_v2_frozen_audit.sbatch`, for example
 `MIN_GROUP_SIZE="2"`, and submit the pipeline again. The fixed feature file is
 reused without submitting another cache job. ResNet and CRP-loss settings live
-only in `scripts/train.sbatch`.
+in `scripts/train_crp.sbatch`.
 
 The audit still constructs the graph. If it contains no accepted edges, training
 runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The
 ungated run must not be reported as having passed the frozen audit.
 
-The unified training script enables Weights & Biases by default. CRP v2 runs use
+Both training scripts enable Weights & Biases by default. CRP v2 runs use
 project `Spur_SpLiCE` and group by dataset/seed/protocol. A persistent W&B login
 must already exist on the cluster account; API keys are deliberately not stored
 in the repository.

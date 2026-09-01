@@ -2,13 +2,14 @@
 
 **Status:** canonical project specification
 
-**Last updated:** 2026-08-30
+**Last updated:** 2026-09-01
 **Implemented baseline:** SpLiCE-CRP v2 — Concept-Projected Relational Pretraining
 
 **Implemented experimental extension:** SpLiCE-CQT v1 — Concept Quotient Transport
 
 **Implementation status:** CRP and CQT graph construction plus shared SSL relational
-training are implemented; empirical validation remains pending
+training are implemented. Initial single-seed Waterbirds experiments exist, but
+multi-seed stability and the causal value of the graph mechanism are not established.
 
 > This file is the authoritative source of truth for the current project direction.
 > If `README.md`, `SPUR_SPLICE_CHAT_SUMMARY.md`, `Spur_SpLiCE.tex`, old chat
@@ -644,16 +645,17 @@ and is a required baseline rather than dead code.
 
 ### 8.11 Running CRP and CQT
 
-The single experiment switch is near the top of `scripts/train.sbatch`:
+CRP and CQT have separate Slurm entry points with their method-specific parameters
+grouped near the top:
 
 ```bash
-MODE="cqt_relational"   # current Waterbirds default: experimental CQT v1
-MODE="crp_relational"   # switch back to existing CRP v2
-MODEL="resnet18_large"       # current target architecture
+sbatch scripts/train_crp.sbatch
+sbatch scripts/train_cqt.sbatch
 ```
 
-The launch default is CQT on `waterbirds`; changing `MODE` back to
-`crp_relational` preserves the CRP path. Both modes build/reuse
+`train_crp.sbatch` defaults directly to `crp_relational`, while
+`train_cqt.sbatch` fixes `cqt_relational` and supplies its configuration to the
+shared W&B-enabled execution body. Both modes build/reuse
 `outputs/crp/<dataset>_train_features.pt` and pass a row-stochastic graph to the
 same training entry point. CRP graphs stay in `outputs/crp/<dataset>/`; complete
 CQT graph and concept-card JSON artifacts are written to `outputs/cqt/<dataset>/`.
@@ -664,7 +666,7 @@ added to the W&B run config after graph loading.
 The sbatch script compares an existing artifact's stored config with the resolved
 CRP/CQT config. A missing, unreadable, wrong-type, or configuration-mismatched graph
 is rebuilt automatically while a valid frozen feature cache is reused. Therefore a
-normal CQT run needs only `sbatch scripts/train.sbatch`; no separate graph command
+normal CQT run needs only `sbatch scripts/train_cqt.sbatch`; no separate graph command
 or manual invalidation is required. `CRP_FORCE_REBUILD=true` remains available when
 the frozen cache itself must also be reconstructed. Real full training keeps W&B
 enabled as required by `AGENTS.md`; disabling it is for explicit smoke/local debug
@@ -972,8 +974,8 @@ Implemented now:
    sampler, relational KL, schedule, and empty-graph fallback;
 3. CQT factor proposal, rank-one quotient, implicit word kernel, exact sparse
    partial-transport LP, DINO local guard, null controls, and concept-card JSON;
-4. `crp_relational` and `cqt_relational` modes in the unified training entry point
-   and `scripts/train.sbatch`;
+4. `crp_relational` and `cqt_relational` modes exposed through separate
+   `scripts/train_crp.sbatch` and `scripts/train_cqt.sbatch` entry points;
 5. W&B-enabled full-training launch with resolved graph artifact/config recorded;
 6. unit tests for label isolation, projections, quotient, deterministic graphs,
    row stochasticity, batching, loss, and training-loop integration.
@@ -1004,14 +1006,15 @@ Current important files:
 - `splice/crp.py` — implemented CRP frozen audit and graph builder;
 - `splice/cqt.py` — implemented CQT frozen audit, transport, and concept cards;
 - `splice/crp_training.py` — shared CRP/CQT graph validation, sampler, and loss;
-- `scripts/train.sbatch` — one-line CRP/CQT mode switch and W&B-enabled launch;
+- `scripts/train_crp.sbatch` — CRP configuration and shared W&B-enabled runner;
+- `scripts/train_cqt.sbatch` — CQT-specific configuration and Slurm entry point;
 - `experiments/spurious_eval/` — datasets, models, losses, training, and metrics.
 
 `spur_splice.py --splice_mode crp_relational` and `--splice_mode cqt_relational`
 both implement confidence-weighted graph distillation on ResNet backbone features
 with graph-aware sampling, a pure-SimCLR start period, a gradual loss ramp, and
-empty-graph fallback. This executable infrastructure is not evidence of a positive
-CRP/CQT result; matched real-data experiments remain pending.
+empty-graph fallback. Initial single-seed experiments are promising but mixed;
+matched multi-seed evidence and mechanism-isolating controls remain pending.
 
 ## 16. Literature anchors
 
@@ -1033,7 +1036,8 @@ CRP/CQT result; matched real-data experiments remain pending.
 
 Before proposing, implementing, or describing the project:
 
-1. Read this file completely.
+1. At the beginning of every new chat, read this file completely before taking
+   task-specific action. Do not rely only on a previous chat summary.
 2. State whether the requested work concerns legacy methods, CRP v2, or CQT v1.
 3. Inspect the current code before claiming that a CRP/CQT component exists.
 4. Preserve the strict information boundary: no `y`, `a`, or group labels in CRP
@@ -1047,3 +1051,246 @@ Before proposing, implementing, or describing the project:
 10. Surface CQT concept cards in analysis; interpretability is part of the method.
 11. If changing a canonical decision, update this file with the reason, rejected
    alternative, date, and consequences for experiments and paper claims.
+12. After every material method, architecture, loss, graph, experiment-protocol,
+    reporting, or interpretation change, append a dated entry to Section 18 during
+    the same task.
+13. Do not silently edit old chronology entries. Add a correction or superseding
+    entry so that the state of the project on any earlier reporting date remains
+    reconstructable.
+14. Always distinguish the current research state from the reporting snapshot.
+    It is valid for a presentation to report the CRP-only state of 2026-08-30 while
+    current research includes later CQT experiments, provided the date is explicit.
+
+## 18. Dated research and implementation chronology
+
+### How to maintain this chronology
+
+This section records scientific and implementation milestones rather than every
+mechanical line edit. Each entry should make it possible to reconstruct what method
+existed on that date. Record:
+
+- the track: legacy, CRP, CQT, shared trainer, baseline, or reporting;
+- the state before the change;
+- the change and its motivation;
+- consequences for losses, graph semantics, experiments, and supported claims;
+- the reporting snapshot affected by the change.
+
+Current research and reported research are deliberately separate timelines. The
+code may contain CQT while a dated presentation or manuscript describes only CRP.
+Do not back-port later improvements into an earlier narrative without labelling
+them as later work.
+
+### 2026-08-07 — Frozen-CLIP sanity checks
+
+**Track:** legacy diagnostics.
+
+Waterbirds concept-ablation sanity checks were added to test whether frozen SpLiCE
+concept interventions could change downstream behaviour at all. This was evidence
+about available concept information, not yet a CRP training method.
+
+### 2026-08-12 — Discovery rankings and diagnostics
+
+**Track:** legacy concept discovery.
+
+Concept-ranking variants and diagnostic outputs were expanded. The project was
+still attempting to identify useful concepts directly; no relational CRP student
+objective existed yet.
+
+### 2026-08-18 — Intervention utility and the CRP v2 frozen stage
+
+**Track:** legacy IU, CRP graph construction, diagnostic baselines.
+
+The label-assisted intervention-utility track was implemented, together with the
+first CRP v2 feature cache, frozen audit, soft graph construction, post-hoc graph
+evaluation, raw-CLIP/DINO-style baseline graphs, and a privileged relational oracle.
+CRP edge evidence already had pair confidence, but the standalone ResNet relational
+trainer had not yet been implemented. Therefore there was no historical unweighted
+CRP training loss before this date; CRP was still a frozen graph/audit mechanism.
+
+### 2026-08-24 — First implemented CRP relational trainer
+
+**Track:** CRP and shared trainer.
+
+CRP relational SSL training was introduced with the graph-aware batch sampler,
+backbone-level student similarities, empty-support handling, and validation of the
+teacher graph. From its first implementation, the relational loss was confidence
+weighted:
+
+```text
+L_CRP = mean over supported anchors i of
+        q_i * KL(p_T(.|i) || p_S(.|i))
+
+L_total = L_SimCLR + lambda(t) * L_CRP
+```
+
+The original anchor confidence was relative to the strongest retained edge in the
+same graph:
+
+```text
+q_i_old = max_j edge_confidence(i,j)
+          / max_k max_j edge_confidence(k,j)
+```
+
+The schedule had a SimCLR-only start and a linear ramp, after which `lambda(t)`
+stayed constant. Graph-linked donors were still ordinary SimCLR negatives. This is
+the earliest implemented CRP loss and is the correct starting point for historical
+method descriptions.
+
+### 2026-08-25 — Unified training entry point
+
+**Track:** experiment infrastructure.
+
+Older Waterbirds launch scripts were consolidated into `scripts/train.sbatch`.
+Run naming was clarified on the same day. This changed experiment operation, not
+the CRP mathematical objective.
+
+### 2026-08-27 — Automatic frozen graph preparation
+
+**Track:** CRP experiment infrastructure.
+
+The CRP frozen-audit configuration was expanded and graph preparation became part
+of the normal training launch. A missing or incompatible graph could be rebuilt
+before SSL training. This reduced manual experiment drift without changing the
+meaning of the relational loss.
+
+### 2026-08-28 — Cluster resource and checkpoint workflow
+
+**Track:** experiment infrastructure.
+
+Memory allocation, output paths, feature-cache validation, and checkpoint cleanup
+options were revised. These were operational changes and should not be presented as
+method innovations.
+
+### 2026-08-30 — CRP reporting snapshot and CQT integration
+
+**Track:** CRP reporting; CQT research implementation.
+
+The CRP manuscript snapshot described the confidence-weighted relational loss with
+`q_i`, graph-aware sampling, a start at epoch 10, and a ten-epoch ramp to a constant
+relational weight. Its strongest recorded single-seed CRP configuration reported
+53.49% average accuracy and 48.95% WGA against approximately 48.94% average accuracy
+and 40.66% WGA for the matched SimCLR baseline. These numbers establish a promising
+pilot, not seed stability.
+
+The same date also introduced the CQT implementation and shared CRP/CQT graph
+validation. CQT was an experimental research extension, not part of the CRP-only
+reporting snapshot. The manuscript saved on this date already contains `q_i`; the
+later September work did not introduce confidence weighting itself.
+
+### 2026-08-31 — CQT operations, empty-graph fallback, and model scale check
+
+**Track:** CQT, shared trainer, and baselines.
+
+An empty CRP/CQT graph was made an explicit SimCLR fallback instead of a failed
+training job. CQT graph configuration was added to artifact paths and run labels,
+and a dedicated CQT investigation workflow was added. Support for an
+ImageNet-initialized ResNet50 student was added as an exploratory scale/pretraining
+check. CoBalT reproduction code was also imported as a comparison track.
+
+The ResNet50 experiment must not be cited as evidence for CQT when its selected
+graph is empty: in that case the run is operationally a SimCLR run from a different
+initialization and architecture.
+
+### 2026-09-01 — Absolute confidence, null-margin calibration, graph positives,
+and concept reports
+
+**Track:** CRP, CQT, shared trainer, interpretability, and audit tooling.
+
+Before this change, every non-empty graph normalized its strongest anchor to
+confidence one. That discarded the absolute strength of graph evidence. Anchor
+confidence now remains on its absolute bounded scale:
+
+```text
+q_i_current = clamp(max_j calibrated_edge_confidence(i,j), 0, 1)
+```
+
+For CRP, selected group evidence is additionally scaled by how far its group score
+exceeds its label-free null threshold. A group that barely passes the threshold now
+contributes less than a group with a large null margin. The multiplication by `q_i`
+inside the KL mean did not change; the construction and calibration of `q_i` did.
+
+Graph-linked samples were changed from simultaneous ordinary SimCLR negatives into
+weighted additional contrastive positives. This addresses the earlier conflict in
+which relational KL pulled a donor toward an anchor while NT-Xent pushed the same
+pair apart. The total objective is therefore now more precisely described as:
+
+```text
+L_total(t) = L_graph-positive-SimCLR
+             + lambda(t) * mean_i[q_i * KL(p_T(.|i) || p_S(.|i))]
+```
+
+An optional late linear decay of `lambda(t)` was added so graph supervision can
+shape the representation early and return control to SimCLR later. Graph records
+were moved to complete JSON artifacts. Post-hoc Waterbirds oracle graph audit and
+CRP concept-usage reports were added. A concept report distinguishes concepts whose
+directions were projected during teacher construction from concepts proven absent
+from the final ResNet; the latter claim is not justified by graph metadata alone.
+
+CRP precision defaults were also tightened: a higher activation-difference gate,
+a larger minimum intervention gain, fewer neighbours per anchor, and more null
+trials. These defaults are new experimental candidates, not established optimal
+values.
+
+### 2026-09-01 — Separate CRP and CQT cluster entry points
+
+**Track:** experiment infrastructure and reporting ergonomics.
+
+Before this change, `scripts/train.sbatch` contained CRP, CQT, shared-training, and
+legacy settings in one long configuration block. Switching methods required finding
+and editing `MODE` while unrelated method parameters remained interleaved.
+
+The old entry point was renamed to `scripts/train_crp.sbatch` and reorganized so
+dataset, model, main CRP loss controls, and CRP graph-audit parameters are grouped
+at the top. `scripts/train_cqt.sbatch` was added with dataset, model, main shared
+loss controls, and all CQT proposal/quotient/transport parameters at the top. The
+CQT file supplies those values to the same execution body, preserving graph
+preparation, evaluation, checkpoint handling, and mandatory W&B tracking across
+both methods. Direct submission commands are now method-specific, so changing one
+method's common experimental knobs does not require navigating the other method's
+configuration.
+
+Both Slurm entry points now request eight hours instead of sixteen. This is a
+cluster scheduling/resource request only; it does not change epoch count, optimizer,
+loss, graph construction, or the scientific interpretation of a run.
+
+### 2026-09-01 — First results with graph positives, decay, and absolute confidence
+
+**Track:** CRP/CQT experimental interpretation and next-run selection.
+
+The matched seed-0 SimCLR reference finishes at 48.94% average accuracy and 40.66%
+WGA when measured by the average of the final ten linear-probe results.
+
+The revised CQT configuration (`q=0.04`, DINO damage quantile `0.60`, relational
+weight `0.01`, student temperature `0.25`, graph positives enabled, decay from
+epoch 200 to 350) finishes at 54.74% average accuracy and 52.27% WGA. Its graph is
+very sparse: 72 supported anchors and 79 edges, or 1.50% anchor coverage. The
+weighted relational loss is only about `3e-7` before decay and zero afterward.
+Consequently this run establishes a promising pipeline result but does not show
+that relational KL caused the gain. Graph-aware batches, sparse extra positives,
+and seed variation remain competing explanations.
+
+The revised CRP precision configuration with the same training controls finishes
+at 48.32% average accuracy and 42.81% WGA. Its graph covers 4,095 anchors with
+12,755 edges, or 85.40% coverage. Its weighted relational loss is about `3.1e-4`
+at weight `0.01`, versus approximately `0.059--0.061` throughout the earlier best
+CRP run. The earlier best CRP configuration, before absolute confidence, graph
+positives, and decay, finished at 53.49% average accuracy and 48.95% WGA.
+
+**Interpretation:** the CQT result must first be replicated without changing its
+hyperparameters. CRP's old weight sweep is no longer on the same effective scale:
+the confidence recalibration made `0.01--0.05` nearly remove the KL contribution.
+The next CRP experiments should disable graph positives for the dense graph,
+disable late decay, retain temperature `0.25`, and sweep larger weights chosen by
+the observed loss ratio rather than by downstream WGA. Initial safe candidates are
+`0.5` and `1.0`; `2.0` approximately targets the old weighted-loss magnitude and is
+a higher-risk follow-up. Selection still requires matched seeds and must not be
+presented as label-free hyperparameter selection if WGA is used to choose it.
+
+### Reporting snapshots currently available
+
+- **CRP-only report dated 2026-08-30:** use the CRP formulation and results recorded
+  in the 2026-08-30 entry. Do not include later graph-positive, decay, absolute
+  confidence, CQT, or concept-report changes as if they existed in that snapshot.
+- **Current research state dated 2026-09-01:** CRP and CQT share the revised trainer;
+  CQT is experimentally ahead of the CRP-only narrative, while neither method has
+  yet established multi-seed stability or a causal concept-removal claim.
