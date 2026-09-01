@@ -18,6 +18,8 @@ from typing import Sequence
 import torch
 import torch.nn.functional as F
 
+from splice.graph_io import save_graph_json
+
 
 CACHE_VERSION = 1
 GRAPH_VERSION = 2
@@ -513,9 +515,9 @@ def _build_teacher_graph(
     indegree = torch.bincount(indices[valid], minlength=n_samples)
     row_sums = weights.sum(dim=1)
     supported = row_sums > 0
-    anchor_confidence = edge_confidences.max(dim=1).values
-    if float(anchor_confidence.max()) > 0:
-        anchor_confidence /= anchor_confidence.max()
+    # Keep confidence on its absolute evidence scale. Per-graph normalization made
+    # a uniformly weak graph exert the same pressure as a strong one.
+    anchor_confidence = edge_confidences.max(dim=1).values.clamp(0.0, 1.0)
     return {
         "neighbor_indices": indices,
         "weights": weights,
@@ -654,23 +656,10 @@ def save_feature_cache(cache: dict, path: str | Path) -> None:
     _atomic_torch_save(cache, Path(path))
 
 
-def _artifact_summary(artifact: dict) -> dict:
-    return {
-        "artifact": artifact["artifact"],
-        "graph_version": artifact["graph_version"],
-        "provenance": artifact["provenance"],
-        "sample_count": len(artifact["sample_ids"]),
-        "candidate_group_count": len(artifact["groups"]),
-        "selected_group_ids": artifact["selected_group_ids"],
-        "degree_stats": artifact["degree_stats"],
-        "groups": artifact["groups"],
-    }
-
-
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the label-free SpLiCE-CRP v2 frozen audit.")
     parser.add_argument("--cache", required=True, help="Frozen feature cache (.pt).")
-    parser.add_argument("--output", required=True, help="Teacher graph output (.pt).")
+    parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
     return parser.parse_args(argv)
@@ -688,11 +677,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     cache_path, output_path = Path(args.cache), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
     artifact = run_frozen_audit(cache, config)
-    _atomic_torch_save(artifact, output_path)
-    summary_path = output_path.with_suffix(".json")
-    summary_path.write_text(json.dumps(_artifact_summary(artifact), indent=2), encoding="utf-8")
+    save_graph_json(artifact, output_path)
     print(f"[INFO] Wrote CRP v2 teacher graph to {output_path}")
-    print(f"[INFO] Wrote frozen-audit summary to {summary_path}")
     print(f"[INFO] Selected {len(artifact['selected_group_ids'])}/{len(artifact['groups'])} groups")
 
 

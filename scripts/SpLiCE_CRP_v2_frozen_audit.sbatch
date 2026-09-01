@@ -56,7 +56,7 @@ CRP_CONFIG_JSON="{\"min_concept_frequency\":${MIN_CONCEPT_FREQUENCY},\"max_conce
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 SEED=$((SEED_BASE + TASK_ID))
-OUTPUT_PATH="${OUTPUT_PATH:-${OUT_DIR}/teacher_graph_seed${SEED}.pt}"
+OUTPUT_PATH="${OUTPUT_PATH:-${OUT_DIR}/teacher_graph_seed${SEED}.json}"
 
 cd "${PROJECT_DIR}"
 mkdir -p "${OUT_DIR}" ./output

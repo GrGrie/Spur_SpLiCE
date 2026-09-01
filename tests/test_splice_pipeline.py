@@ -45,9 +45,11 @@ from splice.crp_training import (
     IndexedCrpDataset,
     validate_teacher_graph,
 )
+from splice.graph_io import load_graph_json, save_graph_json
 from splice.model import SPLICE
 import spur_splice
 from spur_splice import resolve_epoch_schedule
+from scripts.tools.audit_cqt_graph_oracle import audit_graph
 from scripts.tools.discover_splice_spurious_concepts import (
     SparseConceptWeights,
     UtilityProbeFold,
@@ -331,6 +333,78 @@ class SplicePipelineTests(unittest.TestCase):
         regularizer.set_epoch(4)
         self.assertAlmostEqual(regularizer.scheduled_weight, 0.2)
 
+    def test_crp_schedule_decays_to_zero(self):
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph,
+            weight=0.2,
+            temperature=0.1,
+            start_epoch=0,
+            warmup_epochs=0,
+            decay_start_epoch=4,
+            decay_end_epoch=8,
+        )
+        regularizer.set_epoch(4)
+        self.assertAlmostEqual(regularizer.scheduled_weight, 0.2)
+        regularizer.set_epoch(6)
+        self.assertAlmostEqual(regularizer.scheduled_weight, 0.1)
+        regularizer.set_epoch(8)
+        self.assertEqual(regularizer.scheduled_weight, 0.0)
+
+    def test_graph_neighbors_become_symmetric_extra_positives(self):
+        graph = validate_teacher_graph(self._tiny_teacher_graph())
+        regularizer = CrpRelationalRegularizer(
+            graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
+        )
+        regularizer.set_epoch(1)
+        mask = regularizer.batch_positive_mask(torch.tensor([0, 2, 1, 3]))
+        expected = torch.tensor(
+            [
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.6],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.6, 0.0, 0.0],
+            ]
+        )
+        self.assertTrue(torch.equal(mask, expected))
+
+    def test_teacher_graph_json_round_trip_and_oracle_audit(self):
+        graph = self._tiny_teacher_graph()
+        graph.update(
+            {
+                "artifact": CQT_ARTIFACT,
+                "group_ids": torch.tensor([[0, -1], [0, -1], [0, -1], [0, -1]]),
+                "intervention_gains": torch.tensor(
+                    [[0.2, 0.0], [0.2, 0.0], [0.1, 0.0], [0.1, 0.0]]
+                ),
+                "factors": [
+                    {
+                        "factor_id": 0,
+                        "selected": True,
+                        "state_a": {"concepts": ["forest"]},
+                        "state_b": {"concepts": ["water"]},
+                        "preserved_concepts": ["bird"],
+                    }
+                ],
+                "selected_factor_ids": [0],
+            }
+        )
+        metadata = [
+            {"y": "0", "place": "0"},
+            {"y": "0", "place": "1"},
+            {"y": "0", "place": "0"},
+            {"y": "1", "place": "1"},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            graph_path = Path(directory) / "teacher_graph.json"
+            save_graph_json(graph, graph_path)
+            restored = load_graph_json(graph_path)
+            self.assertTrue(torch.equal(restored["neighbor_indices"], graph["neighbor_indices"]))
+            report = audit_graph(restored, metadata)
+        self.assertEqual(report["removed_concepts"], ["forest", "water"])
+        self.assertAlmostEqual(report["graph_metrics"]["desired_relation_rate"], 0.5)
+        self.assertAlmostEqual(report["graph_metrics"]["different_target_rate"], 0.5)
+
     def test_empty_crp_graph_regularizer_has_zero_loss(self):
         graph = self._tiny_teacher_graph()
         graph["neighbor_indices"] = torch.full((4, 2), -1)
@@ -363,8 +437,11 @@ class SplicePipelineTests(unittest.TestCase):
             batch_size=2,
             num_workers=0,
             seed=0,
-            crp_teacher_graph="teacher_graph.pt",
-            crp_graph_sha256="digest",
+            crp_teacher_graph="teacher_graph.json",
+            crp_graph_fingerprint="digest",
+            splice_score_threshold=None,
+            splice_score_quantile=0.75,
+            splice_routing_mode="semantic",
         )
 
         with (

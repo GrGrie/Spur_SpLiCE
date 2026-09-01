@@ -14,9 +14,11 @@ from pathlib import Path
 
 import torch
 
+from splice.graph_io import load_graph_json
+
 
 def _evaluate_graph(graph_path: Path, rows: list[dict]) -> None:
-    graph = torch.load(graph_path, map_location="cpu", weights_only=True)
+    graph = load_graph_json(graph_path)
     sample_ids = [str(value) for value in graph["sample_ids"]]
     indices = graph["neighbor_indices"]
     weights = graph["weights"]

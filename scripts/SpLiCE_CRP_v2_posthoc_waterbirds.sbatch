@@ -14,7 +14,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
-GRAPH_PATH="${GRAPH_PATH:-outputs/crp/waterbirds_v2/teacher_graph_seed${TASK_ID}.pt}"
+GRAPH_PATH="${GRAPH_PATH:-outputs/crp/waterbirds_v2/teacher_graph_seed${TASK_ID}.json}"
 METADATA_CSV="${METADATA_CSV:-./datasets/waterbirds/metadata.csv}"
 
 cd "${PROJECT_DIR}"

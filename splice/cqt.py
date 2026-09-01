@@ -27,12 +27,12 @@ from splice.crp import (
     CACHE_VERSION,
     GRAPH_VERSION,
     CrpAuditConfig,
-    _atomic_torch_save,
     _build_teacher_graph,
     group_concepts,
     topk_neighbors,
     validate_feature_cache,
 )
+from splice.graph_io import save_graph_json
 
 
 CQT_ARTIFACT = "splice_cqt_v1_teacher_graph"
@@ -826,29 +826,35 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
         if selected:
             rows, columns, confidences, gains = [], [], [], []
             for plan in plans:
-                selected_edges = plan["selected"]
+                edge_gain_all = plan["quotient_similarity"] - plan["raw_similarity"]
+                selected_edges = plan["selected"] & (edge_gain_all > config.min_intervention_gain)
+                if not torch.any(selected_edges):
+                    continue
                 state_a_rows = plan["state_a"][plan["source"][selected_edges]]
                 state_b_rows = plan["state_b"][plan["destination"][selected_edges]]
                 flow = plan["flow"][selected_edges]
-                edge_gain = (
-                    plan["quotient_similarity"][selected_edges]
-                    - plan["raw_similarity"][selected_edges]
-                )
+                edge_gain = edge_gain_all[selected_edges]
                 rows.extend([state_a_rows, state_b_rows])
                 columns.extend([state_b_rows, state_a_rows])
-                confidences.extend([flow * null_excess_gain, flow * null_excess_gain])
+                edge_confidence = flow * null_excess_gain * edge_gain
+                confidences.extend([edge_confidence, edge_confidence])
                 gains.extend([edge_gain, edge_gain])
-            selected_evidence.append(
-                (
-                    factor_id,
-                    {
-                        "rows": torch.cat(rows),
-                        "columns": torch.cat(columns),
-                        "confidence": torch.cat(confidences),
-                        "gain": torch.cat(gains),
-                    },
+            factor_payload["accepted_edge_count"] = sum(len(values) for values in rows)
+            if rows:
+                selected_evidence.append(
+                    (
+                        factor_id,
+                        {
+                            "rows": torch.cat(rows),
+                            "columns": torch.cat(columns),
+                            "confidence": torch.cat(confidences),
+                            "gain": torch.cat(gains),
+                        },
+                    )
                 )
-            )
+            else:
+                factor_payload["selected"] = False
+                factor_payload["gates"]["edge_level_gain"] = False
 
     graph = _build_teacher_graph(len(cache["sample_ids"]), selected_evidence, config)
     return {
@@ -864,24 +870,10 @@ def run_cqt_audit(cache: dict, config: CqtAuditConfig) -> dict:
     }
 
 
-def _artifact_summary(artifact: dict) -> dict:
-    return {
-        "artifact": artifact["artifact"],
-        "graph_version": artifact["graph_version"],
-        "config": artifact["config"],
-        "provenance": artifact["provenance"],
-        "sample_count": len(artifact["sample_ids"]),
-        "candidate_factor_count": len(artifact["factors"]),
-        "selected_factor_ids": artifact["selected_factor_ids"],
-        "degree_stats": artifact["degree_stats"],
-        "factors": artifact["factors"],
-    }
-
-
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the label-free SpLiCE-CQT frozen audit.")
     parser.add_argument("--cache", required=True, help="Existing CRP frozen feature cache (.pt).")
-    parser.add_argument("--output", required=True, help="CQT teacher graph output (.pt).")
+    parser.add_argument("--output", required=True, help="Complete CQT teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CqtAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the proposal/null seed.")
     return parser.parse_args(argv)
@@ -899,11 +891,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     cache_path, output_path = Path(args.cache), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
     artifact = run_cqt_audit(cache, config)
-    _atomic_torch_save(artifact, output_path)
-    summary_path = output_path.with_suffix(".json")
-    summary_path.write_text(json.dumps(_artifact_summary(artifact), indent=2), encoding="utf-8")
+    save_graph_json(artifact, output_path)
     print(f"[INFO] Wrote CQT teacher graph to {output_path}")
-    print(f"[INFO] Wrote CQT concept cards to {summary_path}")
     print(
         f"[INFO] Selected {len(artifact['selected_factor_ids'])}/{len(artifact['factors'])} factors"
     )

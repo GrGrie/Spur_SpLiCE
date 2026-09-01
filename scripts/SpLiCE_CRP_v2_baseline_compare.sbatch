@@ -33,9 +33,9 @@ if [[ ! -f "${CACHE_PATH}" ]]; then
 fi
 
 for graph in \
-    "${CRP_DIR}/teacher_graph_seed0.pt" \
-    "${CRP_DIR}/teacher_graph_seed1.pt" \
-    "${CRP_DIR}/teacher_graph_seed2.pt"; do
+    "${CRP_DIR}/teacher_graph_seed0.json" \
+    "${CRP_DIR}/teacher_graph_seed1.json" \
+    "${CRP_DIR}/teacher_graph_seed2.json"; do
     if [[ ! -f "${graph}" ]]; then
         echo "CRP graph not found: ${graph}" >&2
         exit 2
@@ -60,11 +60,11 @@ python -u -m scripts.tools.build_crp_baseline_graphs \
 echo "=== Comparing CRP v2, raw CLIP, and DINO graphs ==="
 python -u -m scripts.tools.evaluate_crp_graph_waterbirds \
     --graph \
-        "${CRP_DIR}/teacher_graph_seed0.pt" \
-        "${CRP_DIR}/teacher_graph_seed1.pt" \
-        "${CRP_DIR}/teacher_graph_seed2.pt" \
-        "${BASELINE_DIR}/raw_clip_graph.pt" \
-        "${BASELINE_DIR}/dino_graph.pt" \
+        "${CRP_DIR}/teacher_graph_seed0.json" \
+        "${CRP_DIR}/teacher_graph_seed1.json" \
+        "${CRP_DIR}/teacher_graph_seed2.json" \
+        "${BASELINE_DIR}/raw_clip_graph.json" \
+        "${BASELINE_DIR}/dino_graph.json" \
     --metadata-csv "${METADATA_CSV}"
 
 echo "Finished CRP v2 baseline comparison; $(date --iso-8601=seconds)"

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
 
-import torch
+from splice.graph_io import graph_fingerprint, load_graph_json
 
 
 def _csv_values(value: str) -> list[str]:
@@ -22,34 +21,11 @@ def _canonical_number(value: str) -> str:
     return format(float(value), ".15g")
 
 
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _topology_sha256(graph: dict) -> str:
-    digest = hashlib.sha256()
-    for key in ("neighbor_indices", "weights"):
-        tensor = graph[key].detach().cpu().contiguous()
-        digest.update(key.encode("utf-8"))
-        digest.update(str(tensor.dtype).encode("ascii"))
-        digest.update(str(tuple(tensor.shape)).encode("ascii"))
-        digest.update(tensor.numpy().tobytes())
-    return digest.hexdigest()
-
-
 def _load_result(graph_path: Path, q: str, dinoq: str) -> dict:
-    summary_path = graph_path.with_suffix(".json")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    graph = torch.load(graph_path, map_location="cpu", weights_only=True)
+    graph = load_graph_json(graph_path)
     if graph.get("artifact") != "splice_cqt_v1_teacher_graph":
         raise ValueError(f"Unexpected artifact in {graph_path}: {graph.get('artifact')}")
     config = graph.get("config", {})
-    if summary.get("artifact") != graph["artifact"] or summary.get("config") != config:
-        raise ValueError(f"Graph and summary disagree for {graph_path}")
     if float(config.get("min_quotient_efficacy")) != float(q):
         raise ValueError(f"Unexpected q in {graph_path}: {config.get('min_quotient_efficacy')}")
     if float(config.get("dino_damage_quantile")) != float(dinoq):
@@ -57,14 +33,25 @@ def _load_result(graph_path: Path, q: str, dinoq: str) -> dict:
             f"Unexpected dinoq in {graph_path}: {config.get('dino_damage_quantile')}"
         )
     edge_count = int(graph.get("degree_stats", {}).get("edge_count", 0))
+    serialized = json.loads(graph_path.read_text(encoding="utf-8"))
     return {
         "q": float(q),
         "dinoq": float(dinoq),
         "graph_path": graph_path.as_posix(),
-        "graph_sha256": _file_sha256(graph_path),
-        "topology_sha256": _topology_sha256(graph),
+        "graph_fingerprint": graph_fingerprint(graph_path),
         "graph_empty": edge_count == 0,
-        **summary,
+        "_topology_key": json.dumps(
+            [serialized["neighbor_indices"], serialized["weights"]],
+            separators=(",", ":"),
+        ),
+        "artifact": serialized["artifact"],
+        "graph_version": serialized["graph_version"],
+        "config": serialized["config"],
+        "provenance": serialized.get("provenance", {}),
+        "sample_count": len(serialized["sample_ids"]),
+        "selected_factor_ids": serialized.get("selected_factor_ids", []),
+        "degree_stats": serialized.get("degree_stats", {}),
+        "factors": serialized.get("factors", []),
     }
 
 
@@ -81,8 +68,8 @@ def aggregate(
     for q in q_values:
         for dinoq in dinoq_values:
             variant = f"q{_canonical_number(q)}_dinoq{_canonical_number(dinoq)}"
-            graph_path = root / variant / f"teacher_graph_seed{seed}.pt"
-            if not graph_path.is_file() or not graph_path.with_suffix(".json").is_file():
+            graph_path = root / variant / f"teacher_graph_seed{seed}.json"
+            if not graph_path.is_file():
                 missing.append({"q": float(q), "dinoq": float(dinoq)})
                 continue
             results.append(_load_result(graph_path, q, dinoq))
@@ -92,12 +79,13 @@ def aggregate(
 
     by_topology: dict[str, list[dict[str, float]]] = defaultdict(list)
     for result in results:
-        by_topology[result["topology_sha256"]].append(
+        topology_key = result.pop("_topology_key")
+        by_topology[topology_key].append(
             {"q": result["q"], "dinoq": result["dinoq"]}
         )
     duplicates = [
-        {"topology_sha256": digest, "configurations": configurations}
-        for digest, configurations in by_topology.items()
+        {"topology_id": index, "configurations": configurations}
+        for index, configurations in enumerate(by_topology.values())
         if len(configurations) > 1
     ]
 

@@ -596,7 +596,7 @@ CRP. The scientific comparison therefore changes graph construction only.
 
 ### 8.8 Human-readable concept cards
 
-Every CQT `.pt` graph has an adjacent JSON report. Each factor card exposes:
+Every CQT graph is one complete JSON artifact. Each factor card exposes:
 
 - state-A and state-B words/indices;
 - fold-wise exclusivity and non-factor context similarity;
@@ -637,7 +637,7 @@ must be called `CQT-T` and reported separately.
 | DINO role | raw pair-neighbour hard support | local-geometry damage veto |
 | Hub control | final indegree cap | transport capacities plus final cap |
 | Nulls | random subspaces/shuffled activation | random contrasts/shuffled states |
-| Student | SimCLR + relational KL | unchanged shared student |
+| Student | SimCLR + relational KL | confidence-weighted graph positives + decaying relational KL |
 
 CQT can miss continuous, one-sided, or multi-state nuisances. CRP remains runnable
 and is a required baseline rather than dead code.
@@ -649,14 +649,14 @@ The single experiment switch is near the top of `scripts/train.sbatch`:
 ```bash
 MODE="cqt_relational"   # current Waterbirds default: experimental CQT v1
 MODE="crp_relational"   # switch back to existing CRP v2
-MODEL="resnet50_pretrained"  # optional ImageNet-pretrained ResNet-50 student
+MODEL="resnet18_large"       # current target architecture
 ```
 
 The launch default is CQT on `waterbirds`; changing `MODE` back to
 `crp_relational` preserves the CRP path. Both modes build/reuse
 `outputs/crp/<dataset>_train_features.pt` and pass a row-stochastic graph to the
-same training entry point. CRP graphs stay in `outputs/crp/<dataset>/`; CQT graphs
-and adjacent human-readable JSON cards are written to `outputs/cqt/<dataset>/`.
+same training entry point. CRP graphs stay in `outputs/crp/<dataset>/`; complete
+CQT graph and concept-card JSON artifacts are written to `outputs/cqt/<dataset>/`.
 CQT-specific thresholds live in one commented configuration block and do not
 borrow CRP audit variables. The full resolved graph config and artifact type are
 added to the W&B run config after graph loading.

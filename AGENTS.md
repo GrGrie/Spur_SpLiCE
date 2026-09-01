@@ -1,5 +1,9 @@
 # Project instructions
 
+## Communication constraint
+
+- Never in this project bring up or mention SHA256 or any other SHA.
+
 ## Training experiment tracking
 
 - Every script that launches full SSL training must enable and configure W&B tracking.

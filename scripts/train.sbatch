@@ -33,16 +33,19 @@ set -euo pipefail
 # Start a sweep from the top; parameters lower in the file usually need fewer changes.
 # =============================================================================
 MODE="cqt_relational"             # cqt_relational | crp_relational | none | legacy modes
-SPLICE_WEIGHT="0.05"              # Relational-loss weight; try 0.025, 0.05, 0.1.
-CRP_TEMPERATURE="0.1"             # Student relation temperature; try 0.05, 0.1, 0.2.
+SPLICE_WEIGHT="0.01"              # Safer CQT pilot after the previous loss dominated late training.
+CRP_TEMPERATURE="0.25"            # Matches the most promising completed CQT pilot.
 LEARNING_RATE="0.01"             # SSL learning rate; try 0.005, 0.01, 0.03.
 EPOCHS="500"                     # 250 for pilot, 500 default, 1000 final if justified.
 LR_DECAY_EPOCHS="auto"            # At 500 epochs: 350,400,450.
 LR_DECAY_RATE="0.1"
 CRP_START_EPOCH="10"              # Pure-SimCLR epochs before CRP/CQT loss; try 5, 10, 20.
 CRP_WARMUP_EPOCHS="10"            # Linear CRP/CQT loss ramp; try 5, 10, 20.
+CRP_DECAY_START_EPOCH="200"        # Begin removing graph pressure after representation shaping.
+CRP_DECAY_END_EPOCH="350"          # Return to pure SimCLR for the final training phase.
+CRP_GRAPH_POSITIVES="true"         # Graph donors are positives, not simultaneous negatives.
 BATCH_SIZE="256"                 # SimCLR batch size; try 128 or 256 within GPU memory.
-SEED="0"                         # Controls cache-independent folds, nulls, and training RNG.
+SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # `sbatch --array=0-2` runs three independent seeds.
 
 # Shared CRP/CQT artifact preparation. This Slurm job builds/reuses the frozen
 # cache and automatically builds a missing or configuration-mismatched graph.
@@ -82,20 +85,22 @@ CQT_MIN_STATE_SAMPLES="16"        # Minimum exclusive samples/state/fold; try 8,
 CQT_MIN_EXCLUSIVITY="0.8"         # Reject coactive state pairs; try 0.7, 0.8, 0.9.
 CQT_MIN_CONTEXT_SIMILARITY="0.2"  # Required shared non-factor semantics; try 0.1, 0.2, 0.3.
 CQT_MIN_STATE_BALANCED_ACCURACY="0.7" # Raw state predictability; try 0.65, 0.7, 0.75.
-CQT_MIN_QUOTIENT_EFFICACY="0.5"   # Fraction of state signal removed; try 0.3, 0.5, 0.7.
+CQT_MIN_QUOTIENT_EFFICACY="0.04"  # Candidate from the best completed pilot; audit before promotion.
 CQT_TRANSPORT_CANDIDATES="32"     # Word-neighbour support per node; try 16, 32, 64.
 CQT_TRANSPORT_MASS="0.25"         # Fraction of smaller state matched; try 0.1, 0.25, 0.5.
 CQT_MIN_TRANSPORT_PAIRS="8"       # Minimum fixed transport mass; try 4, 8, 16.
 CQT_MIN_WORD_SIMILARITY="0.2"     # Preserved-word compatibility gate; try 0.1, 0.2, 0.3.
 CQT_DINO_NEIGHBORS="10"           # Local DINO profile width; try 5, 10, 20.
-CQT_DINO_DAMAGE_QUANTILE="0.5"    # Local-damage tolerance; try 0.25, 0.5, 0.75 (higher looser).
+CQT_DINO_DAMAGE_QUANTILE="0.6"    # Candidate from the best completed pilot.
 CQT_MIN_INTERVENTION_GAIN="1e-4"  # Minimum quotient cosine gain; try 0, 1e-4, 1e-3.
 CQT_MIN_COVERAGE="0.01"           # Minimum supported-anchor fraction; try 0.01, 0.05, 0.1.
-CQT_NULL_TRIALS="4"               # Random/shuffled controls; use 4 pilot, 8 or 16 final audit.
+CQT_NULL_TRIALS="32"              # More reliable null estimate than the earlier four-trial pilot.
 CQT_NULL_QUANTILE="0.95"          # Required null exceedance; try 0.90, 0.95, 0.99.
 CQT_GRAPH_TOP_K="10"              # Teacher neighbours per anchor; try 5, 10, 20.
 CQT_INDEGREE_FACTOR="3.0"         # Donor-hub cap multiplier; try 2, 3, 5.
 CQT_SIMILARITY_CHUNK_SIZE="512"   # Audit speed/memory tradeoff; try 256, 512, 1024.
+CQT_ORACLE_AUDIT="true"            # Waterbirds-only post-hoc check; never used to build the graph.
+WATERBIRDS_METADATA_CSV="./datasets/waterbirds/metadata.csv"
 
 # =============================================================================
 # LEGACY METHODS: augment / corr_reg / augment_corr_reg
@@ -232,9 +237,9 @@ esac
 SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
 CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
 CRP_GRAPH_DIR="outputs/crp/${DATASET}"
-CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
+CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
 CQT_GRAPH_DIR="outputs/cqt/${DATASET}"
-CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
+CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
 RELATIONAL_TEACHER_GRAPH="${CRP_TEACHER_GRAPH}"
 if [[ "${MODE}" == "cqt_relational" ]]; then
     RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
@@ -275,7 +280,7 @@ resolve_relational_graph_config() {
 }
 
 teacher_graph_matches_config() {
-    python -c 'import json, sys, torch; graph=torch.load(sys.argv[1], map_location="cpu", weights_only=True); expected=json.loads(sys.argv[3]); raise SystemExit(0 if graph.get("artifact")==sys.argv[2] and graph.get("config")==expected else 1)' \
+    python -c 'import json, sys; graph=json.load(open(sys.argv[1], encoding="utf-8")); expected=json.loads(sys.argv[3]); raise SystemExit(0 if graph.get("artifact")==sys.argv[2] and graph.get("config")==expected else 1)' \
         "${RELATIONAL_TEACHER_GRAPH}" "${RELATIONAL_ARTIFACT}" "${RELATIONAL_CONFIG_JSON}" >/dev/null 2>&1
 }
 
@@ -286,7 +291,7 @@ prepare_relational_teacher_graph() {
     if [[ "${MODE}" == "cqt_relational" ]]; then
         CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}"
         CQT_GRAPH_DIR="outputs/cqt/${DATASET}/${CQT_GRAPH_VARIANT}"
-        CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.pt"
+        CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
         RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
     fi
 
@@ -348,6 +353,13 @@ prepare_relational_teacher_graph() {
 
 prepare_relational_teacher_graph
 
+if [[ "${MODE}" == "cqt_relational" && "${DATASET}" == "waterbirds" && \
+      "${CQT_ORACLE_AUDIT}" == "true" && -f "${WATERBIRDS_METADATA_CSV}" ]]; then
+    python -u -m scripts.tools.audit_cqt_graph_oracle \
+        --graph "${RELATIONAL_TEACHER_GRAPH}" \
+        --metadata-csv "${WATERBIRDS_METADATA_CSV}"
+fi
+
 if [[ ( "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ) && ! -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
     fail "Relational teacher graph does not exist after preparation: ${RELATIONAL_TEACHER_GRAPH}"
 fi
@@ -355,7 +367,7 @@ fi
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
     crp_relational) RUN_LABEL="CRP_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
-    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
+    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
     augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
@@ -433,6 +445,9 @@ if [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]]; then
         --crp_temperature "${CRP_TEMPERATURE}"
         --crp_start_epoch "${CRP_START_EPOCH}"
         --crp_warmup_epochs "${CRP_WARMUP_EPOCHS}"
+        --crp_decay_start_epoch "${CRP_DECAY_START_EPOCH}"
+        --crp_decay_end_epoch "${CRP_DECAY_END_EPOCH}"
+        --crp_graph_positives "${CRP_GRAPH_POSITIVES}"
     )
 elif [[ "${MODE}" != "none" ]]; then
     ARGS+=(

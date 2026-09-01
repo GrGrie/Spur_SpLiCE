@@ -15,7 +15,11 @@ class SimCLRLoss(nn.Module):
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
 
-    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    def forward(
+        self,
+        features: torch.Tensor,
+        extra_positive_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, float]:
         start = time.perf_counter()
         # Keep the exponential/logarithm part of NT-Xent in FP32 when the encoder uses AMP.
         features = features.float()
@@ -27,6 +31,17 @@ class SimCLRLoss(nn.Module):
         device = features.device
         batch_size = features.shape[0]
         mask = torch.eye(batch_size, dtype=torch.float32, device=device)
+        if extra_positive_mask is not None:
+            extra_positive_mask = torch.as_tensor(
+                extra_positive_mask, device=device, dtype=torch.float32
+            )
+            if extra_positive_mask.shape != (batch_size, batch_size):
+                raise ValueError("extra_positive_mask must be shaped [batch_size, batch_size].")
+            if not torch.isfinite(extra_positive_mask).all() or torch.any(extra_positive_mask < 0):
+                raise ValueError("extra_positive_mask must contain finite non-negative weights.")
+            extra_positive_mask = torch.maximum(extra_positive_mask, extra_positive_mask.T)
+            extra_positive_mask.fill_diagonal_(False)
+            mask = (mask + extra_positive_mask).clamp_max(1.0)
 
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)

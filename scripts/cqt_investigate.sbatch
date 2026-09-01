@@ -103,10 +103,9 @@ validate_feature_cache() {
 
 graph_matches_config() {
     local graph_path="$1"
-    local summary_path="$2"
-    local config_json="$3"
-    python -c 'import json, pathlib, sys, torch; graph=torch.load(sys.argv[1], map_location="cpu", weights_only=True); summary=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")); expected=json.loads(sys.argv[3]); valid=graph.get("artifact")=="splice_cqt_v1_teacher_graph" and graph.get("config")==expected and summary.get("artifact")==graph.get("artifact") and summary.get("config")==expected; raise SystemExit(0 if valid else 1)' \
-        "${graph_path}" "${summary_path}" "${config_json}" >/dev/null 2>&1
+    local config_json="$2"
+    python -c 'import json, pathlib, sys; graph=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); expected=json.loads(sys.argv[2]); valid=graph.get("artifact")=="splice_cqt_v1_teacher_graph" and graph.get("config")==expected; raise SystemExit(0 if valid else 1)' \
+        "${graph_path}" "${config_json}" >/dev/null 2>&1
 }
 
 aggregate_results() {
@@ -164,13 +163,12 @@ for q in "${Q_VALUES[@]}"; do
         dinoq_path="$(canonical_number "${dinoq}")"
         variant="q${q_path}_dinoq${dinoq_path}"
         graph_dir="${CQT_GRAPH_ROOT}/${variant}"
-        graph_path="${graph_dir}/teacher_graph_seed${SEED}.pt"
-        summary_path="${graph_dir}/teacher_graph_seed${SEED}.json"
+        graph_path="${graph_dir}/teacher_graph_seed${SEED}.json"
         config_json="{\"min_concept_frequency\":${CQT_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CQT_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CQT_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CQT_COACTIVATION_THRESHOLD},\"min_group_size\":${CQT_MIN_GROUP_SIZE},\"max_candidate_groups\":${CQT_MAX_CANDIDATE_GROUPS},\"max_factors\":${CQT_MAX_FACTORS},\"min_state_samples\":${CQT_MIN_STATE_SAMPLES},\"min_exclusivity\":${CQT_MIN_EXCLUSIVITY},\"min_context_similarity\":${CQT_MIN_CONTEXT_SIMILARITY},\"min_state_balanced_accuracy\":${CQT_MIN_STATE_BALANCED_ACCURACY},\"min_quotient_efficacy\":${q},\"transport_candidates\":${CQT_TRANSPORT_CANDIDATES},\"transport_mass\":${CQT_TRANSPORT_MASS},\"min_transport_pairs\":${CQT_MIN_TRANSPORT_PAIRS},\"min_word_similarity\":${CQT_MIN_WORD_SIMILARITY},\"dino_neighbors\":${CQT_DINO_NEIGHBORS},\"dino_damage_quantile\":${dinoq},\"min_intervention_gain\":${CQT_MIN_INTERVENTION_GAIN},\"min_coverage\":${CQT_MIN_COVERAGE},\"null_trials\":${CQT_NULL_TRIALS},\"null_quantile\":${CQT_NULL_QUANTILE},\"graph_top_k\":${CQT_GRAPH_TOP_K},\"indegree_factor\":${CQT_INDEGREE_FACTOR},\"similarity_chunk_size\":${CQT_SIMILARITY_CHUNK_SIZE},\"seed\":${SEED}}"
 
         echo "=== [${combination}/${expected_count}] CQT ${variant} ==="
-        if [[ "${FORCE_REBUILD_GRAPHS}" != "true" && -f "${graph_path}" && -f "${summary_path}" ]] && \
-            graph_matches_config "${graph_path}" "${summary_path}" "${config_json}"; then
+        if [[ "${FORCE_REBUILD_GRAPHS}" != "true" && -f "${graph_path}" ]] && \
+            graph_matches_config "${graph_path}" "${config_json}"; then
             echo "[CQT] Reusing matching graph: ${graph_path}"
             continue
         fi

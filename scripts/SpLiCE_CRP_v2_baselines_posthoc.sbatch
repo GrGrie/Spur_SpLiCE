@@ -14,7 +14,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 METADATA_CSV="${METADATA_CSV:-./datasets/waterbirds/metadata.csv}"
-GRAPH_FILES="${GRAPH_FILES:-outputs/crp/waterbirds_v2/teacher_graph_seed0.pt outputs/crp/waterbirds_baselines/raw_clip_graph.pt outputs/crp/waterbirds_baselines/dino_graph.pt}"
+GRAPH_FILES="${GRAPH_FILES:-outputs/crp/waterbirds_v2/teacher_graph_seed0.json outputs/crp/waterbirds_baselines/raw_clip_graph.json outputs/crp/waterbirds_baselines/dino_graph.json}"
 
 cd "${PROJECT_DIR}"
 mkdir -p ./output

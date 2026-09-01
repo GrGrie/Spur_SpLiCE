@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 from pathlib import Path
 from typing import Iterator, Sequence
@@ -12,6 +11,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler
 
 from splice.crp import GRAPH_VERSION
+from splice.graph_io import graph_fingerprint, load_graph_json
 
 
 TEACHER_GRAPH_ARTIFACTS = {
@@ -134,10 +134,9 @@ def load_teacher_graph(
     if not graph_path.is_file():
         raise FileNotFoundError(f"CRP teacher graph not found: {graph_path}")
     expected_sample_ids = [f"{dataset_name}:{int(index)}" for index in source_indices]
-    graph = torch.load(graph_path, map_location="cpu", weights_only=True)
+    graph = load_graph_json(graph_path)
     graph = validate_teacher_graph(graph, expected_sample_ids)
-    digest = hashlib.sha256(graph_path.read_bytes()).hexdigest()
-    return graph, digest
+    return graph, graph_fingerprint(graph_path)
 
 
 class IndexedCrpDataset(Dataset):
@@ -269,13 +268,22 @@ class CrpRelationalRegularizer:
         temperature: float,
         start_epoch: int,
         warmup_epochs: int,
+        decay_start_epoch: int = 0,
+        decay_end_epoch: int = 0,
+        use_graph_positives: bool = True,
     ) -> None:
-        if weight <= 0:
-            raise ValueError("CRP relational weight must be positive.")
+        if weight < 0:
+            raise ValueError("CRP relational weight must be non-negative.")
         if temperature <= 0:
             raise ValueError("CRP student temperature must be positive.")
         if start_epoch < 0 or warmup_epochs < 0:
             raise ValueError("CRP start and warmup epochs must be non-negative.")
+        if decay_start_epoch < 0 or decay_end_epoch < 0:
+            raise ValueError("CRP decay epochs must be non-negative.")
+        if bool(decay_start_epoch) != bool(decay_end_epoch):
+            raise ValueError("CRP decay start/end must both be zero or both be set.")
+        if decay_end_epoch and decay_end_epoch <= decay_start_epoch:
+            raise ValueError("CRP decay end must be greater than decay start.")
         self.neighbor_indices = graph["neighbor_indices"]
         self.weights = graph["weights"]
         self.anchor_confidence = graph["anchor_confidence"]
@@ -283,6 +291,9 @@ class CrpRelationalRegularizer:
         self.temperature = float(temperature)
         self.start_epoch = int(start_epoch)
         self.warmup_epochs = int(warmup_epochs)
+        self.decay_start_epoch = int(decay_start_epoch)
+        self.decay_end_epoch = int(decay_end_epoch)
+        self.uses_graph_positives = bool(use_graph_positives)
         self.epoch = 0
 
     def set_epoch(self, epoch: int) -> None:
@@ -293,9 +304,42 @@ class CrpRelationalRegularizer:
         if self.epoch <= self.start_epoch:
             return 0.0
         if self.warmup_epochs == 0:
-            return self.weight
-        progress = (self.epoch - self.start_epoch) / self.warmup_epochs
-        return self.weight * min(1.0, max(0.0, progress))
+            scheduled = self.weight
+        else:
+            progress = (self.epoch - self.start_epoch) / self.warmup_epochs
+            scheduled = self.weight * min(1.0, max(0.0, progress))
+        if self.decay_end_epoch and self.epoch >= self.decay_start_epoch:
+            remaining = (self.decay_end_epoch - self.epoch) / (
+                self.decay_end_epoch - self.decay_start_epoch
+            )
+            scheduled *= min(1.0, max(0.0, remaining))
+        return scheduled
+
+    def batch_positive_mask(self, sample_indices: torch.Tensor) -> torch.Tensor:
+        """Return graph-linked examples that should not act as SimCLR negatives."""
+        sample_indices = torch.as_tensor(sample_indices).detach().long().cpu().view(-1)
+        if self.epoch <= self.start_epoch or (
+            self.decay_end_epoch and self.epoch >= self.decay_end_epoch
+        ):
+            return torch.zeros((len(sample_indices), len(sample_indices)), dtype=torch.float32)
+        positions: dict[int, list[int]] = {}
+        for position, sample_index in enumerate(sample_indices.tolist()):
+            positions.setdefault(sample_index, []).append(position)
+        mask = torch.zeros((len(sample_indices), len(sample_indices)), dtype=torch.float32)
+        for anchor_position, anchor_index in enumerate(sample_indices.tolist()):
+            for neighbor_index, edge_weight in zip(
+                self.neighbor_indices[anchor_index].tolist(),
+                self.weights[anchor_index].tolist(),
+            ):
+                if neighbor_index < 0 or edge_weight <= 0:
+                    continue
+                for neighbor_position in positions.get(neighbor_index, []):
+                    if neighbor_position != anchor_position:
+                        confidence = float(self.anchor_confidence[anchor_index]) * edge_weight
+                        mask[anchor_position, neighbor_position] = max(
+                            float(mask[anchor_position, neighbor_position]), confidence
+                        )
+        return torch.maximum(mask, mask.T)
 
     def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
         if embeddings.ndim != 2 or embeddings.shape[0] % 2:

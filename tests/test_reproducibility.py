@@ -44,7 +44,7 @@ class ReproducibilityTests(unittest.TestCase):
             save_checkpoint(
                 model,
                 optimizer,
-                argparse.Namespace(crp_graph_sha256="graph-a"),
+                argparse.Namespace(crp_graph_fingerprint="graph-a"),
                 1,
                 checkpoint_path,
             )
@@ -54,7 +54,7 @@ class ReproducibilityTests(unittest.TestCase):
                     optimizer,
                     checkpoint_path,
                     torch.device("cpu"),
-                    expected_crp_graph_sha256="graph-b",
+                    expected_crp_graph_fingerprint="graph-b",
                 )
 
     def test_every_dataset_has_a_dedicated_rank_loader(self):

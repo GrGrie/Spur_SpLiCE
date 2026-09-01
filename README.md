@@ -191,13 +191,13 @@ need to calculate hashes manually. Annotation keys such as `labels`,
 ```bash
 python -m splice.crp \
   --cache outputs/crp/waterbirds_train_features.pt \
-  --output outputs/crp/waterbirds_teacher_graph.pt
+  --output outputs/crp/waterbirds_teacher_graph.json
 ```
 
 The command clusters active concepts, projects the full centered CLIP embedding,
 keeps reciprocal relations supported by DINO, calibrates group selection against
-matched random-subspace and shuffled-code nulls, caps donor indegree, and writes a
-row-stochastic top-k teacher graph plus a readable JSON audit. Selecting no group
+matched random-subspace and shuffled-code nulls, caps donor indegree, and writes one
+complete, readable JSON teacher graph. Selecting no group
 is valid and produces an empty graph, in which case training automatically reduces
 to SimCLR.
 

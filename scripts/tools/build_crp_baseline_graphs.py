@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 
 from splice.crp import topk_neighbors, validate_feature_cache
+from splice.graph_io import save_graph_json
 
 
 def _row_stochastic_knn(neighbours: torch.Tensor, similarities: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -37,8 +38,8 @@ def build_graphs(cache_path: Path, output_dir: Path, top_k: int, chunk_size: int
             "provenance": dict(cache.get("provenance", {})),
             **_row_stochastic_knn(neighbours, similarities),
         }
-        output_path = output_dir / f"{name}_graph.pt"
-        torch.save(graph, output_path)
+        output_path = output_dir / f"{name}_graph.json"
+        save_graph_json(graph, output_path)
         print(f"[INFO] Wrote {name} baseline graph to {output_path}", flush=True)
 
 

@@ -35,6 +35,7 @@ from splice.crp_training import (
     build_crp_training_loader,
     load_teacher_graph,
 )
+from splice.graph_io import graph_fingerprint
 from splice.ssl_regularization import (
     SpliceConceptScorer,
     SpliceConfig,
@@ -498,6 +499,24 @@ def parse_args() -> argparse.Namespace:
         help="Linear warm-up duration for the CRP relational loss weight; 0 disables warm-up.",
     )
     parser.add_argument(
+        "--crp_decay_start_epoch",
+        type=int,
+        default=0,
+        help="Epoch at which relational-loss decay begins; 0 with end=0 disables decay.",
+    )
+    parser.add_argument(
+        "--crp_decay_end_epoch",
+        type=int,
+        default=0,
+        help="Epoch at which relational-loss weight reaches zero.",
+    )
+    parser.add_argument(
+        "--crp_graph_positives",
+        type=str_to_bool,
+        default=True,
+        help="Treat graph-linked examples as additional SimCLR positives.",
+    )
+    parser.add_argument(
         "--splice_intervention",
         type=str,
         default="class_neutralize",
@@ -694,23 +713,29 @@ def parse_args() -> argparse.Namespace:
         "augment_corr_reg",
         "synthesis_distill",
         "oracle_relational",
-        "crp_relational",
-        "cqt_relational",
     } and args.splice_weight <= 0:
         parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
+    if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
+        parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.crp_teacher_graph.strip():
         parser.error("--crp_teacher_graph is required for relational graph modes.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         graph_path = Path(args.crp_teacher_graph)
         if not graph_path.is_file():
             parser.error(f"--crp_teacher_graph does not exist: {graph_path}")
-        args.crp_graph_sha256 = hashlib.sha256(graph_path.read_bytes()).hexdigest()
+        args.crp_graph_fingerprint = graph_fingerprint(graph_path)
     else:
-        args.crp_graph_sha256 = None
+        args.crp_graph_fingerprint = None
     if args.crp_temperature <= 0:
         parser.error("--crp_temperature must be positive.")
     if args.crp_start_epoch < 0 or args.crp_warmup_epochs < 0:
         parser.error("--crp_start_epoch and --crp_warmup_epochs must be non-negative.")
+    if args.crp_decay_start_epoch < 0 or args.crp_decay_end_epoch < 0:
+        parser.error("--crp_decay_start_epoch and --crp_decay_end_epoch must be non-negative.")
+    if bool(args.crp_decay_start_epoch) != bool(args.crp_decay_end_epoch):
+        parser.error("CRP decay start/end must both be zero or both be set.")
+    if args.crp_decay_end_epoch and args.crp_decay_end_epoch <= args.crp_decay_start_epoch:
+        parser.error("--crp_decay_end_epoch must be greater than --crp_decay_start_epoch.")
     if not 0 <= args.splice_intervention_strength <= 2:
         parser.error("--splice_intervention_strength must be in the interval [0, 2].")
     if not 0 < args.ssl_crop_min <= 1:
@@ -1167,17 +1192,30 @@ def build_ssl_loader(args: argparse.Namespace):
     source_indices = getattr(loader.dataset, "indices", None)
     if source_indices is None:
         raise ValueError("CRP training requires an SSL dataset with stable source indices.")
-    graph, graph_sha256 = load_teacher_graph(
+    graph, loaded_graph_fingerprint = load_teacher_graph(
         args.crp_teacher_graph,
         args.dataset,
         source_indices,
     )
-    if graph_sha256 != args.crp_graph_sha256:
+    if loaded_graph_fingerprint != args.crp_graph_fingerprint:
         raise ValueError("Relational teacher graph changed after argument validation; restart the run.")
-    args.crp_graph_sha256 = graph_sha256
+    args.crp_graph_fingerprint = loaded_graph_fingerprint
     args.teacher_graph_artifact = graph["artifact"]
     args.teacher_graph_config = graph.get("config", {})
     stats = graph.get("degree_stats", {})
+    args.teacher_graph_degree_stats = stats
+    args.teacher_graph_selected_factor_ids = graph.get("selected_factor_ids", [])
+    args.teacher_graph_removed_concepts = sorted(
+        {
+            concept
+            for factor in graph.get("factors", [])
+            if factor.get("selected")
+            for concept in (
+                factor.get("state_a", {}).get("concepts", [])
+                + factor.get("state_b", {}).get("concepts", [])
+            )
+        }
+    )
     print(
         f"[INFO] Loaded {graph['artifact']} teacher graph: "
         f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "
@@ -1351,6 +1389,9 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 temperature=args.crp_temperature,
                 start_epoch=args.crp_start_epoch,
                 warmup_epochs=args.crp_warmup_epochs,
+                decay_start_epoch=args.crp_decay_start_epoch,
+                decay_end_epoch=args.crp_decay_end_epoch,
+                use_graph_positives=args.crp_graph_positives,
             )
     else:
         splice_regularizer = build_splice_regularizer(build_splice_config(args))
@@ -1382,10 +1423,16 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 {
                     "teacher_graph_artifact": args.teacher_graph_artifact,
                     "teacher_graph_config": args.teacher_graph_config,
+                    "teacher_graph_degree_stats": args.teacher_graph_degree_stats,
+                    "teacher_graph_selected_factor_ids": args.teacher_graph_selected_factor_ids,
+                    "teacher_graph_removed_concepts": args.teacher_graph_removed_concepts,
                     "relational_graph_empty": getattr(args, "relational_graph_empty", False),
                 }
             )
         wandb_run.config.update(resolved, allow_val_change=True)
+        if args.splice_mode in RELATIONAL_GRAPH_MODES:
+            graph_path = Path(args.crp_teacher_graph).resolve()
+            wandb_run.save(str(graph_path), base_path=str(graph_path.parent), policy="now")
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:
@@ -1476,7 +1523,6 @@ def main() -> None:
             import wandb
 
             wandb_config = vars(args).copy()
-            wandb_config.pop("crp_graph_sha256", None)
             wandb_config["strong_aug"] = strong_aug_config(args)
             wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
             wandb_run = wandb.init(
@@ -1500,7 +1546,7 @@ def main() -> None:
             device,
             scaler=scaler,
             loader_generator=train_loader.generator,
-            expected_crp_graph_sha256=getattr(args, "crp_graph_sha256", None),
+            expected_crp_graph_fingerprint=getattr(args, "crp_graph_fingerprint", None),
         )
         + 1
         if args.resume
