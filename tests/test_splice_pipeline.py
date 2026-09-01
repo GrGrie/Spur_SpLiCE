@@ -43,6 +43,7 @@ from splice.crp_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
     IndexedCrpDataset,
+    build_crp_concept_report,
     validate_teacher_graph,
 )
 from splice.graph_io import load_graph_json, save_graph_json
@@ -404,6 +405,38 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(report["removed_concepts"], ["forest", "water"])
         self.assertAlmostEqual(report["graph_metrics"]["desired_relation_rate"], 0.5)
         self.assertAlmostEqual(report["graph_metrics"]["different_target_rate"], 0.5)
+
+    def test_crp_concept_report_ranks_graph_usage(self):
+        graph = self._tiny_teacher_graph()
+        graph.update(
+            {
+                "group_ids": torch.tensor([[0, -1], [0, -1], [0, -1], [0, -1]]),
+                "edge_confidences": torch.tensor(
+                    [[0.5, 0.0], [0.4, 0.0], [0.3, 0.0], [0.2, 0.0]]
+                ),
+                "intervention_gains": torch.tensor(
+                    [[0.2, 0.0], [0.2, 0.0], [0.1, 0.0], [0.1, 0.0]]
+                ),
+                "groups": [
+                    {
+                        "group_id": 0,
+                        "concepts": ["forest", "water"],
+                        "selected": True,
+                        "score": 0.3,
+                        "null_threshold": 0.1,
+                        "null_excess_score": 0.2,
+                        "null_excess_ratio": 2 / 3,
+                        "coverage": 1.0,
+                        "robust_positive_gain": 0.15,
+                        "semantic_agreement": 0.8,
+                    }
+                ],
+            }
+        )
+        report = build_crp_concept_report(graph)
+        self.assertEqual(report["teacher_projected_concepts"], ["forest", "water"])
+        self.assertEqual(report["important_concepts"][0]["concept"], "forest")
+        self.assertAlmostEqual(report["groups"][0]["training_evidence_mass"], 1.4, places=6)
 
     def test_empty_crp_graph_regularizer_has_zero_loss(self):
         graph = self._tiny_teacher_graph()

@@ -32,7 +32,7 @@ set -euo pipefail
 # Ordered approximately by expected impact on WG/average accuracy.
 # Start a sweep from the top; parameters lower in the file usually need fewer changes.
 # =============================================================================
-MODE="cqt_relational"             # cqt_relational | crp_relational | none | legacy modes
+MODE="crp_relational"             # Improved CRP precision run; switch back to CQT when needed.
 SPLICE_WEIGHT="0.01"              # Safer CQT pilot after the previous loss dominated late training.
 CRP_TEMPERATURE="0.25"            # Matches the most promising completed CQT pilot.
 LEARNING_RATE="0.01"             # SSL learning rate; try 0.005, 0.01, 0.03.
@@ -63,12 +63,12 @@ CRP_COACTIVATION_THRESHOLD="0.35"
 CRP_MIN_GROUP_SIZE="1"
 CRP_PROJECTED_NEIGHBORS="20"
 CRP_DINO_NEIGHBORS="50"
-CRP_ACTIVATION_DIFFERENCE_QUANTILE="0.75"
-CRP_MIN_INTERVENTION_GAIN="1e-4"
+CRP_ACTIVATION_DIFFERENCE_QUANTILE="0.85"
+CRP_MIN_INTERVENTION_GAIN="5e-4"
 CRP_MIN_COVERAGE="0.01"
-CRP_GRAPH_TOP_K="10"
+CRP_GRAPH_TOP_K="5"
 CRP_INDEGREE_FACTOR="3.0"
-CRP_NULL_TRIALS="16"
+CRP_NULL_TRIALS="32"
 CRP_NULL_QUANTILE="0.95"
 CRP_SIMILARITY_CHUNK_SIZE="512"
 CRP_ORTHOGONAL_TOLERANCE="1e-6"
@@ -366,7 +366,7 @@ fi
 
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
-    crp_relational) RUN_LABEL="CRP_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_precision_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;

@@ -34,6 +34,7 @@ from splice.crp_training import (
     CrpRelationalRegularizer,
     build_crp_training_loader,
     load_teacher_graph,
+    save_crp_concept_report,
 )
 from splice.graph_io import graph_fingerprint
 from splice.ssl_regularization import (
@@ -1216,6 +1217,20 @@ def build_ssl_loader(args: argparse.Namespace):
             )
         }
     )
+    if graph["artifact"] == "splice_crp_v2_teacher_graph":
+        report_path = save_crp_concept_report(graph, args.crp_teacher_graph)
+        concept_report = json.loads(report_path.read_text(encoding="utf-8"))
+        top_concepts = [
+            item["concept"]
+            for item in concept_report["important_concepts"]
+            if item["training_edge_count"] > 0
+        ][:10]
+        print(
+            f"[INFO] CRP concept report: path={report_path}, "
+            f"teacher_projected={concept_report['teacher_projected_concepts']}, "
+            f"top_training_concepts={top_concepts}",
+            flush=True,
+        )
     print(
         f"[INFO] Loaded {graph['artifact']} teacher graph: "
         f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "

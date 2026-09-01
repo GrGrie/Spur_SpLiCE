@@ -596,6 +596,11 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
         null_scores = torch.tensor(random_scores + shuffled_scores)
         threshold = float(torch.quantile(null_scores, config.null_quantile)) if null_scores.numel() else math.inf
         selected = evidence["coverage"] >= config.min_coverage and evidence["score"] > threshold
+        null_excess_score = max(0.0, evidence["score"] - threshold)
+        null_excess_ratio = min(
+            1.0,
+            null_excess_score / max(abs(evidence["score"]), 1e-12),
+        )
         group_payload = {
             "group_id": group_id,
             "concept_indices": concept_indices,
@@ -604,6 +609,8 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
             "selected": selected,
             "score": evidence["score"],
             "null_threshold": threshold,
+            "null_excess_score": null_excess_score,
+            "null_excess_ratio": null_excess_ratio,
             "coverage": evidence["coverage"],
             "robust_positive_gain": evidence["positive_gain"],
             "semantic_agreement": evidence["semantic_agreement"],
@@ -619,7 +626,15 @@ def run_frozen_audit(cache: dict, config: CrpAuditConfig) -> dict:
         }
         audited_groups.append(group_payload)
         if selected:
-            selected_evidence.append((group_id, evidence))
+            selected_evidence.append(
+                (
+                    group_id,
+                    {
+                        **evidence,
+                        "confidence": evidence["confidence"] * null_excess_ratio,
+                    },
+                )
+            )
         if (group_id + 1) % report_every == 0 or group_id + 1 == len(groups):
             print(
                 f"[INFO] Audited {group_id + 1}/{len(groups)} groups; "

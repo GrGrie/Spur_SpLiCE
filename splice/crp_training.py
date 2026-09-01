@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Iterator, Sequence
@@ -137,6 +138,106 @@ def load_teacher_graph(
     graph = load_graph_json(graph_path)
     graph = validate_teacher_graph(graph, expected_sample_ids)
     return graph, graph_fingerprint(graph_path)
+
+
+def build_crp_concept_report(graph: dict) -> dict:
+    """Summarize which CRP concepts actually contribute edges to SSL training."""
+
+    if graph.get("artifact") != "splice_crp_v2_teacher_graph":
+        raise ValueError("CRP concept reports require a CRP teacher graph.")
+    weights = torch.as_tensor(graph["weights"], dtype=torch.float32)
+    group_ids = torch.as_tensor(
+        graph.get("group_ids", torch.full_like(graph["neighbor_indices"], -1)),
+        dtype=torch.long,
+    )
+    edge_confidences = torch.as_tensor(
+        graph.get("edge_confidences", torch.zeros_like(weights)), dtype=torch.float32
+    )
+    gains = torch.as_tensor(
+        graph.get("intervention_gains", torch.zeros_like(weights)), dtype=torch.float32
+    )
+    group_reports = []
+    concept_reports = []
+    for group in graph.get("groups", []):
+        group_id = int(group["group_id"])
+        edge_mask = (weights > 0) & (group_ids == group_id)
+        used_rows = edge_mask.any(dim=1)
+        edge_count = int(edge_mask.sum())
+        evidence_mass = float((weights[edge_mask] * edge_confidences[edge_mask]).sum())
+        mean_gain = float(gains[edge_mask].mean()) if edge_count else 0.0
+        report = {
+            "group_id": group_id,
+            "concepts": [str(value) for value in group.get("concepts", [])],
+            "selected": bool(group.get("selected", False)),
+            "audit_score": float(group.get("score", 0.0)),
+            "null_threshold": float(group.get("null_threshold", 0.0)),
+            "null_excess_score": float(group.get("null_excess_score", 0.0)),
+            "null_excess_ratio": float(group.get("null_excess_ratio", 0.0)),
+            "coverage": float(group.get("coverage", 0.0)),
+            "robust_positive_gain": float(group.get("robust_positive_gain", 0.0)),
+            "semantic_agreement": float(group.get("semantic_agreement", 0.0)),
+            "training_edge_count": edge_count,
+            "training_anchor_count": int(used_rows.sum()),
+            "training_evidence_mass": evidence_mass,
+            "mean_training_edge_gain": mean_gain,
+        }
+        group_reports.append(report)
+        for concept in report["concepts"]:
+            concept_reports.append(
+                {
+                    "concept": concept,
+                    "group_id": group_id,
+                    "teacher_projected": report["selected"],
+                    "training_edge_count": edge_count,
+                    "training_evidence_mass": evidence_mass,
+                    "audit_score": report["audit_score"],
+                    "null_excess_score": report["null_excess_score"],
+                }
+            )
+
+    group_reports.sort(
+        key=lambda item: (
+            -item["training_evidence_mass"],
+            -item["null_excess_score"],
+            item["group_id"],
+        )
+    )
+    concept_reports.sort(
+        key=lambda item: (
+            -item["training_evidence_mass"],
+            -item["null_excess_score"],
+            item["concept"],
+        )
+    )
+    return {
+        "artifact": "splice_crp_concept_report_v1",
+        "interpretation": (
+            "teacher_projected means that the concept direction was removed only while "
+            "constructing CRP teacher relations; it does not assert literal erasure from "
+            "the trained student representation."
+        ),
+        "selected_group_count": sum(report["selected"] for report in group_reports),
+        "teacher_projected_concepts": sorted(
+            {
+                concept
+                for report in group_reports
+                if report["selected"]
+                for concept in report["concepts"]
+            }
+        ),
+        "important_concepts": concept_reports,
+        "groups": group_reports,
+    }
+
+
+def save_crp_concept_report(graph: dict, graph_path: str | Path) -> Path:
+    report = build_crp_concept_report(graph)
+    source_path = Path(graph_path)
+    output_path = source_path.with_name(f"{source_path.stem}.concepts.json")
+    temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    temporary_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_path.replace(output_path)
+    return output_path
 
 
 class IndexedCrpDataset(Dataset):
