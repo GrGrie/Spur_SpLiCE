@@ -1,8 +1,14 @@
-import torch
-from .model import SPLICE
+import csv
 import os
-import urllib
+import re
+import tempfile
+import unicodedata
+import urllib.request
 from pathlib import Path
+
+import torch
+
+from .model import SPLICE
 
 GITHUB_HOST_LINK = "https://raw.githubusercontent.com/AI4LIFE-GROUP/SpLiCE/main/data/"
 LOCAL_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
@@ -14,8 +20,13 @@ SUPPORTED_MODELS = {
 }
 
 SUPPORTED_VOCAB = [
-    "laion"
+    "laion",
+    "openimages_v7",
 ]
+
+OPENIMAGES_V7_CLASS_NAMES_URL = (
+    "https://storage.googleapis.com/openimages/v7/oidv7-class-descriptions.csv"
+)
 
 def available_models():
     """Returns supported models."""
@@ -71,6 +82,93 @@ def _resource_source(subfolder: str, filename: str) -> str:
         return str(bundled)
     return f"{GITHUB_HOST_LINK}{subfolder}/{filename}"
 
+
+def _clean_openimages_class_names(source_path: str, destination_path: str) -> str:
+    """Convert the Open Images class-description CSV into a clean word list."""
+    labels = []
+    seen = set()
+    with open(source_path, "r", encoding="utf-8-sig", newline="") as source:
+        for row in csv.reader(source):
+            if not row:
+                continue
+            display_name = row[1] if len(row) > 1 else row[0]
+            display_name = re.sub(
+                r"\s+", " ", unicodedata.normalize("NFKC", display_name)
+            ).strip()
+            if not display_name or display_name.casefold() in {
+                "displayname",
+                "class name",
+                "class names",
+            }:
+                continue
+            key = display_name.casefold()
+            if key not in seen:
+                seen.add(key)
+                labels.append(display_name)
+
+    destination = Path(destination_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=str(destination.parent),
+            prefix=f"{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as output:
+            temporary_path = output.name
+            output.write("\n".join(labels))
+            output.write("\n")
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path and os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+    return str(destination)
+
+
+def _vocabulary_path(name: str, download_root=None) -> str:
+    """Resolve a bundled, remote, or generated vocabulary file."""
+    root = download_root or os.path.expanduser("~/.cache/splice/")
+    if name == "openimages_v7":
+        vocab_root = Path(root) / "vocab"
+        destination = vocab_root / "openimages_v7.txt"
+        if destination.is_file():
+            return str(destination)
+        bundled = LOCAL_DATA_ROOT / "vocab" / "openimages_v7.txt"
+        if download_root is None and bundled.is_file():
+            return str(bundled)
+        source_path = _download(OPENIMAGES_V7_CLASS_NAMES_URL, root, "vocab")
+        try:
+            return _clean_openimages_class_names(source_path, str(destination))
+        finally:
+            source = Path(source_path)
+            if source != destination and source.is_file():
+                source.unlink()
+    return _download(
+        _resource_source("vocab", name + ".txt"),
+        root,
+        "vocab",
+    )
+
+
+def download_openimages_vocabulary(download_root=None) -> str:
+    """Download only Open Images V7 class names and return the generated TXT path."""
+    return _vocabulary_path("openimages_v7", download_root)
+
+
+def _select_vocabulary_lines(lines, name: str, vocabulary_size: int):
+    if vocabulary_size <= 0:
+        return lines
+    # LAION is frequency-ordered in the original SpLiCE resource. Open Images
+    # has no frequency ranking, so preserve the official file order instead.
+    if name == "laion":
+        return lines[-vocabulary_size:]
+    return lines[:vocabulary_size]
+
+
 def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, pretrained: str = "laion2b_s34b_b79k", **kwargs):
     """load SpLiCE
 
@@ -117,11 +215,7 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         concepts = []
         vocab = []
 
-        vocab_path = _download(
-            _resource_source("vocab", vocabulary + ".txt"),
-            download_root or os.path.expanduser("~/.cache/splice/"),
-            "vocab",
-        )
+        vocab_path = _vocabulary_path(vocabulary, download_root)
 
         concept_root = download_root or os.path.expanduser("~/.cache/splice/")
         os.makedirs(os.path.join(concept_root, "embeddings"), exist_ok=True)
@@ -143,8 +237,7 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         else:
             with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
-                if vocabulary_size > 0:
-                    lines = lines[-vocabulary_size:]
+                lines = _select_vocabulary_lines(lines, vocabulary, vocabulary_size)
                 for line in lines:
                     line = line.strip()
                     vocab.append(line)
@@ -183,9 +276,10 @@ def get_vocabulary(name: str, vocabulary_size: int, download_root = None):
     Parameters
     ----------
     name : str
-        Supported vocabulary type. Either 'mscoco' or 'laion'.
+        Supported vocabulary type: 'laion' or 'openimages_v7'.
     vocabulary_size : int
-        Number of concepts to consider. Will consider highest frequency concepts.
+    Number of concepts to consider. LAION uses its existing tail selection;
+    Open Images preserves the official class-list order.
     download_root : str, optional
         If specified, where to access vocab txt file from, otherwise will use default "~/.cache/splice/vocab", by default None
 
@@ -195,17 +289,12 @@ def get_vocabulary(name: str, vocabulary_size: int, download_root = None):
         _description_
     """
     if name in SUPPORTED_VOCAB:
-        vocab_path = _download(
-            _resource_source("vocab", name + ".txt"),
-            download_root or os.path.expanduser("~/.cache/splice/"),
-            "vocab",
-        )
+        vocab_path = _vocabulary_path(name, download_root)
 
         vocab = []
         with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
-            if vocabulary_size > 0:
-                lines = lines[-vocabulary_size:]
+            lines = _select_vocabulary_lines(lines, name, vocabulary_size)
             for line in lines:
                 vocab.append(line.strip())
         return vocab

@@ -50,6 +50,7 @@ from splice.crp_training import (
 )
 from splice.graph_io import load_graph_json, save_graph_json
 from splice.model import SPLICE
+from splice.splice import _clean_openimages_class_names
 import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.audit_cqt_graph_oracle import audit_graph
@@ -65,6 +66,24 @@ from scripts.tools.cache_crp_features import IndexedImages
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_openimages_class_names_are_cleaned_and_deduplicated(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "classes.csv"
+            destination = Path(temporary_directory) / "vocab" / "openimages_v7.txt"
+            source.write_text(
+                "LabelName,DisplayName\n"
+                "/m/1, Cat \n"
+                "/m/2,cat\n"
+                "/m/3,\n"
+                "/m/4,Fire-truck\n",
+                encoding="utf-8",
+            )
+            _clean_openimages_class_names(str(source), str(destination))
+            self.assertEqual(
+                destination.read_text(encoding="utf-8").splitlines(),
+                ["Cat", "Fire-truck"],
+            )
+
     @staticmethod
     def _tiny_teacher_graph():
         return {

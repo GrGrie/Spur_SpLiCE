@@ -2,7 +2,7 @@
 
 **Status:** canonical project specification
 
-**Last updated:** 2026-09-01
+**Last updated:** 2026-09-02
 **Implemented baseline:** SpLiCE-CRP v2 — Concept-Projected Relational Pretraining
 
 **Implemented experimental extension:** SpLiCE-CQT v1 — Concept Quotient Transport
@@ -1479,6 +1479,78 @@ and the report distinguishes generic intervention behavior from relations that
 actually supervise the student. These changes affect CRP audit storage and
 reporting only; concept selection, graph mathematics, SSL losses, and existing
 experimental results are unchanged.
+
+### 2026-09-02 — Open Images V7 vocabulary source and cleanup
+
+**Track:** shared SpLiCE vocabulary and experiment infrastructure.
+
+Before this change, the repository exposed only the bundled LAION vocabulary,
+whose 37,445 entries contain many malformed fragments, social tags, names, and
+other low-value strings. The Open Images V7 download page provides class-label
+metadata separately from the image pixels, so the project can obtain a more
+object-oriented candidate vocabulary without downloading the dataset images.
+
+The loader now supports `openimages_v7`. It downloads the official class-description
+CSV on demand, keeps the display-name column, normalizes Unicode and whitespace,
+deduplicates case-insensitively, writes only `openimages_v7.txt`, and removes the
+temporary source CSV. A standalone downloader and a local parser test were added;
+the generated repository vocabulary contains 20,931 non-empty unique labels.
+LAION remains available for reproducibility, and Open Images is selectable rather
+than silently replacing historical defaults. The current CRP/CQT Slurm launchers
+also accept `SPLICE_VOCAB` and `SPLICE_VOCAB_SIZE` environment overrides so a new
+vocabulary can be selected without editing the runner.
+
+Consequences: a cache built with `openimages_v7` is not comparable with a cache
+built from LAION and must be rebuilt before CRP or CQT graph construction. The
+dictionary change does not alter CRP/CQT graph mathematics, the shared SSL loss,
+or any existing result. New Open Images runs require a fresh frozen audit and the
+same label-free controls; no quality or WGA claim follows from the vocabulary
+swap alone. The 2026-08-30 CRP reporting snapshot is unchanged.
+
+### 2026-09-02 — English graph reports and expanded Open Images audit sweep
+
+**Track:** CRP frozen-audit experiment infrastructure and reporting only.
+
+Before this change, the concept-ablation HTML renderer mixed Russian and English,
+and the graph-preparation array covered six configurations. The renderer now emits
+English text throughout, including pair descriptions, table headings, warnings,
+and methodological notes; its test also rejects Cyrillic output. The preparation
+array now covers twelve label-free configurations, adding group sizes 1--4,
+lower text/coactivation thresholds, and selected-group caps of 8--16. The Slurm
+launcher accepts an externally built Open Images cache and preserves the cache
+rebuild override as an environment setting.
+
+The reason is to make reports shareable with English-speaking reviewers and to
+probe whether the Open Images vocabulary yields usable multi-word teacher groups
+across a broader operating range. Consequences: one cache-build command should be
+run before the array, then the array can reuse the frozen cache without concurrent
+rebuilds. The sweep uses an explicit Open Images graph-variant prefix so graph
+artifacts cannot be confused with historical LAION paths. The new configurations
+and English reporting do not change CRP graph mathematics, the SSL loss, or
+historical results. They create a new Open Images audit surface; graph quality and
+downstream WGA remain unestablished until the resulting JSON/HTML artifacts and
+matched training runs are reviewed.
+
+### 2026-09-02 — Dedicated Open Images cache job and legacy cache-script removal
+
+**Track:** CRP frozen-cache experiment infrastructure.
+
+Before this change, Open Images cache preparation was documented as a direct
+terminal Python command, while the repository also contained a legacy
+`SpLiCE_CRP_v2_cache_features.sbatch` with LAION-only defaults and a twelve-hour
+limit. The legacy job was removed and replaced by `cache_openimages_crp.sbatch`,
+which requests two hours on one V100, activates the cluster environment itself,
+uses the official Open Images V7 vocabulary, enables DINO by default, and writes
+to a distinct `waterbirds_train_features_oi_v7.pt` path. `train_crp.sbatch` now
+accepts an explicit `CRP_CACHE_PATH`, allowing the graph sweep and later training
+to consume this cache without overwriting the historical LAION cache.
+
+The reason is operational: this workflow must be launchable entirely through
+Slurm, without requiring Python commands in an interactive cluster shell. The
+separate output path and the `oi_v7` graph-variant prefix prevent accidental
+mixing of vocabulary-specific frozen artifacts. CRP graph mathematics, SSL loss,
+and historical results are unchanged; this affects preparation infrastructure
+only and does not establish graph quality or downstream WGA.
 
 ### Reporting snapshots currently available
 

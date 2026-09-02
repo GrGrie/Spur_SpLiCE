@@ -43,6 +43,7 @@ with `--data_folder` or `-DataFolder`.
 - `linear_probe.py` — standalone target/spurious linear probing.
 - `splice_cbm.py` — sparse concept-bottleneck baseline.
 - `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
+- `scripts/download_openimages_vocabulary.py` — download the Open Images V7 class-label dictionary only.
 - `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE/DINOv3 cache construction.
 - `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
 - `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
@@ -52,6 +53,66 @@ with `--data_folder` or `-DataFolder`.
 - `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
 - `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
 - `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
+- `scripts/cache_openimages_crp.sbatch` — Slurm-only Open Images V7 cache preparation.
+
+### Open Images V7 vocabulary
+
+The SpLiCE loader supports `openimages_v7`. It downloads only the official class
+description CSV, writes the cleaned display names to `data/vocab/openimages_v7.txt`
+or the selected cache root, and removes the temporary CSV. No Open Images pixels
+are downloaded. A local repository copy can be created with:
+
+```bash
+python scripts/download_openimages_vocabulary.py --download-root ./data
+```
+
+Use `--splice_vocab openimages_v7 --splice_vocab_size -1` when building a new
+SpLiCE/CRP cache. Existing LAION caches and graphs must not be reused for this
+dictionary; rebuild them with a distinct experiment variant. For a graph-only
+Open Images CRP sweep, first build the cache once, then submit the 12-configuration
+array. The cache step is intentionally separate so array jobs do not rebuild the
+same frozen features concurrently:
+
+```bash
+cd /home/xar68reb/Spur_SpLiCE
+module purge
+module load miniforge3/latest
+. "${ANACONDA_HOME}/etc/profile.d/conda.sh"
+conda activate grgrie-train
+export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
+
+CACHE_JOB=$(sbatch --parsable --export=ALL,\
+PROJECT_DIR=/home/xar68reb/Spur_SpLiCE,\
+DATA_FOLDER=/home/xar68reb/Datasets,\
+DATASET=waterbirds,\
+USE_DINO=true \
+  scripts/cache_openimages_crp.sbatch)
+
+sbatch --dependency=afterok:${CACHE_JOB} --array=0-11%2 --export=ALL,\
+PROJECT_DIR=/home/xar68reb/Spur_SpLiCE,\
+DATA_FOLDER=/home/xar68reb/Datasets,\
+DATASET=waterbirds,\
+CRP_CACHE_PATH=outputs/crp/waterbirds_train_features_oi_v7.pt,\
+SPLICE_VOCAB=openimages_v7,\
+SPLICE_VOCAB_SIZE=-1,\
+CRP_FORCE_REBUILD=false,\
+PREPARE_ONLY=true,\
+GRAPH_VARIANT_PREFIX=oi_v7 \
+  scripts/prepare_crp_group_sweep.sbatch
+```
+
+The sweep keeps the original six audit settings and adds six wider settings
+covering group sizes 1--4, lower thresholds, and caps of 8--16 selected groups.
+The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
+Each task writes its own graph directory and an English-only `graph_audit.html`.
+For a single CRP training run with the same dictionary, use the regular Slurm
+entry point:
+
+```bash
+SPLICE_VOCAB=openimages_v7 SPLICE_VOCAB_SIZE=-1 \
+CRP_FORCE_REBUILD=true RELATIONAL_GRAPH_VARIANT=oi-vocab \
+sbatch scripts/train_crp.sbatch
+```
 
 ## Training length and learning-rate schedules
 

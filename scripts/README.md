@@ -174,7 +174,7 @@ graph:
 
 | Скрипт | Назначение |
 |---|---|
-| `SpLiCE_CRP_v2_cache_features.sbatch` | один раз кеширует frozen признаки |
+| `cache_openimages_crp.sbatch` | один раз кеширует frozen признаки с Open Images V7 vocabulary |
 | `SpLiCE_CRP_v2_frozen_audit.sbatch` | строит и аудирует teacher graph |
 | `SpLiCE_CRP_v2_report.sbatch` | формирует label-free go/no-go отчёт |
 | `SpLiCE_CRP_v2_posthoc_waterbirds.sbatch` | post-hoc проверка по скрытым Waterbirds labels |

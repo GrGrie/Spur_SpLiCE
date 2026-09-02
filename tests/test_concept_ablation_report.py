@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,17 +96,19 @@ class ConceptAblationReportTests(unittest.TestCase):
             )
             compact_report = compact_path.read_text(encoding="utf-8")
 
-        self.assertIn("Пара 1: одинаковый label", report)
-        self.assertIn("Пара 2: разные labels", report)
+        self.assertIn("Pair 1: same target", report)
+        self.assertIn("Pair 2: different targets", report)
         self.assertIn("waterbird", report)
         self.assertIn("landbird", report)
         self.assertIn("background direction", report)
         self.assertIn("data:image/jpeg;base64,", report)
         self.assertIn("+1.000000", report)
-        self.assertIn("Пара 3: одинаковые label и spurious", report)
-        self.assertIn("Пара 4: разные label и spurious", report)
+        self.assertIn("Pair 3: same target and spurious", report)
+        self.assertIn("Pair 4: different target and spurious", report)
         self.assertIn("Typical retained teacher edges", report)
         self.assertIn("median edge confidence", report)
+        self.assertIn('<html lang="en">', report)
+        self.assertIsNone(re.search(r"[\u0400-\u04FF]", report))
         self.assertEqual(report.count('<figure class="card">'), 8)
         self.assertEqual(report.count('<figure class="card compact">'), 2)
         self.assertEqual(compact_report.count('<figure class="card">'), 8)

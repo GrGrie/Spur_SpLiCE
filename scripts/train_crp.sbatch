@@ -91,8 +91,8 @@ ONLY_SAM_STEP_SIZE="false"
 # Frozen SpLiCE/OpenCLIP backend used to construct the relational cache.
 SPLICE_MODEL="open_clip:ViT-B-32"
 SPLICE_PRETRAINED="laion2b_s34b_b79k"
-SPLICE_VOCAB="laion"
-SPLICE_VOCAB_SIZE="10000"
+SPLICE_VOCAB="${SPLICE_VOCAB:-laion}"
+SPLICE_VOCAB_SIZE="${SPLICE_VOCAB_SIZE:-10000}"
 SPLICE_L1_PENALTY="0.25"
 SPLICE_BATCH_SIZE="128"
 SPLICE_NUM_WORKERS="1"
@@ -119,7 +119,7 @@ RANK_EVAL_FREQ="0"
 # Cluster paths and runtime (rarely changed)
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 CONDA_ENV="grgrie-train"
-DATA_FOLDER="/home/xar68reb/Datasets"
+DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 CHECKPOINT_DIR="outputs/training"
 RESUME=""                         # Empty = start from scratch; otherwise a .pth path.
 SPLICE_SCORE_CACHE_DIR="outputs/splice_score_cache"
@@ -163,9 +163,10 @@ case "${DATASET}" in
 esac
 # Recompute dataset-derived paths after canonicalization.
 SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
-if [[ "${USE_DINO}" == "true" ]]; then
+CRP_CACHE_PATH="${CRP_CACHE_PATH:-}"
+if [[ -z "${CRP_CACHE_PATH}" && "${USE_DINO}" == "true" ]]; then
     CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
-else
+elif [[ -z "${CRP_CACHE_PATH}" ]]; then
     CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
 fi
 CRP_GRAPH_DIR="outputs/crp/${DATASET}"

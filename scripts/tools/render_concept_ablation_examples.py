@@ -50,24 +50,24 @@ class PairSpec:
 
 PAIR_SPECS = (
     PairSpec(
-        title="Пара 1: одинаковый label, разный spurious attribute",
-        explanation="Обе птицы — waterbird; одна на суше, другая на воде.",
+        title="Pair 1: same target, different spurious attribute",
+        explanation="Both images contain waterbirds; one is on land and the other is on water.",
         left_label=1,
         left_background=0,
         right_label=1,
         right_background=1,
     ),
     PairSpec(
-        title="Пара 2: разные labels, одинаковый spurious attribute",
-        explanation="Waterbird и landbird; обе птицы на суше.",
+        title="Pair 2: different targets, same spurious attribute",
+        explanation="A waterbird and a landbird; both birds are on land.",
         left_label=1,
         left_background=0,
         right_label=0,
         right_background=0,
     ),
     PairSpec(
-        title="Пара 3: одинаковые label и spurious attribute",
-        explanation="Две разные landbird на суше: контроль обычной внутригрупповой близости.",
+        title="Pair 3: same target and spurious attribute",
+        explanation="Two different landbirds on land: a control for ordinary within-group similarity.",
         left_label=0,
         left_background=0,
         right_label=0,
@@ -75,8 +75,8 @@ PAIR_SPECS = (
         same_pool=True,
     ),
     PairSpec(
-        title="Пара 4: разные label и spurious attribute",
-        explanation="Waterbird на воде и landbird на суше: очевидная отрицательная контрольная пара.",
+        title="Pair 4: different target and spurious attribute",
+        explanation="A waterbird on water and a landbird on land: an expected negative control pair.",
         left_label=1,
         left_background=1,
         right_label=0,
@@ -303,7 +303,7 @@ def _image_card(
 
 def _group_table(interventions: Sequence[Intervention]) -> str:
     if not interventions:
-        return '<p class="warning">Teacher graph не содержит выбранных concept groups/factors.</p>'
+        return '<p class="warning">The teacher graph contains no selected concept groups or factors.</p>'
     rows = []
     for item in interventions:
         rows.append(
@@ -315,7 +315,7 @@ def _group_table(interventions: Sequence[Intervention]) -> str:
             "</tr>"
         )
     return (
-        '<table><thead><tr><th>ID</th><th>Концепты</th><th>Graph evidence</th>'
+        '<table><thead><tr><th>ID</th><th>Concepts</th><th>Graph evidence</th>'
         f'<th>Selected</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
     )
 
@@ -348,7 +348,7 @@ def _similarity_table(
             f"<td class=\"{delta_class}\">{delta:+.6f}</td></tr>"
         )
     return (
-        '<table><thead><tr><th>Удалённая группа / factor</th><th>Cosine before</th>'
+        '<table><thead><tr><th>Removed group / factor</th><th>Cosine before</th>'
         f'<th>Cosine after</th><th>Δ = after − before</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
     )
 
@@ -525,22 +525,22 @@ def generate_report(
             same_pool=spec.same_pool,
         )
         selection_note = (
-            "Пара выбрана детерминированно: её исходный cosine ближе всего к медиане "
-            f"всех допустимых пар этого типа (median={median_cosine:.6f})."
+            "The pair was selected deterministically: its raw cosine is closest to the "
+            f"median of all eligible pairs of this type (median={median_cosine:.6f})."
         )
         pair_sections.append(
             f"""
             <section>
               <h2>{html.escape(spec.title)}</h2>
               <p>{html.escape(spec.explanation)}</p>
-              <p class="muted">{html.escape(selection_note)} Выбор не использует результаты concept interventions.</p>
+              <p class="muted">{html.escape(selection_note)} Pair selection does not use concept-intervention results.</p>
               <div class="images">
                 {_image_card(left, cache, metadata_rows, image_root)}
                 {_image_card(right, cache, metadata_rows, image_root)}
               </div>
-              <h3>Найденные concept groups / factors</h3>
+              <h3>Selected concept groups / factors</h3>
               {_group_table(interventions)}
-              <h3>Cosine similarity до и после удаления</h3>
+              <h3>Cosine similarity before and after removal</h3>
               {_similarity_table(cache['centered_clip'], left, right, interventions)}
             </section>
             """
@@ -559,7 +559,7 @@ def generate_report(
         edges_per_group,
     )
     document = f"""<!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -591,8 +591,8 @@ def generate_report(
     <p><strong>Intervention:</strong> {html.escape(mode_name)}.</p>
     <p><strong>Graph:</strong> <code>{html.escape(str(graph_path))}</code></p>
     <p><strong>Scope:</strong> {html.escape(scope)}; audited={audited_count}, selected={selected_count}, shown={len(interventions)}.</p>
-    <p class="muted">Показанные interventions отсортированы по числу реально сохранённых teacher edges, затем по label-free null margin. Ограничение показа не меняет teacher graph.</p>
-    <p>Все числа вычислены по полным centered CLIP embeddings из frozen cache. Метаданные Waterbirds используются только после graph discovery, чтобы выбрать четыре диагностические пары, подписать изображения и посчитать post-hoc edge metrics.</p>
+    <p class="muted">Displayed interventions are sorted by the number of retained teacher edges, then by the label-free null margin. The display limit does not change the teacher graph.</p>
+    <p>All values use the full centered CLIP embeddings from the frozen cache. Waterbirds metadata is used only after graph discovery to select four diagnostic pairs, annotate images, and compute post-hoc edge metrics.</p>
   </header>
   <section>
     <h2>Aggregate graph summary</h2>
@@ -602,7 +602,7 @@ def generate_report(
     {_group_table(interventions)}
   </section>
   {''.join(pair_sections)}
-  <section><h2>Typical retained teacher edges</h2><p>Эти пары действительно присутствуют в teacher graph.</p></section>
+  <section><h2>Typical retained teacher edges</h2><p>These pairs are actual edges in the teacher graph.</p></section>
   {retained_edges}
 </main></body></html>"""
     output_path.parent.mkdir(parents=True, exist_ok=True)
