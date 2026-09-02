@@ -116,27 +116,34 @@ waterbirds_S0_resnet18_large_CRP_precision_simclrWei_1.0_splWei_0.01_crpTemp_0.2
 
 ## Sanity-check конкретных изображений
 
-Один самодостаточный HTML с двумя изображениями, наиболее значимыми выбранными
-concept groups/factors и `cosine before / after / delta` создаётся так:
+Самодостаточный HTML-аудит с четырьмя типичными парами, выбранными concept
+groups/factors, `cosine before / after / delta`, агрегатной сводкой графа и
+реальными retained teacher edges создаётся так:
 
 ```bash
 sbatch scripts/concept_ablation_examples.sbatch
 ```
 
-По умолчанию отчёт показывает пару waterbird-on-land / landbird-on-land и не
-более 12 выбранных interventions, отсортированных по реальному использованию в
-teacher graph. Ограничение влияет только на HTML. Чтобы показать обе
-диагностические пары или все eligible interventions, задайте соответственно
-`REPORT_PAIR_SCOPE=both` или `REPORT_MAX_INTERVENTIONS=0`.
+Четыре пары покрывают: одинаковый target при разных backgrounds, разные targets
+при одинаковом background, одинаковые target/background и разные
+target/background. Для каждого типа выбирается пара с исходным CLIP cosine,
+ближайшим к медиане всех допустимых пар; результат interventions на выбор не
+влияет. По умолчанию показываются не более 12 выбранных interventions и одно
+типичное retained edge на группу. `REPORT_MAX_INTERVENTIONS=0` показывает все
+eligible interventions, а `REPORT_EDGES_PER_GROUP=0` скрывает edge examples.
 
-Отчёт сохраняется в `outputs/diagnostics/concept_ablation_crp_seed0.html`. Для CQT:
+Graph path автоматически включает все параметры frozen audit. Необязательный
+`RELATIONAL_GRAPH_VARIANT` служит только читаемой меткой: полная конфигурация всё
+равно добавляется ниже неё, поэтому другое содержимое не перезапишет граф.
+`graph_audit.html` сохраняется рядом с соответствующим `teacher_graph.json`.
+Для CQT:
 
 ```bash
 sbatch --export=ALL,REPORT_METHOD=cqt scripts/concept_ablation_examples.sbatch
 ```
 
 Скрытые Waterbirds labels/background используются только в этом post-hoc
-diagnostic для выбора и подписи двух пар. Frozen cache и teacher graph строятся
+diagnostic для выбора, подписи четырёх пар и aggregate edge metrics. Frozen cache и teacher graph строятся
 тем же preparation path, что и у соответствующего training entry point.
 
 ## KL-only ablation

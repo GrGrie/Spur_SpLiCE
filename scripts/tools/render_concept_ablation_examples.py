@@ -6,6 +6,7 @@ import argparse
 import base64
 import html
 import io
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -31,6 +32,7 @@ class Intervention:
     concepts: str
     kind: str
     direction: torch.Tensor
+    concept_indices: tuple[int, ...]
     selected: bool
     evidence: str
 
@@ -43,6 +45,7 @@ class PairSpec:
     left_background: int
     right_label: int
     right_background: int
+    same_pool: bool = False
 
 
 PAIR_SPECS = (
@@ -59,6 +62,23 @@ PAIR_SPECS = (
         explanation="Waterbird и landbird; обе птицы на суше.",
         left_label=1,
         left_background=0,
+        right_label=0,
+        right_background=0,
+    ),
+    PairSpec(
+        title="Пара 3: одинаковые label и spurious attribute",
+        explanation="Две разные landbird на суше: контроль обычной внутригрупповой близости.",
+        left_label=0,
+        left_background=0,
+        right_label=0,
+        right_background=0,
+        same_pool=True,
+    ),
+    PairSpec(
+        title="Пара 4: разные label и spurious attribute",
+        explanation="Waterbird на воде и landbird на суше: очевидная отрицательная контрольная пара.",
+        left_label=1,
+        left_background=1,
         right_label=0,
         right_background=0,
     ),
@@ -114,12 +134,18 @@ def _interventions(
                     concepts=", ".join(concepts),
                     kind="crp_projection",
                     direction=orthonormal_basis(cache["dictionary"][indices], tolerance),
+                    concept_indices=tuple(indices),
                     selected=selected,
                     evidence=(
                         f"rank={int(group.get('basis_rank', len(indices)))}, "
                         f"score={float(group.get('score', 0.0)):.6g}, "
                         f"null threshold={float(group.get('null_threshold', 0.0)):.6g}, "
+                        f"null excess={float(group.get('null_excess_score', 0.0)):.6g}, "
+                        f"null ratio={float(group.get('null_excess_ratio', 0.0)):.2%}, "
                         f"coverage={float(group.get('coverage', 0.0)):.2%}, "
+                        f"DINO agreement={float(group.get('semantic_agreement', 0.0)):.4f}, "
+                        f"alignment={float(group.get('activation_gain_alignment', 0.0)):.4f}, "
+                        f"turnover={float(group.get('mean_neighbor_turnover', 0.0)):.2%}, "
                         f"retained edges={retained_edge_count(int(group['group_id']))}"
                     ),
                 )
@@ -155,6 +181,7 @@ def _interventions(
                     concepts=f"A: {concepts_a} ↔ B: {concepts_b}",
                     kind="cqt_quotient",
                     direction=direction_a - direction_b,
+                    concept_indices=tuple(indices_a + indices_b),
                     selected=selected,
                     evidence=(
                         f"gain={float(factor.get('intervention_gain', 0.0)):.6g}, "
@@ -192,40 +219,48 @@ def _candidate_positions(
     return torch.tensor(positions, dtype=torch.long)
 
 
-def _most_changed_pair(
+def _typical_pair(
     centered: torch.Tensor,
     left_positions: torch.Tensor,
     right_positions: torch.Tensor,
-    interventions: Sequence[Intervention],
     chunk_size: int,
-) -> tuple[int, int, str | None, float]:
-    if not interventions:
-        return int(left_positions[0]), int(right_positions[0]), None, 0.0
+    same_pool: bool = False,
+) -> tuple[int, int, float]:
+    """Choose the pair nearest the median raw cosine, independently of interventions."""
 
-    raw_right = centered[right_positions]
-    best_score = -1.0
-    best = (int(left_positions[0]), int(right_positions[0]), None, 0.0)
-    for intervention in interventions:
-        edited_right = _apply(raw_right, intervention)
-        for start in range(0, len(left_positions), chunk_size):
-            rows = left_positions[start : start + chunk_size]
-            raw_left = centered[rows]
-            edited_left = _apply(raw_left, intervention)
-            delta = edited_left @ edited_right.T - raw_left @ raw_right.T
-            scores = delta.abs()
-            flat_position = int(scores.argmax())
-            score = float(scores.flatten()[flat_position])
-            if score > best_score:
-                local_row = flat_position // scores.shape[1]
-                local_column = flat_position % scores.shape[1]
-                best_score = score
-                best = (
-                    int(rows[local_row]),
-                    int(right_positions[local_column]),
-                    intervention.identifier,
-                    float(delta[local_row, local_column]),
-                )
-    return best
+    right = centered[right_positions]
+    values = []
+    for start in range(0, len(left_positions), chunk_size):
+        rows = left_positions[start : start + chunk_size]
+        similarities = centered[rows] @ right.T
+        if same_pool:
+            valid = rows.view(-1, 1) < right_positions.view(1, -1)
+            similarities = similarities[valid]
+        else:
+            similarities = similarities.flatten()
+        if similarities.numel():
+            values.append(similarities)
+    if not values:
+        raise ValueError("No distinct candidate pairs are available for this diagnostic case.")
+    median = float(torch.cat(values).median())
+
+    best_distance = float("inf")
+    best_pair = (int(left_positions[0]), int(right_positions[-1]))
+    for start in range(0, len(left_positions), chunk_size):
+        rows = left_positions[start : start + chunk_size]
+        similarities = centered[rows] @ right.T
+        valid = (
+            rows.view(-1, 1) < right_positions.view(1, -1)
+            if same_pool
+            else torch.ones_like(similarities, dtype=torch.bool)
+        )
+        distances = (similarities - median).abs().masked_fill(~valid, torch.inf)
+        flat = int(distances.argmin())
+        distance = float(distances.flatten()[flat])
+        candidate = (int(rows[flat // distances.shape[1]]), int(right_positions[flat % distances.shape[1]]))
+        if distance < best_distance or (distance == best_distance and candidate < best_pair):
+            best_distance, best_pair = distance, candidate
+    return best_pair[0], best_pair[1], median
 
 
 def _image_data_uri(path: Path, max_size: int = 640) -> str:
@@ -239,7 +274,13 @@ def _image_data_uri(path: Path, max_size: int = 640) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def _image_card(position: int, cache: dict, metadata_rows: Sequence[dict], image_root: Path) -> str:
+def _image_card(
+    position: int,
+    cache: dict,
+    metadata_rows: Sequence[dict],
+    image_root: Path,
+    compact: bool = False,
+) -> str:
     sample_id = str(cache["sample_ids"][position])
     row = metadata_rows[_source_index(sample_id)]
     label = LABEL_NAMES[int(row["y"])]
@@ -248,7 +289,7 @@ def _image_card(position: int, cache: dict, metadata_rows: Sequence[dict], image
     if not image_path.is_file():
         raise FileNotFoundError(f"Waterbirds image not found: {image_path}")
     return f"""
-      <figure class="card">
+      <figure class="card{' compact' if compact else ''}">
         <img src="{_image_data_uri(image_path)}" alt="{html.escape(label)}, {html.escape(background)}">
         <figcaption>
           <strong>{html.escape(label)}</strong><br>
@@ -312,6 +353,132 @@ def _similarity_table(
     )
 
 
+def _graph_summary(graph: dict, cache: dict, metadata_rows: Sequence[dict]) -> str:
+    indices = torch.as_tensor(graph.get("neighbor_indices", []), dtype=torch.long)
+    weights = torch.as_tensor(graph.get("weights", []), dtype=torch.float32)
+    valid = (indices >= 0) & (weights > 0)
+    rows, slots = torch.where(valid) if valid.numel() else (torch.tensor([]), torch.tensor([]))
+    columns = indices[rows, slots] if rows.numel() else torch.tensor([], dtype=torch.long)
+    labels = torch.tensor(
+        [int(metadata_rows[_source_index(sample_id)]["y"]) for sample_id in cache["sample_ids"]]
+    )
+    backgrounds = torch.tensor(
+        [int(metadata_rows[_source_index(sample_id)]["place"]) for sample_id in cache["sample_ids"]]
+    )
+    same_target = labels[rows] == labels[columns] if rows.numel() else torch.tensor([], dtype=torch.bool)
+    opposite_background = (
+        backgrounds[rows] != backgrounds[columns] if rows.numel() else torch.tensor([], dtype=torch.bool)
+    )
+    same_target_precision = float(same_target.float().mean()) if same_target.numel() else 0.0
+    cross_background_given_same = (
+        float(opposite_background[same_target].float().mean()) if bool(same_target.any()) else 0.0
+    )
+    desired_edges = int((same_target & opposite_background).sum()) if same_target.numel() else 0
+    confidence = torch.as_tensor(graph.get("anchor_confidence", []), dtype=torch.float32)
+    supported_confidence = confidence[confidence > 0]
+    stats = graph.get("degree_stats", {})
+    config = graph.get("config", {})
+    rows_html = [
+        ("Selected groups / factors", str(len(graph.get("selected_group_ids", graph.get("selected_factor_ids", []))))),
+        ("Supported anchors", f"{int(stats.get('supported_anchors', 0))} ({float(stats.get('coverage', 0.0)):.2%})"),
+        ("Retained edges", str(int(stats.get("edge_count", int(valid.sum()))))),
+        ("Same-target precision", f"{same_target_precision:.2%}"),
+        ("Same-target + opposite-background edges", f"{desired_edges} ({cross_background_given_same:.2%} of same-target edges)"),
+        ("Maximum indegree", str(int(stats.get("maximum_indegree", 0)))),
+        ("Indegree Gini", f"{float(stats.get('indegree_gini', 0.0)):.4f}"),
+        ("Effective donor count", f"{float(stats.get('effective_donor_count', 0.0)):.2f}"),
+        ("Anchor confidence", (
+            f"median={float(supported_confidence.median()):.6g}, mean={float(supported_confidence.mean()):.6g}, "
+            f"max={float(supported_confidence.max()):.6g}" if supported_confidence.numel() else "no supported anchors"
+        )),
+        ("DINO / CoBalT", f"{bool(config.get('use_dino', True))} / {bool(config.get('cobalt', False))}"),
+    ]
+    return '<table><tbody>' + ''.join(
+        f'<tr><th>{html.escape(name)}</th><td>{html.escape(value)}</td></tr>' for name, value in rows_html
+    ) + '</tbody></table>'
+
+
+def _typical_edge_slots(mask: torch.Tensor, confidences: torch.Tensor, count: int) -> list[tuple[int, int]]:
+    rows, slots = torch.where(mask)
+    if not rows.numel() or count <= 0:
+        return []
+    order = torch.argsort(confidences[rows, slots])
+    if count == 1:
+        chosen = [int(order[len(order) // 2])]
+    else:
+        chosen = [int(order[round(position * (len(order) - 1) / (count - 1))]) for position in range(count)]
+    return [(int(rows[index]), int(slots[index])) for index in dict.fromkeys(chosen)]
+
+
+def _retained_edge_examples(
+    graph: dict,
+    cache: dict,
+    metadata_rows: Sequence[dict],
+    image_root: Path,
+    interventions: Sequence[Intervention],
+    edges_per_group: int,
+) -> str:
+    if edges_per_group == 0 or not interventions:
+        return ""
+    indices = torch.as_tensor(graph.get("neighbor_indices", []), dtype=torch.long)
+    weights = torch.as_tensor(graph.get("weights", []), dtype=torch.float32)
+    group_ids = torch.as_tensor(graph.get("group_ids", []), dtype=torch.long)
+    edge_confidences = torch.as_tensor(graph.get("edge_confidences", []), dtype=torch.float32)
+    gains = torch.as_tensor(graph.get("intervention_gains", []), dtype=torch.float32)
+    anchor_confidence = torch.as_tensor(graph.get("anchor_confidence", []), dtype=torch.float32)
+    if not indices.numel() or indices.shape != weights.shape or group_ids.shape != weights.shape:
+        return '<p class="warning">Graph artifact does not contain retained-edge tensors.</p>'
+
+    sections = []
+    for intervention in interventions:
+        numeric_id = int(intervention.identifier[1:])
+        edge_slots = _typical_edge_slots(
+            (group_ids == numeric_id) & (indices >= 0) & (weights > 0),
+            edge_confidences,
+            edges_per_group,
+        )
+        if not edge_slots:
+            continue
+        cards = []
+        for row, slot in edge_slots:
+            column = int(indices[row, slot])
+            pair = cache["centered_clip"][[row, column]]
+            edited = _apply(pair, intervention)
+            raw_cosine = float(torch.dot(pair[0], pair[1]))
+            projected_cosine = float(torch.dot(edited[0], edited[1]))
+            dino_similarity = "disabled"
+            if bool(graph.get("config", {}).get("use_dino", True)) and cache.get("dino_embeddings") is not None:
+                dino_similarity = f"{float(torch.dot(cache['dino_embeddings'][row], cache['dino_embeddings'][column])):.6f}"
+            left_meta = metadata_rows[_source_index(cache["sample_ids"][row])]
+            right_meta = metadata_rows[_source_index(cache["sample_ids"][column])]
+            same_target = int(left_meta["y"]) == int(right_meta["y"])
+            opposite_background = int(left_meta["place"]) != int(right_meta["place"])
+            activation_text = "n/a"
+            if intervention.kind == "crp_projection" and intervention.concept_indices:
+                activation = cache["splice_codes"][:, list(intervention.concept_indices)].sum(dim=1)
+                activation_text = f"{float(activation[row]):.6g} / {float(activation[column]):.6g}"
+            cards.append(
+                f'<article class="edge-example"><div class="images compact-grid">'
+                f'{_image_card(row, cache, metadata_rows, image_root, compact=True)}'
+                f'{_image_card(column, cache, metadata_rows, image_root, compact=True)}</div>'
+                f'<table><tbody>'
+                f'<tr><th>Raw / projected cosine</th><td>{raw_cosine:.6f} / {projected_cosine:.6f}</td></tr>'
+                f'<tr><th>Stored gain</th><td>{float(gains[row, slot]):+.6f}</td></tr>'
+                f'<tr><th>Group activation A / B</th><td>{activation_text}</td></tr>'
+                f'<tr><th>DINO cosine</th><td>{dino_similarity}</td></tr>'
+                f'<tr><th>Edge confidence / teacher weight</th><td>{float(edge_confidences[row, slot]):.6g} / {float(weights[row, slot]):.6g}</td></tr>'
+                f'<tr><th>Anchor confidence</th><td>{float(anchor_confidence[row]):.6g}</td></tr>'
+                f'<tr><th>Post-hoc relation</th><td>same target={same_target}; opposite background={opposite_background}</td></tr>'
+                f'</tbody></table></article>'
+            )
+        sections.append(
+            f'<section><h3>{html.escape(intervention.identifier)}: {html.escape(intervention.concepts)}</h3>'
+            f'<p class="muted">Typical retained edges are selected by median edge confidence, not maximum effect.</p>'
+            f'{"".join(cards)}</section>'
+        )
+    return ''.join(sections)
+
+
 def generate_report(
     cache_path: Path,
     graph_path: Path,
@@ -320,7 +487,7 @@ def generate_report(
     scope: str = "selected",
     selection_chunk_size: int = 512,
     max_interventions: int = 0,
-    pair_scope: str = "both",
+    edges_per_group: int = 1,
 ) -> Path:
     graph = load_graph_json(graph_path)
     cache = validate_feature_cache(
@@ -335,45 +502,38 @@ def generate_report(
         raise ValueError("selection_chunk_size must be positive.")
     if max_interventions < 0:
         raise ValueError("max_interventions must be non-negative; 0 shows every eligible item.")
-    pair_scopes = {
-        "same-target": (PAIR_SPECS[0],),
-        "same-background": (PAIR_SPECS[1],),
-        "both": PAIR_SPECS,
-    }
-    if pair_scope not in pair_scopes:
-        raise ValueError("pair_scope must be same-target, same-background, or both.")
+    if edges_per_group < 0:
+        raise ValueError("edges_per_group must be non-negative.")
 
     dataset = WaterbirdsDataset(str(data_folder))
     metadata_rows = dataset.metadata_df.to_dict(orient="records")
     image_root = Path(dataset.data_dir)
     interventions = _interventions(graph, cache, scope, max_interventions=max_interventions)
     pair_sections = []
-    for spec in pair_scopes[pair_scope]:
+    for spec in PAIR_SPECS:
         left_candidates = _candidate_positions(
             cache["sample_ids"], metadata_rows, spec.left_label, spec.left_background
         )
         right_candidates = _candidate_positions(
             cache["sample_ids"], metadata_rows, spec.right_label, spec.right_background
         )
-        left, right, selection_group, selection_delta = _most_changed_pair(
+        left, right, median_cosine = _typical_pair(
             cache["centered_clip"],
             left_candidates,
             right_candidates,
-            interventions,
             selection_chunk_size,
+            same_pool=spec.same_pool,
         )
         selection_note = (
-            f"Выбрана допустимая пара с максимальным |Δ| среди показанных interventions: "
-            f"{selection_group}, Δ={selection_delta:+.6f}."
-            if selection_group is not None
-            else "Выбрана первая допустимая пара: выбранных interventions нет."
+            "Пара выбрана детерминированно: её исходный cosine ближе всего к медиане "
+            f"всех допустимых пар этого типа (median={median_cosine:.6f})."
         )
         pair_sections.append(
             f"""
             <section>
               <h2>{html.escape(spec.title)}</h2>
               <p>{html.escape(spec.explanation)}</p>
-              <p class="muted">{html.escape(selection_note)} Это иллюстративный sanity-check, не aggregate metric.</p>
+              <p class="muted">{html.escape(selection_note)} Выбор не использует результаты concept interventions.</p>
               <div class="images">
                 {_image_card(left, cache, metadata_rows, image_root)}
                 {_image_card(right, cache, metadata_rows, image_root)}
@@ -390,6 +550,14 @@ def generate_report(
     audited_count = len(graph.get("groups", graph.get("factors", [])))
     all_items = graph.get("groups", graph.get("factors", []))
     selected_count = sum(bool(item.get("selected", False)) for item in all_items)
+    retained_edges = _retained_edge_examples(
+        graph,
+        cache,
+        metadata_rows,
+        image_root,
+        interventions,
+        edges_per_group,
+    )
     document = f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -405,12 +573,14 @@ def generate_report(
     .images {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }}
     .card {{ margin:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fafbfc; }}
     .card img {{ display:block; width:100%; height:360px; object-fit:contain; background:#e9edf2; }}
+    .card.compact img {{ height:180px; }} .compact-grid {{ max-width:720px; }}
     figcaption {{ padding:12px 14px; }} .muted {{ color:var(--muted); }}
     table {{ width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }}
     th,td {{ padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; }}
     th {{ background:#f0f3f7; }} .positive {{ color:#067647; font-weight:700; }}
     .negative {{ color:#b42318; font-weight:700; }} .neutral {{ color:var(--muted); }}
     .warning {{ padding:12px; border-left:4px solid #f79009; background:#fffaeb; }}
+    .edge-example {{ padding:14px; margin:14px 0; border:1px solid var(--line); border-radius:12px; }}
     code {{ overflow-wrap:anywhere; }}
     @media (max-width:760px) {{ .images {{ grid-template-columns:1fr; }} .card img {{ height:280px; }} table {{ font-size:13px; }} }}
   </style>
@@ -419,11 +589,21 @@ def generate_report(
   <header>
     <h1>Spur SpLiCE: concept-ablation sanity-check</h1>
     <p><strong>Intervention:</strong> {html.escape(mode_name)}.</p>
-    <p><strong>Scope:</strong> {html.escape(scope)}; pair view={html.escape(pair_scope)}; audited={audited_count}, selected={selected_count}, shown={len(interventions)}.</p>
+    <p><strong>Graph:</strong> <code>{html.escape(str(graph_path))}</code></p>
+    <p><strong>Scope:</strong> {html.escape(scope)}; audited={audited_count}, selected={selected_count}, shown={len(interventions)}.</p>
     <p class="muted">Показанные interventions отсортированы по числу реально сохранённых teacher edges, затем по label-free null margin. Ограничение показа не меняет teacher graph.</p>
-    <p>Все числа вычислены по полным centered CLIP embeddings из frozen cache. Метаданные Waterbirds используются только после graph discovery, чтобы выбрать две диагностические пары и подписать изображения.</p>
+    <p>Все числа вычислены по полным centered CLIP embeddings из frozen cache. Метаданные Waterbirds используются только после graph discovery, чтобы выбрать четыре диагностические пары, подписать изображения и посчитать post-hoc edge metrics.</p>
   </header>
+  <section>
+    <h2>Aggregate graph summary</h2>
+    {_graph_summary(graph, cache, metadata_rows)}
+    <details><summary>Complete graph configuration</summary><pre><code>{html.escape(json.dumps(graph.get('config', {}), indent=2, sort_keys=True))}</code></pre></details>
+    <h3>Selected concept groups / factors</h3>
+    {_group_table(interventions)}
+  </section>
   {''.join(pair_sections)}
+  <section><h2>Typical retained teacher edges</h2><p>Эти пары действительно присутствуют в teacher graph.</p></section>
+  {retained_edges}
 </main></body></html>"""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(document, encoding="utf-8")
@@ -439,11 +619,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scope", choices=("selected", "all"), default="selected")
     parser.add_argument("--selection-chunk-size", type=int, default=512)
     parser.add_argument("--max-interventions", type=int, default=0)
-    parser.add_argument(
-        "--pair-scope",
-        choices=("same-target", "same-background", "both"),
-        default="both",
-    )
+    parser.add_argument("--edges-per-group", type=int, default=1)
     return parser.parse_args()
 
 
@@ -457,7 +633,7 @@ def main() -> None:
         scope=args.scope,
         selection_chunk_size=args.selection_chunk_size,
         max_interventions=args.max_interventions,
-        pair_scope=args.pair_scope,
+        edges_per_group=args.edges_per_group,
     )
     print(f"[INFO] Wrote self-contained concept-ablation report to {path}")
 

@@ -169,12 +169,6 @@ else
     CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
 fi
 CRP_GRAPH_DIR="outputs/crp/${DATASET}"
-if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
-    CRP_GRAPH_DIR="${CRP_GRAPH_DIR}/use_dino_${USE_DINO}_cobalt_${COBALT}"
-fi
-if [[ -n "${RELATIONAL_GRAPH_VARIANT}" ]]; then
-    CRP_GRAPH_DIR="${CRP_GRAPH_DIR}/variants/${RELATIONAL_GRAPH_VARIANT}"
-fi
 CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
 CQT_GRAPH_DIR="outputs/cqt/${DATASET}"
 CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
@@ -228,11 +222,23 @@ teacher_graph_matches_config() {
         "${RELATIONAL_TEACHER_GRAPH}" "${RELATIONAL_ARTIFACT}" "${RELATIONAL_CONFIG_JSON}" >/dev/null 2>&1
 }
 
+crp_config_path() {
+    local args=(--config "${RELATIONAL_CONFIG_JSON}")
+    if [[ -n "${RELATIONAL_GRAPH_VARIANT}" ]]; then
+        args+=(--variant "${RELATIONAL_GRAPH_VARIANT}")
+    fi
+    python -m scripts.tools.crp_config_path "${args[@]}"
+}
+
 prepare_relational_teacher_graph() {
     [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]] || return 0
 
     resolve_relational_graph_config
-    if [[ "${MODE}" == "cqt_relational" ]]; then
+    if [[ "${MODE}" == "crp_relational" ]]; then
+        CRP_GRAPH_DIR="outputs/crp/${DATASET}/$(crp_config_path)"
+        CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/seed${SEED}/teacher_graph.json"
+        RELATIONAL_TEACHER_GRAPH="${CRP_TEACHER_GRAPH}"
+    else
         CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}"
         if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
             CQT_GRAPH_VARIANT="${CQT_GRAPH_VARIANT}_useDino${USE_DINO}_cobalt${COBALT}"

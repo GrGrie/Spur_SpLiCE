@@ -22,6 +22,7 @@ class ConceptAblationReportTests(unittest.TestCase):
                 {"img_filename": "waterbird_water.jpg", "y": 1, "place": 1, "split": 0},
                 {"img_filename": "landbird_land.jpg", "y": 0, "place": 0, "split": 0},
                 {"img_filename": "landbird_water.jpg", "y": 0, "place": 1, "split": 0},
+                {"img_filename": "landbird_land_2.jpg", "y": 0, "place": 0, "split": 0},
             ]
             pd.DataFrame(rows).to_csv(root / "metadata.csv", index=False)
             for index, row in enumerate(rows):
@@ -34,17 +35,18 @@ class ConceptAblationReportTests(unittest.TestCase):
                         [-1.0, 1.0, 0.0],
                         [0.0, 1.0, 1.0],
                         [0.0, -1.0, 1.0],
+                        [0.0, 2.0, 1.0],
                     ]
                 ),
                 dim=1,
             )
-            sample_ids = [f"waterbirds:{index}" for index in range(4)]
+            sample_ids = [f"waterbirds:{index}" for index in range(5)]
             cache = {
                 "cache_version": 1,
                 "sample_ids": sample_ids,
                 "clip_embeddings": clip,
                 "image_mean": torch.zeros(3),
-                "splice_codes": torch.tensor([[1.0], [0.0], [1.0], [0.0]]),
+                "splice_codes": torch.tensor([[1.0], [0.0], [1.0], [0.0], [1.0]]),
                 "dictionary": torch.tensor([[1.0, 0.0, 0.0]]),
                 "vocabulary": ["background direction"],
                 "dino_embeddings": clip,
@@ -57,6 +59,14 @@ class ConceptAblationReportTests(unittest.TestCase):
                     "artifact": "splice_crp_v2_teacher_graph",
                     "sample_ids": sample_ids,
                     "config": {"orthogonal_tolerance": 1e-6},
+                    "selected_group_ids": [0],
+                    "neighbor_indices": torch.tensor([[1], [-1], [-1], [-1], [-1]]),
+                    "weights": torch.tensor([[1.0], [0.0], [0.0], [0.0], [0.0]]),
+                    "edge_confidences": torch.tensor([[0.2], [0.0], [0.0], [0.0], [0.0]]),
+                    "group_ids": torch.tensor([[0], [-1], [-1], [-1], [-1]]),
+                    "intervention_gains": torch.tensor([[1.0], [0.0], [0.0], [0.0], [0.0]]),
+                    "anchor_confidence": torch.tensor([0.2, 0.0, 0.0, 0.0, 0.0]),
+                    "degree_stats": {"edge_count": 1, "supported_anchors": 1, "coverage": 0.2},
                     "groups": [
                         {
                             "group_id": 0,
@@ -81,7 +91,7 @@ class ConceptAblationReportTests(unittest.TestCase):
                 root,
                 root / "compact.html",
                 max_interventions=1,
-                pair_scope="same-background",
+                edges_per_group=0,
             )
             compact_report = compact_path.read_text(encoding="utf-8")
 
@@ -92,9 +102,13 @@ class ConceptAblationReportTests(unittest.TestCase):
         self.assertIn("background direction", report)
         self.assertIn("data:image/jpeg;base64,", report)
         self.assertIn("+1.000000", report)
-        self.assertEqual(report.count('<figure class="card">'), 4)
-        self.assertEqual(compact_report.count('<figure class="card">'), 2)
-        self.assertIn("pair view=same-background", compact_report)
+        self.assertIn("Пара 3: одинаковые label и spurious", report)
+        self.assertIn("Пара 4: разные label и spurious", report)
+        self.assertIn("Typical retained teacher edges", report)
+        self.assertIn("median edge confidence", report)
+        self.assertEqual(report.count('<figure class="card">'), 8)
+        self.assertEqual(report.count('<figure class="card compact">'), 2)
+        self.assertEqual(compact_report.count('<figure class="card">'), 8)
 
 
 if __name__ == "__main__":

@@ -246,8 +246,11 @@ must already exist on the cluster account; API keys are deliberately not stored
 in the repository.
 
 Two dedicated sanity-check entry points are also available. The first produces a
-self-contained post-hoc HTML with representative Waterbirds image pairs and exact
-cosine changes for every selected CRP group (or CQT factor). The second disables
+self-contained post-hoc HTML with four deterministic median-case Waterbirds pairs,
+aggregate graph metrics, exact cosine changes, and actual retained teacher edges
+for every shown CRP group (or CQT factor). Each CRP graph path contains its complete
+frozen-audit configuration and the HTML is stored beside that graph, so different
+configurations cannot overwrite one another. The second disables
 the SimCLR term and trains with relational KL alone while retaining the normal
 linear evaluation:
 

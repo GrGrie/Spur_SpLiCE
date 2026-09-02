@@ -1399,6 +1399,87 @@ seed-0 arrays are mechanism-finding pilots, not evidence of seed stability. Exis
 CRP/CQT results and the 2026-08-30 CRP-only reporting snapshot are unchanged; no new
 performance claim follows from this infrastructure and diagnostic update.
 
+### 2026-09-02 — Seed-0 CRP loss-scale sweep, first four runs
+
+**Track:** CRP experimental interpretation.
+
+Before these runs, absolute anchor confidence had reduced the effective relational
+term enough that the earlier `0.01--0.05` weight sweep was no longer informative;
+weights `0.5`, `1.0`, and then `2.0` were proposed from the observed loss scale.
+The first completed runs on the bounded `g2_t070_c020_k12` graph disabled graph
+positives and late decay and used student temperature `0.25`. At seed 0, weight
+`1.0` finished at 52.45% final-ten average accuracy and 47.17% final-ten WGA,
+while weight `2.0` finished at 54.15% and 50.54%, respectively. The shared graph
+covered 3,060 anchors (63.82%) with 6,268 edges; mean supported-anchor confidence
+was about 0.00232 and the confidence-weighted KL was about 0.012 before application
+of the scheduled weight. Thus doubling the weight materially increased the active
+relational contribution and improved both reported downstream metrics in this
+single-seed comparison.
+
+Two otherwise matched weight-`1.0` temperature checks (`0.10` and `0.50`) were
+still running at roughly 50 of 500 epochs when inspected. Their early probe values
+are not final-ten estimates and do not yet support a temperature ranking. None of
+these four runs establishes seed stability, comparison with required non-concept
+controls, or a causal concept-removal effect. The weight-`2.0` result is a stronger
+seed-0 CRP pilot than the earlier recorded CRP pilot, but it remains tuning evidence
+and must not be promoted to a label-free general claim based on WGA selection.
+
+### 2026-09-02 — Paper rewritten for the current CRP architecture
+
+**Track:** CRP reporting.
+
+Before this change, `Spur_SpLiCE.tex` mixed an earlier CRP reporting snapshot with
+newer implementation details and an older seed-0 sweep. It did not present absolute
+null-margin confidence, optional graph-positive SimCLR, late relational decay,
+empty-graph fallback, or the newer relational diagnostics as one coherent system.
+
+The paper was rewritten as a current-state CRP-only description. It now follows the
+implemented pipeline from frozen cache, concept grouping, full centered-CLIP
+projection, reciprocal and DINO-gated relations, random/shuffled null calibration,
+absolute anchor confidence and sparse graph construction through graph-aware
+sampling, backbone relational KL, optional weighted graph positives, and the
+start/ramp/decay schedule. Its empirical section reports the completed bounded-graph
+seed-0 weight-`1.0` and weight-`2.0` runs and explicitly separates current
+entry-point defaults from the mechanism-isolation configuration used by those runs.
+This reporting update changes no method, loss, graph, or experiment protocol and
+does not retroactively alter the dated 2026-08-30 reporting snapshot.
+
+### 2026-09-02 — Configuration-safe visual CRP graph audit
+
+**Track:** CRP frozen audit and reporting diagnostics.
+
+Before this change, CRP graph separation depended on a manually supplied variant
+name. Reusing a name with different frozen-audit parameters could rebuild and
+overwrite the previous graph, while every seed-level concept-ablation report used
+one shared diagnostics filename. The report selected the image pair with maximum
+absolute displayed intervention change and applied every shown group to that pair,
+even when the pair was not a retained teacher edge. It therefore illustrated a
+best-looking intervention but did not provide a representative or complete view of
+the graph used for training.
+
+CRP graph paths now include a human-readable hierarchy containing every resolved
+graph-construction parameter, the DINO and CoBalT switches, and the seed. An
+optional variant name is only an additional readable parent label; distinct
+resolved configurations still receive distinct paths. Each HTML audit is stored
+beside its exact teacher graph. The grouping sweep now emits both the numeric audit
+summary and this HTML automatically.
+
+The CRP HTML now always displays four post-hoc Waterbirds relation types: same
+target/opposite background, opposite target/same background, same target/same
+background, and opposite target/opposite background. Each example is selected by
+the pair whose raw centered-CLIP cosine is nearest the median of all eligible pairs
+of that type; intervention results do not affect selection. The report adds full
+resolved configuration, graph degree/confidence statistics, hidden-label edge
+diagnostics, richer word-level group evidence, and representative actual retained
+edges selected around median edge confidence. Hidden annotations remain reporting
+only and do not affect graph discovery or selection.
+
+Consequences: frozen graph sweeps can be compared without silent artifact loss,
+and the report distinguishes generic intervention behavior from relations that
+actually supervise the student. These changes affect CRP audit storage and
+reporting only; concept selection, graph mathematics, SSL losses, and existing
+experimental results are unchanged.
+
 ### Reporting snapshots currently available
 
 - **CRP-only report dated 2026-08-30:** use the CRP formulation and results recorded

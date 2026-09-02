@@ -64,3 +64,14 @@ source "${PROJECT_DIR}/scripts/train_crp.sbatch"
 # the summary in Slurm output.
 python -u -m scripts.tools.summarize_crp_audit "${RELATIONAL_TEACHER_GRAPH}" || true
 
+REPORT_PATH="$(dirname "${RELATIONAL_TEACHER_GRAPH}")/graph_audit.html"
+python -u -m scripts.tools.render_concept_ablation_examples \
+    --cache "${CRP_CACHE_PATH}" \
+    --graph "${RELATIONAL_TEACHER_GRAPH}" \
+    --data-folder "${DATA_FOLDER}" \
+    --scope selected \
+    --max-interventions 12 \
+    --edges-per-group 1 \
+    --output "${REPORT_PATH}"
+
+echo "[INFO] Graph audit report: ${PROJECT_DIR}/${REPORT_PATH}"

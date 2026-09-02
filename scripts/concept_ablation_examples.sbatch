@@ -19,7 +19,7 @@ set -euo pipefail
 REPORT_METHOD="${REPORT_METHOD:-crp}" # crp | cqt
 REPORT_SCOPE="${REPORT_SCOPE:-selected}" # selected | all
 REPORT_MAX_INTERVENTIONS="${REPORT_MAX_INTERVENTIONS:-12}" # 0 = show every eligible item.
-REPORT_PAIR_SCOPE="${REPORT_PAIR_SCOPE:-same-background}" # same-target | same-background | both
+REPORT_EDGES_PER_GROUP="${REPORT_EDGES_PER_GROUP:-1}" # Typical retained edges shown per group.
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}"
 PREPARE_ONLY="true"
@@ -42,8 +42,8 @@ case "${REPORT_METHOD}" in
         ;;
 esac
 
-REPORT_DIR="outputs/diagnostics"
-REPORT_PATH="${REPORT_DIR}/concept_ablation_${REPORT_METHOD}_seed${SEED}.html"
+REPORT_DIR="$(dirname "${RELATIONAL_TEACHER_GRAPH}")"
+REPORT_PATH="${REPORT_DIR}/graph_audit.html"
 mkdir -p "${REPORT_DIR}"
 python -u -m scripts.tools.render_concept_ablation_examples \
     --cache "${CRP_CACHE_PATH}" \
@@ -51,7 +51,7 @@ python -u -m scripts.tools.render_concept_ablation_examples \
     --data-folder "${DATA_FOLDER}" \
     --scope "${REPORT_SCOPE}" \
     --max-interventions "${REPORT_MAX_INTERVENTIONS}" \
-    --pair-scope "${REPORT_PAIR_SCOPE}" \
+    --edges-per-group "${REPORT_EDGES_PER_GROUP}" \
     --output "${REPORT_PATH}"
 
 echo "[INFO] Copy or open this single report file: ${PROJECT_DIR}/${REPORT_PATH}"
