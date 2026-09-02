@@ -10,8 +10,8 @@
 #SBATCH --gres=gpu:v100:1
 #SBATCH --partition=informatik-mind
 #SBATCH --gpu_cmode=shared
-#SBATCH --output=./output/CRPv2/slurm-%x_%A_%a.out
-#SBATCH --error=./output/CRPv2/slurm-%x_%A_%a.err
+#SBATCH --output=./output/CRPv3/slurm-%x_%A_%a.out
+#SBATCH --error=./output/CRPv3/slurm-%x_%A_%a.err
 
 set -euo pipefail
 

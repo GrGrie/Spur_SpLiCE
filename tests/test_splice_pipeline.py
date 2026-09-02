@@ -220,6 +220,10 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
         self.assertTrue(torch.all((first["anchor_confidence"] >= 0) & (first["anchor_confidence"] <= 1)))
         self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
+        self.assertEqual(first["artifact"], "splice_crp_v3_teacher_graph")
+        self.assertEqual(first["degree_stats"]["indegree_cap"], 10)
+        self.assertEqual(first["degree_stats"]["indegree_rule"], "absolute")
+        self.assertTrue(all("cross_fold" in group for group in first["groups"]))
 
     def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
         config = CrpAuditConfig(
@@ -251,6 +255,7 @@ class SplicePipelineTests(unittest.TestCase):
             min_coverage=0.0,
             seed=7,
             use_dino=False,
+            use_residual_splice_gate=False,
         )
         graph = run_frozen_audit(cache, config)
         self.assertFalse(graph["config"]["use_dino"])
@@ -300,6 +305,14 @@ class SplicePipelineTests(unittest.TestCase):
         graph = run_frozen_audit(self._tiny_crp_cache(), config, cobalt_concepts=concepts)
         self.assertTrue(graph["config"]["cobalt"])
         self.assertEqual(graph["cobalt_check"]["concept_sample_counts"], [4, 4])
+
+    def test_cobalt_confidence_downweights_uncertain_memberships(self):
+        concepts = torch.tensor([[0], [0], [1], [1]])
+        confidence = torch.tensor([0.1, 1.0, 1.0, 1.0])
+        weights, summary = concept_balanced_sample_weights(concepts, confidence)
+        self.assertTrue(summary["confidence_enabled"])
+        self.assertAlmostEqual(float(summary["confidence_min"]), 0.1)
+        self.assertLess(float(weights[0]), float(weights[1]))
 
     def test_cobalt_weights_rebalance_grouping_frequency_filter(self):
         codes = torch.tensor(

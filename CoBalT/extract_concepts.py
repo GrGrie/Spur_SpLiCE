@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from CoBalT.data import split_loader
-from CoBalT.model import CoBalTDiscoveryModel
+from CoBalT.model import CoBalTDiscoveryModel, concept_assignment_confidence
 from CoBalT.runtime import atomic_torch_save, seed_everything
 
 
@@ -52,15 +52,17 @@ def main(argv: list[str] | None = None) -> None:
             args.workers,
             args.image_size,
         )
-        all_concepts, all_ids = [], []
+        all_concepts, all_confidence, all_ids = [], [], []
         with torch.inference_mode():
             for images, _, _, sample_ids in loader:
-                concepts, _ = model.infer_concepts(images.to(device, non_blocking=True))
+                concepts, attention = model.infer_concepts(images.to(device, non_blocking=True))
                 all_concepts.append(concepts.cpu())
+                all_confidence.append(concept_assignment_confidence(attention).cpu())
                 all_ids.append(sample_ids.cpu())
         records[split] = {
             "sample_ids": torch.cat(all_ids),
             "concepts": torch.cat(all_concepts),
+            "confidence": torch.cat(all_confidence),
         }
         print(f"split={split} samples={len(records[split]['sample_ids'])}")
 

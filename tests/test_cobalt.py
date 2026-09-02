@@ -5,6 +5,7 @@ from CoBalT.model import (
     ConceptDictionary,
     SemanticGrouping,
     align_to_source_overlap,
+    concept_assignment_confidence,
 )
 from CoBalT.sampler import ConceptBalancedSampler, inferred_worst_group_accuracy
 
@@ -15,6 +16,16 @@ def test_semantic_grouping_is_normalized_over_slots():
     assert slots.shape == (3, 4, 8)
     assert attention.shape == (3, 4, 5, 5)
     assert torch.allclose(attention.sum(dim=1), torch.ones(3, 5, 5), atol=1e-6)
+
+
+def test_concept_assignment_confidence_measures_slot_separation():
+    attention = torch.zeros(2, 2, 2, 2)
+    attention[0, 0] = 0.5
+    attention[0, 1] = 0.5
+    attention[1, 0] = 0.9
+    attention[1, 1] = 0.1
+    confidence = concept_assignment_confidence(attention)
+    assert torch.allclose(confidence, torch.tensor([0.5, 0.9]))
 
 
 def test_identity_overlap_alignment_preserves_map():

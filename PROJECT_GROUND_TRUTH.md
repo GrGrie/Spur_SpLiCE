@@ -7,7 +7,8 @@ are deliberately separate.
 
 **Last updated:** 2026-09-02
 
-**Current tracks:** SpLiCE-CRP v2 (canonical) and SpLiCE-CQT v1 (experimental)
+**Current tracks:** SpLiCE-CRP v3 (active internal no-DINO/CoBalT protocol),
+SpLiCE-CRP v2 (historical/compatibility) and SpLiCE-CQT v1 (experimental)
 **Current evidence:** implementation and initial Waterbirds single-seed pilots exist.
 Multi-seed stability, required controls, and a causal concept-removal claim are not
 established.
@@ -89,7 +90,7 @@ optional graph-linked SimCLR positives. Unsupported anchors contribute zero.
 There is no student memory bank or permanent hard positive. An empty graph falls
 back to SimCLR, except in the explicitly non-empty KL-only ablation.
 
-## 4. CRP v2 — canonical method
+## 4. CRP v2 — historical canonical method
 
 CRP means Concept-Projected Relational Pretraining. It is the canonical method and
 the required baseline for CQT.
@@ -114,6 +115,28 @@ the required baseline for CQT.
 CRP's inductive bias is that removing a factor can restore relations supported by
 independent semantic geometry. It may select a class factor as well as a nuisance;
 this is not a general identification guarantee.
+
+## 4.1 CRPv3 — active internal no-DINO/CoBalT protocol
+
+CRPv3 keeps the CRP v2 projection and null-test structure, but the active protocol
+for the CoBalT/no-DINO track adds four label-free controls:
+
+1. The final graph uses fixed `top_k=3` and absolute `max_indegree=10`; the old
+   relative indegree rule remains only as a compatibility fallback.
+2. With `use_dino=false`, an optional residual SpLiCE gate compares the remaining
+   sparse concepts after excluding the projected group. It is enabled by default
+   and controlled by `use_residual_splice_gate`.
+3. Accepted group relations are checked on deterministic cross-fold subsets and
+   require configured edge persistence. This is an out-of-sample relation check;
+   it is not a downstream label-based selector.
+4. CoBalT concept artifacts may carry spatial slot-separation confidence. When
+   available, confidence downweights uncertain memberships in the concept-balance
+   weights; older artifacts fall back explicitly to neutral confidence.
+
+CRPv3 emits `splice_crp_v3_teacher_graph` and remains separate from CQT. This is
+an internal research protocol, not evidence that the new gates improve WGA or
+identify a true nuisance factor. The exact graph configuration and fold results
+must be reported with each audit.
 
 ## 5. CQT v1 — experimental extension
 
@@ -271,7 +294,6 @@ editing; and combined CRP-plus-spectral variants before separate effects are kno
 4. Inspect CQT concept cards and representative sample-ID reports.
 5. Update the paper only after controls determine which mode, if either, survives.
 
-
 ## 12. Project history
 
 The complete dated research and implementation chronology is in
@@ -284,3 +306,28 @@ the current state. Never back-port later decisions into an earlier snapshot with
 labelling them as later work. When a material method, loss, graph, protocol,
 reporting, or interpretation change is made, append the new dated entry to
 Project History.md in the same task.
+
+## 13. 2026-09-02 — CRPv3 implementation chronology
+
+- **State before:** CRP v2 used CoBalT only to reweight SpLiCE concept frequency
+  and coactivation grouping. No-DINO relation scoring disabled the independent
+  semantic gate, and the final indegree cap was derived from candidate density.
+  CoBalT concept artifacts stored hard memberships without assignment confidence.
+- **Change:** introduced the CRPv3 no-DINO/CoBalT protocol with fixed graph
+  density (`top_k=3`, `max_indegree=10`), an optional default-on residual SpLiCE
+  semantic gate, deterministic cross-fold relation validation, and spatial
+  slot-separation confidence propagated from concept extraction into CoBalT
+  balancing weights. Added v3 graph validation/reporting while retaining v2
+  compatibility and leaving CQT behavior on its existing format.
+- **Reason:** make graph density comparable across settings, restore a
+  DINO-free semantic consistency check, reject unstable relations, and prevent
+  uncertain CoBalT assignments from dominating concept grouping.
+- **Consequences:** CRPv3 graphs may be sparser and have lower coverage than the
+  previous dense no-DINO graphs; selected groups now need cross-fold support and
+  graph training receives confidence-calibrated edges. Existing CoBalT artifacts
+  without confidence remain runnable but do not receive the new confidence signal
+  until concept extraction is rerun. These changes require fresh frozen audits,
+  matched graph-density controls, and paired SSL seeds before any robustness claim.
+- **Track:** CRP and shared graph/reporting infrastructure; CoBalT concept
+  extraction is an upstream CRP input. CQT and historical reporting snapshots
+  are not superseded by this entry.

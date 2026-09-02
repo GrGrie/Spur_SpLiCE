@@ -108,3 +108,9 @@ def validate_concept_artifact(
             raise ValueError(f"Concept sample order does not match current {split} split.")
         if concepts.ndim != 2 or concepts.shape[0] != ids.numel():
             raise ValueError(f"Invalid concept tensor for split {split!r}.")
+        if "confidence" in record:
+            confidence = torch.as_tensor(record["confidence"], dtype=torch.float32).view(-1)
+            if confidence.shape != (ids.numel(),) or not torch.isfinite(confidence).all():
+                raise ValueError(f"Invalid confidence tensor for split {split!r}.")
+            if torch.any((confidence < 0) | (confidence > 1)):
+                raise ValueError(f"CoBalT confidence must lie in [0, 1] for split {split!r}.")

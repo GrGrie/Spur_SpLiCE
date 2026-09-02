@@ -20,7 +20,7 @@ from splice.crp import orthonormal_basis, project_out, validate_feature_cache
 from splice.graph_io import load_graph_json
 
 
-CRP_ARTIFACT = "splice_crp_v2_teacher_graph"
+CRP_ARTIFACTS = {"splice_crp_v2_teacher_graph", "splice_crp_v3_teacher_graph"}
 LABEL_NAMES = {0: "landbird", 1: "waterbird"}
 BACKGROUND_NAMES = {0: "land background", 1: "water background"}
 
@@ -109,7 +109,7 @@ def _interventions(
             return 0
         return int(((group_ids == identifier) & (weights > 0)).sum())
 
-    if graph.get("artifact") == CRP_ARTIFACT:
+    if graph.get("artifact") in CRP_ARTIFACTS:
         tolerance = float(graph.get("config", {}).get("orthogonal_tolerance", 1e-6))
         groups = sorted(
             graph.get("groups", []),
@@ -127,6 +127,12 @@ def _interventions(
                 continue
             indices = [int(index) for index in group["concept_indices"]]
             concepts = [str(word) for word in group.get("concepts", [])]
+            semantic_label = (
+                "residual SpLiCE agreement"
+                if not bool(graph.get("config", {}).get("use_dino", True))
+                and bool(group.get("residual_splice_gate_enabled", False))
+                else "DINO agreement"
+            )
             interventions.append(
                 Intervention(
                     identifier=f"G{int(group['group_id'])}",
@@ -143,7 +149,7 @@ def _interventions(
                         f"null excess={float(group.get('null_excess_score', 0.0)):.6g}, "
                         f"null ratio={float(group.get('null_excess_ratio', 0.0)):.2%}, "
                         f"coverage={float(group.get('coverage', 0.0)):.2%}, "
-                        f"DINO agreement={float(group.get('semantic_agreement', 0.0)):.4f}, "
+                        f"{semantic_label}={float(group.get('semantic_agreement', 0.0)):.4f}, "
                         f"alignment={float(group.get('activation_gain_alignment', 0.0)):.4f}, "
                         f"turnover={float(group.get('mean_neighbor_turnover', 0.0)):.2%}, "
                         f"retained edges={retained_edge_count(int(group['group_id']))}"
@@ -546,7 +552,7 @@ def generate_report(
             """
         )
 
-    mode_name = "CRP full-subspace projection" if graph["artifact"] == CRP_ARTIFACT else "CQT rank-one quotient"
+    mode_name = "CRP full-subspace projection" if graph["artifact"] in CRP_ARTIFACTS else "CQT rank-one quotient"
     audited_count = len(graph.get("groups", graph.get("factors", [])))
     all_items = graph.get("groups", graph.get("factors", []))
     selected_count = sum(bool(item.get("selected", False)) for item in all_items)

@@ -127,6 +127,14 @@ def active_slots(attention: torch.Tensor) -> torch.Tensor:
     return one_hot.sum(dim=(1, 2)).gt(0)
 
 
+def concept_assignment_confidence(attention: torch.Tensor) -> torch.Tensor:
+    """Return label-free confidence from spatial slot separation."""
+
+    if attention.ndim != 4:
+        raise ValueError("attention must have shape [batch, slots, height, width].")
+    return attention.max(dim=1).values.mean(dim=(1, 2)).clamp(0.0, 1.0)
+
+
 def _overlap_box(first: torch.Tensor, second: torch.Tensor) -> torch.Tensor:
     left_top = torch.maximum(first[:, :2], second[:, :2])
     right_bottom = torch.minimum(first[:, 2:], second[:, 2:])

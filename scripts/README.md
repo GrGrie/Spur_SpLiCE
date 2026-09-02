@@ -52,10 +52,11 @@ sbatch scripts/train_cqt.sbatch
 ```
 
 При `USE_DINO=false` DINO-модель не загружается, её признаки не кешируются, а
-DINO gate в CRP/CQT отключается. CRP в этом режиме сохраняет reciprocal
-projected-neighbour check и использует intervention delta для confidence; CQT
-пропускает DINO local-damage gate. No-DINO cache и graphs пишутся в отдельные
-пути, поэтому обычные результаты не перезаписываются.
+DINO gate в CRP/CQT отключается. CRPv3 в этом режиме сохраняет reciprocal
+projected-neighbour check, добавляет residual SpLiCE semantic gate и cross-fold
+edge validation. По умолчанию граф ограничен `top_k=3` и
+`max_indegree=10`; эти значения задаются в `train_crp.conf`. No-DINO cache и
+graphs пишутся в отдельные пути, поэтому обычные результаты не перезаписываются.
 
 Для CoBalT-проверки сначала один раз обучите label-free discovery stage и
 выгрузите фиксированные concept memberships:
@@ -78,6 +79,12 @@ spurious attribute для этого не читаются. Это label-free co
 При прямом Python-запуске доступны запрошенные CLI-формы
 `--use_dino true|false`, `--cobalt true|false` и
 `--cobalt-concepts /path/to/concepts.pt`.
+
+В CRPv3 CoBalT concept artifacts, созданные заново через
+`CoBalT/scripts/prepare_concepts.sbatch`, также содержат label-free confidence
+из spatial slot separation. Он включён параметром
+`CRP_USE_COBALT_CONFIDENCE=true`; для старых artifacts без этого поля будет
+использован нейтральный confidence и это отмечается в graph metadata.
 
 Для CRP/CQT с ImageNet-предобученной ResNet-50 измените `MODEL` в нужном
 `.conf`-файле:
@@ -122,7 +129,7 @@ CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12
 эффект graph-aware sampler, graph positives и KL на одном и том же graph, затем
 сравнивает два более широких frozen graph variants.
 
-Основные значения видны прямо в W&B run name. Например, CRPv2-конфигурация
+Основные значения видны прямо в W&B run name. Например, CRPv3-конфигурация
 выше получит имя:
 
 ```text

@@ -9,8 +9,8 @@
 #SBATCH --gres=gpu:v100:1
 #SBATCH --partition=informatik-mind
 #SBATCH --gpu_cmode=shared
-#SBATCH --output=./output/CRPv2/slurm-%x_%j.out
-#SBATCH --error=./output/CRPv2/slurm-%x_%j.err
+#SBATCH --output=./output/CRPv3/slurm-%x_%j.out
+#SBATCH --error=./output/CRPv3/slurm-%x_%j.err
 
 set -euo pipefail
 
@@ -96,9 +96,9 @@ validate_crp_feature_cache() {
 resolve_relational_graph_config() {
     if [[ "${MODE}" == "crp_relational" ]]; then
         RELATIONAL_LABEL="CRP"
-        RELATIONAL_ARTIFACT="splice_crp_v2_teacher_graph"
+        RELATIONAL_ARTIFACT="splice_crp_v3_teacher_graph"
         RELATIONAL_MODULE="splice.crp"
-        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"max_indegree\":${CRP_MAX_INDEGREE},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${CRP_USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${CRP_RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cross_fold_validation\":${CRP_USE_CROSS_FOLD_VALIDATION},\"cross_fold_count\":${CRP_CROSS_FOLD_COUNT},\"cross_fold_min_edge_persistence\":${CRP_CROSS_FOLD_MIN_EDGE_PERSISTENCE},\"use_cobalt_confidence\":${CRP_USE_COBALT_CONFIDENCE},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
     else
         RELATIONAL_LABEL="CQT"
         RELATIONAL_ARTIFACT="splice_cqt_v1_teacher_graph"

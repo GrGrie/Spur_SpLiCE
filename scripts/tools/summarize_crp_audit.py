@@ -1,4 +1,4 @@
-"""Print a small go/no-go report for CRP v2 frozen-audit JSON files.
+"""Print a small go/no-go report for CRP frozen-audit JSON files.
 
 This report is intentionally label-free.  Hidden-label graph checks belong in a
 separate post-hoc analysis and must not influence the audit thresholds.
@@ -59,9 +59,19 @@ def summarize(path: Path) -> int:
     print(
         "graph="
         f"coverage={float(degree.get('coverage', 0.0)):.4f} "
+        f"edges={int(degree.get('edge_count', 0))} "
+        f"max_indegree={int(degree.get('maximum_indegree', 0))}/{int(degree.get('indegree_cap', 0))} "
         f"indegree_gini={float(degree.get('indegree_gini', 0.0)):.4f} "
         f"effective_donor_count={float(degree.get('effective_donor_count', 0.0)):.1f}"
     )
+    fold = report.get("cross_fold_summary", {})
+    if fold.get("enabled"):
+        print(
+            "cross_fold="
+            f"folds={int(fold.get('fold_count', 0))} "
+            f"passed_groups={int(fold.get('passed_groups', 0))}/{len(groups)} "
+            f"min_persistence={float(fold.get('min_edge_persistence', 0.0)):.2f}"
+        )
     if selected:
         print(
             "nulls="
