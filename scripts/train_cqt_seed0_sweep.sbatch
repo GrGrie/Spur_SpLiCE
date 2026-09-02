@@ -16,41 +16,16 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
-SEED="0"
-CRP_AUTO_BUILD_GRAPH="false"
-CRP_START_EPOCH="10"
-CRP_WARMUP_EPOCHS="10"
-CRP_DECAY_START_EPOCH="0"
-CRP_DECAY_END_EPOCH="0"
-CRP_TEMPERATURE="0.25"
-CQT_MIN_QUOTIENT_EFFICACY="0.04"
-CQT_DINO_DAMAGE_QUANTILE="0.60"
-CQT_MAX_FACTORS="8"
-RELATIONAL_GRAPH_VARIANT="current"
+source "${PROJECT_DIR}/scripts/load_config.sh"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/train_cqt_seed0_sweep.conf}"
+load_splice_config "${CONFIG_FILE}"
 
-# Tasks 0-5 use exactly one frozen graph to separate sampler, graph-positive,
-# and KL effects. Tasks 6-7 compare wider frozen graphs with graph positives
-# only. Task 4 is intentionally high-risk; submit 0-3 first if GPU time is tight.
-case "${SLURM_ARRAY_TASK_ID}" in
-    0) SPLICE_WEIGHT="0"; CRP_GRAPH_POSITIVES="false" ;;
-    1) SPLICE_WEIGHT="0"; CRP_GRAPH_POSITIVES="true" ;;
-    2) SPLICE_WEIGHT="10"; CRP_GRAPH_POSITIVES="false" ;;
-    3) SPLICE_WEIGHT="100"; CRP_GRAPH_POSITIVES="false" ;;
-    4) SPLICE_WEIGHT="1000"; CRP_GRAPH_POSITIVES="false" ;;
-    5) SPLICE_WEIGHT="100"; CRP_GRAPH_POSITIVES="true" ;;
-    6)
-        SPLICE_WEIGHT="0"; CRP_GRAPH_POSITIVES="true"
-        CQT_MIN_QUOTIENT_EFFICACY="0.01"; CQT_DINO_DAMAGE_QUANTILE="0.60"
-        CQT_MAX_FACTORS="16"; RELATIONAL_GRAPH_VARIANT="q001_d060_wide"
-        ;;
-    7)
-        SPLICE_WEIGHT="0"; CRP_GRAPH_POSITIVES="true"
-        CQT_MIN_QUOTIENT_EFFICACY="0.01"; CQT_DINO_DAMAGE_QUANTILE="0.60"
-        CQT_MAX_FACTORS="16"; RELATIONAL_GRAPH_VARIANT="q001_d060_grouped"
-        ;;
-    *) echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2 ;;
-esac
+variant_record="${CQT_TRAIN_SWEEP_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
+[[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
+IFS='|' read -r SPLICE_WEIGHT CRP_GRAPH_POSITIVES \
+    CQT_MIN_QUOTIENT_EFFICACY CQT_DINO_DAMAGE_QUANTILE \
+    CQT_MAX_FACTORS RELATIONAL_GRAPH_VARIANT <<< "${variant_record}"
 
-WANDB_EXTRA_TAGS="machine_cluster,sweep_cqt_seed0,sweep_task_${SLURM_ARRAY_TASK_ID}"
+WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS},sweep_task_${SLURM_ARRAY_TASK_ID}"
+CONFIG_ALREADY_LOADED="true"
 source "${PROJECT_DIR}/scripts/train_cqt.sbatch"
-

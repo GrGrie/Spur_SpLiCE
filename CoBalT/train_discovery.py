@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps-per-epoch", type=int, default=None)
     parser.add_argument("--backbone", choices=["resnet50", "resnet18"], default="resnet50")
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--allow-nonpaper-backbone", action=argparse.BooleanOptionalAction, default=False)
     add_wandb_args(parser)
     return parser
 
@@ -48,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     config = paper_config(args.dataset)
     args.epochs = args.epochs or config.discovery_epochs
     args.batch_size = args.batch_size or config.discovery_batch_size
-    if not args.smoke and (args.backbone != "resnet50" or not args.pretrained):
+    if not args.smoke and not args.allow_nonpaper_backbone and (args.backbone != "resnet50" or not args.pretrained):
         raise ValueError("Full paper runs require an ImageNet-pretrained ResNet-50 backbone.")
     seed_everything(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

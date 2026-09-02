@@ -9,11 +9,25 @@ sbatch scripts/train_crp.sbatch
 sbatch scripts/train_cqt.sbatch
 ```
 
-В [`train_crp.sbatch`](train_crp.sbatch) наверху сгруппированы dataset, основные
-SSL/CRP параметры и CRP frozen-audit параметры. В
-[`train_cqt.sbatch`](train_cqt.sbatch) в таком же порядке находятся dataset,
-основные SSL/CQT параметры и все CQT factor/transport параметры. Переключать
-`MODE` вручную между CRP и CQT больше не требуется.
+Настройки вынесены в редактируемые `.conf`-файлы рядом с launcher-ами:
+
+- [`train_crp.conf`](train_crp.conf) — CRP training и frozen-audit параметры;
+- [`train_cqt.conf`](train_cqt.conf) — CQT training и factor/transport параметры;
+- [`prepare_crp_group_sweep.conf`](prepare_crp_group_sweep.conf) — CRP sweep matrix;
+- [`prepare_cqt_graph_sweep.conf`](prepare_cqt_graph_sweep.conf) — CQT sweep matrix;
+- [`train_crp_seed0_sweep.conf`](train_crp_seed0_sweep.conf) и
+  [`train_cqt_seed0_sweep.conf`](train_cqt_seed0_sweep.conf) — training sweeps;
+- [`prepare_concepts.conf`](prepare_concepts.conf) — CoBalT discovery;
+- [`cache_openimages_crp.conf`](cache_openimages_crp.conf) — frozen feature cache.
+
+После изменения конфигурации обычный запуск выглядит как `sbatch` без длинного
+списка параметров. Для одноразовой альтернативы можно передать `CONFIG_FILE`,
+но основной workflow этого не требует:
+
+Каталог `scripts/tools/` намеренно содержит Python-модули. Это не старые
+launcher-ы: cache, graph audit, summaries и HTML reports вызывают их напрямую
+через `python -m scripts.tools...`. Удалять эти файлы с кластера нельзя, если
+нужны соответствующие preparation/diagnostic jobs.
 
 Запуск CRP:
 
@@ -32,8 +46,9 @@ sbatch scripts/train_cqt.sbatch
 Оба training entry point поддерживают два независимых переключателя:
 
 ```bash
-sbatch --export=ALL,USE_DINO=false scripts/train_crp.sbatch
-sbatch --export=ALL,USE_DINO=false scripts/train_cqt.sbatch
+# edit USE_DINO=false in train_crp.conf or train_cqt.conf
+sbatch scripts/train_crp.sbatch
+sbatch scripts/train_cqt.sbatch
 ```
 
 При `USE_DINO=false` DINO-модель не загружается, её признаки не кешируются, а
@@ -47,15 +62,16 @@ projected-neighbour check и использует intervention delta для conf
 
 ```bash
 sbatch CoBalT/scripts/prepare_concepts.sbatch
-sbatch --export=ALL,COBALT=true scripts/train_crp.sbatch
-sbatch --export=ALL,COBALT=true scripts/train_cqt.sbatch
+# edit COBALT=true in train_crp.conf or train_cqt.conf
+sbatch scripts/train_crp.sbatch
+sbatch scripts/train_cqt.sbatch
 ```
 
 `COBALT=true` балансирует частоты и coactivation при составлении SpLiCE concept
 groups весами, полученными только из CoBalT memberships. Target label и
 spurious attribute для этого не читаются. Это label-free concept-balance check,
-а не supervised classifier-balancing stage из статьи. Для другого артефакта
-задайте `COBALT_CONCEPTS_PATH=/path/to/concepts.pt`.
+а не supervised classifier-balancing stage из статьи. Путь к другому артефакту
+задаётся в `COBALT_CONCEPTS_PATH` соответствующего `.conf`-файла.
 При `COBALT=true` teacher graph пересобирается из текущего concept artifact,
 даже если файл графа уже существует; frozen SpLiCE cache при этом переиспользуется.
 
@@ -64,7 +80,7 @@ spurious attribute для этого не читаются. Это label-free co
 `--cobalt-concepts /path/to/concepts.pt`.
 
 Для CRP/CQT с ImageNet-предобученной ResNet-50 измените `MODEL` в нужном
-скрипте:
+`.conf`-файле:
 
 ```bash
 MODEL="resnet50_pretrained"
@@ -101,9 +117,8 @@ sbatch scripts/train_crp_seed0_sweep.sbatch
 sbatch scripts/train_cqt_seed0_sweep.sbatch
 ```
 
-CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12`. Другой
-прошедший frozen audit вариант задаётся через
-`--export=ALL,CRP_SWEEP_GRAPH_VARIANT=<variant>`. CQT sweep сначала отделяет
+CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12`; его можно
+изменить в `train_crp_seed0_sweep.conf`. CQT sweep сначала отделяет
 эффект graph-aware sampler, graph positives и KL на одном и том же graph, затем
 сравнивает два более широких frozen graph variants.
 
@@ -187,14 +202,5 @@ graph:
 CRP-обучение запускается через `train_crp.sbatch`, CQT — через
 `train_cqt.sbatch`; оба entry point умеют автоматически подготовить graph.
 
-## Локальное обучение на Windows
-
-Windows runner оставлен отдельно, потому что PowerShell не использует Slurm:
-
-```powershell
-.\scripts\Test-HomeTraining.ps1 -DataFolder "D:\Datasets\waterbirds"
-.\scripts\Run-HomeExperiments.ps1 -Family routing -Seeds 0 -Tasks 0,1,2
-```
-
-Он не влияет на кластерную конфигурацию в `train_crp.sbatch` или
-`train_cqt.sbatch`.
+Все обучения запускаются на кластере. Локальные PowerShell-launcher-ы удалены;
+для cluster-only workflow используются только Slurm entry points и конфиги выше.

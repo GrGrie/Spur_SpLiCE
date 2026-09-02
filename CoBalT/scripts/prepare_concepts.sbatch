@@ -17,6 +17,10 @@ set -euo pipefail
 
 # Label-free CoBalT Stage 1 only: discovery followed by fixed concept inference.
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/prepare_concepts.conf}"
+source "${PROJECT_DIR}/scripts/load_config.sh"
+load_splice_config "${CONFIG_FILE}"
+
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 DATASET="${DATASET:-waterbirds}" # waterbirds | celeba
@@ -41,17 +45,73 @@ conda activate "${CONDA_ENV}"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
 echo "=== CoBalT label-free concept discovery ==="
-python -u -m CoBalT.train_discovery \
-    --dataset "${DATASET}" \
-    --data-root "${DATA_FOLDER}" \
-    --output "${DISCOVERY_CHECKPOINT}" \
-    --seed "${SEED}" \
-    --workers "${NUM_WORKERS}" \
-    --wandb-project "${WANDB_PROJECT}" \
-    --wandb-entity "${WANDB_ENTITY}" \
-    --wandb-run-name "CoBalT_${DATASET}_s${SEED}_concept_check" \
-    --wandb-group "${WANDB_GROUP}" \
+case "${COBALT_MODEL}" in
+    resnet18_large)
+        COBALT_BACKBONE="resnet18"
+        COBALT_PRETRAINED="false"
+        COBALT_ALLOW_NONPAPER_BACKBONE="true"
+        ;;
+    resnet50_pretrained)
+        COBALT_BACKBONE="resnet50"
+        COBALT_PRETRAINED="true"
+        COBALT_ALLOW_NONPAPER_BACKBONE="false"
+        ;;
+    *)
+        echo "ERROR: COBALT_MODEL must be resnet18_large or resnet50_pretrained; got ${COBALT_MODEL}" >&2
+        exit 2
+        ;;
+esac
+
+DISCOVERY_ARGS=(
+    -u -m CoBalT.train_discovery
+    --dataset "${DATASET}"
+    --data-root "${DATA_FOLDER}"
+    --output "${DISCOVERY_CHECKPOINT}"
+    --seed "${SEED}"
+    --epochs "${COBALT_EPOCHS}"
+    --batch-size "${COBALT_BATCH_SIZE}"
+    --workers "${NUM_WORKERS}"
+    --image-size "${COBALT_IMAGE_SIZE}"
+    --crop-min "${COBALT_CROP_MIN}"
+    --num-slots "${COBALT_NUM_SLOTS}"
+    --codebook-size "${COBALT_CODEBOOK_SIZE}"
+    --slot-dim "${COBALT_SLOT_DIM}"
+    --hidden-dim "${COBALT_HIDDEN_DIM}"
+    --learning-rate "${COBALT_LEARNING_RATE}"
+    --weight-decay "${COBALT_WEIGHT_DECAY}"
+    --student-temperature "${COBALT_STUDENT_TEMPERATURE}"
+    --teacher-temperature "${COBALT_TEACHER_TEMPERATURE}"
+    --contrastive-temperature "${COBALT_CONTRASTIVE_TEMPERATURE}"
+    --teacher-momentum "${COBALT_TEACHER_MOMENTUM}"
+    --codebook-momentum "${COBALT_CODEBOOK_MOMENTUM}"
+    --center-momentum "${COBALT_CENTER_MOMENTUM}"
+    --backbone "${COBALT_BACKBONE}"
+    --wandb-project "${WANDB_PROJECT}"
+    --wandb-entity "${WANDB_ENTITY}"
+    --wandb-run-name "CoBalT_${DATASET}_s${SEED}_concept_check"
+    --wandb-group "${WANDB_GROUP}"
     --wandb-tags "${WANDB_TAGS}"
+)
+if [[ "${COBALT_PRETRAINED}" == "true" ]]; then
+    DISCOVERY_ARGS+=(--pretrained)
+else
+    DISCOVERY_ARGS+=(--no-pretrained)
+fi
+if [[ "${COBALT_ALLOW_NONPAPER_BACKBONE}" == "true" ]]; then
+    DISCOVERY_ARGS+=(--allow-nonpaper-backbone)
+else
+    DISCOVERY_ARGS+=(--no-allow-nonpaper-backbone)
+fi
+if [[ "${COBALT_AMP}" == "true" ]]; then
+    DISCOVERY_ARGS+=(--amp)
+else
+    DISCOVERY_ARGS+=(--no-amp)
+fi
+if [[ -n "${COBALT_MAX_STEPS_PER_EPOCH}" ]]; then
+    DISCOVERY_ARGS+=(--max-steps-per-epoch "${COBALT_MAX_STEPS_PER_EPOCH}")
+fi
+
+python "${DISCOVERY_ARGS[@]}"
 
 echo "=== Extracting fixed CoBalT concept memberships ==="
 python -u -m CoBalT.extract_concepts \

@@ -16,30 +16,14 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
-SEED="0"
-CRP_AUTO_BUILD_GRAPH="false"
-RELATIONAL_GRAPH_VARIANT="${CRP_SWEEP_GRAPH_VARIANT:-g2_t070_c020_k12}"
-CRP_START_EPOCH="10"
-CRP_WARMUP_EPOCHS="10"
-CRP_DECAY_START_EPOCH="0"
-CRP_DECAY_END_EPOCH="0"
-CRP_GRAPH_POSITIVES="false"
-CRP_TEMPERATURE="0.25"
+source "${PROJECT_DIR}/scripts/load_config.sh"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/train_crp_seed0_sweep.conf}"
+load_splice_config "${CONFIG_FILE}"
 
-# First isolate the effective KL scale under absolute graph confidence. Tasks
-# 5-6 test temperature; task 7 re-enables graph positives at the central weight.
-case "${SLURM_ARRAY_TASK_ID}" in
-    0) SPLICE_WEIGHT="0" ;;
-    1) SPLICE_WEIGHT="0.25" ;;
-    2) SPLICE_WEIGHT="0.5" ;;
-    3) SPLICE_WEIGHT="1.0" ;;
-    4) SPLICE_WEIGHT="2.0" ;;
-    5) SPLICE_WEIGHT="1.0"; CRP_TEMPERATURE="0.10" ;;
-    6) SPLICE_WEIGHT="1.0"; CRP_TEMPERATURE="0.50" ;;
-    7) SPLICE_WEIGHT="1.0"; CRP_GRAPH_POSITIVES="true" ;;
-    *) echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2 ;;
-esac
+variant_record="${CRP_TRAIN_SWEEP_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
+[[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
+IFS='|' read -r SPLICE_WEIGHT CRP_TEMPERATURE CRP_GRAPH_POSITIVES <<< "${variant_record}"
 
-WANDB_EXTRA_TAGS="machine_cluster,sweep_crp_seed0,sweep_task_${SLURM_ARRAY_TASK_ID}"
+WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS},sweep_task_${SLURM_ARRAY_TASK_ID}"
+CONFIG_ALREADY_LOADED="true"
 source "${PROJECT_DIR}/scripts/train_crp.sbatch"
-

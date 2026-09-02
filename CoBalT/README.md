@@ -13,9 +13,11 @@ method on which stage 1 is based: <https://github.com/CVMI-Lab/SlotCon>.
 The current scope is the two datasets already supported by this project and
 needed for a matched comparison: **Waterbirds** and **CelebA**.
 
-1. `train_discovery.py` trains the ImageNet-pretrained ResNet-50 student and EMA
-   teacher, spatial projector, four semantic slots, and an eight-entry VQ
-   concept dictionary. The optimized objective is
+1. `train_discovery.py` trains a spatial student/EMA teacher, projector, semantic
+   slots, and an eight-entry VQ concept dictionary. The paper reproduction uses
+   an ImageNet-pretrained ResNet-50; the cluster concept-check launcher defaults
+   to the project's `resnet18_large` convention (CoBalT internal name `resnet18`,
+   trained from scratch). The optimized objective is
    `L_distillation + L_contrastive + L_vq` (paper equation 5).
 2. `extract_concepts.py` freezes stage 1 and assigns every train/validation/test
    image to the dictionary entries represented by its active slots.
@@ -83,8 +85,13 @@ concept groups, run:
 
 ```bash
 sbatch CoBalT/scripts/prepare_concepts.sbatch
-sbatch --export=ALL,COBALT=true scripts/train_crp.sbatch
+# Set COBALT="true" in scripts/train_crp.conf first.
+sbatch scripts/train_crp.sbatch
 ```
+
+Edit `scripts/prepare_concepts.conf` before the first command. Its default
+`COBALT_MODEL="resnet18_large"` is an explicitly labelled alternative discovery
+protocol; use `resnet50_pretrained` there for the paper-style discovery backbone.
 
 The preparation job runs discovery and fixed concept extraction, but does not
 train the CoBalT classifier. CRP/CQT converts memberships into mean-one sample

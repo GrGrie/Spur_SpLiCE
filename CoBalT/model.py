@@ -23,7 +23,7 @@ class SpatialResNet(nn.Module):
             network = models.resnet18(weights=weights)
             self.out_dim = 512
         else:
-            raise ValueError("Only resnet50 (paper) and resnet18 (smoke tests) are supported.")
+            raise ValueError("Only resnet50 and resnet18 discovery backbones are supported.")
         self.stem = nn.Sequential(network.conv1, network.bn1, network.relu, network.maxpool)
         self.layers = nn.Sequential(network.layer1, network.layer2, network.layer3, network.layer4)
 

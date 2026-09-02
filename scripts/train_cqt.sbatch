@@ -14,70 +14,15 @@
 
 set -euo pipefail
 
-# =============================================================================
-# CQT CONFIGURATION — normally edit only this block.
-# Submit with: sbatch scripts/train_cqt.sbatch
-# =============================================================================
-MODE="cqt_relational"
-DATASET="${DATASET:-waterbirds}" # waterbirds | celeba | spur_cifar10
-MODEL="${MODEL:-resnet18_large}"
-SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # sbatch --array=0-2 for three seeds.
-
-# Main SSL/CQT sweep parameters.
-EPOCHS="${EPOCHS:-500}"
-BATCH_SIZE="${BATCH_SIZE:-256}"
-LEARNING_RATE="${LEARNING_RATE:-0.01}"
-SPLICE_WEIGHT="${SPLICE_WEIGHT:-0.01}"
-CRP_TEMPERATURE="${CRP_TEMPERATURE:-0.25}" # Student relational temperature, shared trainer name.
-CRP_START_EPOCH="${CRP_START_EPOCH:-10}"
-CRP_WARMUP_EPOCHS="${CRP_WARMUP_EPOCHS:-10}"
-CRP_DECAY_START_EPOCH="${CRP_DECAY_START_EPOCH:-200}"
-CRP_DECAY_END_EPOCH="${CRP_DECAY_END_EPOCH:-350}"
-CRP_GRAPH_POSITIVES="${CRP_GRAPH_POSITIVES:-true}"
-USE_DINO="${USE_DINO:-true}"
-COBALT="${COBALT:-false}"
-COBALT_CONCEPTS_PATH="${COBALT_CONCEPTS_PATH:-}"
-
-# CQT factor proposal and quotient-transport hyperparameters.
-CQT_MIN_CONCEPT_FREQUENCY="${CQT_MIN_CONCEPT_FREQUENCY:-0.01}"   # Try 0.005, 0.01, 0.02.
-CQT_MAX_CONCEPT_FREQUENCY="${CQT_MAX_CONCEPT_FREQUENCY:-0.95}"   # Try 0.90, 0.95, 0.98.
-CQT_TEXT_SIMILARITY_THRESHOLD="${CQT_TEXT_SIMILARITY_THRESHOLD:-0.8}"
-CQT_COACTIVATION_THRESHOLD="${CQT_COACTIVATION_THRESHOLD:-0.35}"
-CQT_MIN_GROUP_SIZE="${CQT_MIN_GROUP_SIZE:-1}"
-CQT_MAX_CANDIDATE_GROUPS="${CQT_MAX_CANDIDATE_GROUPS:-128}"
-CQT_MAX_FACTORS="${CQT_MAX_FACTORS:-8}"
-CQT_MIN_STATE_SAMPLES="${CQT_MIN_STATE_SAMPLES:-16}"
-CQT_MIN_EXCLUSIVITY="${CQT_MIN_EXCLUSIVITY:-0.8}"
-CQT_MIN_CONTEXT_SIMILARITY="${CQT_MIN_CONTEXT_SIMILARITY:-0.2}"
-CQT_MIN_STATE_BALANCED_ACCURACY="${CQT_MIN_STATE_BALANCED_ACCURACY:-0.7}"
-CQT_MIN_QUOTIENT_EFFICACY="${CQT_MIN_QUOTIENT_EFFICACY:-0.04}"
-CQT_TRANSPORT_CANDIDATES="${CQT_TRANSPORT_CANDIDATES:-32}"
-CQT_TRANSPORT_MASS="${CQT_TRANSPORT_MASS:-0.25}"
-CQT_MIN_TRANSPORT_PAIRS="${CQT_MIN_TRANSPORT_PAIRS:-8}"
-CQT_MIN_WORD_SIMILARITY="${CQT_MIN_WORD_SIMILARITY:-0.2}"
-CQT_DINO_NEIGHBORS="${CQT_DINO_NEIGHBORS:-10}"
-CQT_DINO_DAMAGE_QUANTILE="${CQT_DINO_DAMAGE_QUANTILE:-0.6}"
-CQT_MIN_INTERVENTION_GAIN="${CQT_MIN_INTERVENTION_GAIN:-1e-4}"
-CQT_MIN_COVERAGE="${CQT_MIN_COVERAGE:-0.01}"
-CQT_NULL_TRIALS="${CQT_NULL_TRIALS:-32}"
-CQT_NULL_QUANTILE="${CQT_NULL_QUANTILE:-0.95}"
-CQT_GRAPH_TOP_K="${CQT_GRAPH_TOP_K:-10}"
-CQT_INDEGREE_FACTOR="${CQT_INDEGREE_FACTOR:-3.0}"
-CQT_SIMILARITY_CHUNK_SIZE="${CQT_SIMILARITY_CHUNK_SIZE:-512}"
-CQT_ORACLE_AUDIT="${CQT_ORACLE_AUDIT:-true}" # Post-hoc only; never builds the graph.
-WATERBIRDS_METADATA_CSV="${WATERBIRDS_METADATA_CSV:-./datasets/waterbirds/metadata.csv}"
-RELATIONAL_GRAPH_VARIANT="${RELATIONAL_GRAPH_VARIANT:-}"
-
-# Graph/cache preparation.
-CRP_AUTO_BUILD_GRAPH="${CRP_AUTO_BUILD_GRAPH:-true}"
-CRP_FORCE_REBUILD="${CRP_FORCE_REBUILD:-false}"
-CRP_CACHE_BATCH_SIZE="${CRP_CACHE_BATCH_SIZE:-64}"
-CRP_CACHE_NUM_WORKERS="${CRP_CACHE_NUM_WORKERS:-4}"
-CRP_DINO_MODEL="${CRP_DINO_MODEL:-vit_small_patch16_dinov3.lvd1689m}"
-
-# Cluster checkout containing the shared training implementation.
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/train_cqt.conf}"
+CONFIG_ALREADY_LOADED="${CONFIG_ALREADY_LOADED:-false}"
+if [[ "${CONFIG_ALREADY_LOADED}" != "true" ]]; then
+    source "${PROJECT_DIR}/scripts/load_config.sh"
+    load_splice_config "${CONFIG_FILE}"
+fi
 
-# The renamed CRP script contains the shared, W&B-enabled relational pipeline.
-# Variables above remain set when it is sourced, so it executes CQT only.
+# train_crp.sbatch contains the shared implementation. The CQT config has
+# already supplied MODE and all shared values, so it must not be loaded again.
+CONFIG_ALREADY_LOADED="true"
 source "${PROJECT_DIR}/scripts/train_crp.sbatch"

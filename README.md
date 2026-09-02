@@ -27,15 +27,11 @@ pip install -e .
 ```
 
 RTX 50-series cards require a current Blackwell-capable PyTorch/CUDA build and
-an up-to-date NVIDIA driver. A Windows setup and smoke test are also available:
-
-```powershell
-.\scripts\Setup-HomeTraining.ps1
-.\scripts\Test-HomeTraining.ps1 -DataFolder "D:\Datasets\waterbirds"
-```
+an up-to-date NVIDIA driver. Full training is run on the cluster through the
+Slurm entry points below.
 
 Dataset directories are intentionally excluded from Git. Pass their location
-with `--data_folder` or `-DataFolder`.
+with `--data_folder` or edit the relevant Slurm `.conf` file.
 
 ## Main entry points
 
@@ -49,11 +45,11 @@ with `--data_folder` or `-DataFolder`.
 - `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
-- `scripts/Run-HomeExperiments.ps1` — selected Windows experiment runs.
-- `scripts/Start-ReportRuns.ps1` — priority queue for the current report.
 - `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
 - `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
 - `scripts/cache_openimages_crp.sbatch` — Slurm-only Open Images V7 cache preparation.
+- `scripts/*.conf` — editable Slurm configurations for training, sweeps, cache,
+  and CoBalT concept discovery.
 
 ### Open Images V7 vocabulary
 
@@ -73,32 +69,14 @@ Open Images CRP sweep, first build the cache once, then submit the 12-configurat
 array. The cache step is intentionally separate so array jobs do not rebuild the
 same frozen features concurrently:
 
+Edit `scripts/cache_openimages_crp.conf` and
+`scripts/prepare_crp_group_sweep.conf` for the dataset, cache path, vocabulary,
+and graph prefix. Then submit the two jobs in order:
+
 ```bash
-cd /home/xar68reb/Spur_SpLiCE
-module purge
-module load miniforge3/latest
-. "${ANACONDA_HOME}/etc/profile.d/conda.sh"
-conda activate grgrie-train
-export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
-
-CACHE_JOB=$(sbatch --parsable --export=ALL,\
-PROJECT_DIR=/home/xar68reb/Spur_SpLiCE,\
-DATA_FOLDER=/home/xar68reb/Datasets,\
-DATASET=waterbirds,\
-USE_DINO=true \
-  scripts/cache_openimages_crp.sbatch)
-
-sbatch --dependency=afterok:${CACHE_JOB} --array=0-11%2 --export=ALL,\
-PROJECT_DIR=/home/xar68reb/Spur_SpLiCE,\
-DATA_FOLDER=/home/xar68reb/Datasets,\
-DATASET=waterbirds,\
-CRP_CACHE_PATH=outputs/crp/waterbirds_train_features_oi_v7.pt,\
-SPLICE_VOCAB=openimages_v7,\
-SPLICE_VOCAB_SIZE=-1,\
-CRP_FORCE_REBUILD=false,\
-PREPARE_ONLY=true,\
-GRAPH_VARIANT_PREFIX=oi_v7 \
-  scripts/prepare_crp_group_sweep.sbatch
+sbatch scripts/cache_openimages_crp.sbatch
+# after the cache job finishes successfully:
+sbatch scripts/prepare_crp_group_sweep.sbatch
 ```
 
 The sweep keeps the original six audit settings and adds six wider settings
@@ -109,8 +87,7 @@ For a single CRP training run with the same dictionary, use the regular Slurm
 entry point:
 
 ```bash
-SPLICE_VOCAB=openimages_v7 SPLICE_VOCAB_SIZE=-1 \
-CRP_FORCE_REBUILD=true RELATIONAL_GRAPH_VARIANT=oi-vocab \
+# edit the matching values in scripts/train_crp.conf first
 sbatch scripts/train_crp.sbatch
 ```
 
@@ -159,33 +136,13 @@ is distilled through the dedicated CLIP head. This edit is agnostic to whether
 the nuisance is a background, demographic attribute, colour, texture, or other
 language-aligned concept.
 
-### Routing controls
-
-Tasks are baseline, semantic, shuffled, matched-random, and augment-all:
-
-```powershell
-.\scripts\Run-HomeExperiments.ps1 `
-  -Family routing -Seeds 4 -Tasks 1,2 `
-  -DataFolder "D:\Datasets\waterbirds"
-```
-
-### Strong-augmentation components
-
-Tasks `0..4` are All, Crop, ColorJitter, Grayscale, and Blur.
-
-```powershell
-.\scripts\Run-HomeExperiments.ps1 `
-  -Family augmentation -Seeds 3,4 -Tasks 1,2,3,4 `
-  -DataFolder "D:\Datasets\waterbirds"
-```
-
 ### Hyperparameter sweep
 
 Tasks `0..8` are baseline, augmentation quantiles
 `.50/.75/.90/.95`, and correlation weights `.001/.01/.1/1.0`.
 
-Cluster sweeps use the method-specific entry point. Edit one configuration at a
-time in its top block; W&B names include the relevant values.
+Cluster sweeps use the method-specific entry point. Edit the corresponding
+`.conf` file beside the launcher; W&B names include the relevant values.
 
 ```bash
 sbatch scripts/train_crp.sbatch
@@ -239,7 +196,7 @@ precomputation before SSL training starts.
   remain in W&B config and detailed checkpoint directory names.
 
 See `experiments/spurious_eval/README.md` for implementation-level details and
-`scripts/README.md` for Windows launch/recovery instructions.
+`scripts/README.md` for cluster launch and recovery instructions.
 
 ## SpLiCE-CRP v2 frozen audit
 
@@ -287,15 +244,15 @@ The CRP entry point builds or reuses its teacher graph automatically:
 sbatch scripts/train_crp.sbatch
 ```
 
-CRP training and graph hyperparameters are grouped near the top of
-`scripts/train_crp.sbatch`. CQT has an independent top-level configuration in
-`scripts/train_cqt.sbatch`; no terminal-side environment variables are required.
+CRP training and graph hyperparameters are in `scripts/train_crp.conf`; CQT has
+an independent configuration in `scripts/train_cqt.conf`. Graph sweep variants
+are edited in `scripts/prepare_crp_group_sweep.conf` and
+`scripts/prepare_cqt_graph_sweep.conf`.
 
-For CRP graph sweeps, edit the named numeric variables near the top of
-`scripts/SpLiCE_CRP_v2_frozen_audit.sbatch`, for example
-`MIN_GROUP_SIZE="2"`, and submit the pipeline again. The fixed feature file is
-reused without submitting another cache job. ResNet and CRP-loss settings live
-in `scripts/train_crp.sbatch`.
+For CRP graph sweeps, edit the variant records in
+`scripts/prepare_crp_group_sweep.conf` and submit the pipeline again. The fixed
+feature file is reused without submitting another cache job. ResNet and CRP-loss
+settings live in `scripts/train_crp.conf`.
 
 The audit still constructs the graph. If it contains no accepted edges, training
 runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The

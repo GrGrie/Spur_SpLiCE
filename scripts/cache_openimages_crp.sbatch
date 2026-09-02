@@ -17,6 +17,10 @@ set -euo pipefail
 # One-time frozen cache preparation for the Open Images V7 vocabulary. This is
 # a diagnostic/preparation job; it does not train the student network.
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/cache_openimages_crp.conf}"
+source "${PROJECT_DIR}/scripts/load_config.sh"
+load_splice_config "${CONFIG_FILE}"
+
 CONDA_ENV="${CONDA_ENV:-grgrie-train}"
 DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 DATASET="${DATASET:-waterbirds}"

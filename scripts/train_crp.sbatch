@@ -15,128 +15,17 @@
 set -euo pipefail
 
 # =============================================================================
-# CRP CONFIGURATION — normally edit only this block.
-# Submit with: sbatch scripts/train_crp.sbatch
+# Configuration is kept beside this launcher. Set CONFIG_FILE only for a
+# deliberate alternate configuration; normal use is just `sbatch ...`.
 # =============================================================================
-MODE="${MODE:-crp_relational}"    # Fixed by this entry point; CQT uses train_cqt.sbatch.
-DATASET="${DATASET:-waterbirds}" # waterbirds | celeba | spur_cifar10
-MODEL="${MODEL:-resnet18_large}"
-SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}" # sbatch --array=0-2 for three seeds.
-
-# Main SSL/CRP sweep parameters.
-EPOCHS="${EPOCHS:-500}"
-BATCH_SIZE="${BATCH_SIZE:-256}"
-LEARNING_RATE="${LEARNING_RATE:-0.01}"
-SPLICE_WEIGHT="${SPLICE_WEIGHT:-0.01}"
-CRP_TEMPERATURE="${CRP_TEMPERATURE:-0.25}"
-CRP_START_EPOCH="${CRP_START_EPOCH:-10}"
-CRP_WARMUP_EPOCHS="${CRP_WARMUP_EPOCHS:-10}"
-CRP_DECAY_START_EPOCH="${CRP_DECAY_START_EPOCH:-200}"
-CRP_DECAY_END_EPOCH="${CRP_DECAY_END_EPOCH:-350}"
-CRP_GRAPH_POSITIVES="${CRP_GRAPH_POSITIVES:-true}"
-SIMCLR_WEIGHT="${SIMCLR_WEIGHT:-1.0}"
-USE_DINO="${USE_DINO:-true}"
-COBALT="${COBALT:-false}"
-COBALT_CONCEPTS_PATH="${COBALT_CONCEPTS_PATH:-}"
-
-# CRP frozen-audit hyperparameters.
-CRP_MIN_CONCEPT_FREQUENCY="${CRP_MIN_CONCEPT_FREQUENCY:-0.01}"
-CRP_MAX_CONCEPT_FREQUENCY="${CRP_MAX_CONCEPT_FREQUENCY:-0.95}"
-CRP_TEXT_SIMILARITY_THRESHOLD="${CRP_TEXT_SIMILARITY_THRESHOLD:-0.8}"
-CRP_COACTIVATION_THRESHOLD="${CRP_COACTIVATION_THRESHOLD:-0.35}"
-CRP_MIN_GROUP_SIZE="${CRP_MIN_GROUP_SIZE:-1}"
-CRP_MAX_SELECTED_GROUPS="${CRP_MAX_SELECTED_GROUPS:-0}" # 0 = retain every null-passing group.
-CRP_PROJECTED_NEIGHBORS="${CRP_PROJECTED_NEIGHBORS:-20}"
-CRP_DINO_NEIGHBORS="${CRP_DINO_NEIGHBORS:-50}"
-CRP_ACTIVATION_DIFFERENCE_QUANTILE="${CRP_ACTIVATION_DIFFERENCE_QUANTILE:-0.85}"
-CRP_MIN_INTERVENTION_GAIN="${CRP_MIN_INTERVENTION_GAIN:-5e-4}"
-CRP_MIN_COVERAGE="${CRP_MIN_COVERAGE:-0.01}"
-CRP_GRAPH_TOP_K="${CRP_GRAPH_TOP_K:-5}"
-CRP_INDEGREE_FACTOR="${CRP_INDEGREE_FACTOR:-3.0}"
-CRP_NULL_TRIALS="${CRP_NULL_TRIALS:-32}"
-CRP_NULL_QUANTILE="${CRP_NULL_QUANTILE:-0.95}"
-CRP_SIMILARITY_CHUNK_SIZE="${CRP_SIMILARITY_CHUNK_SIZE:-512}"
-CRP_ORTHOGONAL_TOLERANCE="${CRP_ORTHOGONAL_TOLERANCE:-1e-6}"
-RELATIONAL_GRAPH_VARIANT="${RELATIONAL_GRAPH_VARIANT:-}"
-
-# Graph/cache preparation.
-CRP_AUTO_BUILD_GRAPH="${CRP_AUTO_BUILD_GRAPH:-true}"
-CRP_FORCE_REBUILD="${CRP_FORCE_REBUILD:-false}"
-CRP_CACHE_BATCH_SIZE="${CRP_CACHE_BATCH_SIZE:-64}"
-CRP_CACHE_NUM_WORKERS="${CRP_CACHE_NUM_WORKERS:-4}"
-CRP_DINO_MODEL="${CRP_DINO_MODEL:-vit_small_patch16_dinov3.lvd1689m}"
-
-# =============================================================================
-# SHARED LOWER-PRIORITY TRAINING SETTINGS
-# =============================================================================
-OPTIMIZER="SGD"                   # SGD | AdamW | SAM
-WEIGHT_DECAY="1e-4"
-MOMENTUM="0.9"
-SIMCLR_TEMPERATURE="0.05"
-SSL_CROP_MIN="0.2"
-COSINE="false"
-LR_WARMUP="false"
-HEAD="mlp"
-FEAT_DIM="128"
-TRIAL="0"
-LR_DECAY_EPOCHS="auto"
-LR_DECAY_RATE="0.1"
-
-# SAM-only settings (ignored by SGD/AdamW)
-SAM_BASE_OPTIMIZER="SGD"
-SAM_RHO="0.05"
-SAM_NO_GRAD_NORM="false"
-ONLY_SAM_STEP_SIZE="false"
-
-# Frozen SpLiCE/OpenCLIP backend used to construct the relational cache.
-SPLICE_MODEL="open_clip:ViT-B-32"
-SPLICE_PRETRAINED="laion2b_s34b_b79k"
-SPLICE_VOCAB="${SPLICE_VOCAB:-laion}"
-SPLICE_VOCAB_SIZE="${SPLICE_VOCAB_SIZE:-10000}"
-SPLICE_L1_PENALTY="0.25"
-SPLICE_BATCH_SIZE="128"
-SPLICE_NUM_WORKERS="1"
-
-# Evaluation and checkpoints
-LINEAR_TRAIN_SPLIT="ds_train"
-LINEAR_EVAL_SPLIT="val"
-LINEAR_PROBE_MODE="periodic"      # periodic | final | none
-LINEAR_PROBE_FREQ="25"
-LINEAR_PROBE_EPOCHS="100"
-LINEAR_LEARNING_RATE="1.0"
-LINEAR_LR_DECAY_EPOCHS="auto"
-LINEAR_LR_DECAY_RATE="0.2"
-LINEAR_WEIGHT_DECAY="0.0"
-LINEAR_SPURIOUS_PROBE="true"
-FINAL_TEST="false"                # true requires LINEAR_PROBE_MODE=final.
-SAVE_FREQ="25"
-KEEP_CHECKPOINTS="true"
-CHECKPOINT_KEEP_COUNT="4"          # Keep the current checkpoint plus 3 previous ones.
-DELETE_CHECKPOINTS_AFTER_TRAINING="true" # W&B remains the durable experiment record.
-PRINT_FREQ="25"
-RANK_EVAL_FREQ="0"
-
-# Cluster paths and runtime (rarely changed)
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
-CONDA_ENV="grgrie-train"
-DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
-CHECKPOINT_DIR="outputs/training"
-RESUME=""                         # Empty = start from scratch; otherwise a .pth path.
-SPLICE_SCORE_CACHE_DIR="outputs/splice_score_cache"
-NUM_WORKERS="5"
-AMP="true"
-CHANNELS_LAST="true"
-CUDNN_ENABLED="true"
-CUDNN_BENCHMARK="false"           # Must remain false for reproducibility.
-
-# Weights & Biases
-USE_WANDB="true"
-WANDB_PROJECT="Spur_SpLiCE"
-WANDB_ENTITY="gsgrechkin-rptu"
-WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS:-machine_cluster}"
-
-# Diagnostic jobs may reuse the exact cache/graph preparation path without training.
-PREPARE_ONLY="${PREPARE_ONLY:-false}"
+CONFIG_FILE="${CONFIG_FILE:-${PROJECT_DIR}/scripts/train_crp.conf}"
+CONFIG_ALREADY_LOADED="${CONFIG_ALREADY_LOADED:-false}"
+if [[ "${CONFIG_ALREADY_LOADED}" != "true" ]]; then
+    # shellcheck disable=SC1091
+    source "${PROJECT_DIR}/scripts/load_config.sh"
+    load_splice_config "${CONFIG_FILE}"
+fi
 
 # =============================================================================
 # IMPLEMENTATION BELOW. Normal experiment changes should not require edits here.
