@@ -35,6 +35,10 @@ REQUIRED_KEYS = (
     "cross_fold_count",
     "cross_fold_min_edge_persistence",
     "use_cobalt_confidence",
+    "spatial_balance",
+    "spatial_balance_variant",
+    "spatial_balance_floor",
+    "spatial_frequency_power",
 )
 
 
@@ -65,6 +69,11 @@ def config_path(config: dict, variant: str = "") -> PurePosixPath:
     root = PurePosixPath("configs")
     if variant:
         root /= f"named-{_safe_label(variant)}"
+    if config["spatial_balance"]:
+        root /= (
+            f"spatial-{_safe_label(str(config['spatial_balance_variant']))}-"
+            f"floor{value('spatial_balance_floor')}-freq{value('spatial_frequency_power')}"
+        )
     return root.joinpath(
         f"dino-{value('use_dino')}_cobalt-{value('cobalt')}",
         f"freq-{value('min_concept_frequency')}-{value('max_concept_frequency')}_"

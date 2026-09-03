@@ -7,8 +7,9 @@ are deliberately separate.
 
 **Last updated:** 2026-09-03
 
-**Current tracks:** SpLiCE-CRP v3 (active internal no-DINO/CoBalT protocol),
-SpLiCE-CRP v2 (historical/compatibility) and SpLiCE-CQT v1 (experimental)
+**Current tracks:** SpLiCE-CRP v4 (active spatial SpLiCE-balancing protocol),
+SpLiCE-CRP v3 (no-DINO/legacy-CoBalT compatibility), SpLiCE-CRP v2
+(historical compatibility), and SpLiCE-CQT v1 (experimental)
 **Current evidence:** implementation and initial Waterbirds single-seed pilots exist.
 Multi-seed stability, required controls, and a causal concept-removal claim are not
 established.
@@ -58,6 +59,7 @@ cache or graph containing annotation keys is invalid.
 unlabeled images
    ├─ OpenCLIP ViT-B/32 → centered CLIP vectors
    ├─ SpLiCE → sparse codes + readable dictionary
+   ├─ CLIP patch tokens → optional Slot Attention → spatial SpLiCE evidence (CRPv4)
    └─ DINOv3 → independent semantic geometry
                     │
              CRP or CQT frozen audit
@@ -140,6 +142,24 @@ an internal research protocol, not evidence that the new gates improve WGA or
 identify a true nuisance factor. The exact graph configuration and fold results
 must be reported with each audit.
 
+## 4.2 CRPv4 — spatial balancing in the shared SpLiCE vocabulary
+
+CRPv4 replaces the legacy CoBalT ResNet/VQ path with a frozen OpenCLIP visual
+encoder shared conceptually with SpLiCE. Native 768-dimensional ViT patch tokens
+are either matched patchwise or aggregated by label-free Slot Attention; slots are
+then mapped through CLIP's frozen visual normalization/projection and compared with
+the exact SpLiCE dictionary in the 512-dimensional multimodal space. The supported
+ablation matrix is `vanilla/sclip × patchwise/slots`; SCLIP changes only the final
+visual self-attention operation and adds no learned language adapter.
+
+The spatial artifact stores sparse image-specific evidence and confidence aligned
+exactly to cache sample IDs and vocabulary. During the frozen audit, CRPv4 forms a
+separate mass-preserving `w_i * B_i` copy for grouping, activation differences, and
+the residual SpLiCE gate. Original cached SpLiCE weights remain untouched, the
+projection intervention remains CRP, and the student/loss are unchanged. CRPv4
+emits `splice_crp_v4_teacher_graph`. Legacy CoBalT balancing and CRPv4 spatial
+balancing are separate ablations and cannot be combined in one graph.
+
 ## 5. CQT v1 — experimental extension
 
 CQT means Concept Quotient Transport. It reuses the cache, graph interface, and
@@ -178,7 +198,8 @@ or entangled nuisances. Its artifact type is splice_cqt_v1_teacher_graph.
 
 ## 6. Status, claims, and results
 
-Implemented: label-isolated cache; CRP and CQT audits/graphs; shared graph sampler,
+Implemented: label-isolated cache; CRPv2/v3/v4 and CQT audits/graphs; CRPv4
+patchwise/slot and vanilla/SCLIP spatial variants; shared graph sampler,
 backbone KL, schedules, graph positives, empty-graph fallback; separate Slurm
 entry points; W&B-enabled full training; concept cards and tests.
 
@@ -221,8 +242,9 @@ excess, and for CQT state accuracy/efficacy, transport mass, word preservation,
 and local DINO damage. Hidden-label diagnostics are falsifiers, not selectors.
 
 Required pilot controls: SimCLR; raw-CLIP relational distillation; DINO-only
-relational distillation; CRP; CQT; shuffled concepts/states; matched random
-subspaces/contrasts; hard-positive CRP v1; and Ghanooni spectral regularization.
+relational distillation; unbalanced CRPv3; all four CRPv4 spatial variants; CQT;
+shuffled concepts/states; matched random subspaces/contrasts; hard-positive CRP
+v1; and Ghanooni spectral regularization.
 Only then promote to paired seeds on Waterbirds, CelebA, and SpurCIFAR10 with
 matched initialization, augmentations, and evaluation. Report mean, standard
 deviation, average accuracy, WGA, and per-group accuracy.
@@ -255,6 +277,9 @@ metrics. Diagnostic cache/graph/audit/report jobs do not need W&B.
 | scripts/tools/cache_crp_features.py | frozen cache construction |
 | scripts/cache_openimages_crp.sbatch | Open Images cache job |
 | CoBalT/scripts/prepare_concepts.sbatch | label-free CoBalT concept artifact |
+| CoBalT/scripts/prepare_crpv4_spatial.sbatch | four CRPv4 spatial SpLiCE artifacts |
+| CoBalT/spatial.py | frozen CLIP patch/SCLIP features and trainable SpLiCE slots |
+| splice/spatial_balance.py | CRPv4 artifact validation and `w_i * B_i` balancing |
 | data/vocab/ | selectable vocabularies |
 | README.md | usage/setup |
 | Spur_SpLiCE.tex | paper draft; may lag current state |
@@ -293,10 +318,10 @@ editing; and combined CRP-plus-spectral variants before separate effects are kno
 
 ## 11. Immediate next work
 
-1. Finish Waterbirds CRP/CQT frozen audits and post-hoc graph falsifiers.
-2. Run raw-CLIP, DINO-only, random, shuffled, and spectral controls.
-3. Run one shortened paired pilot before multi-seed submission.
-4. Inspect CQT concept cards and representative sample-ID reports.
+1. Prepare and compare all four Waterbirds CRPv4 spatial artifacts against CRPv3.
+2. Finish CRP/CQT frozen audits and post-hoc graph falsifiers.
+3. Run raw-CLIP, DINO-only, random, shuffled, and spectral controls.
+4. Run one shortened paired pilot before multi-seed submission.
 5. Update the paper only after controls determine which mode, if either, survives.
 
 ## 12. Project history

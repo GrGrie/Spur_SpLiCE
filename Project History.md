@@ -733,3 +733,48 @@ that difference is the treatment being measured. The result remains a shortened
 single-seed screen and cannot establish robustness without full paired runs. No
 graph formula, SSL loss, CQT behavior, existing result, or historical snapshot
 changed.
+
+### 2026-09-03 — CRPv4 spatial balancing in the SpLiCE vocabulary
+
+**Track:** CRP method and frozen-audit infrastructure; label-free spatial concept
+discovery. The shared student trainer is format-compatible but mathematically
+unchanged. CQT and historical reporting snapshots are unchanged.
+
+Before this change, CRPv3's optional CoBalT input came from a separate visual
+ResNet and an anonymous vector-quantized dictionary. It influenced SpLiCE grouping
+through dataset-level sample weights, so the spatial branch and SpLiCE described
+images with different concept systems. Spatial slot confidence existed, but there
+was no direct per-image balance factor over named SpLiCE concepts.
+
+CRPv4 adds a separate spatial path over the same frozen OpenCLIP ViT-B/32 used by
+SpLiCE. It exposes native patch tokens, optionally learns Slot Attention with
+label-free two-view attention and projected-semantic consistency, applies CLIP's
+own frozen normalization/projection only after slot aggregation, and compares
+patches or slots directly with the frozen SpLiCE dictionary. The bounded ablation
+matrix contains vanilla and SCLIP patch features, each with and without slots;
+the SCLIP path reuses the frozen final-layer projections with query-query plus
+key-key correlative attention and adds no learned language adapter or new concept
+dictionary.
+
+The reason for the change is to remove duplicate teacher-side concept systems:
+SpLiCE should continue to answer which named concepts explain an image, while the
+spatial branch should describe where and how consistently those same concepts are
+represented. This also makes spatial balancing independently ablatable without
+changing the student or rewriting the original decomposition.
+
+Extraction writes sparse image-specific evidence and spatial confidence aligned
+exactly to the frozen cache's sample IDs and vocabulary. Graph construction creates
+a separate balanced code tensor from the original SpLiCE weights and the spatial
+factors, interpolates uncertain samples toward neutral balance, and preserves each
+sample's original total sparse-code mass. These balanced codes affect grouping,
+activation differences, nulls, and the no-DINO residual gate; the cached weights,
+CLIP projection intervention, teacher-graph loss, and student remain unchanged.
+CRPv4 has a distinct graph artifact/version. Combining this path with legacy
+CoBalT sample balancing is rejected so their effects remain identifiable.
+
+The implementation establishes a runnable hypothesis, not evidence that slots,
+SCLIP, or spatial balancing improve WGA or identify nuisance concepts. All four
+spatial variants require fresh frozen audits, direct comparison with unbalanced
+CRPv3 and frequency-only controls, inspection of coverage/null margins, and paired
+SSL seeds before any robustness or causal claim. Earlier CRPv2/v3 results and the
+current manuscript snapshot are not retroactively reinterpreted.

@@ -1,5 +1,33 @@
 # CoBalT reproduction
 
+> The modules described below remain the historical CoBalT reproduction and
+> CRPv3 compatibility baseline. CRPv4 does not use this ResNet/VQ dictionary.
+
+## CRPv4 spatial SpLiCE branch
+
+CRPv4 is implemented separately in `spatial.py`, `train_spatial.py`, and
+`extract_spatial_balance.py`. It freezes OpenCLIP ViT-B/32, aggregates native
+patch tokens with optional trainable slots, applies CLIP's frozen visual
+normalization/projection after aggregation, and matches the result directly to
+the cache's SpLiCE dictionary. No second concept vocabulary or supervised
+classifier is involved.
+
+The four preparation tasks are `vanilla_patchwise`, `vanilla_slots`,
+`sclip_patchwise`, and `sclip_slots`. Slot tasks train with label-free two-view
+attention and projected-semantic consistency; patchwise tasks perform extraction
+only. Every artifact is bound to the exact CRP cache sample order and vocabulary.
+
+Edit `scripts/prepare_crpv4_spatial.conf`, then run:
+
+```bash
+sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
+```
+
+To build/train one CRPv4 graph, set `CRP_SPATIAL_BALANCE=true`, the selected
+`CRP_SPATIAL_BALANCE_VARIANT`, and its artifact path in
+`scripts/train_crp.conf`, then use the normal CRP launcher. The original sparse
+codes remain in the cache; the balanced copy exists only inside graph audit.
+
 This directory is an independent PyTorch implementation of **CoBalT** from
 Md Rifat Arefin et al., *Unsupervised Concept Discovery Mitigates Spurious
 Correlations* (ICML 2024): <https://arxiv.org/abs/2402.13368>.

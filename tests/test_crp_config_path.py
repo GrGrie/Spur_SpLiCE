@@ -33,6 +33,10 @@ def _config(**overrides):
         "cross_fold_count": 2,
         "cross_fold_min_edge_persistence": 0.5,
         "use_cobalt_confidence": True,
+        "spatial_balance": False,
+        "spatial_balance_variant": "",
+        "spatial_balance_floor": 0.25,
+        "spatial_frequency_power": 0.0,
     }
     values.update(overrides)
     return values
@@ -43,11 +47,17 @@ class CrpConfigPathTests(unittest.TestCase):
         self.assertEqual(config_path(_config()), config_path(_config(indegree_factor=3)))
 
     def test_every_graph_parameter_changes_the_path(self):
-        baseline = config_path(_config())
-        for key, value in _config().items():
-            replacement = not value if isinstance(value, bool) else value + 1
+        active = _config(spatial_balance=True, spatial_balance_variant="vanilla_slots")
+        baseline = config_path(active)
+        for key, value in active.items():
+            if isinstance(value, bool):
+                replacement = not value
+            elif isinstance(value, str):
+                replacement = "sclip_slots" if value == "vanilla_slots" else "vanilla_slots"
+            else:
+                replacement = value + 1
             with self.subTest(key=key):
-                self.assertNotEqual(baseline, config_path(_config(**{key: replacement})))
+                self.assertNotEqual(baseline, config_path({**active, key: replacement}))
 
     def test_variant_is_sanitized_without_replacing_configuration(self):
         baseline = config_path(_config())

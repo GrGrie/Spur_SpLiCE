@@ -31,6 +31,7 @@ from splice.ssl_regularization import (
     score_cache_path,
 )
 from splice.crp import (
+    CRP_V4_GRAPH_VERSION,
     CrpAuditConfig,
     group_concepts,
     orthonormal_basis,
@@ -41,6 +42,11 @@ from splice.crp import (
 )
 from splice.cqt import CQT_ARTIFACT, CqtAuditConfig, concept_quotient, run_cqt_audit
 from splice.cobalt_check import concept_balanced_sample_weights, load_cobalt_train_concepts
+from splice.spatial_balance import (
+    SPATIAL_BALANCE_ARTIFACT,
+    spatially_balanced_codes,
+    validate_spatial_balance_artifact,
+)
 from splice.crp_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
@@ -385,6 +391,82 @@ class SplicePipelineTests(unittest.TestCase):
             [[0], [1]],
         )
 
+    def test_spatial_balance_is_aligned_and_preserves_original_splice_mass(self):
+        cache = self._tiny_crp_cache()
+        artifact = {
+            "artifact": SPATIAL_BALANCE_ARTIFACT,
+            "dataset": "waterbirds",
+            "sample_ids": cache["sample_ids"],
+            "vocabulary": cache["vocabulary"],
+            "variant": "vanilla_slots",
+            "concept_indices": torch.tensor([[0, 1]] * 8),
+            "evidence": torch.tensor([[1.0, 0.1], [0.1, 1.0]] * 4),
+            "confidence": torch.tensor([1.0] * 7 + [0.0]),
+            "config": {"feature_source": "vanilla", "use_slots": True},
+        }
+        validated = validate_spatial_balance_artifact(
+            artifact, "waterbirds", cache["sample_ids"], cache["vocabulary"]
+        )
+        original = cache["splice_codes"].clone()
+        balanced, summary = spatially_balanced_codes(original, validated)
+        torch.testing.assert_close(original, cache["splice_codes"])
+        torch.testing.assert_close(balanced.sum(dim=1), original.sum(dim=1))
+        torch.testing.assert_close(balanced[-1], original[-1])
+        self.assertTrue(summary["original_mass_preserved"])
+
+    def test_crpv4_uses_spatial_codes_and_emits_a_distinct_graph_version(self):
+        cache = self._tiny_crp_cache()
+        artifact = validate_spatial_balance_artifact(
+            {
+                "artifact": SPATIAL_BALANCE_ARTIFACT,
+                "dataset": "waterbirds",
+                "sample_ids": cache["sample_ids"],
+                "vocabulary": cache["vocabulary"],
+                "variant": "vanilla_patchwise",
+                "concept_indices": torch.tensor([[0, 1]] * 8),
+                "evidence": torch.tensor([[1.0, 0.25]] * 8),
+                "confidence": torch.ones(8),
+                "config": {"feature_source": "vanilla", "use_slots": False},
+            },
+            "waterbirds",
+            cache["sample_ids"],
+            cache["vocabulary"],
+        )
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            projected_neighbors=3,
+            dino_neighbors=4,
+            graph_top_k=2,
+            null_trials=1,
+            null_quantile=0.0,
+            min_coverage=0.0,
+            seed=7,
+            spatial_balance=True,
+            spatial_balance_variant="vanilla_patchwise",
+        )
+        graph = run_frozen_audit(cache, config, spatial_balance_artifact=artifact)
+        self.assertEqual(graph["artifact"], "splice_crp_v4_teacher_graph")
+        self.assertEqual(graph["graph_version"], 4)
+        self.assertEqual(graph["spatial_balance"]["variant"], "vanilla_patchwise")
+        validate_teacher_graph(graph, cache["sample_ids"])
+
+    def test_crpv4_rejects_a_different_spatial_variant(self):
+        cache = self._tiny_crp_cache()
+        artifact = {
+            "artifact": SPATIAL_BALANCE_ARTIFACT,
+            "dataset": "waterbirds",
+            "sample_ids": cache["sample_ids"],
+            "vocabulary": cache["vocabulary"],
+            "variant": "sclip_slots",
+            "concept_indices": torch.tensor([[0, 1]] * 8),
+            "evidence": torch.ones(8, 2),
+            "confidence": torch.ones(8),
+        }
+        config = CrpAuditConfig(spatial_balance=True, spatial_balance_variant="vanilla_slots")
+        with self.assertRaisesRegex(ValueError, "variant does not match"):
+            run_frozen_audit(cache, config, spatial_balance_artifact=artifact)
+
     def test_cqt_quotient_removes_only_the_rank_one_state_contrast(self):
         embeddings = torch.nn.functional.normalize(
             torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]), dim=1
@@ -639,6 +721,8 @@ class SplicePipelineTests(unittest.TestCase):
         graph = self._tiny_teacher_graph()
         graph.update(
             {
+                "artifact": "splice_crp_v4_teacher_graph",
+                "graph_version": CRP_V4_GRAPH_VERSION,
                 "group_ids": torch.tensor([[0, -1], [0, -1], [0, -1], [0, -1]]),
                 "edge_confidences": torch.tensor(
                     [[0.5, 0.0], [0.4, 0.0], [0.3, 0.0], [0.2, 0.0]]

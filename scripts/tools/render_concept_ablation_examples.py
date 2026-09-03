@@ -20,7 +20,11 @@ from splice.crp import orthonormal_basis, project_out, validate_feature_cache
 from splice.graph_io import load_graph_json
 
 
-CRP_ARTIFACTS = {"splice_crp_v2_teacher_graph", "splice_crp_v3_teacher_graph"}
+CRP_ARTIFACTS = {
+    "splice_crp_v2_teacher_graph",
+    "splice_crp_v3_teacher_graph",
+    "splice_crp_v4_teacher_graph",
+}
 LABEL_NAMES = {0: "landbird", 1: "waterbird"}
 BACKGROUND_NAMES = {0: "land background", 1: "water background"}
 

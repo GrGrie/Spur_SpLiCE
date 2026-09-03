@@ -46,6 +46,7 @@ with `--data_folder` or edit the relevant Slurm `.conf` file.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
+- `CoBalT/scripts/prepare_crpv4_spatial.sbatch` — four-way CRPv4 spatial evidence preparation.
 - `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
 - `scripts/cache_openimages_crp.sbatch` — Slurm-only Open Images V7 cache preparation.
 - `scripts/*.conf` — editable Slurm configurations for training, sweeps, cache,
@@ -154,6 +155,27 @@ entry point:
 # edit the matching values in scripts/train_crp.conf first
 sbatch scripts/train_crp.sbatch
 ```
+
+### CRPv4 spatial SpLiCE balancing
+
+CRPv4 keeps the CRP projection and student loss, but replaces the earlier
+anonymous CoBalT concept balance with image-specific evidence in the exact SpLiCE
+vocabulary. Frozen CLIP patch tokens are tested in four controlled variants:
+vanilla patchwise, vanilla plus slots, SCLIP patchwise, and SCLIP plus slots. Slot
+aggregation happens in CLIP's native visual width; CLIP's frozen visual projection
+is applied only afterward. The original SpLiCE cache is never overwritten.
+
+Prepare all four spatial artifacts after the matching CRP cache exists:
+
+```bash
+sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
+```
+
+Then select one artifact in `scripts/train_crp.conf` by setting
+`CRP_SPATIAL_BALANCE=true`, `CRP_SPATIAL_BALANCE_VARIANT`, and
+`CRP_SPATIAL_BALANCE_PATH`, and run the normal CRP entry point. The resulting
+graph is versioned separately as CRPv4; legacy CoBalT balancing remains available
+only as a distinct compatibility ablation.
 
 ## Training length and learning-rate schedules
 

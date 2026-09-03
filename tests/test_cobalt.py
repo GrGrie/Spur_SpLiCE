@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 from CoBalT.model import (
     CoBalTDiscoveryModel,
@@ -8,6 +9,12 @@ from CoBalT.model import (
     concept_assignment_confidence,
 )
 from CoBalT.sampler import ConceptBalancedSampler, inferred_worst_group_accuracy
+from CoBalT.spatial import (
+    SpatialSpliceDiscoveryModel,
+    TokenSlotAttention,
+    _sclip_attention,
+    aggregate_spatial_evidence,
+)
 
 
 def test_semantic_grouping_is_normalized_over_slots():
@@ -88,3 +95,69 @@ def test_discovery_forward_and_teacher_update_smoke():
     after = next(model.teacher_encoder.parameters()).detach()
     assert torch.isfinite(output.loss)
     assert not torch.equal(before, after)
+
+
+def test_token_slots_aggregate_native_clip_width_before_projection():
+    grouping = TokenSlotAttention(num_slots=3, dim=6)
+    slots, attention, _ = grouping(torch.randn(2, 4, 6), (2, 2), temperature=0.1)
+    assert slots.shape == (2, 3, 6)
+    assert attention.shape == (2, 3, 2, 2)
+    assert torch.allclose(attention.sum(dim=1), torch.ones(2, 2, 2), atol=1e-6)
+
+
+def test_sclip_attention_reuses_frozen_qkv_shapes():
+    attention = nn.MultiheadAttention(8, 2, batch_first=True)
+    output = _sclip_attention(attention, torch.randn(3, 5, 8))
+    assert output.shape == (3, 5, 8)
+    assert torch.isfinite(output).all()
+
+
+def test_spatial_evidence_is_sparse_named_dictionary_evidence():
+    regions = torch.nn.functional.normalize(torch.tensor([[[1.0, 0.0], [0.0, 1.0]]]), dim=-1)
+    dictionary = torch.tensor([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]])
+    indices, evidence, confidence = aggregate_spatial_evidence(
+        regions,
+        torch.tensor([[0.75, 0.25]]),
+        dictionary,
+        concepts_per_region=1,
+        confidence=torch.tensor([0.8]),
+    )
+    assert indices.shape == evidence.shape == (1, 2)
+    assert set(indices[0].tolist()) == {0, 1}
+    assert torch.all(evidence >= 0)
+    assert torch.allclose(confidence, torch.tensor([0.8]))
+
+
+def test_spatial_slot_discovery_trains_only_slot_queries():
+    class FakeFrozenEncoder(nn.Module):
+        native_dim = 4
+        output_dim = 3
+
+        def __init__(self):
+            super().__init__()
+            self.frozen_marker = nn.Parameter(torch.ones(()), requires_grad=False)
+            self.register_buffer(
+                "projection",
+                torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]),
+            )
+
+        @torch.no_grad()
+        def native_patches(self, images):
+            pooled = torch.nn.functional.adaptive_avg_pool2d(images, (2, 2))
+            fourth = pooled.mean(dim=1, keepdim=True)
+            return torch.cat((pooled, fourth), dim=1).flatten(2).transpose(1, 2), (2, 2)
+
+        def project(self, vectors):
+            return torch.nn.functional.normalize(vectors @ self.projection, dim=-1)
+
+    model = SpatialSpliceDiscoveryModel(
+        FakeFrozenEncoder(), torch.eye(3), num_slots=2, semantic_weight=0.5
+    )
+    views = torch.randn(2, 2, 3, 8, 8)
+    boxes = torch.tensor([[[0.0, 0.0, 1.0, 1.0]] * 2] * 2)
+    flips = torch.zeros(2, 2, dtype=torch.bool)
+    output = model(views, boxes, flips)
+    output.loss.backward()
+    assert model.student_grouping.slots.grad is not None
+    assert all(parameter.grad is None for parameter in model.encoder.parameters())
+    assert torch.isfinite(output.loss)

@@ -1230,7 +1230,11 @@ def build_ssl_loader(args: argparse.Namespace):
             )
         }
     )
-    if graph["artifact"] == "splice_crp_v2_teacher_graph":
+    if graph["artifact"] in {
+        "splice_crp_v2_teacher_graph",
+        "splice_crp_v3_teacher_graph",
+        "splice_crp_v4_teacher_graph",
+    }:
         report_path = save_crp_concept_report(graph, args.crp_teacher_graph)
         concept_report = json.loads(report_path.read_text(encoding="utf-8"))
         top_concepts = [
