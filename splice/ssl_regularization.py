@@ -22,8 +22,8 @@ class SpliceConfig:
     mode: str = "none"
     concepts: str = ""
     l1_penalty: float = 0.25
-    vocab: str = "laion"
-    vocab_size: int = 10000
+    vocab: str = splice.DEFAULT_VOCABULARY
+    vocab_size: int = splice.DEFAULT_VOCABULARY_SIZE
     model: str = "open_clip:ViT-B-32"
     pretrained: str = "laion2b_s34b_b79k"
     score_cache_dir: str = "outputs/splice_score_cache"
@@ -327,7 +327,7 @@ class SpliceConceptScorer:
         """Return an ``[n_images, n_selected_concepts]`` weight matrix.
 
         Keeping this matrix instead of immediately reducing it to one scalar is
-        essential: mutually exclusive concepts such as ``water`` and ``forest``
+        essential: mutually exclusive concepts such as ``state_a`` and ``state_b``
         otherwise become indistinguishable.
         """
 

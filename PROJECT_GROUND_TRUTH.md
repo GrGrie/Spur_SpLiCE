@@ -5,7 +5,7 @@ running, or interpreting the project. The full dated chronology is in
 `Project History.md`; current research state and historical reporting snapshots
 are deliberately separate.
 
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-03
 
 **Current tracks:** SpLiCE-CRP v3 (active internal no-DINO/CoBalT protocol),
 SpLiCE-CRP v2 (historical/compatibility) and SpLiCE-CQT v1 (experimental)
@@ -71,7 +71,9 @@ unlabeled images
 
 The frozen cache contains normalized CLIP embeddings, centered CLIP vectors using
 the SpLiCE image mean, sparse SpLiCE codes, dictionary/vocabulary, and by default
-normalized DINO embeddings. It is indexed by sample ID, validates aligned lengths
+normalized DINO embeddings. The complete Open Images V7 label vocabulary is the
+default dictionary; LAION remains an explicit historical/ablation option. The cache
+is indexed by sample ID, validates aligned lengths
 and finite values, and records model/configuration provenance. CQT reuses it.
 
 The default student is a from-scratch large-input ResNet18. ResNet50 from scratch
@@ -240,8 +242,10 @@ metrics. Diagnostic cache/graph/audit/report jobs do not need W&B.
 | splice/ssl_regularization.py | legacy interventions and baselines |
 | experiments/spurious_eval/ | datasets, ResNets, SSL loop, probes, metrics |
 | scripts/train_crp.sbatch | CRP Slurm runner |
+| scripts/train_ssl_graph_shortlist.sbatch | matched 100-epoch SimCLR/CRP graph screen |
 | scripts/train_cqt.sbatch | CQT Slurm runner |
 | scripts/prepare_crp_group_sweep.sbatch | CRP frozen graph sweep |
+| scripts/prepare_crp_semantic_family_sweep.sbatch | seed-0 semantic-family graph sweep |
 | scripts/prepare_cqt_graph_sweep.sbatch | CQT frozen graph sweep |
 | scripts/*.conf | editable Slurm configurations for training and preparation |
 | scripts/load_config.sh | shared config loader |
@@ -331,3 +335,95 @@ Project History.md in the same task.
 - **Track:** CRP and shared graph/reporting infrastructure; CoBalT concept
   extraction is an upstream CRP input. CQT and historical reporting snapshots
   are not superseded by this entry.
+
+## 14. 2026-09-03 — Current manuscript architecture update
+
+- **State before:** the paper described an earlier frozen-audit architecture with
+  an auxiliary visual-geometry branch and treated CoBalT only as related work.
+- **Change:** architectural passages now present CoBalT discovery, confidence-aware
+  concept balancing, residual SpLiCE agreement, cross-fold persistence and fixed
+  graph-density limits as the sole CRP method. Existing results are scoped to the
+  relational trainer.
+- **Reason:** align the manuscript with the active CoBalT-balanced CRP protocol.
+- **Consequences:** the paper's method and parameter table match current research.
+  Fresh end-to-end audits and paired runs remain required for claims about the
+  complete pipeline. This is a reporting-only change; code, losses and existing
+  experiment artifacts are unchanged.
+- **Track:** CRP reporting; current manuscript snapshot. CQT and historical
+  reporting snapshots are unchanged.
+
+## 15. 2026-09-03 — Semantic-family CRP audit variants
+
+- **State before:** the Open Images CRP grouping sweep required positive
+  coactivation for every non-lexical grouping edge and used selected-group caps in
+  nearly all lower-threshold variants. On Waterbirds this produced mostly
+  two-concept near-synonym groups for individual bird species, so the capped audit
+  could spend most of its factor budget on repeated bird semantics.
+- **Change:** appended three frozen-audit variants with text thresholds 0.75, 0.70,
+  and 0.65, `coactivation_threshold=0`, `min_group_size=1`, and
+  `max_selected_groups=0`. Because cached SpLiCE codes are non-negative, zero
+  coactivation makes the existing grouping graph semantic-only; connected
+  components remain data-dependent and have no maximum concept count. Existing
+  coactivation-gated variants remain unchanged as controls.
+- **Reason:** test whether mutually exclusive but semantically related concepts can
+  form broad families, reducing repeated species-level factors and exposing
+  background families to the same label-free audit without curated nuisance words.
+- **Consequences:** the sweep now has fifteen tasks. Semantic-only components may
+  become large through transitive links, so their words, basis ranks, coverage,
+  null margins, and graph density must be inspected before SSL. A background group
+  is not guaranteed and must still pass the unchanged null and cross-fold gates.
+  No training result or robustness claim changes until fresh audits and matched
+  controls are run.
+- **Track:** CRP frozen-audit experiment protocol only. CQT, the shared trainer,
+  baselines, and earlier reporting snapshots are unchanged.
+
+## 16. 2026-09-03 — Open Images V7 as the repository-wide vocabulary default
+
+- **State before:** the dedicated Open Images cache launcher selected the complete
+  Open Images V7 vocabulary explicitly, but generic Python entry points, legacy
+  SpLiCE helpers, the shared cluster configuration, and the environment check still
+  defaulted to a 10,000-entry LAION vocabulary.
+- **Change:** centralized Python defaults on `openimages_v7` with the full vocabulary
+  (`vocab_size=-1`) and applied the same pair to every generic CLI, SpLiCE helper,
+  shared cluster configuration, and environment check. LAION remains supported only
+  when explicitly selected.
+- **Reason:** make the richer named object vocabulary used by the active CRP audits
+  the consistent zero-override behavior and prevent entry-point-dependent dictionary
+  changes.
+- **Consequences:** commands that omit vocabulary flags now build Open Images-based
+  caches and concept artifacts. Historical LAION caches remain valid only with their
+  recorded configuration and must not be mixed with new default artifacts. Fresh
+  graph audits are required after the dictionary change; no existing result or
+  robustness claim is updated.
+- **Track:** shared SpLiCE cache/discovery infrastructure affecting CRP, CQT, and
+  legacy SpLiCE baselines when they omit explicit overrides. The shared SSL trainer
+  and historical reporting snapshots are unchanged.
+
+## 17. 2026-09-03 — Comparable semantic audits and matched SSL graph screen
+
+- **State before:** the general grouping array inherited its seed from the Slurm
+  task index, so different grouping variants also changed the null-test seed. The
+  three semantic-family settings existed only at the end of the fifteen-task
+  array. There was no small launcher that compared shortlisted CRPv3 graphs with a
+  true SimCLR run under an otherwise matched shortened protocol.
+- **Change:** fixed the grouping sweep seed at zero and added a dedicated
+  three-task CoBalT/no-DINO semantic-family preparation array with explicit Open
+  Images, residual-gate, cross-fold, and graph-density settings. Added a separate
+  100-epoch W&B-tracked SSL screen containing pure SimCLR plus the label-free
+  shortlist `g3_t065_c015_k8` and `g2_t070_c020_k12`, both with relational weight
+  2.0, temperature 0.25, graph positives disabled, warmup, and no late decay. The
+  shared launcher now accepts `MODE=none` so the control does not load a teacher
+  graph or use graph-aware batches.
+- **Reason:** isolate grouping parameters from audit randomness, run the requested
+  semantic-only variants without repeating completed graphs, and obtain an early
+  matched SSL signal for one higher-null-margin/variable-group graph and one denser
+  coverage-oriented graph.
+- **Consequences:** newly prepared semantic variants are directly comparable at
+  seed zero; older array artifacts with other seeds remain valid diagnostics but
+  are not exact controlled variant comparisons. The 100-epoch jobs are screening
+  evidence only and cannot be compared directly with historical 500-epoch values
+  or support robustness claims. Promotion still requires inspection of loss scale,
+  supported-anchor fraction and downstream metrics, followed by full paired seeds
+  and the required non-concept controls. No graph mathematics or SSL loss changed.
+- **Track:** CRP frozen-audit and experiment protocol; shared training launcher and
+  SimCLR baseline plumbing. CQT and historical reporting snapshots are unchanged.

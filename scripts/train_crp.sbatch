@@ -39,8 +39,8 @@ fail() {
 [[ -d "${PROJECT_DIR}" ]] || fail "PROJECT_DIR does not exist: ${PROJECT_DIR}"
 
 case "${MODE}" in
-    crp_relational|cqt_relational) ;;
-    *) fail "Relational entry points support only crp_relational or cqt_relational; got MODE=${MODE}" ;;
+    none|crp_relational|cqt_relational) ;;
+    *) fail "This entry point supports none, crp_relational, or cqt_relational; got MODE=${MODE}" ;;
 esac
 case "${USE_DINO}" in true|false) ;; *) fail "USE_DINO must be true or false." ;; esac
 case "${COBALT}" in true|false) ;; *) fail "COBALT must be true or false." ;; esac

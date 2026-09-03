@@ -50,7 +50,11 @@ from splice.crp_training import (
 )
 from splice.graph_io import load_graph_json, save_graph_json
 from splice.model import SPLICE
-from splice.splice import _clean_openimages_class_names
+from splice.splice import (
+    DEFAULT_VOCABULARY,
+    DEFAULT_VOCABULARY_SIZE,
+    _clean_openimages_class_names,
+)
 import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.audit_cqt_graph_oracle import audit_graph
@@ -66,6 +70,16 @@ from scripts.tools.cache_crp_features import IndexedImages
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_openimages_v7_is_the_default_vocabulary(self):
+        self.assertEqual(DEFAULT_VOCABULARY, "openimages_v7")
+        self.assertEqual(DEFAULT_VOCABULARY_SIZE, -1)
+        self.assertEqual(SpliceConfig().vocab, DEFAULT_VOCABULARY)
+        self.assertEqual(SpliceConfig().vocab_size, DEFAULT_VOCABULARY_SIZE)
+        with patch("sys.argv", ["spur_splice.py"]):
+            args = spur_splice.parse_args()
+        self.assertEqual(args.splice_vocab, DEFAULT_VOCABULARY)
+        self.assertEqual(args.splice_vocab_size, DEFAULT_VOCABULARY_SIZE)
+
     def test_openimages_class_names_are_cleaned_and_deduplicated(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             source = Path(temporary_directory) / "classes.csv"
@@ -110,7 +124,7 @@ class SplicePipelineTests(unittest.TestCase):
                  [0.0, 1.0], [0.0, 1.0], [0.0, 0.8], [0.0, 0.8]]
             ),
             "dictionary": torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
-            "vocabulary": ["forest", "water"],
+            "vocabulary": ["concept_a", "concept_b"],
             "dino_embeddings": torch.nn.functional.normalize(torch.randn(8, 3, generator=generator), dim=1),
         }
 
@@ -142,7 +156,7 @@ class SplicePipelineTests(unittest.TestCase):
             "image_mean": torch.zeros(6),
             "splice_codes": codes,
             "dictionary": dictionary,
-            "vocabulary": ["forest", "water", "bird", "striped", "spotted"],
+            "vocabulary": ["state_a", "state_b", "shared_feature", "context_a", "context_b"],
             "dino_embeddings": torch.nn.functional.normalize(dino, dim=1),
         }
 
@@ -152,6 +166,40 @@ class SplicePipelineTests(unittest.TestCase):
         embeddings = torch.tensor([[0.6, 0.0, 0.8], [0.0, 0.6, 0.8]])
         projected = project_out(embeddings, basis)
         torch.testing.assert_close(projected @ basis, torch.zeros(2, 1), atol=1e-6, rtol=0)
+
+    def test_zero_coactivation_threshold_forms_semantic_families(self):
+        codes = torch.eye(4)
+        dictionary = torch.nn.functional.normalize(
+            torch.tensor(
+                [
+                    [1.0, 0.00, 0.0, 0.0],
+                    [1.0, 0.10, 0.0, 0.0],
+                    [1.0, 0.20, 0.0, 0.0],
+                    [1.0, 0.30, 0.0, 0.0],
+                ]
+            ),
+            dim=1,
+        )
+        vocabulary = ["semantic_a", "semantic_b", "semantic_c", "semantic_d"]
+        coactivation_gated = CrpAuditConfig(
+            min_concept_frequency=0.2,
+            text_similarity_threshold=0.9,
+            coactivation_threshold=0.2,
+        )
+        semantic_only = CrpAuditConfig(
+            min_concept_frequency=0.2,
+            text_similarity_threshold=0.9,
+            coactivation_threshold=0.0,
+        )
+
+        self.assertEqual(
+            group_concepts(codes, dictionary, vocabulary, coactivation_gated),
+            [[0], [1], [2], [3]],
+        )
+        self.assertEqual(
+            group_concepts(codes, dictionary, vocabulary, semantic_only),
+            [[0, 1, 2, 3]],
+        )
 
     def test_crp_cache_rejects_training_annotations(self):
         cache = self._tiny_crp_cache()
@@ -330,10 +378,10 @@ class SplicePipelineTests(unittest.TestCase):
             text_similarity_threshold=0.99,
             coactivation_threshold=0.99,
         )
-        self.assertEqual(group_concepts(codes, dictionary, ["water", "land"], config), [[1]])
+        self.assertEqual(group_concepts(codes, dictionary, ["concept_a", "concept_b"], config), [[1]])
         weights = torch.tensor([2 / 3, 2 / 3, 2 / 3, 2.0])
         self.assertEqual(
-            group_concepts(codes, dictionary, ["water", "land"], config, weights),
+            group_concepts(codes, dictionary, ["concept_a", "concept_b"], config, weights),
             [[0], [1]],
         )
 
@@ -563,9 +611,9 @@ class SplicePipelineTests(unittest.TestCase):
                     {
                         "factor_id": 0,
                         "selected": True,
-                        "state_a": {"concepts": ["forest"]},
-                        "state_b": {"concepts": ["water"]},
-                        "preserved_concepts": ["bird"],
+                        "state_a": {"concepts": ["state_a"]},
+                        "state_b": {"concepts": ["state_b"]},
+                        "preserved_concepts": ["shared_feature"],
                     }
                 ],
                 "selected_factor_ids": [0],
@@ -583,7 +631,7 @@ class SplicePipelineTests(unittest.TestCase):
             restored = load_graph_json(graph_path)
             self.assertTrue(torch.equal(restored["neighbor_indices"], graph["neighbor_indices"]))
             report = audit_graph(restored, metadata)
-        self.assertEqual(report["removed_concepts"], ["forest", "water"])
+        self.assertEqual(report["removed_concepts"], ["state_a", "state_b"])
         self.assertAlmostEqual(report["graph_metrics"]["desired_relation_rate"], 0.5)
         self.assertAlmostEqual(report["graph_metrics"]["different_target_rate"], 0.5)
 
@@ -601,7 +649,7 @@ class SplicePipelineTests(unittest.TestCase):
                 "groups": [
                     {
                         "group_id": 0,
-                        "concepts": ["forest", "water"],
+                        "concepts": ["concept_a", "concept_b"],
                         "selected": True,
                         "score": 0.3,
                         "null_threshold": 0.1,
@@ -615,8 +663,8 @@ class SplicePipelineTests(unittest.TestCase):
             }
         )
         report = build_crp_concept_report(graph)
-        self.assertEqual(report["teacher_projected_concepts"], ["forest", "water"])
-        self.assertEqual(report["important_concepts"][0]["concept"], "forest")
+        self.assertEqual(report["teacher_projected_concepts"], ["concept_a", "concept_b"])
+        self.assertEqual(report["important_concepts"][0]["concept"], "concept_a")
         self.assertAlmostEqual(report["groups"][0]["training_evidence_mass"], 1.4, places=6)
 
     def test_empty_crp_graph_regularizer_has_zero_loss(self):
@@ -1135,7 +1183,7 @@ class SplicePipelineTests(unittest.TestCase):
             deduplicate_concepts=True,
         )
         candidates = rank_concepts(
-            ["forests", "forest", "lake"],
+            ["signals", "signal", "anchor"],
             group_means,
             {key: 1 for key in group_means},
             torch.tensor([1.5, 1.0, 0.5]),
@@ -1144,7 +1192,7 @@ class SplicePipelineTests(unittest.TestCase):
             {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
             args,
         )
-        self.assertEqual([candidate["concept"] for candidate in candidates], ["forests", "lake"])
+        self.assertEqual([candidate["concept"] for candidate in candidates], ["signals", "anchor"])
 
     def test_cache_fingerprint_separates_vectors_and_scalar_reductions(self):
         config_mean = SpliceConfig(concepts="1,2", score_reduction="mean", pretrained="a")

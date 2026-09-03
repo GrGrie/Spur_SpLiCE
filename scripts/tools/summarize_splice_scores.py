@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 from splice.ssl_regularization import SpliceConceptScorer, SpliceConfig, dataset_score_cache_key
 
 
@@ -34,8 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice_model", default="open_clip:ViT-B-32")
     parser.add_argument("--splice_pretrained", default="laion2b_s34b_b79k")
     parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
-    parser.add_argument("--splice_vocab", default="laion")
-    parser.add_argument("--splice_vocab_size", type=int, default=10000)
+    parser.add_argument("--splice_vocab", default=DEFAULT_VOCABULARY)
+    parser.add_argument("--splice_vocab_size", type=int, default=DEFAULT_VOCABULARY_SIZE)
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
     parser.add_argument("--splice_score_reduction", default="mean", choices=["mean", "max"])
     parser.add_argument(

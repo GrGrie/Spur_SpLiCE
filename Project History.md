@@ -543,3 +543,113 @@ with the new default must not be compared as identical to the old pretrained
 ResNet-50 discovery without recording the model configuration. This affects
 preparation infrastructure and the CoBalT concept-check track; it does not alter
 the CRP/CQT scientific claims or the historical reporting snapshots.
+
+### 2026-09-03 — Manuscript aligned with the CoBalT-balanced CRP protocol
+
+**Track:** CRP reporting only; current manuscript snapshot.
+
+**State before:** `Spur_SpLiCE.tex` presented the earlier frozen-audit architecture
+with an auxiliary visual-geometry branch, older graph-density settings and CoBalT
+only as related work. Its reported seed-0 pilots predated the complete current
+pipeline.
+
+**Change:** the architectural and method passages now present label-free CoBalT
+discovery as the upstream balancing stage. They describe spatial concept
+memberships, assignment-confidence weighting, weighted SpLiCE frequency and
+coactivation, residual SpLiCE pair agreement, deterministic cross-fold edge
+persistence, three outgoing edges, absolute indegree ten and the existing shared
+relational trainer. The manuscript uses the public name CRP throughout and presents
+this configuration as the sole method. Pilot results are explicitly scoped to the
+relational trainer.
+
+**Reason:** align the paper's method narrative with the active CoBalT-balanced CRP
+research track and prevent earlier architectural details from being attributed to
+the current method.
+
+**Consequences:** the mathematical graph description and default-parameter table
+now match the active protocol. Existing pilot values remain historical
+mechanism-finding evidence and provide no end-to-end evaluation of the full
+pipeline. Fresh frozen audits, matched controls and paired SSL seeds remain
+required for robustness claims. No implementation, loss or experiment artifact was
+changed.
+
+### 2026-09-03 — Semantic-family CRP audit variants
+
+**Track:** CRP frozen-audit experiment protocol; current development only.
+
+Before this change, the Open Images CRP grouping sweep required positive
+coactivation for every non-lexical grouping edge and capped selected groups in
+nearly all lower-threshold variants. The observed Waterbirds audit consequently
+contained mostly two-word near-synonym groups for separate bird species, allowing
+repeated bird semantics to occupy the capped selection.
+
+Three semantic-family variants were appended with text thresholds 0.75, 0.70, and
+0.65, zero coactivation threshold, minimum group size one, and no selected-group
+cap. Since SpLiCE codes are non-negative, zero coactivation uses the existing
+grouping implementation as a semantic-only connected-component graph. Component
+size remains data-dependent with no upper bound. All prior coactivation-gated
+variants remain available as matched controls.
+
+The purpose is to let mutually exclusive but semantically related names form broad
+families and thereby give background families an opportunity to enter the same
+label-free audit, without dataset-specific nuisance words or annotations. The sweep
+now has fifteen tasks. Semantic components can percolate through transitive links,
+so group contents, basis ranks, coverage, null margins, and graph density must be
+audited before SSL. Background discovery is not guaranteed, and no training result,
+method claim, CQT behavior, shared-trainer behavior, or historical reporting
+snapshot changes until new audits and controls are completed.
+
+### 2026-09-03 — Open Images V7 as the repository-wide vocabulary default
+
+**Track:** shared SpLiCE cache/discovery infrastructure; CRP, CQT, and legacy
+SpLiCE baselines when no explicit vocabulary override is supplied.
+
+Before this change, the dedicated Open Images cache launcher explicitly selected
+the full Open Images V7 vocabulary, while generic Python entry points, legacy helper
+functions, the shared cluster configuration, and the environment check still
+defaulted to a 10,000-entry LAION vocabulary. Consequently, two otherwise similar
+commands could silently construct incompatible concept dictionaries.
+
+Python defaults are now centralized on `openimages_v7` with `vocab_size=-1`, and
+the same vocabulary/size pair is used by every generic CLI, helper fallback, shared
+cluster configuration, and environment check. LAION support is retained for
+explicit historical controls and ablations. The OpenCLIP pretrained checkpoint is
+unchanged because it is the encoder configuration rather than the concept
+vocabulary.
+
+Commands without vocabulary flags now create Open Images-based caches and concept
+artifacts. Historical LAION artifacts remain valid only with their recorded exact
+configuration and cannot be mixed with the new defaults. Graphs must be rebuilt
+after a dictionary change. This updates future cache/discovery behavior but changes
+no shared SSL loss, existing result, supported robustness claim, or historical
+reporting snapshot.
+
+### 2026-09-03 — Comparable semantic audits and matched SSL graph screen
+
+**Track:** CRP frozen-audit and experiment protocol; shared training launcher and
+SimCLR baseline plumbing.
+
+Before this change, the general grouping array inherited its seed from the Slurm
+task index, coupling each grouping setting to a different null-test seed. The three
+semantic-family settings also required submitting the complete fifteen-task array,
+and no small launcher compared promising CRPv3 graphs with a true matched SimCLR
+control.
+
+The grouping sweep now fixes seed zero. A dedicated three-task preparation array
+runs only the CoBalT/no-DINO semantic-family settings with explicit Open Images,
+residual-gate, cross-fold, and fixed-density values. A separate W&B-enabled
+100-epoch SSL array runs pure SimCLR and two graphs selected from label-free frozen
+audit evidence: `g3_t065_c015_k8` as the variable-group, higher-null-margin
+candidate and `g2_t070_c020_k12` as the denser coverage comparator. Both CRP tasks
+use relational weight 2.0, temperature 0.25, graph positives off, warmup, and no
+late decay. The shared training launcher accepts `MODE=none` so the SimCLR task
+loads neither a graph nor the graph-aware sampler.
+
+This separates configuration effects from null-test randomness and permits an
+inexpensive matched mechanism screen while the new semantic audits run. Existing
+nonzero-seed artifacts remain useful diagnostics but are not exact controlled
+variant comparisons. The shortened runs cannot be compared directly with prior
+500-epoch results and do not establish robustness; a winner must still pass loss
+and supported-anchor checks before full paired seeds and required controls. Graph
+construction, the relational loss, CQT, and historical reporting snapshots are
+unchanged.

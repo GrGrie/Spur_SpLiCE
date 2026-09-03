@@ -142,8 +142,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--splice_model", default="open_clip:ViT-B-32")
     parser.add_argument("--splice_pretrained", default="laion2b_s34b_b79k")
-    parser.add_argument("--splice_vocab", default="laion")
-    parser.add_argument("--splice_vocab_size", type=int, default=10000)
+    parser.add_argument("--splice_vocab", default=splice.DEFAULT_VOCABULARY)
+    parser.add_argument("--splice_vocab_size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
     parser.add_argument("--splice_score_cache_dir", default="outputs/splice_score_cache")
     parser.add_argument("--min_mean_weight", type=float, default=0.0)
@@ -164,7 +164,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const=True,
         default=False,
-        help="Automatically collapse simple lexical variants such as forest/forests.",
+        help="Automatically collapse simple lexical variants such as signal/signals.",
     )
     return parser.parse_args()
 

@@ -11,69 +11,79 @@
 \maketitle
 
 \begin{abstract}
-Self-supervised representations can encode accidental correlations even without
-labels. We introduce \emph{SpLiCE-CRP}, or Concept-Projected Relational
+Self-supervised representations can encode accidental correlations present in
+unlabeled images. We introduce \emph{SpLiCE-CRP}, or Concept-Projected Relational
 Pretraining, a label-free method that converts semantic concept interventions into
 relational supervision for an independent SSL encoder. Frozen OpenCLIP and SpLiCE
-features propose language-readable concept groups. CRP removes each group subspace
-from the full centered CLIP embedding and measures which image relations become
-stronger. Reciprocal projected neighbours and frozen DINO features guard semantic
-compatibility; matched random subspaces and shuffled concept activations calibrate
-selection. Null-calibrated evidence becomes a sparse, degree-controlled teacher
-graph. A ResNet is trained from images with SimCLR and confidence-weighted
-relational distillation on backbone similarities; graph edges can additionally
-supply weighted contrastive positives. Target, spurious-attribute, and group
-annotations are excluded from discovery, graph construction, and SSL training.
-Initial seed-0 Waterbirds results improve average and worst-group validation
-accuracy, while multi-seed validation and non-concept controls remain necessary.
+provide language-readable concept directions and sparse image codes. A label-free
+CoBalT discovery module finds recurring spatial concepts and produces
+confidence-calibrated sample weights for balanced SpLiCE group formation. CRP
+removes each group subspace from the full centered CLIP embedding and measures
+which image relations become stronger. Residual SpLiCE agreement, reciprocal
+projected neighbours and deterministic cross-fold persistence validate these
+relations. Matched random subspaces and shuffled concept activations calibrate
+selection. The resulting evidence forms a sparse fixed-density teacher graph. A
+ResNet is trained from images with SimCLR and confidence-weighted relational
+distillation on backbone similarities. Graph edges also supply weighted
+contrastive positives. Target, spurious-attribute and group annotations are
+reserved for downstream evaluation. Existing Waterbirds runs serve as single-seed
+relational-mechanism pilots. Fresh end-to-end evaluation of the full pipeline and
+multi-seed controls remain necessary.
 \end{abstract}
 
 \section{Introduction}
-Removing labels from pretraining does not remove correlations from images. In
+Correlations remain present in images used for label-free pretraining. In
 Waterbirds, bird type is correlated with background, so a contrastive encoder can
-organize its representation around water and land context without observing either
-annotation. A label-free robust method therefore needs alternative evidence about
-which variations should exert less influence on representation geometry.
+organize its representation around water and land context using image content
+alone. A label-free robust method therefore needs alternative evidence about which
+variations should exert less influence on representation geometry.
 
 SpLiCE expresses a frozen CLIP embedding with sparse non-negative activations over
 a language-aligned dictionary \citep{bhalla2024splice}. This creates an intervention
-interface: a word group defines a semantic subspace, and projecting it out asks
-which image relations become visible when that factor has less influence. Such a
-relation is useful only if it survives independent checks and recurs systematically.
+interface: a word group defines a semantic subspace and projecting it out asks
+which image relations become visible when that factor has less influence. CoBalT
+adds an object-centric view of the unlabeled training distribution. Its discovered
+memberships balance the statistics used to form SpLiCE groups. A relation enters
+the teacher graph when it is reciprocal, preserves the remaining readable concepts
+and recurs across deterministic data folds.
 
-SpLiCE-CRP has two stages. A frozen audit constructs a sparse teacher graph from
-concept interventions, independent visual agreement, and label-free null controls.
-A trainable ResNet then receives this graph through a graph-aware sampler,
-confidence-weighted relational KL, and optionally weighted positives in SimCLR. At
-inference only the ResNet backbone remains; OpenCLIP, SpLiCE, DINO, and the graph
-are no longer required.
+SpLiCE-CRP has three stages. First, label-free CoBalT discovery produces fixed
+spatial concept memberships and assignment confidence. Second, a frozen CRP audit
+constructs a sparse teacher graph from balanced SpLiCE groups, full-space concept
+interventions, residual concept agreement, cross-fold persistence and label-free
+null controls. Third, a trainable ResNet receives this graph through a graph-aware
+sampler, confidence-weighted relational KL and weighted positives in SimCLR. At
+inference the ResNet backbone is the sole required component.
 
 Our contributions are:
 \begin{itemize}
  \item a language-readable, label-free procedure that proposes semantic factor
  subspaces and tests them by full-space intervention;
+ \item an object-centric balancing stage that uses CoBalT memberships and spatial
+ assignment confidence to calibrate SpLiCE group statistics;
  \item a sparse teacher graph whose edge and anchor confidence preserve the
- absolute strength of null-calibrated frozen evidence;
+ absolute strength of null-calibrated and cross-fold-validated frozen evidence;
  \item a combined SSL objective that transfers graph geometry into the backbone
- while preserving SimCLR and optionally resolves graph-neighbour/negative conflict;
+ while preserving SimCLR and resolving graph-neighbour/negative conflict;
  \item a Waterbirds pilot with diagnostics that separate graph coverage, absolute
- confidence, unweighted KL, and effective weighted KL.
+ confidence, unweighted KL and effective weighted KL.
 \end{itemize}
 
 \section{Related Work}
 \paragraph{Language-aligned concepts.}
 TCAV introduced concept directions \citep{kim2018tcav}, ACE demonstrated automatic
-concept discovery \citep{ghorbani2019ace}, and Concept Bottleneck Models made
+concept discovery \citep{ghorbani2019ace} and Concept Bottleneck Models made
 concepts explicit in prediction \citep{koh2020concept}. SpLiCE directly underlies
 CRP because its sparse coordinates and text dictionary inhabit the CLIP space in
 which we intervene \citep{bhalla2024splice}.
 
 \paragraph{Spurious-correlation mitigation.}
 Group DRO uses group annotations \citep{sagawa2020groupdro}; EIIL and Just Train
-Twice reduce annotation requirements but retain target-dependent signals
-\citep{creager2021eiil,liu2021jtt}. CoBalT uses object-centric concepts in supervised
-balancing \citep{arefin2024cobalt}, while DIAL removes sparse directions inside a
-vision-language model \citep{yalavarthi2026dial}. CRP instead uses frozen concept
+Twice retain target-dependent signals \citep{creager2021eiil,liu2021jtt}. CoBalT
+learns object-centric concepts and uses them for supervised balancing
+\citep{arefin2024cobalt}. We use its label-free discovery stage as a fixed upstream
+source of confidence-calibrated balance weights. DIAL removes sparse directions
+inside a vision-language model \citep{yalavarthi2026dial}. CRP uses frozen concept
 removal to create relations for a separately trained image encoder.
 
 \paragraph{Relational self-supervision.}
@@ -88,34 +98,51 @@ same-setting baselines \citep{zhu2023lassl,ghanooni2025spectral}.
 Let $\mathcal{D}=\{(x_i,y_i,a_i)\}_{i=1}^{N}$, where $y_i$ is the downstream
 target and $a_i$ a spurious attribute; evaluation groups are $g_i=(y_i,a_i)$.
 During graph discovery and SSL training, CRP receives only images $x_i$ and stable
-sample identifiers. Labels, attributes, and groups are reserved for downstream
+sample identifiers. Labels, attributes and groups are reserved for downstream
 linear probing and explicitly post-hoc diagnostics.
 
 After SSL training, a linear classifier is fitted on the frozen backbone. We report
-average accuracy and worst-group accuracy (WGA). CRP does not assume that nuisance
-factors are universally identifiable from unlabeled data. Its testable inductive
-bias is narrower: removing a useful nuisance candidate should repeatedly reveal
-relations supported by a separate visual geometry without creating excessive hubs.
+average accuracy and worst-group accuracy (WGA). CRP uses a focused testable
+inductive bias: projection of a relevant spurious factor should repeatedly reveal
+relations that preserve the remaining readable concepts and avoid excessive hubs.
 
 \section{SpLiCE-CRP}
 \label{sec:method}
-\subsection{Frozen cache and semantic groups}
+\subsection{Frozen cache and CoBalT-balanced semantic groups}
 Frozen OpenCLIP produces normalized image embeddings $z_i$. With the SpLiCE image
 mean $\mu$, CRP forms full centered embeddings
 \begin{equation}u_i=\operatorname{norm}(z_i-\mu).\end{equation}
 SpLiCE supplies non-negative sparse codes $c_i\in\mathbb{R}^{K}_{\geq0}$ and a
 normalized text dictionary $D=[d_1^\top;\ldots;d_K^\top]$ such that
-$u_i\approx D^\top c_i$. Frozen DINO independently produces normalized visual
-embeddings $v_i$. Cache rows are aligned by sample identifier, and the cache
+$u_i\approx D^\top c_i$. Cache rows are aligned by sample identifier and the cache
 validator rejects hidden annotation fields.
 
-CRP filters concepts by unlabeled activation frequency. It joins trivial lexical
-variants and joins other concepts only when both dictionary-direction similarity
-and activation-profile co-occurrence pass fixed thresholds. For group $G$, SVD
-produces a stable orthonormal basis
+CoBalT is trained first on two augmented views of each unlabeled image. A spatial
+encoder maps each view to patch features. Learned slots compete for patches and
+pool them into object-centric vectors. Cross-view attention distillation, slot
+contrastive learning and vector quantization make these vectors stable across
+crops. A momentum teacher assigns each active slot to a learned concept code. For
+sample $i$, let $m_{ir}\in\{0,1\}$ indicate membership in discovered concept $r$.
+The assignment confidence $\rho_i\in[0,1]$ is the spatial mean of the winning-slot
+probability. CRP converts fixed memberships into mean-one sample weights
+\begin{equation}
+ n_r=\sum_i\rho_i m_{ir},\qquad
+ \bar w_i=\rho_i\sum_r\frac{m_{ir}}{n_r},\qquad
+ w_i=\frac{\bar w_i}{N^{-1}\sum_{\ell}\bar w_{\ell}}.
+ \label{eq:cobalt-weights}
+\end{equation}
+Rare discovered concepts receive greater mass and uncertain assignments receive
+less mass.
+
+CRP filters SpLiCE concepts using the weighted unlabeled frequency
+$f_k=N^{-1}\sum_iw_i\mathbf{1}[c_{ik}>0]$. Coactivation similarity is computed from
+the weighted profiles $\sqrt{w_i}c_{ik}$. CRP joins trivial lexical variants and
+joins other concepts when dictionary-direction similarity and weighted
+coactivation pass fixed thresholds. These weights affect group proposal only. For
+group $G$, SVD produces a stable orthonormal basis
 \begin{equation}Q_G=\operatorname{orth}(D_G^\top).\end{equation}
 Near-collinear directions are dropped, so the intervention depends on the subspace
-rather than the number of synonymous words.
+geometry and remains invariant to repeated synonymous directions.
 
 \subsection{Full-space concept intervention}
 The canonical intervention removes the group span from the \emph{full} centered
@@ -124,31 +151,36 @@ CLIP vector:
  u_i^{-G}=\operatorname{norm}\!\left[u_i-(u_iQ_G)Q_G^\top\right].
  \label{eq:projection}
 \end{equation}
-The sparse code proposes the interpretable subspace, but subtraction is not limited
-to its reconstruction. Components aligned with $G$ are therefore removed even if
-they remain in the SpLiCE residual.
+The operation acts on the full centered embedding, so every component aligned with
+$G$ is removed.
 
 CRP finds top-$k_P$ projected neighbours. For candidate $j$, intervention gain is
 \begin{equation}
  \Delta_{ij}^{G}=\cos(u_i^{-G},u_j^{-G})-\cos(u_i,u_j).
  \label{eq:gain}
 \end{equation}
-A pair is eligible only when gain exceeds a minimum, summed group activations
-$A_i^G=\sum_{k\in G}c_{ik}$ differ by at least a group-specific unlabeled quantile,
-the projected relation is reciprocal, and $j$ lies in the raw-DINO neighbour set
-of $i$. DINO guards semantic compatibility; it does not define the intervention.
+A pair is eligible when gain exceeds a minimum, summed group activations
+$A_i^G=\sum_{k\in G}c_{ik}$ differ by at least a group-specific unlabeled quantile
+and the projected relation is reciprocal. CRP also compares the remaining SpLiCE
+codes after setting coordinates in $G$ to zero:
+\begin{equation}
+ R_{ij}^{-G}=\cos(c_i^{-G},c_j^{-G}).
+ \label{eq:residual-agreement}
+\end{equation}
+Eligible pairs satisfy $R_{ij}^{-G}\geq\tau_R$. This gate asks whether the pair
+still shares readable content outside the projected group.
 
 Accepted-edge evidence is
 \begin{equation}
  e_{ij}^{G}=\Delta_{ij}^{G}
- \left(\tfrac12+\tfrac12\max(0,\cos(v_i,v_j))\right).
+ \left(\tfrac12+\tfrac12R_{ij}^{-G}\right).
  \label{eq:edge-confidence}
 \end{equation}
-For each group, CRP combines median accepted gain, anchor coverage, mean DINO
-agreement, non-negative activation-difference/gain correlation, and hubness:
+For each group, CRP combines median accepted gain, anchor coverage, mean residual
+agreement, non-negative activation-difference/gain correlation and hubness:
 \begin{equation}
  S(G)=\frac{\operatorname{medianGain}(G)\operatorname{coverage}(G)
- \operatorname{agreement}(G)\operatorname{alignment}(G)}
+ \operatorname{residualAgreement}(G)\operatorname{alignment}(G)}
  {1+\operatorname{Gini}(G)+\operatorname{maxIndegree}(G)/N}.
  \label{eq:group-score}
 \end{equation}
@@ -156,17 +188,24 @@ agreement, non-negative activation-difference/gain correlation, and hubness:
 \subsection{Null calibration and teacher graph}
 CRP compares $S(G)$ with equal-rank random-subspace scores and scores obtained after
 shuffling group activations. Let $T_G$ be a fixed quantile of their combined null.
-A group is retained only if it passes minimum coverage and $S(G)>T_G$. Its pair
-evidence is scaled by relative null margin:
+A group is retained when it passes minimum coverage and $S(G)>T_G$.
+
+CRP then partitions the samples into deterministic folds. Within each fold it
+recomputes projected neighbourhoods and accepted relations. The fold persistence
+is the fraction of full-data accepted pairs among fold members that reappears after
+this recomputation. Let $\pi_G$ denote mean persistence across folds. A retained
+group satisfies $\pi_G\geq\tau_F$. Its pair evidence is scaled by relative null
+margin and fold persistence:
 \begin{equation}
  r_G=\min\!\left(1,\frac{\max(0,S(G)-T_G)}{\max(|S(G)|,\epsilon)}\right),
- \qquad \tilde e_{ij}^{G}=r_Ge_{ij}^{G}.
+ \qquad \tilde e_{ij}^{G}=r_G\pi_Ge_{ij}^{G}.
  \label{eq:null-margin}
 \end{equation}
 An optional post-gate cap keeps groups with largest label-free null excess.
 
 For duplicate directed pairs, CRP keeps the strongest group evidence. It retains
-at most $k_G$ outgoing edges per anchor and applies a hard destination-indegree cap.
+the three strongest outgoing edges per anchor and applies an absolute destination
+indegree cap of ten.
 Remaining confidences are row-normalized:
 \begin{equation}
  p_T(j\mid i)=\frac{\tilde e_{ij}}
@@ -178,13 +217,13 @@ Relative teacher preference is separated from absolute anchor confidence,
  q_i=\operatorname{clip}_{[0,1]}\max_j\tilde e_{ij}.
  \label{eq:absolute-confidence}
 \end{equation}
-Thus row normalization cannot make a uniformly weak graph as influential as a
-strong graph. If no group passes, training explicitly reduces to matched SimCLR.
+This keeps weak evidence weak after row normalization. If no group passes, training
+reduces to matched SimCLR.
 
 \subsection{Graph-aware relational SSL}
-A graph-aware batch sampler visits each image as an anchor once per epoch and, when
+A graph-aware batch sampler visits each image as an anchor once per epoch and when
 possible, includes one neighbour sampled from $p_T(\cdot\mid i)$. It increases the
-number of supported minibatch anchors without replacing the ordinary SSL stream.
+number of supported minibatch anchors while preserving the ordinary SSL stream.
 
 For backbone features $h_i^{(1)},h_i^{(2)}$ of two views, CRP uses
 \begin{equation}
@@ -207,19 +246,18 @@ teacher to neighbours present in $B$ gives $p_T^B$. Supported anchors contribute
 \end{equation}
 The KL acts directly on backbone geometry; SimCLR uses its projection head.
 
-Optionally, graph-linked samples become weighted additional NT-Xent positives with
+Graph-linked samples become weighted additional NT-Xent positives with
 symmetric weights derived from $q_i p_T(j\mid i)$. This avoids treating a teacher
-neighbour only as a SimCLR negative while KL attracts it. Denote the resulting loss
-by $\mathcal{L}_{\mathrm{SimCLR}}^{+G}$; disabling the option recovers standard
-SimCLR. The complete implemented objective is
+neighbour as a SimCLR negative while KL attracts it. Denote the resulting loss by
+$\mathcal{L}_{\mathrm{SimCLR}}^{+G}$. The complete implemented objective is
 \begin{equation}
  \mathcal{L}(t)=\alpha\mathcal{L}_{\mathrm{SimCLR}}^{+G}
  +\lambda(t)\mathcal{L}_{\mathrm{rel}}.
  \label{eq:total}
 \end{equation}
-After a pure-SimCLR start, $\lambda(t)$ ramps linearly to its configured value. An
-optional late linear decay returns it to zero. Graph positives follow the same
-active interval. Setting $\alpha=0$ defines a diagnostic KL-only ablation.
+After a pure-SimCLR start, $\lambda(t)$ ramps linearly to its configured value. A
+late linear decay returns it to zero. Graph positives follow the same active
+interval. Setting $\alpha=0$ defines a diagnostic KL-only ablation.
 
 \section{Experimental Setup}
 Waterbirds contains 4,795 training images and four bird/background groups
@@ -229,22 +267,22 @@ validation data. Reported Avg. and WGA are means over the final ten probes. A
 separate background probe measures accessibility of the spurious attribute.
 
 The student is ResNet-18-large with a 128-dimensional head, trained for 500 epochs
-with batch 256, SGD learning rate 0.01, momentum 0.9, weight decay $10^{-4}$, and
-SimCLR temperature 0.05. Learning rate drops by 0.1 at epochs 350, 400, and 450.
-Resolved configuration, runtime versions, SSL diagnostics, and evaluation metrics
+with batch 256, SGD learning rate 0.01, momentum 0.9, weight decay $10^{-4}$ and
+SimCLR temperature 0.05. Learning rate drops by 0.1 at epochs 350, 400 and 450.
+Resolved configuration, runtime versions, SSL diagnostics and evaluation metrics
 are retained in W\&B.
 
-The newest bounded seed-0 graph uses minimum group size 2, text threshold 0.70,
-coactivation threshold 0.20, and at most 12 groups after the null gate. It uses
-activation-difference quantile 0.85, minimum gain $5\times10^{-4}$, 32 trials per
-null family, top-20 projected neighbours, top-50 DINO support, and at most five
-outgoing edges. The graph has 6,268 edges, 3,060 supported anchors (63.82\%),
-effective donor count 2,109.75, and maximum indegree five.
+The CoBalT discovery stage uses a from-scratch large-input ResNet-18 for 50 epochs,
+four spatial slots, an eight-entry codebook and 32-dimensional slot vectors. The
+main CRP audit uses CoBalT confidence in its balance weights, top-20 projected
+neighbours, residual SpLiCE threshold 0.25, two deterministic folds, minimum fold
+persistence 0.5, three outgoing graph edges and maximum indegree ten. It uses 32
+trials for each null family and null quantile 0.95.
 
 The completed loss-isolation runs disable graph positives and late decay, activate
-KL after epoch 10, ramp for ten epochs, and use $\tau_S=0.25$. They differ only in
-$\lambda\in\{1,2\}$. Two $\lambda=1$ temperature checks are still running and are
-not treated as final evidence.
+KL after epoch 10, ramp for ten epochs and use $\tau_S=0.25$. They differ only in
+$\lambda\in\{1,2\}$. These development pilots quantify the relational trainer and
+fresh runs will evaluate the complete pipeline described above.
 
 \section{Initial Results}
 \begin{table}[t]
@@ -269,39 +307,41 @@ and WGA by 9.88 points. Training remains numerically stable.
 
 Diagnostics explain the effective scale. At the end of both runs, roughly 44\% of
 minibatch anchors have teacher support and mean supported-anchor confidence is
-about 0.00232. Unweighted KL is about 5.2, but confidence reduces it to about 0.012
-before the scheduled multiplier. Thus $\lambda=2$ contributes about 0.024 to the
-final loss: active but smaller than SimCLR. The best run's background probe remains
-high at about 91.9\%. CRP has therefore not demonstrated removal of background
-information; the supported statement is that it changes representation geometry
-and improves group balance in this seed.
+about 0.00232. Confidence weighting reduces the unweighted KL of about 5.2 to about
+0.012 before the scheduled multiplier. Thus $\lambda=2$ contributes about 0.024 to
+the final loss. The best run's background probe remains high at about 91.9\%. The
+supported statement is that CRP changes representation geometry and improves group
+balance in this seed.
 
 \section{Evidence Boundary and Limitations}
-These results are mechanism-finding pilots. All runs use seed 0, and graph/loss
-settings were developed with validation feedback. Paired seeds are required before
-claiming stability. Improvement over SimCLR does not isolate language-aligned
-concept intervention. Required controls include raw-CLIP and DINO-only relational
-distillation, random-subspace projection, shuffled SpLiCE codes, and a strong fully
-self-supervised baseline including spectral regularization.
+These results are mechanism-finding pilots. All runs use seed 0 and graph/loss
+settings were developed with validation feedback. They measure the relational
+trainer. The complete CoBalT-balanced pipeline awaits fresh evaluation. Paired
+seeds are required before claiming stability. Required controls include raw-CLIP relational
+distillation, random-subspace projection, shuffled SpLiCE codes, matched graph
+density and a strong fully self-supervised baseline including spectral
+regularization.
 
-Core and nuisance factors are not universally identifiable from task-agnostic
-unlabeled data. CLIP and DINO may share shortcuts, and concept subspaces can mix
-target and context information. Full projection may therefore remove both. Sparse
-minority groups can limit cross-context donors; dense graphs can create false
-relations or hubs. Finally, absolute confidence makes numerical loss weights
-non-comparable across graph calibrations. Graph coverage, anchor confidence,
-supported-batch fraction, unweighted KL, weighted KL, and scheduled weight must be
-reported together.
+Core and context-related factors can remain entangled in task-agnostic unlabeled
+data. SpLiCE concept subspaces can mix target and context information. Full
+projection may therefore remove both. CoBalT memberships can emphasize recurring
+objects that are unrelated to the desired robustness property. Residual SpLiCE
+agreement shares the same readable concept system used to propose interventions.
+Sparse groups can limit cross-context donors and dense candidate relations can
+create false links or hubs. Finally, absolute confidence makes numerical loss
+weights non-comparable across graph calibrations. Graph coverage, anchor
+confidence, supported-batch fraction, unweighted KL, weighted KL and scheduled
+weight must be reported together.
 
 \section{Conclusion}
-SpLiCE-CRP uses language-aligned subspace removal as a frozen experiment and
-transfers relations that survive reciprocal-neighbour, DINO, null, and hubness
-checks. The implementation separates relative teacher weights from absolute
-confidence, applies graph-aware backbone KL, and can integrate graph neighbours as
-weighted SimCLR positives under an explicit schedule. The strongest completed
-bounded-graph pilot reaches 54.15\% Avg. and 50.54\% WGA on Waterbirds. Paired seeds
-and the full non-concept control suite are required to establish stability and the
-causal value of the concept mechanism.
+SpLiCE-CRP combines object-centric CoBalT balancing with language-aligned subspace
+removal and transfers relations that survive residual-concept, reciprocal,
+cross-fold, null and hubness checks. The fixed-density graph separates relative
+teacher weights from absolute evidence confidence. A graph-aware sampler,
+backbone-level KL and weighted SimCLR positives transfer its geometry into an
+independent ResNet. The strongest completed relational pilot reaches 54.15\% Avg.
+and 50.54\% WGA on Waterbirds. Fresh end-to-end runs, paired seeds and the full
+control suite are required to evaluate the complete pipeline.
 
 \clearpage
 \bibliographystyle{iclr2026_conference}
@@ -337,16 +377,20 @@ Reported metric & Mean of final ten validation probes \\
 \begin{tabularx}{\linewidth}{lX}
 \toprule Component & Setting \\
 \midrule
-Frozen features & OpenCLIP ViT-B/32, SpLiCE LAION vocabulary, DINOv3 ViT-S/16 \\
+Frozen features & OpenCLIP ViT-B/32, SpLiCE LAION vocabulary, fixed CoBalT memberships and confidence \\
+CoBalT discovery & ResNet-18-large; 50 epochs; 4 slots; 8 codes; slot dimension 32 \\
+CoBalT balance & Confidence-weighted inverse discovered-concept frequency; mean-one sample weights \\
 Concept frequency & $[0.01,0.95]$ \\
 Grouping & Text 0.80; coactivation 0.35; minimum size 1 \\
-Neighbours & 20 projected; 50 DINO \\
+Neighbours & 20 projected; reciprocal relation required \\
+Residual agreement & Remaining SpLiCE cosine at least 0.25 \\
 Activation contrast & Quantile 0.85 \\
 Minimum gain & $5\times10^{-4}$ \\
 Nulls & 32 random subspaces and 32 shuffles; quantile 0.95 \\
-Graph & Five outgoing edges; indegree factor 3 \\
+Cross-fold check & 2 deterministic folds; mean edge persistence at least 0.5 \\
+Graph & 3 outgoing edges; absolute maximum indegree 10 \\
 Numerics & Orthogonal tolerance $10^{-6}$; chunks of 512 \\
-Selected-group cap & Disabled by default; post-gate when enabled \\
+Selected-group cap & No default cap; post-gate when configured \\
 \bottomrule
 \end{tabularx}
 \end{table}

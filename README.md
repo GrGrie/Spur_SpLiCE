@@ -53,8 +53,9 @@ with `--data_folder` or edit the relevant Slurm `.conf` file.
 
 ### Open Images V7 vocabulary
 
-The SpLiCE loader supports `openimages_v7`. It downloads only the official class
-description CSV, writes the cleaned display names to `data/vocab/openimages_v7.txt`
+The default SpLiCE vocabulary is the complete `openimages_v7` vocabulary
+(`splice_vocab_size=-1`). The loader downloads only the official class description
+CSV and writes the cleaned display names to `data/vocab/openimages_v7.txt`
 or the selected cache root, and removes the temporary CSV. No Open Images pixels
 are downloaded. A local repository copy can be created with:
 
@@ -62,10 +63,11 @@ are downloaded. A local repository copy can be created with:
 python scripts/download_openimages_vocabulary.py --download-root ./data
 ```
 
-Use `--splice_vocab openimages_v7 --splice_vocab_size -1` when building a new
-SpLiCE/CRP cache. Existing LAION caches and graphs must not be reused for this
-dictionary; rebuild them with a distinct experiment variant. For a graph-only
-Open Images CRP sweep, first build the cache once, then submit the 12-configuration
+No vocabulary flags are needed when building a new SpLiCE/CRP cache. Pass an
+explicit vocabulary and size only for a deliberate ablation. Existing LAION caches
+and graphs must not be reused with the default dictionary; rebuild them with a
+distinct experiment variant. For a graph-only
+Open Images CRP sweep, first build the cache once, then submit the 15-configuration
 array. The cache step is intentionally separate so array jobs do not rebuild the
 same frozen features concurrently:
 
@@ -79,10 +81,37 @@ sbatch scripts/cache_openimages_crp.sbatch
 sbatch scripts/prepare_crp_group_sweep.sbatch
 ```
 
-The sweep keeps the original six audit settings and adds six wider settings
-covering group sizes 1--4, lower thresholds, and caps of 8--16 selected groups.
+The sweep keeps the original twelve audit settings and adds three semantic-family
+settings. In those three settings, `coactivation_threshold=0` intentionally removes
+the coactivation gate (SpLiCE codes are non-negative), `min_group_size=1` permits
+both singleton and variable-size components, and `max_selected_groups=0` disables
+the post-audit cap. They test whether mutually exclusive names such as different
+bird species collapse into one semantic factor while leaving room for background
+families; every factor must still pass the label-free null and cross-fold gates.
 The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
 Each task writes its own graph directory and an English-only `graph_audit.html`.
+The three CoBalT/no-DINO semantic-family variants also have a dedicated seed-0
+launcher, so they can be prepared without rerunning the twelve conventional
+grouping variants:
+
+```bash
+sbatch scripts/prepare_crp_semantic_family_sweep.sbatch
+```
+
+A separate three-task, 100-epoch screening array runs a matched pure SimCLR
+control and the two current label-free CRP shortlist graphs
+`g3_t065_c015_k8` and `g2_t070_c020_k12`. It expects those graph artifacts to
+already exist and deliberately disables automatic rebuilding:
+
+```bash
+sbatch scripts/train_ssl_graph_shortlist.sbatch
+```
+
+This array is a mechanism screen, not a final comparison. Promote a candidate to
+the full epoch and multi-seed protocol only after inspecting its W&B loss scale,
+supported-anchor fraction, average accuracy, WGA, and per-group accuracy against
+the matched SimCLR task.
+
 For a single CRP training run with the same dictionary, use the regular Slurm
 entry point:
 

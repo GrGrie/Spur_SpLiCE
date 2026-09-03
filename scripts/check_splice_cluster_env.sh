@@ -116,9 +116,9 @@ import splice
 
 print("splice module:", splice.__file__)
 print("available models:", splice.available_models())
-vocab = splice.get_vocabulary("laion", -1)
-print("laion vocab length:", len(vocab))
-print("laion vocab tail sample:", vocab[-5:])
+vocab = splice.get_vocabulary("openimages_v7", -1)
+print("openimages_v7 vocab length:", len(vocab))
+print("openimages_v7 vocab sample:", vocab[:5])
 PY
 
 echo

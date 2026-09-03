@@ -30,3 +30,13 @@
 - Pass the W&B project, entity, run name, group, tags, resolved configuration, runtime versions, per-epoch SSL metrics, and evaluation metrics to the training entry point.
 - Treat W&B as the durable record of a training experiment: `.pt`/`.pth` checkpoints may be processed and deleted after training, so do not make them the only source of experiment results.
 - Disabling W&B is acceptable only for explicit smoke tests or local debugging, not for real training runs.
+
+## Cluster launch commands
+
+- Never give a cluster launch command that prefixes `sbatch` with temporary
+  environment assignments or other arguments.
+- Every launch instruction must be exactly `sbatch path/to/standalone.sbatch`.
+- All experiment-specific overrides must be made in the referenced `.conf` file
+  before launch; the `.sbatch` file must load that configuration itself.
+- Diagnostic commands such as `squeue`, `sacct`, and `scontrol` may still include
+  their normal command arguments because they are not job submissions.

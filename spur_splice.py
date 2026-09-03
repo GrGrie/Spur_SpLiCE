@@ -37,6 +37,7 @@ from splice.crp_training import (
     save_crp_concept_report,
 )
 from splice.graph_io import graph_fingerprint
+from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 from splice.ssl_regularization import (
     SpliceConceptScorer,
     SpliceConfig,
@@ -553,8 +554,8 @@ def parse_args() -> argparse.Namespace:
         help="Center features/concepts within target classes before correlation regularization.",
     )
     parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
-    parser.add_argument("--splice_vocab", type=str, default="laion")
-    parser.add_argument("--splice_vocab_size", type=int, default=10000)
+    parser.add_argument("--splice_vocab", type=str, default=DEFAULT_VOCABULARY)
+    parser.add_argument("--splice_vocab_size", type=int, default=DEFAULT_VOCABULARY_SIZE)
     parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
     parser.add_argument("--splice_pretrained", type=str, default="laion2b_s34b_b79k")
     parser.add_argument(
@@ -628,7 +629,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const=True,
         default=True,
-        help="Automatically collapse lexical concept variants such as forest/forests.",
+        help="Automatically collapse lexical concept variants such as signal/signals.",
     )
     parser.add_argument(
         "--splice_strong_crop",

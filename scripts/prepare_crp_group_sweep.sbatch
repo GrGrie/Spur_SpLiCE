@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=08:00:00
 #SBATCH --job-name=SpurSpLiCE_CRP_groups
-#SBATCH --array=0-11%2
+#SBATCH --array=0-14%2
 #SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1

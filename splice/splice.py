@@ -24,6 +24,9 @@ SUPPORTED_VOCAB = [
     "openimages_v7",
 ]
 
+DEFAULT_VOCABULARY = "openimages_v7"
+DEFAULT_VOCABULARY_SIZE = -1
+
 OPENIMAGES_V7_CLASS_NAMES_URL = (
     "https://storage.googleapis.com/openimages/v7/oidv7-class-descriptions.csv"
 )
@@ -382,7 +385,7 @@ def decompose_dataset(dataloader, splicemodel=None, device="cpu"):
         A vector of the mean value of sparse weights over the dataset.
     """
     if splicemodel is None:
-        splicemodel = load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=-1, l1_penalty=0.15, return_weights=True,device=device)
+        splicemodel = load("open_clip:ViT-B-32", vocabulary=DEFAULT_VOCABULARY, vocabulary_size=DEFAULT_VOCABULARY_SIZE, l1_penalty=0.15, return_weights=True,device=device)
     splicemodel.eval()
 
     splicemodel.return_weights = True
@@ -435,7 +438,7 @@ def decompose_classes(dataloader, target_label, splicemodel=None, device="cpu"):
         A dictionary of elements {label : mean sparse weight vector}
     """
     if splicemodel is None:
-        splicemodel = load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=-1, l1_penalty=0.15, return_weights=True, return_cosine=True, device=device)
+        splicemodel = load("open_clip:ViT-B-32", vocabulary=DEFAULT_VOCABULARY, vocabulary_size=DEFAULT_VOCABULARY_SIZE, l1_penalty=0.15, return_weights=True, return_cosine=True, device=device)
     splicemodel.eval()
 
     class_weights={}
@@ -501,7 +504,7 @@ def decompose_image(image, splicemodel=None, device="cpu"):
         Torch device.
     """
     if splicemodel is None:
-        splicemodel = load("open_clip:ViT-B-32", vocabulary="laion", vocabulary_size=-1, l1_penalty=0.15, return_weights=True, device=device)
+        splicemodel = load("open_clip:ViT-B-32", vocabulary=DEFAULT_VOCABULARY, vocabulary_size=DEFAULT_VOCABULARY_SIZE, l1_penalty=0.15, return_weights=True, device=device)
     splicemodel.eval()
 
     splicemodel.return_weights = True
