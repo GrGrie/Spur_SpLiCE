@@ -120,6 +120,21 @@ the full epoch and multi-seed protocol only after inspecting its W&B loss scale,
 supported-anchor fraction, average accuracy, WGA, and per-group accuracy against
 the matched SimCLR task.
 
+For a one-command Windows/RTX quick screen of SpLiCE-only CRP against matched
+SimCLR, run from a fresh repository clone in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_windows.ps1
+```
+
+The script uses the existing `grgrie-train` Conda environment, checks CUDA,
+downloads and materializes Waterbirds plus the Open Images vocabulary, builds a
+no-DINO/no-CoBalT `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
+one 30-epoch final validation probe per arm, and writes `results.csv`, logs,
+checkpoints, an HTML graph audit, and offline W&B records under
+`outputs/windows_splice_only_ablation`. These defaults are a local mechanism
+screen and are not directly comparable with the 500-epoch protocol.
+
 For a single CRP training run with the same dictionary, use the regular Slurm
 entry point:
 

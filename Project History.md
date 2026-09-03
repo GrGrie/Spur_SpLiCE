@@ -679,3 +679,29 @@ scale, augmentations, and evaluation remain fixed. These 100-epoch runs are
 screening evidence only; full paired seeds and non-concept controls remain required.
 No graph formula, loss, vocabulary, CQT behavior, existing result, or historical
 reporting snapshot changed.
+
+### 2026-09-03 — One-command Windows SpLiCE-only mechanism screen
+
+**Track:** local experiment infrastructure, SpLiCE-only CRP ablation, SimCLR
+baseline, and reporting plumbing.
+
+Before this change, the no-DINO/no-CoBalT graph controls and matched SSL screen were
+available only through cluster-oriented launchers. Running them from a fresh
+Windows clone required manually acquiring Waterbirds, constructing the vocabulary
+and cache, building a graph, and assembling separate training commands.
+
+An idempotent PowerShell entry point now uses the existing `grgrie-train` Conda
+environment, verifies a working CUDA tensor operation, obtains and materializes
+Waterbirds and the Open Images vocabulary, constructs a frozen SpLiCE cache and one
+`g2_t070_c020_k12` teacher graph with DINO and CoBalT disabled, renders the graph
+audit, and trains matched SimCLR and SpLiCE-only CRP students sequentially. The
+default quick budget is 50 SSL epochs and a single 30-epoch final validation probe.
+It preserves logs, final checkpoints, a CSV result table, and offline W&B records.
+The local audit uses 16 null trials to limit runtime.
+
+This provides a reproducible home-GPU mechanism screen but is not directly
+comparable with the canonical 32-null-trial audit or 500-epoch SSL protocol. Exact
+completion time remains dependent on downloads, drivers, and the local environment.
+A promising result must be confirmed under the full paired-seed protocol. The
+graph formula, relational loss, CoBalT, CQT, existing results, and historical
+reporting snapshots are unchanged.

@@ -452,3 +452,30 @@ Project History.md in the same task.
   CQT behavior, or historical result changed.
 - **Track:** CRP frozen-audit protocol, SpLiCE-only baseline, CoBalT ablation, and
   shared SSL experiment protocol. Reporting snapshots are unchanged.
+
+## 19. 2026-09-03 — One-command Windows SpLiCE-only mechanism screen
+
+- **State before:** the SpLiCE-only graph and matched SSL controls had standalone
+  Slurm entry points but no local Windows path. A fresh clone required manual
+  dataset preparation and several separate Python commands, while the standard
+  100/500-epoch schedules were poorly suited to a short run on one home GPU.
+- **Change:** added an idempotent PowerShell entry point that uses the existing
+  `grgrie-train` Conda environment, verifies CUDA execution, downloads and
+  materializes Waterbirds plus the Open Images vocabulary, builds one
+  `g2_t070_c020_k12` no-DINO/no-CoBalT graph, renders its audit, and sequentially
+  trains matched SimCLR and SpLiCE-only CRP students. The default local budget is
+  50 SSL epochs with one 30-epoch final validation probe; logs, final checkpoints,
+  a CSV summary, and offline W&B records are retained. The local graph uses 16 null
+  trials to bound wall-clock time.
+- **Reason:** obtain an end-to-end indication within a few hours on a single modern
+  Windows GPU while preserving a clean SimCLR-versus-SpLiCE-only comparison and a
+  reproducible local record.
+- **Consequences:** the script produces useful mechanism-screening evidence but is
+  not directly comparable with the canonical 32-null-trial graph audit or the
+  500-epoch SSL protocol. Network speed, local drivers, and environment versions
+  still affect wall-clock time. Any promising difference must be repeated with the
+  full protocol and paired seeds before supporting a research claim. No graph or
+  loss mathematics changed.
+- **Track:** local experiment infrastructure, SpLiCE-only CRP ablation, SimCLR
+  baseline, and reporting plumbing. CoBalT, CQT, and historical snapshots are
+  unchanged.
