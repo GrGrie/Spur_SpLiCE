@@ -705,3 +705,31 @@ completion time remains dependent on downloads, drivers, and the local environme
 A promising result must be confirmed under the full paired-seed protocol. The
 graph formula, relational loss, CoBalT, CQT, existing results, and historical
 reporting snapshots are unchanged.
+
+### 2026-09-03 — Matched Windows CoBalT contribution arm
+
+**Track:** local CRPv3 experiment protocol, CoBalT ablation, SpLiCE-only baseline,
+and SimCLR control.
+
+Before this change, the local screen ended after matched SimCLR and SpLiCE-only
+CRP training. It could not evaluate current CoBalT-balanced graph construction.
+Applying a CoBalT switch while retaining the exact same teacher graph would not
+change SSL because fixed CoBalT memberships participate only in graph construction,
+not in the student loss or optimizer.
+
+The Windows entry point now accepts `-IncludeCobalt`. It reuses a completed
+Waterbirds download, frozen SpLiCE cache, SimCLR run, and SpLiCE-only CRP run. It
+then trains the current seed-0 CoBalT discovery configuration, extracts fixed
+memberships and confidence, rebuilds the same `g2_t070_c020_k12` graph setting with
+CoBalT weighting enabled, renders a second audit, and trains a third student with
+the same quick-screen SSL parameters. Results for all three arms are written to one
+CSV. Log names include the SSL/probe budgets so changed budgets do not silently
+reuse older results.
+
+This isolates CoBalT at its actual intervention point while holding the cache,
+non-CoBalT graph settings, seed, student, optimizer, augmentations, relational
+schedule, and evaluation fixed. The two teacher graphs are expected to differ;
+that difference is the treatment being measured. The result remains a shortened
+single-seed screen and cannot establish robustness without full paired runs. No
+graph formula, SSL loss, CQT behavior, existing result, or historical snapshot
+changed.

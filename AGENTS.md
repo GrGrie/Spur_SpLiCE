@@ -4,21 +4,27 @@
 
 - Never in this project bring up or mention SHA256 or any other SHA.
 
-## Project context and chronology
+## Project context and change history
 
 - At the beginning of every new chat, read `PROJECT_GROUND_TRUTH.md` completely
   before proposing, implementing, or interpreting project work.
-- Treat `PROJECT_GROUND_TRUTH.md` as both the canonical current specification and
-  the durable, human-readable research chronology.
-- After every material method, architecture, loss, experiment-protocol, reporting,
-  or interpretation change, append a dated entry to the chronology in
-  `PROJECT_GROUND_TRUTH.md` during the same task.
-- A chronology entry must record the state before the change, the change itself,
-  the reason, its consequences for experiments and claims, and whether it belongs
-  to CRP, CQT, a shared trainer, a baseline, or reporting only.
-- Never rewrite an older chronology entry to make it match the current method.
-  Add a new correction or superseding entry so historical reporting snapshots
-  remain reconstructable.
+- Keep `PROJECT_GROUND_TRUTH.md` concise. It is the canonical description of the
+  current project core and a navigation aid for quickly locating the relevant
+  architecture, method, experiment, and reporting files.
+- Do not append routine implementation changes, launcher additions, individual
+  experiments, or dated chronology entries to `PROJECT_GROUND_TRUTH.md`.
+- Update `PROJECT_GROUND_TRUTH.md` only when the current core architecture,
+  canonical method, or essential file map materially changes. Integrate such
+  updates into the relevant current-state section instead of adding a changelog.
+- Record material method, architecture, loss, experiment-protocol, reporting, or
+  interpretation changes in `Project History.md`, which is the durable,
+  human-readable research chronology.
+- A `Project History.md` entry must record the state before the change, the change
+  itself, the reason, its consequences for experiments and claims, and whether it
+  belongs to CRP, CQT, a shared trainer, a baseline, or reporting only.
+- Never rewrite an older history entry to make it match the current method. Add a
+  new correction or superseding entry so historical reporting snapshots remain
+  reconstructable.
 - Keep the current research state separate from the reporting snapshot. A report
   may intentionally describe an earlier CRP-only stage while current development
   has already advanced to CQT.

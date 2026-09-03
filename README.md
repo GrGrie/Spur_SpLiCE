@@ -135,6 +135,18 @@ checkpoints, an HTML graph audit, and offline W&B records under
 `outputs/windows_splice_only_ablation`. These defaults are a local mechanism
 screen and are not directly comparable with the 500-epoch protocol.
 
+After that run, add the matched current CRPv3/CoBalT arm with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_windows.ps1 -IncludeCobalt
+```
+
+Completed SimCLR and SpLiCE-only logs are reused. The additional path trains the
+current 50-epoch CoBalT discovery model, extracts fixed memberships, rebuilds the
+same `g2_t070_c020_k12` configuration with CoBalT weighting enabled, and trains a
+third SSL student with the same quick-screen settings. CoBalT changes graph
+construction; applying it to an already fixed graph would be a no-op.
+
 For a single CRP training run with the same dictionary, use the regular Slurm
 entry point:
 

@@ -12,7 +12,10 @@ param(
     [ValidateRange(0, 32)]
     [int]$Workers = 4,
     [ValidateSet("offline", "online")]
-    [string]$WandbMode = "offline"
+    [string]$WandbMode = "offline",
+    [switch]$IncludeCobalt,
+    [ValidateRange(1, 200)]
+    [int]$CobaltEpochs = 50
 )
 
 Set-StrictMode -Version Latest
@@ -80,13 +83,13 @@ $env:WANDB_MODE = $WandbMode
 $env:WANDB_DIR = $WandbRoot
 Set-Location $RepoRoot
 
-Write-Host "=== 1/6: Checking the Conda environment and RTX GPU ==="
+Write-Host "=== Checking the Conda environment and RTX GPU ==="
 Invoke-CondaPython -Arguments @(
     "-c",
     "import torch; assert torch.cuda.is_available(), 'CUDA is unavailable'; x=torch.randn(64,64,device='cuda'); y=x@x; torch.cuda.synchronize(); print('PyTorch',torch.__version__,'GPU',torch.cuda.get_device_name(0))"
 )
 
-Write-Host "=== 2/6: Ensuring the Waterbirds download dependency is present ==="
+Write-Host "=== Ensuring the Waterbirds download dependency is present ==="
 & $CondaExe run --no-capture-output -n $CondaEnvironment python -c "import datasets" *> $null
 if ($LASTEXITCODE -ne 0) {
     & $CondaExe run --no-capture-output -n $CondaEnvironment python -m pip install "datasets>=3,<5"
@@ -103,7 +106,7 @@ Invoke-CondaPython -Arguments @(
     "--download-root", (Join-Path $RepoRoot "data")
 )
 
-Write-Host "=== 3/6: Building or validating the frozen SpLiCE cache ==="
+Write-Host "=== Building or validating the frozen SpLiCE cache ==="
 $CachePath = Join-Path $OutputRoot "waterbirds_train_features_oi_v7_no_dino.pt"
 if (-not (Test-Path -LiteralPath $CachePath)) {
     Invoke-CondaPython -Arguments @(
@@ -124,7 +127,7 @@ if (-not (Test-Path -LiteralPath $CachePath)) {
 $CacheValidation = "import sys,torch; from splice.crp import validate_feature_cache; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True),require_dino=False); p=c['provenance']; assert p['splice_vocab']=='openimages_v7' and p['splice_vocab_size']==-1 and not p['use_dino']; print('[OK] cache samples',len(c['sample_ids']))"
 Invoke-CondaPython -Arguments @("-c", $CacheValidation, $CachePath)
 
-Write-Host "=== 4/6: Building the SpLiCE-only teacher graph ==="
+Write-Host "=== Building the SpLiCE-only teacher graph ==="
 $GraphPath = Join-Path $GraphRoot "teacher_graph.json"
 $GraphConfig = [ordered]@{
     min_concept_frequency = 0.01
@@ -224,31 +227,161 @@ $CommonTrainingArguments = @(
     "--keep_checkpoints",
     "--use_wandb",
     "--wandb_name", "Spur_SpLiCE_windows_screen",
-    "--wandb_group", "waterbirds_splice_only_windows_seed0_e$Epochs",
-    "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,no_cobalt"
+    "--wandb_group", "waterbirds_splice_cobalt_ablation_windows_seed0_e$Epochs"
 )
 
-Write-Host "=== 5/6: Training the matched SimCLR control ==="
-$BaselineLog = Join-Path $LogsRoot "simclr.log"
-Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
-    "--splice_mode", "none",
-    "--wandb_run_name", "windows_simclr_seed0_e$Epochs"
-)) -LogPath $BaselineLog
+function Test-CompletedProbeLog {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    return $null -ne (Select-String -Path $Path -Pattern "best accuracy: ([0-9.]+) and worst-group accuracy: ([0-9.]+) and best-group accuracy: ([0-9.]+)" | Select-Object -Last 1)
+}
 
-Write-Host "=== 6/6: Training SpLiCE-only relational SSL ==="
-$SpliceLog = Join-Path $LogsRoot "splice_only_crp.log"
-Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
-    "--splice_mode", "crp_relational",
-    "--splice_weight", "2.0",
-    "--crp_teacher_graph", $GraphPath,
-    "--crp_temperature", "0.25",
-    "--crp_start_epoch", "5",
-    "--crp_warmup_epochs", "5",
-    "--crp_decay_start_epoch", "0",
-    "--crp_decay_end_epoch", "0",
-    "--crp_graph_positives", "false",
-    "--wandb_run_name", "windows_splice_only_crp_seed0_e$Epochs"
-)) -LogPath $SpliceLog
+Write-Host "=== Training the matched SimCLR control ==="
+$BaselineLog = Join-Path $LogsRoot "simclr_e${Epochs}_p${ProbeEpochs}.log"
+if (Test-CompletedProbeLog $BaselineLog) {
+    Write-Host "[INFO] Reusing completed SimCLR result from $BaselineLog"
+}
+else {
+    Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
+        "--splice_mode", "none",
+        "--wandb_run_name", "windows_simclr_seed0_e$Epochs",
+        "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,baseline"
+    )) -LogPath $BaselineLog
+}
+
+Write-Host "=== Training SpLiCE-only relational SSL ==="
+$SpliceLog = Join-Path $LogsRoot "splice_only_crp_e${Epochs}_p${ProbeEpochs}.log"
+if (Test-CompletedProbeLog $SpliceLog) {
+    Write-Host "[INFO] Reusing completed SpLiCE-only result from $SpliceLog"
+}
+else {
+    Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
+        "--splice_mode", "crp_relational",
+        "--splice_weight", "2.0",
+        "--crp_teacher_graph", $GraphPath,
+        "--crp_temperature", "0.25",
+        "--crp_start_epoch", "5",
+        "--crp_warmup_epochs", "5",
+        "--crp_decay_start_epoch", "0",
+        "--crp_decay_end_epoch", "0",
+        "--crp_graph_positives", "false",
+        "--wandb_run_name", "windows_splice_only_crp_seed0_e$Epochs",
+        "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,splice_only,no_cobalt"
+    )) -LogPath $SpliceLog
+}
+
+$CobaltLog = Join-Path $LogsRoot "cobalt_crp_e${Epochs}_p${ProbeEpochs}_discovery${CobaltEpochs}.log"
+$CobaltGraphRoot = Join-Path $OutputRoot "graph_g2_t070_c020_k12_cobalt_e$CobaltEpochs"
+if ($IncludeCobalt) {
+    Write-Host "=== Training or reusing CoBalT Stage 1 ==="
+    $CobaltRoot = Join-Path $OutputRoot "cobalt_e$CobaltEpochs"
+    New-Item -ItemType Directory -Force -Path $CobaltRoot, $CobaltGraphRoot | Out-Null
+    $CobaltCheckpoint = Join-Path $CobaltRoot "discovery.pt"
+    $CobaltConcepts = Join-Path $CobaltRoot "concepts.pt"
+    if (-not (Test-Path -LiteralPath $CobaltCheckpoint)) {
+        Invoke-CondaPython -Arguments @(
+            "-u", "-m", "CoBalT.train_discovery",
+            "--dataset", "waterbirds",
+            "--data-root", $DataRoot,
+            "--output", $CobaltCheckpoint,
+            "--seed", "0",
+            "--epochs", $CobaltEpochs.ToString(),
+            "--batch-size", $BatchSize.ToString(),
+            "--workers", $Workers.ToString(),
+            "--image-size", "224",
+            "--crop-min", "0.2",
+            "--num-slots", "4",
+            "--codebook-size", "8",
+            "--slot-dim", "32",
+            "--hidden-dim", "1024",
+            "--learning-rate", "0.0002",
+            "--weight-decay", "0.0005",
+            "--student-temperature", "0.1",
+            "--teacher-temperature", "0.07",
+            "--contrastive-temperature", "0.2",
+            "--teacher-momentum", "0.99",
+            "--codebook-momentum", "0.9",
+            "--center-momentum", "0.9",
+            "--backbone", "resnet18",
+            "--no-pretrained",
+            "--allow-nonpaper-backbone",
+            "--amp",
+            "--wandb-project", "Spur_SpLiCE_windows_screen",
+            "--wandb-run-name", "windows_cobalt_discovery_seed0_e$CobaltEpochs",
+            "--wandb-group", "waterbirds_splice_cobalt_ablation_windows_seed0_e$Epochs",
+            "--wandb-tags", "windows_local,screen,seed_0,cobalt_discovery"
+        ) -LogPath (Join-Path $LogsRoot "cobalt_discovery.log")
+    }
+    if (-not (Test-Path -LiteralPath $CobaltConcepts)) {
+        Invoke-CondaPython -Arguments @(
+            "-u", "-m", "CoBalT.extract_concepts",
+            "--checkpoint", $CobaltCheckpoint,
+            "--data-root", $DataRoot,
+            "--output", $CobaltConcepts,
+            "--batch-size", $BatchSize.ToString(),
+            "--workers", $Workers.ToString(),
+            "--image-size", "224"
+        ) -LogPath (Join-Path $LogsRoot "cobalt_extract.log")
+    }
+
+    Write-Host "=== Building the matched CoBalT-balanced teacher graph ==="
+    $CobaltGraphConfig = [ordered]@{}
+    foreach ($entry in $GraphConfig.GetEnumerator()) {
+        $CobaltGraphConfig[$entry.Key] = $entry.Value
+    }
+    $CobaltGraphConfig["use_cobalt_confidence"] = $true
+    $CobaltGraphConfig["cobalt"] = $true
+    $CobaltGraphConfigJson = $CobaltGraphConfig | ConvertTo-Json -Compress
+    $CobaltGraphPath = Join-Path $CobaltGraphRoot "teacher_graph.json"
+    if (-not (Test-Path -LiteralPath $CobaltGraphPath)) {
+        Invoke-CondaPython -Arguments @(
+            "-u", "-m", "splice.crp",
+            "--cache", $CachePath,
+            "--output", $CobaltGraphPath,
+            "--seed", "0",
+            "--config", $CobaltGraphConfigJson,
+            "--use-dino", "false",
+            "--cobalt", "true",
+            "--cobalt-concepts", $CobaltConcepts
+        ) -LogPath (Join-Path $LogsRoot "cobalt_graph.log")
+    }
+    Invoke-CondaPython -Arguments @("-c", $GraphValidation, $CobaltGraphPath, $CobaltGraphConfigJson)
+    Invoke-CondaPython -Arguments @(
+        "-u", "-m", "scripts.tools.summarize_crp_audit", $CobaltGraphPath
+    ) -AllowFailure
+    Invoke-CondaPython -Arguments @(
+        "-u", "-m", "scripts.tools.render_concept_ablation_examples",
+        "--cache", $CachePath,
+        "--graph", $CobaltGraphPath,
+        "--data-folder", $DataRoot,
+        "--scope", "selected",
+        "--max-interventions", "12",
+        "--edges-per-group", "1",
+        "--output", (Join-Path $CobaltGraphRoot "graph_audit.html")
+    )
+
+    Write-Host "=== Training matched CoBalT-balanced CRPv3 SSL ==="
+    if (Test-CompletedProbeLog $CobaltLog) {
+        Write-Host "[INFO] Reusing completed CoBalT CRP result from $CobaltLog"
+    }
+    else {
+        Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
+            "--splice_mode", "crp_relational",
+            "--splice_weight", "2.0",
+            "--crp_teacher_graph", $CobaltGraphPath,
+            "--crp_temperature", "0.25",
+            "--crp_start_epoch", "5",
+            "--crp_warmup_epochs", "5",
+            "--crp_decay_start_epoch", "0",
+            "--crp_decay_end_epoch", "0",
+            "--crp_graph_positives", "false",
+            "--wandb_run_name", "windows_cobalt_crpv3_seed0_e$Epochs",
+            "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,cobalt,crpv3"
+        )) -LogPath $CobaltLog
+    }
+}
 
 function Read-ProbeResult {
     param([string]$Name, [string]$Path)
@@ -268,6 +401,9 @@ $Results = @(
     Read-ProbeResult -Name "simclr" -Path $BaselineLog
     Read-ProbeResult -Name "splice_only_crp" -Path $SpliceLog
 )
+if ($IncludeCobalt) {
+    $Results += Read-ProbeResult -Name "cobalt_crpv3" -Path $CobaltLog
+}
 $ResultsPath = Join-Path $OutputRoot "results.csv"
 $Results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $ResultsPath
 Write-Host ""
@@ -275,4 +411,7 @@ Write-Host "=== Completed quick SpLiCE-only ablation ==="
 $Results | Format-Table -AutoSize
 Write-Host "Results: $ResultsPath"
 Write-Host "Graph audit: $(Join-Path $GraphRoot 'graph_audit.html')"
+if ($IncludeCobalt) {
+    Write-Host "CoBalT graph audit: $(Join-Path $CobaltGraphRoot 'graph_audit.html')"
+}
 Write-Host "Offline/online W&B files: $WandbRoot"
