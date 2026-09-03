@@ -246,6 +246,7 @@ metrics. Diagnostic cache/graph/audit/report jobs do not need W&B.
 | scripts/train_cqt.sbatch | CQT Slurm runner |
 | scripts/prepare_crp_group_sweep.sbatch | CRP frozen graph sweep |
 | scripts/prepare_crp_semantic_family_sweep.sbatch | seed-0 semantic-family graph sweep |
+| scripts/prepare_crp_splice_only_sweep.sbatch | no-DINO/no-CoBalT SpLiCE-only graph controls |
 | scripts/prepare_cqt_graph_sweep.sbatch | CQT frozen graph sweep |
 | scripts/*.conf | editable Slurm configurations for training and preparation |
 | scripts/load_config.sh | shared config loader |
@@ -427,3 +428,27 @@ Project History.md in the same task.
   and the required non-concept controls. No graph mathematics or SSL loss changed.
 - **Track:** CRP frozen-audit and experiment protocol; shared training launcher and
   SimCLR baseline plumbing. CQT and historical reporting snapshots are unchanged.
+
+## 18. 2026-09-03 — SpLiCE-only teacher-graph ablation before CoBalT
+
+- **State before:** the active no-DINO CRPv3 graph runs used CoBalT-derived
+  confidence-weighted sample balancing, so completed SSL screens could not isolate
+  whether the frozen SpLiCE concepts and their interventions were useful without
+  CoBalT. The existing shortlist contained SimCLR and CoBalT-balanced graphs only.
+- **Change:** added a two-task seed-0 graph preparation array with `USE_DINO=false`
+  and `COBALT=false` for the matched `g3_t065_c015_k8` and
+  `g2_t070_c020_k12` configurations. It reuses the same frozen Open Images SpLiCE
+  cache but computes frequency and coactivation with uniform sample mass. Expanded
+  the 100-epoch SSL screen to five matched tasks: SimCLR, both SpLiCE-only graphs,
+  and both CoBalT-balanced counterparts.
+- **Reason:** measure the incremental contribution of SpLiCE/CRP before adding
+  CoBalT, and then measure the contribution of CoBalT while holding seed, student,
+  graph hyperparameters, loss scale, augmentations, and evaluation fixed.
+- **Consequences:** the experiment now supports two explicit comparisons:
+  SimCLR versus SpLiCE-only CRP, and SpLiCE-only CRP versus CoBalT-balanced CRP.
+  The first graph stage remains a frozen, label-free diagnostic; the shortened SSL
+  stage remains screening evidence and cannot support a robustness claim without
+  full paired seeds and non-concept controls. No graph formula, loss, vocabulary,
+  CQT behavior, or historical result changed.
+- **Track:** CRP frozen-audit protocol, SpLiCE-only baseline, CoBalT ablation, and
+  shared SSL experiment protocol. Reporting snapshots are unchanged.

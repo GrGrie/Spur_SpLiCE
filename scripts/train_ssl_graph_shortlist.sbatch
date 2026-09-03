@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=04:00:00
 #SBATCH --job-name=SpurSpLiCE_SSL_graph_screen
-#SBATCH --array=0-2%2
+#SBATCH --array=0-4%2
 #SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1
@@ -22,14 +22,14 @@ load_splice_config "${CONFIG_FILE}"
 
 variant_record="${SSL_GRAPH_SHORTLIST_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
 [[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
-IFS='|' read -r PILOT_LABEL MODE RELATIONAL_GRAPH_VARIANT CRP_MIN_GROUP_SIZE \
+IFS='|' read -r PILOT_LABEL MODE COBALT RELATIONAL_GRAPH_VARIANT CRP_MIN_GROUP_SIZE \
     CRP_TEXT_SIMILARITY_THRESHOLD CRP_COACTIVATION_THRESHOLD \
     CRP_MAX_SELECTED_GROUPS SPLICE_WEIGHT <<< "${variant_record}"
 
 if [[ "${MODE}" == "none" ]]; then
     USE_DINO="false"
-    COBALT="false"
 fi
+CRP_USE_COBALT_CONFIDENCE="${COBALT}"
 
 WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS},pilot_${PILOT_LABEL},array_task_${SLURM_ARRAY_TASK_ID}"
 CONFIG_ALREADY_LOADED="true"

@@ -653,3 +653,29 @@ variant comparisons. The shortened runs cannot be compared directly with prior
 and supported-anchor checks before full paired seeds and required controls. Graph
 construction, the relational loss, CQT, and historical reporting snapshots are
 unchanged.
+
+### 2026-09-03 — SpLiCE-only teacher-graph ablation before CoBalT
+
+**Track:** CRP frozen-audit protocol, SpLiCE-only baseline, CoBalT ablation, and
+shared SSL experiment protocol.
+
+Before this change, the active no-DINO CRPv3 graphs applied confidence-weighted
+sample balancing derived from fixed CoBalT memberships. Although SpLiCE supplied
+the concept dictionary, sparse codes and intervention geometry, there was no
+matched current-protocol graph or SSL run isolating those components before CoBalT.
+
+A two-task seed-0 graph array now builds `g3_t065_c015_k8` and
+`g2_t070_c020_k12` with both DINO and CoBalT disabled. These jobs reuse the same
+frozen Open Images SpLiCE cache as the CoBalT runs; the only grouping-input change
+is that concept frequency and coactivation use uniform sample mass instead of
+CoBalT-derived weights. The shortened SSL array now contains five matched tasks:
+pure SimCLR, both SpLiCE-only CRP graphs, and both CoBalT-balanced counterparts.
+
+This establishes a direct decomposition of the mechanism: SimCLR versus
+SpLiCE-only CRP estimates the value or harm of the frozen SpLiCE teacher graph,
+while SpLiCE-only versus CoBalT-balanced CRP estimates the incremental balancing
+contribution. Seed, graph hyperparameters, student configuration, relational-loss
+scale, augmentations, and evaluation remain fixed. These 100-epoch runs are
+screening evidence only; full paired seeds and non-concept controls remain required.
+No graph formula, loss, vocabulary, CQT behavior, existing result, or historical
+reporting snapshot changed.

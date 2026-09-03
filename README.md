@@ -98,10 +98,18 @@ grouping variants:
 sbatch scripts/prepare_crp_semantic_family_sweep.sbatch
 ```
 
-A separate three-task, 100-epoch screening array runs a matched pure SimCLR
-control and the two current label-free CRP shortlist graphs
-`g3_t065_c015_k8` and `g2_t070_c020_k12`. It expects those graph artifacts to
-already exist and deliberately disables automatic rebuilding:
+A separate pure-SpLiCE/no-DINO graph array builds the same two CRP settings without
+loading CoBalT assignments or applying CoBalT-derived sample weights. It reuses the
+same frozen Open Images SpLiCE cache as the CoBalT comparison:
+
+```bash
+sbatch scripts/prepare_crp_splice_only_sweep.sbatch
+```
+
+The five-task, 100-epoch screening array then runs a matched pure SimCLR control,
+two pure-SpLiCE CRP graphs, and the corresponding two CoBalT-balanced CRP graphs
+for `g3_t065_c015_k8` and `g2_t070_c020_k12`. It expects all four graph artifacts
+to already exist and deliberately disables automatic rebuilding:
 
 ```bash
 sbatch scripts/train_ssl_graph_shortlist.sbatch
