@@ -889,3 +889,25 @@ no SpLiCE or teacher graph and records zero graph statistics. This launcher chan
 enables the intended matched comparison without altering the already completed
 vanilla-slot evidence or treating an earlier baseline from another protocol as
 interchangeable.
+
+### 2026-09-04 — Seed-parameterized Windows CRPv3 replication
+
+**Track:** local CRPv3 experiment protocol and reporting. CRP graph mathematics,
+legacy CoBalT discovery, student losses, and the seed-zero results are unchanged.
+
+The original three-arm Windows screen fixed seed zero throughout and reused a
+single output namespace. It therefore could not run a clean second stochastic
+replicate, and its result parser matched an intermediate linear-probe status line
+rather than the final probe summary. The launcher now accepts an experiment seed,
+uses that seed consistently for the CRP audit, CoBalT discovery, and all three SSL
+students, and gives nonzero seeds an independent default output directory. The
+frozen SpLiCE feature cache is reused across seeds because it is fixed input data,
+while both teacher graphs and the learned CoBalT artifact are regenerated inside
+the seed-specific directory.
+
+The 100-epoch protocol retains linear probes every 25 SSL epochs. Completion now
+requires both the final SSL epoch and its completed final probe, log names encode
+the seed and probe cadence, W&B identity fields encode the seed, and the result
+table reads the final probe summary. A local side-by-side HTML index was also added
+for presenting the existing seed-zero SpLiCE-only and CoBalT-balanced graph audits;
+this is reporting-only and does not modify either graph artifact.

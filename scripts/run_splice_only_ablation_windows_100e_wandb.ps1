@@ -3,6 +3,9 @@ param(
     [string]$CondaEnvironment = "grgrie-train",
     [string]$DataRoot = "",
     [string]$OutputRoot = "",
+    [string]$CachePath = "",
+    [ValidateRange(0, 2147483647)]
+    [int]$Seed = 0,
     [ValidateRange(1, 500)]
     [int]$Epochs = 100,
     [ValidateRange(1, 200)]
@@ -25,10 +28,22 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($DataRoot)) {
-    $DataRoot = Join-Path $RepoRoot "datasets"
+    $DriveDataRoot = Join-Path ([System.IO.Path]::GetPathRoot($RepoRoot)) "Datasets"
+    $DataRoot = if (Test-Path -LiteralPath $DriveDataRoot) {
+        $DriveDataRoot
+    }
+    else {
+        Join-Path $RepoRoot "datasets"
+    }
 }
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $RepoRoot "outputs\windows_splice_only_ablation"
+    $OutputName = if ($Seed -eq 0) {
+        "windows_splice_only_ablation"
+    }
+    else {
+        "windows_splice_only_ablation_seed$Seed"
+    }
+    $OutputRoot = Join-Path $RepoRoot "outputs\$OutputName"
 }
 $DataRoot = [System.IO.Path]::GetFullPath($DataRoot)
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
@@ -119,7 +134,17 @@ Invoke-CondaPython -Arguments @(
 )
 
 Write-Host "=== Building or validating the frozen SpLiCE cache ==="
-$CachePath = Join-Path $OutputRoot "waterbirds_train_features_oi_v7_no_dino.pt"
+if ([string]::IsNullOrWhiteSpace($CachePath)) {
+    $SharedCachePath = Join-Path $RepoRoot `
+        "outputs\windows_splice_only_ablation\waterbirds_train_features_oi_v7_no_dino.pt"
+    $CachePath = if (Test-Path -LiteralPath $SharedCachePath) {
+        $SharedCachePath
+    }
+    else {
+        Join-Path $OutputRoot "waterbirds_train_features_oi_v7_no_dino.pt"
+    }
+}
+$CachePath = [System.IO.Path]::GetFullPath($CachePath)
 if (-not (Test-Path -LiteralPath $CachePath)) {
     Invoke-CondaPython -Arguments @(
         "-u", "-m", "scripts.tools.cache_crp_features",
@@ -166,7 +191,7 @@ $GraphConfig = [ordered]@{
     cross_fold_count = 2
     cross_fold_min_edge_persistence = 0.5
     use_cobalt_confidence = $false
-    seed = 0
+    seed = $Seed
     use_dino = $false
     cobalt = $false
 }
@@ -178,7 +203,7 @@ if (-not (Test-Path -LiteralPath $GraphPath)) {
         "-u", "-m", "splice.crp",
         "--cache", $CachePath,
         "--output", $GraphPath,
-        "--seed", "0",
+        "--seed", $Seed.ToString(),
         "--config", $GraphConfigJsonNative,
         "--use-dino", "false",
         "--cobalt", "false"
@@ -205,7 +230,7 @@ $CommonTrainingArguments = @(
     "--dataset", "waterbirds",
     "--data_folder", $DataRoot,
     "--model", "resnet18_large",
-    "--seed", "0",
+    "--seed", $Seed.ToString(),
     "--trial", "windows_quick",
     "--epochs", $Epochs.ToString(),
     "--batch_size", $BatchSize.ToString(),
@@ -241,7 +266,7 @@ $CommonTrainingArguments = @(
     "--keep_checkpoints",
     "--use_wandb",
     "--wandb_name", "Spur_SpLiCE_windows_screen",
-    "--wandb_group", "waterbirds_splice_cobalt_ablation_windows_seed0_e$Epochs"
+    "--wandb_group", "waterbirds_splice_cobalt_ablation_windows_seed${Seed}_e$Epochs"
 )
 
 function Test-CompletedProbeLog {
@@ -249,24 +274,39 @@ function Test-CompletedProbeLog {
     if (-not (Test-Path -LiteralPath $Path)) {
         return $false
     }
-    return $null -ne (Select-String -Path $Path -Pattern "best accuracy: ([0-9.]+) and worst-group accuracy: ([0-9.]+) and best-group accuracy: ([0-9.]+)" | Select-Object -Last 1)
+    $TrainingFinished = (
+        Select-String -LiteralPath $Path -Pattern "^epoch $Epochs, total time" |
+            Select-Object -Last 1
+    )
+    $FinalProbeFinished = (
+        Select-String -LiteralPath $Path `
+            -Pattern "^Last accuracy: ([0-9.]+), Last worst-group accuracy: ([0-9.]+), Last best-group accuracy: ([0-9.]+)" |
+            Select-Object -Last 1
+    )
+    return (
+        $null -ne $TrainingFinished -and
+        $null -ne $FinalProbeFinished -and
+        $FinalProbeFinished.LineNumber -gt $TrainingFinished.LineNumber
+    )
 }
 
 Write-Host "=== Training the matched SimCLR control ==="
-$BaselineLog = Join-Path $LogsRoot "simclr_e${Epochs}_p${ProbeEpochs}.log"
+$BaselineLog = Join-Path $LogsRoot `
+    "simclr_s${Seed}_e${Epochs}_periodic${LinearProbeFrequency}_p${ProbeEpochs}.log"
 if (Test-CompletedProbeLog $BaselineLog) {
     Write-Host "[INFO] Reusing completed SimCLR result from $BaselineLog"
 }
 else {
     Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
         "--splice_mode", "none",
-        "--wandb_run_name", "windows_simclr_seed0_e$Epochs",
-        "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,baseline"
+        "--wandb_run_name", "windows_simclr_seed${Seed}_e$Epochs",
+        "--wandb_tags", "windows_local,screen,seed_$Seed,openimages_v7,no_dino,baseline"
     )) -LogPath $BaselineLog
 }
 
 Write-Host "=== Training SpLiCE-only relational SSL ==="
-$SpliceLog = Join-Path $LogsRoot "splice_only_crp_e${Epochs}_p${ProbeEpochs}.log"
+$SpliceLog = Join-Path $LogsRoot `
+    "splice_only_crp_s${Seed}_e${Epochs}_periodic${LinearProbeFrequency}_p${ProbeEpochs}.log"
 if (Test-CompletedProbeLog $SpliceLog) {
     Write-Host "[INFO] Reusing completed SpLiCE-only result from $SpliceLog"
 }
@@ -281,12 +321,13 @@ else {
         "--crp_decay_start_epoch", "0",
         "--crp_decay_end_epoch", "0",
         "--crp_graph_positives", "false",
-        "--wandb_run_name", "windows_splice_only_crp_seed0_e$Epochs",
-        "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,splice_only,no_cobalt"
+        "--wandb_run_name", "windows_splice_only_crp_seed${Seed}_e$Epochs",
+        "--wandb_tags", "windows_local,screen,seed_$Seed,openimages_v7,no_dino,splice_only,no_cobalt"
     )) -LogPath $SpliceLog
 }
 
-$CobaltLog = Join-Path $LogsRoot "cobalt_crp_e${Epochs}_p${ProbeEpochs}_discovery${CobaltEpochs}.log"
+$CobaltLog = Join-Path $LogsRoot `
+    "cobalt_crp_s${Seed}_e${Epochs}_periodic${LinearProbeFrequency}_p${ProbeEpochs}_discovery${CobaltEpochs}.log"
 $CobaltGraphRoot = Join-Path $OutputRoot "graph_g2_t070_c020_k12_cobalt_e$CobaltEpochs"
 if ($IncludeCobalt) {
     Write-Host "=== Training or reusing CoBalT Stage 1 ==="
@@ -300,7 +341,7 @@ if ($IncludeCobalt) {
             "--dataset", "waterbirds",
             "--data-root", $DataRoot,
             "--output", $CobaltCheckpoint,
-            "--seed", "0",
+            "--seed", $Seed.ToString(),
             "--epochs", $CobaltEpochs.ToString(),
             "--batch-size", $BatchSize.ToString(),
             "--workers", $Workers.ToString(),
@@ -323,9 +364,9 @@ if ($IncludeCobalt) {
             "--allow-nonpaper-backbone",
             "--amp",
             "--wandb-project", "Spur_SpLiCE_windows_screen",
-            "--wandb-run-name", "windows_cobalt_discovery_seed0_e$CobaltEpochs",
-            "--wandb-group", "waterbirds_splice_cobalt_ablation_windows_seed0_e$Epochs",
-            "--wandb-tags", "windows_local,screen,seed_0,cobalt_discovery"
+            "--wandb-run-name", "windows_cobalt_discovery_seed${Seed}_e$CobaltEpochs",
+            "--wandb-group", "waterbirds_splice_cobalt_ablation_windows_seed${Seed}_e$Epochs",
+            "--wandb-tags", "windows_local,screen,seed_$Seed,cobalt_discovery"
         ) -LogPath (Join-Path $LogsRoot "cobalt_discovery.log")
     }
     if (-not (Test-Path -LiteralPath $CobaltConcepts)) {
@@ -355,7 +396,7 @@ if ($IncludeCobalt) {
             "-u", "-m", "splice.crp",
             "--cache", $CachePath,
             "--output", $CobaltGraphPath,
-            "--seed", "0",
+            "--seed", $Seed.ToString(),
             "--config", $CobaltGraphConfigJsonNative,
             "--use-dino", "false",
             "--cobalt", "true",
@@ -392,20 +433,23 @@ if ($IncludeCobalt) {
             "--crp_decay_start_epoch", "0",
             "--crp_decay_end_epoch", "0",
             "--crp_graph_positives", "false",
-            "--wandb_run_name", "windows_cobalt_crpv3_seed0_e$Epochs",
-            "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,cobalt,crpv3"
+            "--wandb_run_name", "windows_cobalt_crpv3_seed${Seed}_e$Epochs",
+            "--wandb_tags", "windows_local,screen,seed_$Seed,openimages_v7,no_dino,cobalt,crpv3"
         )) -LogPath $CobaltLog
     }
 }
 
 function Read-ProbeResult {
     param([string]$Name, [string]$Path)
-    $match = Select-String -Path $Path -Pattern "best accuracy: ([0-9.]+) and worst-group accuracy: ([0-9.]+) and best-group accuracy: ([0-9.]+)" | Select-Object -Last 1
+    $match = Select-String -LiteralPath $Path `
+        -Pattern "^Last accuracy: ([0-9.]+), Last worst-group accuracy: ([0-9.]+), Last best-group accuracy: ([0-9.]+)" |
+        Select-Object -Last 1
     if ($null -eq $match -or -not $match.Matches[0].Success) {
         throw "Could not find final probe metrics in $Path"
     }
     return [pscustomobject]@{
         run = $Name
+        seed = $Seed
         validation_accuracy = [double]::Parse($match.Matches[0].Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
         validation_worst_group_accuracy = [double]::Parse($match.Matches[0].Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture)
         validation_best_group_accuracy = [double]::Parse($match.Matches[0].Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
