@@ -778,3 +778,114 @@ spatial variants require fresh frozen audits, direct comparison with unbalanced
 CRPv3 and frequency-only controls, inspection of coverage/null margins, and paired
 SSL seeds before any robustness or causal claim. Earlier CRPv2/v3 results and the
 current manuscript snapshot are not retroactively reinterpreted.
+
+### 2026-09-04 — Sequential Windows CRPv4 four-way screen
+
+**Track:** CRPv4 experiment protocol and local launcher infrastructure. The CRP
+graph construction and shared student loss are unchanged.
+
+Before this change, the four CRPv4 spatial variants had a cluster preparation
+array, but there was no one-command Windows path that prepared each spatial
+artifact, built its matching CRPv4 graph, and trained all four students under the
+same local 100-epoch protocol. The earlier Windows launcher covered SimCLR,
+SpLiCE-only CRPv3, and legacy CoBalT-balanced CRPv3 instead.
+
+A resumable PowerShell launcher now runs vanilla patchwise, vanilla slots, SCLIP
+patchwise, and SCLIP slots sequentially at seed zero. It reuses a validated frozen
+Open Images SpLiCE cache, trains only the two slot branches, extracts aligned
+image-specific spatial evidence, constructs a separately validated CRPv4 graph for
+each variant, and performs W&B-tracked 100-epoch relational SSL followed by one
+final validation probe. All graph, student, optimizer, augmentation, relational
+schedule, and evaluation settings are matched across the four arms. Partial and
+final result tables record graph support alongside the final probe metrics; an
+empty graph remains a valid falsification and uses the documented SimCLR fallback.
+
+This enables the requested overnight single-GPU architecture screen while keeping
+the four spatial treatments identifiable. Its default 16-trial null audit is a
+local runtime compromise and is not directly equivalent to the 32-trial cluster
+audit. The single seed and shortened 100-epoch schedule are screening evidence
+only; they do not establish stability, a causal concept interpretation, or an
+improvement over matched non-concept controls. No current or historical result is
+reinterpreted.
+
+### 2026-09-04 — Isolated diversity-constrained CRPv4 experiment
+
+**Track:** optional CRPv4 frozen-audit experiment and local experiment launcher.
+The canonical CRP implementation, four-way CRPv4 screen, graph format, and shared
+student trainer are unchanged.
+
+Before this change, the active Waterbirds grouping configuration required at least
+two concepts joined by both text similarity and sparse-code coactivation. The
+resulting candidate set consisted only of small bird-name families even though
+several scene and environment concepts had nonzero unlabeled SpLiCE support. The
+final group cap ranked null-passing candidates by quality but did not constrain
+semantic or edge redundancy.
+
+An opt-in module now implements a separate diversity-constrained CRPv4 audit. It
+allows singleton factors, lowers the candidate-frequency floor, partitions group
+centroids into deterministic unlabeled semantic clusters, and budgets expensive
+audits across those clusters using activation entropy plus agreement with the
+existing spatial artifact. It then applies the unchanged projection, relation,
+null, residual-agreement, and cross-fold gates. Only groups passing those gates are
+eligible for a cluster-capped MMR selection that penalizes text-centroid similarity
+and teacher-edge overlap. The resulting artifact remains a standard CRPv4 teacher
+graph accepted by the unchanged trainer and records the full preselection and
+selection trace.
+
+A separate resumable PowerShell launcher reuses one completed spatial artifact
+from the four-way screen, writes all new graph, audit, training, W&B, and result
+files under an independent output root, and trains a matched 100-epoch seed-zero
+student. This isolates rollback to the optional module, launcher, tests, and this
+history entry; no running or canonical code path imports the experiment.
+
+The mechanism encourages semantic breadth but cannot guarantee a particular named
+scene concept: a candidate is still rejected if it fails the unchanged label-free
+quality gates. Spatial multiplication also cannot introduce a concept whose
+original sparse SpLiCE weight is identically zero. The experiment is therefore a
+test of diverse selection among supported concepts, not an oracle scene-concept
+injection, and remains single-seed screening evidence.
+
+### 2026-09-04 — Periodic CRPv4 probes and no-DINO diverse-cache correction
+
+**Track:** CRPv4 experiment protocol and optional diversity launcher plumbing.
+The canonical audit, diversity objective, graph format, and student losses are
+unchanged.
+
+The first local diversity launch exposed an interface edge case: the optional
+module validated a no-DINO feature cache twice, and the canonical first pass
+represented the absent optional embedding as `None`; the second pass then tried
+to normalize that value as a tensor. The diverse path now performs one CLI-level
+validation and defensively removes only that absent optional field from a shallow
+copy when its audit function receives an already validated cache. The correction
+is confined to the opt-in module and is covered by a regression fixture; the
+canonical CRP implementation remains untouched.
+
+Both Windows CRPv4 launchers now request a validation linear probe every 25 SSL
+epochs, including epoch 100, rather than only after the final SSL epoch. Probe
+frequency is an explicit launcher parameter, and log names, checkpoint roots,
+W&B names, and tags encode it so completed final-only runs are preserved and are
+not silently reused as periodic runs. Each probe still trains for 30 epochs by
+default. This changes evaluation cadence and runtime, not SSL optimization.
+
+### 2026-09-04 — Resumable three-arm local diverse screen
+
+**Track:** optional diversity experiment protocol and Windows launcher. The
+diversity selector, frozen audit, teacher graph, and shared student losses are
+unchanged.
+
+The first diverse launcher invocation accepted one spatial variant and therefore
+stopped after the requested default `vanilla_slots` student. It did not provide a
+single-command matched control screen. The default invocation now orchestrates
+three sequential arms: the completed diverse vanilla-slot graph/student, a
+diverse vanilla-patchwise graph/student, and a pure SimCLR baseline with the same
+student, augmentations, optimizer, seed, 100-epoch schedule, and periodic linear
+probe protocol. Explicit `-Variant` selection remains available for isolated
+runs.
+
+Each arm has an independent output, checkpoint, log, and W&B directory. Completed
+arms are validated and reused, while missing arms continue in order, and a root
+result table is assembled after all three finish. The baseline explicitly uses
+no SpLiCE or teacher graph and records zero graph statistics. This launcher change
+enables the intended matched comparison without altering the already completed
+vanilla-slot evidence or treating an earlier baseline from another protocol as
+interchangeable.
