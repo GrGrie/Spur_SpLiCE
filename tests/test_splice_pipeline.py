@@ -262,7 +262,8 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(first["artifact"], "splice_crp_v3_teacher_graph")
         self.assertEqual(first["degree_stats"]["indegree_cap"], 10)
         self.assertEqual(first["degree_stats"]["indegree_rule"], "absolute")
-        self.assertTrue(all("cross_fold" in group for group in first["groups"]))
+        self.assertNotIn("cross_fold_summary", first)
+        self.assertTrue(all("cross_fold" not in group for group in first["groups"]))
 
     def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
         config = CrpAuditConfig(
@@ -280,7 +281,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)
 
-    def test_crp_audit_can_use_reciprocal_support_without_residual_gate(self):
+    def test_crp_audit_can_use_projected_candidates_without_residual_gate(self):
         config = CrpAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
@@ -294,6 +295,16 @@ class SplicePipelineTests(unittest.TestCase):
         )
         graph = run_frozen_audit(self._tiny_crp_cache(), config)
         self.assertTrue(all(group["semantic_agreement"] == 1.0 for group in graph["groups"]))
+
+    def test_crp_regularizer_does_not_modify_simclr_positives(self):
+        regularizer = CrpRelationalRegularizer(
+            validate_teacher_graph(self._tiny_teacher_graph()),
+            weight=0.1,
+            temperature=0.1,
+            start_epoch=0,
+            warmup_epochs=0,
+        )
+        self.assertFalse(regularizer.uses_graph_positives)
 
     def test_cobalt_memberships_are_aligned_and_concept_balanced_without_labels(self):
         artifact = {

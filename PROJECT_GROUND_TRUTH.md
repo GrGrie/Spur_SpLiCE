@@ -122,25 +122,34 @@ this is not a general identification guarantee.
 
 ## 4.1 CRPv3 — active legacy-CoBalT protocol
 
-CRPv3 keeps the CRP v2 projection and null-test structure and adds four label-free
-controls:
+CRPv3 keeps the CRP v2 projection and null-test structure and simplifies the
+relation/training path:
 
 1. The final graph uses fixed `top_k=3` and absolute `max_indegree=10`; the old
    relative indegree rule remains only as a compatibility fallback.
 2. An optional residual SpLiCE gate compares the remaining sparse concepts after
    excluding the projected group. It is enabled by default and controlled by
    `use_residual_splice_gate`.
-3. Accepted group relations are checked on deterministic cross-fold subsets and
-   require configured edge persistence. This is an out-of-sample relation check;
-   it is not a downstream label-based selector.
-4. Independently trained CoBalT artifacts retain their own ResNet, Slot Attention,
+3. Projected kNN is an efficient candidate search. Reciprocity is not required;
+   accepted relations retain only the gain, activation-difference, and remaining
+   SpLiCE semantic-agreement checks.
+4. Group scoring and matched random-subspace/shuffled-code null calibration remain;
+   a group is selected only when `S(G) > T_G` (plus coverage and the optional cap).
+5. Independently trained CoBalT artifacts retain their own ResNet, Slot Attention,
    and VQ codebook. Their memberships and spatial slot-separation confidence are
    aligned to cache sample IDs and used only to form concept-balance sample weights;
    older artifacts fall back explicitly to neutral confidence.
 
+CRPv3 student training uses the ordinary SimCLR loss plus the confidence-weighted
+teacher-graph KL, `L_total = L_SimCLR + lambda * mean_i[q_i * KL(p_T(.|i) ||
+p_S(.|i))]`. Graph-linked examples are not additional SimCLR positives, and
+cross-fold validation/persistence is not part of this protocol. The teacher graph
+still uses row-stochastic weights, a fixed outgoing `top_k`, and absolute
+indegree/hub control.
+
 CRPv3 emits `splice_crp_v3_teacher_graph` and remains separate from CQT. This is
 an internal research protocol, not evidence that the new gates improve WGA or
-identify a true nuisance factor. The exact graph configuration and fold results
+identify a true nuisance factor. The exact graph configuration and audit results
 must be reported with each audit.
 
 ## 4.2 Branch boundary relative to CRPv4
@@ -224,7 +233,7 @@ contains both CRP and CQT.
 
 Before expensive SSL, audit raw CLIP, sparse subtraction, full projection,
 forbidden-group refitting, random projection, and shuffled concepts. Inspect
-neighbour turnover/Jaccard, reciprocal coverage, residual SpLiCE agreement,
+neighbour turnover/Jaccard, projected-neighbour coverage, residual SpLiCE agreement,
 hubness, null excess, and for CQT state accuracy/efficacy, transport mass and word
 preservation. Hidden-label diagnostics are falsifiers, not selectors.
 

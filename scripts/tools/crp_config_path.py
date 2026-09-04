@@ -29,9 +29,6 @@ REQUIRED_KEYS = (
     "orthogonal_tolerance",
     "use_residual_splice_gate",
     "residual_splice_similarity_threshold",
-    "use_cross_fold_validation",
-    "cross_fold_count",
-    "cross_fold_min_edge_persistence",
     "use_cobalt_confidence",
 )
 
@@ -75,8 +72,7 @@ def config_path(config: dict, variant: str = "") -> PurePosixPath:
         f"null-{value('null_trials')}-{value('null_quantile')}_"
         f"num-{value('similarity_chunk_size')}-{value('orthogonal_tolerance')}_"
         f"resid-{value('use_residual_splice_gate')}-{value('residual_splice_similarity_threshold')}_"
-        f"fold-{value('use_cross_fold_validation')}-{value('cross_fold_count')}-"
-        f"{value('cross_fold_min_edge_persistence')}_cbconf-{value('use_cobalt_confidence')}",
+        f"cbconf-{value('use_cobalt_confidence')}",
     )
 
 

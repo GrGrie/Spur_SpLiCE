@@ -43,8 +43,9 @@ sbatch scripts/train_cqt.sbatch
 
 ### CoBalT concept check
 
-CRPv3 использует reciprocal projected-neighbour check, residual SpLiCE semantic
-gate и cross-fold edge validation. По умолчанию граф ограничен `top_k=3` и
+CRPv3 использует projected kNN как поиск кандидатов, residual SpLiCE semantic
+gate и label-free null calibration. Reciprocity и cross-fold edge validation в
+этой упрощённой версии не требуются. По умолчанию граф ограничен `top_k=3` и
 `max_indegree=10`; эти значения задаются в `train_crp.conf`.
 
 Для CoBalT-проверки сначала один раз обучите label-free discovery stage и
@@ -115,14 +116,14 @@ sbatch scripts/train_cqt_seed0_sweep.sbatch
 
 CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12`; его можно
 изменить в `train_crp_seed0_sweep.conf`. CQT sweep сначала отделяет
-эффект graph-aware sampler, graph positives и KL на одном и том же graph, затем
+эффект graph-aware sampler, optional graph positives и KL на одном и том же graph, затем
 сравнивает два более широких frozen graph variants.
 
 Основные значения видны прямо в W&B run name. Например, CRPv3-конфигурация
 выше получит имя:
 
 ```text
-waterbirds_S0_resnet18_large_CRP_precision_simclrWei_1.0_splWei_0.01_crpTemp_0.25_graphPos_true_decay_200-350_lr_0.01_e500
+waterbirds_S0_resnet18_large_CRP_precision_splWei_0.01_crpTemp_0.25_decay_200-350_lr_0.01_e500
 ```
 
 ## Sanity-check конкретных изображений

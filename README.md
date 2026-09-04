@@ -87,7 +87,7 @@ the coactivation gate (SpLiCE codes are non-negative), `min_group_size=1` permit
 both singleton and variable-size components, and `max_selected_groups=0` disables
 the post-audit cap. They test whether mutually exclusive names such as different
 bird species collapse into one semantic factor while leaving room for background
-families; every factor must still pass the label-free null and cross-fold gates.
+families; every factor must still pass the label-free null gate.
 The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
 Each task writes its own graph directory and an English-only `graph_audit.html`.
 The three CoBalT-balanced semantic-family variants also have a dedicated seed-0
@@ -279,7 +279,8 @@ python -m splice.crp \
 ```
 
 The command clusters active concepts, projects the full centered CLIP embedding,
-keeps reciprocal relations supported by remaining SpLiCE concepts, calibrates group selection against
+uses projected kNN only as an efficient candidate search, keeps relations supported by
+remaining SpLiCE concepts, and calibrates group selection against
 matched random-subspace and shuffled-code nulls, caps donor indegree, and writes one
 complete, readable JSON teacher graph. Selecting no group
 is valid and produces an empty graph, in which case training automatically reduces

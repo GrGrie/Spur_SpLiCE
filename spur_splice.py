@@ -521,8 +521,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--crp_graph_positives",
         type=str_to_bool,
-        default=True,
-        help="Treat graph-linked examples as additional SimCLR positives.",
+        default=False,
+        help="CQT-only ablation: treat graph-linked examples as additional SimCLR positives.",
     )
     parser.add_argument(
         "--splice_intervention",
@@ -1424,7 +1424,9 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 warmup_epochs=args.crp_warmup_epochs,
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
-                use_graph_positives=args.crp_graph_positives,
+                use_graph_positives=(
+                    args.crp_graph_positives if args.splice_mode == "cqt_relational" else False
+                ),
             )
     else:
         splice_regularizer = build_splice_regularizer(build_splice_config(args))

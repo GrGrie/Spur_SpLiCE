@@ -77,9 +77,6 @@ class CrpAuditConfig:
     cobalt: bool = False
     use_residual_splice_gate: bool = True
     residual_splice_similarity_threshold: float = 0.25
-    use_cross_fold_validation: bool = True
-    cross_fold_count: int = 2
-    cross_fold_min_edge_persistence: float = 0.5
     use_cobalt_confidence: bool = True
 
 
@@ -87,7 +84,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
     boolean_fields = {
         "cobalt": config.cobalt,
         "use_residual_splice_gate": config.use_residual_splice_gate,
-        "use_cross_fold_validation": config.use_cross_fold_validation,
         "use_cobalt_confidence": config.use_cobalt_confidence,
     }
     if any(not isinstance(value, bool) for value in boolean_fields.values()):
@@ -99,7 +95,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
         "min_coverage": config.min_coverage,
         "null_quantile": config.null_quantile,
         "residual_splice_similarity_threshold": config.residual_splice_similarity_threshold,
-        "cross_fold_min_edge_persistence": config.cross_fold_min_edge_persistence,
     }
     for name, value in probabilities.items():
         if not 0 <= value <= 1:
@@ -111,7 +106,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
         "projected_neighbors": config.projected_neighbors,
         "graph_top_k": config.graph_top_k,
         "max_indegree": config.max_indegree,
-        "cross_fold_count": config.cross_fold_count,
         "null_trials": config.null_trials,
         "similarity_chunk_size": config.similarity_chunk_size,
     }
@@ -120,8 +114,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
             raise ValueError(f"{name} must be positive, got {value}.")
     if config.max_selected_groups < 0:
         raise ValueError("max_selected_groups must be non-negative; 0 disables the cap.")
-    if config.use_cross_fold_validation and config.cross_fold_count < 2:
-        raise ValueError("cross_fold_count must be at least 2 when cross-fold validation is enabled.")
 
 
 def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
@@ -341,22 +333,6 @@ def topk_neighbors(features: torch.Tensor, k: int, chunk_size: int = 512) -> tup
     return torch.cat(indices), torch.cat(similarities)
 
 
-def _edge_membership(
-    reference_neighbours: torch.Tensor,
-    query_rows: torch.Tensor,
-    query_columns: torch.Tensor,
-) -> torch.Tensor:
-    """Test directed-edge membership without an O(n_samples^2) matrix."""
-
-    n_samples = len(reference_neighbours)
-    reference_rows = torch.arange(n_samples).view(-1, 1).expand_as(reference_neighbours)
-    reference_keys = (reference_rows * n_samples + reference_neighbours).flatten().sort().values
-    query_keys = (query_rows * n_samples + query_columns).flatten()
-    positions = torch.searchsorted(reference_keys, query_keys)
-    positions = positions.clamp_max(len(reference_keys) - 1)
-    return (reference_keys[positions] == query_keys).view_as(query_rows)
-
-
 def _gini(values: torch.Tensor) -> float:
     values = values.float().sort().values
     total = float(values.sum())
@@ -408,7 +384,6 @@ def _relation_geometry(
     anchors = torch.arange(len(projected)).view(-1, 1).expand_as(neighbours)
     raw_similarity = (audit.centered_clip[anchors] * audit.centered_clip[neighbours]).sum(dim=2)
     gain = projected_similarity - raw_similarity
-    reciprocal = _edge_membership(neighbours, neighbours, anchors)
     if config.use_residual_splice_gate:
         residual_similarity = _residual_splice_similarity(
             audit.splice_codes,
@@ -419,7 +394,7 @@ def _relation_geometry(
         residual_support = residual_similarity >= config.residual_splice_similarity_threshold
     else:
         residual_similarity = torch.ones_like(projected_similarity)
-        residual_support = torch.ones_like(reciprocal)
+        residual_support = torch.ones_like(projected_similarity, dtype=torch.bool)
     raw_overlap = (
         neighbours.unsqueeze(2) == audit.raw_neighbours.unsqueeze(1)
     ).any(dim=2).float().mean(dim=1)
@@ -431,7 +406,7 @@ def _relation_geometry(
         "semantic_similarity": residual_similarity,
         "residual_splice_similarity": residual_similarity,
         "residual_splice_support": residual_support,
-        "supported": reciprocal & residual_support,
+        "supported": residual_support,
         "top1_neighbor_turnover": float(
             (neighbours[:, 0] != audit.raw_neighbours[:, 0]).float().mean()
         ),
@@ -527,96 +502,6 @@ def _null_scores(
         shuffled = activation[torch.randperm(len(activation), generator=generator)]
         shuffled_scores.append(_score_relations(group_geometry, shuffled, config)["score"])
     return random_scores, shuffled_scores
-
-
-def _cross_fold_validation(
-    audit: _AuditGeometry,
-    basis: torch.Tensor,
-    activation: torch.Tensor,
-    full_evidence: dict,
-    concept_indices: Sequence[int],
-    config: CrpAuditConfig,
-) -> dict:
-    """Validate accepted group relations on deterministic held-out folds."""
-
-    if not config.use_cross_fold_validation:
-        return {
-            "enabled": False,
-            "fold_count": 0,
-            "edge_persistence": None,
-            "fold_edge_persistence": [],
-            "fold_scores": [],
-            "fold_coverages": [],
-            "fold_edge_counts": [],
-            "passed": True,
-        }
-
-    n_samples = len(audit.centered_clip)
-    fold_count = min(config.cross_fold_count, n_samples // 2)
-    if fold_count < 2:
-        return {
-            "enabled": True,
-            "fold_count": fold_count,
-            "edge_persistence": 0.0,
-            "fold_edge_persistence": [],
-            "fold_scores": [],
-            "fold_coverages": [],
-            "fold_edge_counts": [],
-            "passed": False,
-        }
-
-    split_generator = torch.Generator().manual_seed(config.seed + 104729)
-    permutation = torch.randperm(n_samples, generator=split_generator)
-    folds = [fold for fold in torch.tensor_split(permutation, fold_count) if len(fold) >= 2]
-    full_pairs = {
-        (int(row), int(column))
-        for row, column in zip(
-            full_evidence["rows"].tolist(), full_evidence["columns"].tolist()
-        )
-    }
-    fold_persistence, fold_scores, fold_coverages, fold_edge_counts = [], [], [], []
-    for fold in folds:
-        fold = fold.sort().values
-        fold_members = set(fold.tolist())
-        fold_audit = _AuditGeometry(
-            centered_clip=audit.centered_clip[fold],
-            raw_neighbours=topk_neighbors(
-                audit.centered_clip[fold],
-                config.projected_neighbors,
-                config.similarity_chunk_size,
-            )[0],
-            splice_codes=audit.splice_codes[fold],
-        )
-        fold_geometry = _relation_geometry(fold_audit, basis, config, concept_indices)
-        fold_evidence = _score_relations(fold_geometry, activation[fold], config)
-        local_pairs = {
-            (int(fold[row]), int(fold[column]))
-            for row, column in zip(
-                fold_evidence["rows"].tolist(), fold_evidence["columns"].tolist()
-            )
-        }
-        full_pairs_in_fold = {
-            pair for pair in full_pairs if pair[0] in fold_members and pair[1] in fold_members
-        }
-        overlap = len(local_pairs.intersection(full_pairs_in_fold))
-        persistence = overlap / max(1, len(full_pairs_in_fold))
-        fold_persistence.append(float(persistence))
-        fold_scores.append(float(fold_evidence["score"]))
-        fold_coverages.append(float(fold_evidence["coverage"]))
-        fold_edge_counts.append(len(local_pairs))
-
-    edge_persistence = sum(fold_persistence) / len(fold_persistence) if fold_persistence else 0.0
-    return {
-        "enabled": True,
-        "fold_count": len(folds),
-        "edge_persistence": edge_persistence,
-        "edge_persistence_aggregation": "mean",
-        "fold_edge_persistence": fold_persistence,
-        "fold_scores": fold_scores,
-        "fold_coverages": fold_coverages,
-        "fold_edge_counts": fold_edge_counts,
-        "passed": edge_persistence >= config.cross_fold_min_edge_persistence,
-    }
 
 
 def _build_teacher_graph(
@@ -787,18 +672,9 @@ def run_frozen_audit(
         )
         null_scores = torch.tensor(random_scores + shuffled_scores)
         threshold = float(torch.quantile(null_scores, config.null_quantile)) if null_scores.numel() else math.inf
-        cross_fold = _cross_fold_validation(
-            audit_geometry,
-            basis,
-            activation,
-            evidence,
-            concept_indices,
-            config,
-        )
         selected = (
             evidence["coverage"] >= config.min_coverage
             and evidence["score"] > threshold
-            and cross_fold["passed"]
         )
         null_excess_score = max(0.0, evidence["score"] - threshold)
         null_excess_ratio = min(
@@ -824,7 +700,6 @@ def run_frozen_audit(
                 if config.use_residual_splice_gate
                 else None
             ),
-            "cross_fold": cross_fold,
             "hubness_penalty": evidence["hubness_penalty"],
             "activation_gain_alignment": evidence["activation_gain_alignment"],
             "accepted_edges": len(evidence["rows"]),
@@ -844,7 +719,6 @@ def run_frozen_audit(
                         **evidence,
                         "confidence": evidence["confidence"]
                         * null_excess_ratio
-                        * float(cross_fold["edge_persistence"] or 1.0),
                     },
                 )
             )
@@ -885,14 +759,6 @@ def run_frozen_audit(
         "cobalt_check": cobalt_check,
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
-        "cross_fold_summary": {
-            "enabled": config.use_cross_fold_validation,
-            "fold_count": config.cross_fold_count if config.use_cross_fold_validation else 0,
-            "min_edge_persistence": config.cross_fold_min_edge_persistence,
-            "passed_groups": sum(
-                bool(group.get("cross_fold", {}).get("passed")) for group in audited_groups
-            ),
-        },
         **graph,
     }
 
@@ -937,13 +803,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Enable the residual SpLiCE semantic gate.",
     )
     parser.add_argument(
-        "--use-cross-fold-validation",
-        type=_parse_bool,
-        nargs="?",
-        const=True,
-        help="Enable label-free cross-fold relation validation.",
-    )
-    parser.add_argument(
         "--use-cobalt-confidence",
         type=_parse_bool,
         nargs="?",
@@ -966,8 +825,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         config_values["cobalt"] = args.cobalt
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
-    if args.use_cross_fold_validation is not None:
-        config_values["use_cross_fold_validation"] = args.use_cross_fold_validation
     if args.use_cobalt_confidence is not None:
         config_values["use_cobalt_confidence"] = args.use_cobalt_confidence
     config = CrpAuditConfig(**config_values)

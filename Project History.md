@@ -812,3 +812,39 @@ rebuilt for this branch. CRPv3 graph semantics, CoBalT contribution screens, CQT
 audits, launch metadata, and required controls now use CLIP/SpLiCE plus optional
 legacy CoBalT only. This is an implementation and protocol split, not new evidence
 for WGA, robustness, causal concept removal, or either architecture's superiority.
+
+### 2026-09-04 — CRPv3 overengineering reduction
+
+**Track:** CRP method, shared CRP training entry point, and experiment reporting;
+CQT remains a separate compatibility track. The historical CRP-only report is
+unchanged.
+
+**State before:** CRPv3 required reciprocal projected-neighbour edges and
+deterministic cross-fold edge persistence in addition to projected gain,
+activation difference, and remaining SpLiCE agreement. Its shared trainer could
+also add graph-linked SimCLR positives, and the CRP launch/sweep configuration
+carried those switches even when the canonical CRP runs disabled them.
+
+**Change:** projected kNN is now only an efficient candidate search; reciprocity
+and cross-fold validation/persistence were removed from CRPv3 relation selection,
+artifact payloads, config paths, and launch configs. Group scoring, matched
+random-subspace/shuffled-code null calibration, residual semantic agreement,
+fixed outgoing top-k, and absolute indegree control remain. CRPv3 training now
+uses the ordinary SimCLR objective plus the confidence-weighted teacher-graph KL;
+graph-linked positives are disabled on the CRP path. The invalid graph-positive
+CRP sweep arm was removed, while CQT's explicitly separate optional ablation was
+preserved.
+
+**Reason:** the requested architecture treats CRP as a single additional
+regularizer rather than a second contrastive objective or a multi-stage
+validation protocol. This reduces coupling and makes the falsifiable core
+explicit: `L_total = L_SimCLR + lambda * mean_i[q_i * KL(p_T || p_S)]`.
+
+**Consequences:** newly prepared CRPv3 graphs use the simpler config schema and
+may contain more directed candidate relations because no reciprocal or fold
+gate removes them. Existing fold-gated graph artifacts are historical and must
+be rebuilt through the current preparation path. This changes the CRPv3 method
+and its experiment matrix, but supplies no new WGA, robustness, or causal claim;
+fresh audits and matched controls remain required. The change belongs to CRP,
+the shared trainer's CRP integration, and reporting/configuration only; CQT
+behavior and the historical reporting snapshot are not reinterpreted.

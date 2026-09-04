@@ -95,7 +95,7 @@ resolve_relational_graph_config() {
         RELATIONAL_LABEL="CRP"
         RELATIONAL_ARTIFACT="splice_crp_v3_teacher_graph"
         RELATIONAL_MODULE="splice.crp"
-        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"max_indegree\":${CRP_MAX_INDEGREE},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${CRP_USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${CRP_RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cross_fold_validation\":${CRP_USE_CROSS_FOLD_VALIDATION},\"cross_fold_count\":${CRP_CROSS_FOLD_COUNT},\"cross_fold_min_edge_persistence\":${CRP_CROSS_FOLD_MIN_EDGE_PERSISTENCE},\"use_cobalt_confidence\":${CRP_USE_COBALT_CONFIDENCE},\"seed\":${SEED},\"cobalt\":${COBALT}}"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"max_indegree\":${CRP_MAX_INDEGREE},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${CRP_USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${CRP_RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cobalt_confidence\":${CRP_USE_COBALT_CONFIDENCE},\"seed\":${SEED},\"cobalt\":${COBALT}}"
     else
         RELATIONAL_LABEL="CQT"
         RELATIONAL_ARTIFACT="splice_cqt_v1_teacher_graph"
@@ -226,7 +226,7 @@ fi
 
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
-    crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_cobalt_${COBALT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
@@ -308,8 +308,10 @@ if [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]]; then
         --crp_warmup_epochs "${CRP_WARMUP_EPOCHS}"
         --crp_decay_start_epoch "${CRP_DECAY_START_EPOCH}"
         --crp_decay_end_epoch "${CRP_DECAY_END_EPOCH}"
-        --crp_graph_positives "${CRP_GRAPH_POSITIVES}"
     )
+    if [[ "${MODE}" == "cqt_relational" ]]; then
+        ARGS+=(--crp_graph_positives "${CRP_GRAPH_POSITIVES}")
+    fi
 elif [[ "${MODE}" != "none" ]]; then
     ARGS+=(
         --splice_concepts "${SPLICE_CONCEPTS}"

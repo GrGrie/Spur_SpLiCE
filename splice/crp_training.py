@@ -377,7 +377,7 @@ class CrpRelationalRegularizer:
         warmup_epochs: int,
         decay_start_epoch: int = 0,
         decay_end_epoch: int = 0,
-        use_graph_positives: bool = True,
+        use_graph_positives: bool = False,
     ) -> None:
         if weight < 0:
             raise ValueError("CRP relational weight must be non-negative.")

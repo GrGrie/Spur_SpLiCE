@@ -27,9 +27,6 @@ def _config(**overrides):
         "orthogonal_tolerance": 1e-6,
         "use_residual_splice_gate": True,
         "residual_splice_similarity_threshold": 0.25,
-        "use_cross_fold_validation": True,
-        "cross_fold_count": 2,
-        "cross_fold_min_edge_persistence": 0.5,
         "use_cobalt_confidence": True,
     }
     values.update(overrides)
