@@ -355,7 +355,7 @@ def _gini(values: torch.Tensor) -> float:
     if total == 0:
         return 0.0
     n = len(values)
-    positions = torch.arange(1, n + 1, dtype=values.dtype)
+    positions = torch.arange(1, n + 1, dtype=values.dtype, device=values.device)
     return float((2 * (positions * values).sum() / (n * values.sum())) - (n + 1) / n)
 
 
@@ -376,7 +376,9 @@ def _residual_splice_similarity(
 
     left = codes[anchors]
     right = codes[neighbours]
-    excluded = torch.as_tensor(excluded_concept_indices, dtype=torch.long)
+    excluded = torch.as_tensor(
+        excluded_concept_indices, dtype=torch.long, device=codes.device
+    )
     left_excluded = left.index_select(2, excluded)
     right_excluded = right.index_select(2, excluded)
     numerator = (left * right).sum(dim=2) - (left_excluded * right_excluded).sum(dim=2)
@@ -415,6 +417,7 @@ def _relation_geometry(
     ).any(dim=2).float().mean(dim=1)
     return {
         "anchors": anchors,
+        "raw_neighbours": audit.raw_neighbours,
         "neighbours": neighbours,
         "projected_similarity": projected_similarity,
         "gain": gain,
@@ -467,7 +470,9 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
     else:
         activation_gain_alignment = 0.0
     activation_gain_alignment = max(0.0, min(1.0, activation_gain_alignment))
-    covered = torch.zeros(len(neighbours), dtype=torch.bool)
+    covered = torch.zeros(
+        len(neighbours), dtype=torch.bool, device=neighbours.device
+    )
     if rows.numel():
         covered[rows] = True
     indegree = torch.bincount(columns, minlength=len(neighbours))

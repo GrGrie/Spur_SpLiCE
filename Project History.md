@@ -972,3 +972,42 @@ reports, and W&B metadata no longer encode those retired dimensions. No empirica
 claim is changed; CRP audits and matched controls must be rerun under the reduced
 protocol. This is a CRP/shared-trainer architecture change with reporting and
 experiment infrastructure updates.
+
+### 2026-09-04 — Reconstruction-first CRPv4 concept-group screen
+
+**Track:** CRPv4 experiment protocol and reporting only. The spatial amplifier,
+full teacher-graph builder, relational loss, and student architecture are
+unchanged.
+
+**State before:** grouping sweeps immediately invoked the full frozen graph audit,
+and the local CRPv4 launchers coupled spatial preparation, graph construction,
+and 100-epoch student training. Group inspection therefore required expensive
+relation work, while the optional diversity selector introduced several
+selection objectives that were difficult to motivate independently.
+
+**Change:** added a reconstruction-first group screen that uses the canonical flat
+CRP grouping, collapses each group to one normalized text prototype, and measures
+the activation-ranked prototype mixture against the original full SpLiCE
+reconstruction. An optional deterministic mini audit applies the existing
+projection, activation, residual-agreement, and null calculations after the
+reconstruction gate passes, using a bounded image subset and a rank-spaced group
+sample that includes the most- and least-active selected groups, without emitting
+a teacher graph. A self-contained HTML report
+shows the decision, coverage curve, resolved configuration, poor/median/good
+examples, searchable group membership, contact sheets, sampled intervention
+before/after neighbour triplets, audited/selected group counts, and strictly
+post-hoc class/context slices. Matching Windows and standalone
+Slurm launchers expose a three-step baseline → no-coactivation → lower-text-
+threshold narrative. Retired coupled Windows launchers and the superseded group,
+semantic-family, seed-zero, pure-SpLiCE, and shortlist launcher chains were
+removed; their method implementations and historical artifacts remain intact.
+
+**Reason:** make concept granularity directly inspectable and falsifiable before
+paying for a full graph or student run, while keeping the research story limited
+to reconstruction, simple semantic coherence, and sampled intervention evidence.
+
+**Consequences:** group hyperparameters can now be rejected from one HTML artifact
+without graph materialization or SSL training. `PROVISIONAL_GO` permits, but does
+not replace, the full null-calibrated graph audit; class slices cannot influence
+group selection. Existing CRPv4 results and robustness claims are not
+reinterpreted. This is a CRP experiment-protocol and reporting change only.

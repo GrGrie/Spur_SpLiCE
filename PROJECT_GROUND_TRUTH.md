@@ -8,9 +8,11 @@ teacher graph by projecting out selected concept-group subspaces. The trainable
 student is a SimCLR ResNet whose representation is regularized toward the teacher
 relation geometry.
 
-The current CRPv4 extension is image-specific spatial balancing in the exact
-SpLiCE vocabulary. CoBalT remains available only as a separate legacy concept-
-balance compatibility control.
+The current CRPv4 extension is a CoBalT-style image-specific spatial amplifier in
+the exact SpLiCE vocabulary. It produces a separate balance signal that directly
+changes the SpLiCE codes used by grouping and relation construction while leaving
+the frozen cache untouched. The original VQ-based CoBalT path remains only as a
+separate legacy compatibility control.
 
 ## 2. Information boundary
 
@@ -76,6 +78,14 @@ The spatial artifact is prepared by
 `CRP_SPATIAL_BALANCE`, `CRP_SPATIAL_BALANCE_VARIANT`, and
 `CRP_SPATIAL_BALANCE_PATH` in `scripts/train_crp.conf`.
 
+Before a full graph audit, the canonical preparation workflow runs a lightweight
+group screen. Every flat group is collapsed to one normalized text prototype and
+the activation-ranked prototype mixture is compared with the original full
+SpLiCE reconstruction. A deterministic image subset then receives the unchanged
+CRP projection/null checks on a rank-spaced sample spanning the selected group
+list, without materializing a teacher graph. The resulting self-contained HTML
+separates label-free selection from post-hoc class slices.
+
 ## 6. CoBalT boundary
 
 The active CRPv4 CoBalT integration does not use a separate concept vocabulary or
@@ -85,9 +95,10 @@ SpLiCE vocabulary and its own image-specific evidence.
 
 ## 7. Status and claims
 
-Implemented: frozen CLIP/SpLiCE cache construction, CRP v2/v3/v4 graph audits,
-CRPv4 spatial artifacts, graph-aware relational training, legacy CoBalT control,
-W&B-enabled training entry points, and label-isolated post-hoc reports.
+Implemented: frozen CLIP/SpLiCE cache construction, the reconstruction/mini-
+intervention group screen, CRP v2/v3/v4 graph audits, CRPv4 spatial artifacts,
+graph-aware relational training, legacy CoBalT control, W&B-enabled training
+entry points, and label-isolated post-hoc reports.
 
 Not established: improvement in worst-group accuracy, superiority of any graph
 variant, or transfer of a graph relation to a particular nuisance attribute.
@@ -101,17 +112,19 @@ evaluation under the repository protocol.
 | Training entry | `spur_splice.py`, `scripts/train_crp.sbatch` |
 | CRP audit | `splice/crp.py`, `splice/graph_io.py` |
 | CRP training | `splice/crp_training.py`, `experiments/spurious_eval/training/ssl_loop.py` |
-| Diverse CRPv4 audit | `splice/crp_diverse.py` |
+| Group screen | `splice/crp_group_screen.py`, `scripts/tools/render_crp_group_screen.py` |
+| Historical optional diverse audit | `splice/crp_diverse.py` |
 | Cache | `scripts/tools/cache_crp_features.py` |
 | Spatial CoBalT path | `CoBalT/train_spatial.py`, `CoBalT/extract_spatial_balance.py`, `splice/spatial_balance.py` |
 | Baseline/report tools | `scripts/tools/build_crp_baseline_graphs.py`, `scripts/tools/render_concept_ablation_examples.py` |
 | Config paths | `scripts/tools/crp_config_path.py`, `scripts/train_crp.conf`, `scripts/shared_training.conf` |
-| Tests | `tests/test_splice_pipeline.py`, `tests/test_crp_diverse.py`, `tests/test_crp_config_path.py` |
+| Tests | `tests/test_splice_pipeline.py`, `tests/test_crp_group_screen.py`, `tests/test_crp_diverse.py`, `tests/test_crp_config_path.py` |
 
 ## 9. Canonical commands
 
 ```bash
 sbatch scripts/cache_openimages_crp.sbatch
+sbatch scripts/crpv4_group_screen.sbatch
 sbatch scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
 sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
 sbatch scripts/train_crp.sbatch

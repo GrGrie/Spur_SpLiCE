@@ -1,176 +1,141 @@
-# Запуск экспериментов
+# Experiment launchers
 
-## Обучение на Slurm
+The maintained CRPv4 workflow separates cheap concept-group screening from full
+teacher-graph construction and SSL training.
 
-Для CRP используется единая точка входа:
+## 1. Frozen feature cache
 
-```bash
-sbatch scripts/train_crp.sbatch
-```
-
-Настройки вынесены в редактируемые `.conf`-файлы рядом с launcher-ами:
-
-- [`train_crp.conf`](train_crp.conf) — CRP training и frozen-audit параметры;
-- [`prepare_crp_group_sweep.conf`](prepare_crp_group_sweep.conf) — CRP sweep matrix;
-- [`train_crp_seed0_sweep.conf`](train_crp_seed0_sweep.conf) — training sweep;
-- [`prepare_concepts.conf`](prepare_concepts.conf) — CoBalT discovery;
-- [`cache_openimages_crp.conf`](cache_openimages_crp.conf) — frozen feature cache.
-
-После изменения конфигурации обычный запуск выглядит как `sbatch` без длинного
-списка параметров. Для одноразовой альтернативы можно передать `CONFIG_FILE`,
-но основной workflow этого не требует:
-
-Каталог `scripts/tools/` намеренно содержит Python-модули. Это не старые
-launcher-ы: cache, graph audit, summaries и HTML reports вызывают их напрямую
-через `python -m scripts.tools...`. Удалять эти файлы с кластера нельзя, если
-нужны соответствующие preparation/diagnostic jobs.
-
-Запуск CRP:
+Edit `cache_openimages_crp.conf`, then run:
 
 ```bash
-sbatch scripts/train_crp.sbatch
+sbatch scripts/cache_openimages_crp.sbatch
 ```
 
-### CoBalT concept check
+The cache is reused by all group-screen configurations. It contains no target,
+context, group, or metadata annotations.
 
-CRPv4 использует projected kNN как поиск кандидатов; reciprocal и cross-fold
-checks в CRP не применяются, а residual SpLiCE semantic gate остаётся
-опциональным. По умолчанию граф ограничен `top_k=3` и `max_indegree=10`; эти
-значения задаются в `train_crp.conf`.
+## 2. CRPv4 spatial evidence
 
-Для CoBalT-проверки сначала один раз обучите label-free discovery stage и
-выгрузите фиксированные concept memberships:
+Edit `prepare_crpv4_spatial.conf`, then run:
 
 ```bash
-sbatch CoBalT/scripts/prepare_concepts.sbatch
-# edit COBALT=true in train_crp.conf
-sbatch scripts/train_crp.sbatch
+sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
 ```
 
-`COBALT=true` балансирует частоты и coactivation при составлении SpLiCE concept
-groups весами, полученными только из CoBalT memberships. Target label и
-spurious attribute для этого не читаются. Это label-free concept-balance check,
-а не supervised classifier-balancing stage из статьи. Путь к другому артефакту
-задаётся в `COBALT_CONCEPTS_PATH` соответствующего `.conf`-файла.
-При `COBALT=true` teacher graph пересобирается из текущего concept artifact,
-даже если файл графа уже существует; frozen SpLiCE cache при этом переиспользуется.
+This prepares `vanilla_patchwise`, `vanilla_slots`, `sclip_patchwise`, and
+`sclip_slots` artifacts. Patchwise variants require no Slot Attention training;
+slot variants train only the label-free spatial grouping module. All variants
+produce evidence in the exact SpLiCE vocabulary.
 
-При прямом Python-запуске доступны CLI-формы `--cobalt true|false` и
-`--cobalt-concepts /path/to/concepts.pt`.
+## 3. Group-only screen and mini audit
 
-В CRPv3 CoBalT concept artifacts, созданные заново через
-`CoBalT/scripts/prepare_concepts.sbatch`, также содержат label-free confidence
-из spatial slot separation. Он включён параметром
-`CRP_USE_COBALT_CONFIDENCE=true`; для старых artifacts без этого поля будет
-использован нейтральный confidence и это отмечается в graph metadata.
+The screen is the first CRPv4 decision point. It does not build a teacher graph
+or train a student.
 
-Для CRP с ImageNet-предобученной ResNet-50 измените `MODEL` в нужном
-`.conf`-файле:
+Each concept group is collapsed to one normalized text prototype. Image-specific
+group weights are sums of the corresponding SpLiCE weights. The report measures
+how closely that compact mixture reproduces the original full SpLiCE
+representation. Groups are ordered by total activation mass, and the smallest
+evaluated prefix reaching the requested image coverage is passed to a sampled
+intervention audit.
+
+The default experiment story is:
+
+1. `current_t070_c020`: current text plus coactivation grouping;
+2. `semantic_t070`: remove coactivation so mutually exclusive names can merge;
+3. `semantic_t065`: lower text similarity to create broader semantic families.
+
+Edit `crpv4_group_screen.conf`, then run:
 
 ```bash
-MODEL="resnet50_pretrained"
+sbatch scripts/crpv4_group_screen.sbatch
 ```
 
-При первом запуске torchvision автоматически скачает веса
-`ResNet50_Weights.IMAGENET1K_V2` в PyTorch cache. Encoder использует тот же
-ImageNet stem (`7x7`, stride 2, max-pool) и те же 224x224 transforms, что и
-`resnet18_large`; во время SSL все его веса продолжают обучаться. Для
-контроля той же архитектуры без предобучения используйте
-`MODEL="resnet50_large"`.
-
-В обоих скриптах `EPOCHS` по умолчанию равен 500, а лимит Slurm job — 8 часов.
-Общие evaluation- и инфраструктурные настройки находятся ниже основных knobs.
-
-Имена W&B runs и checkpoint-папок строятся автоматически из режима, seed и
-ключевых гиперпараметров.
-
-### Seed-0 CRP sweep
-
-Сначала строятся label-free graph variants; этот шаг не обучает ResNet и не
-выбирает конфигурацию по downstream WGA:
-
-```bash
-sbatch scripts/prepare_crp_group_sweep.sbatch
-```
-
-После проверки слов, размера групп, coverage, null margin и hubness запускаются
-полные W&B-tracked обучения:
-
-```bash
-sbatch scripts/train_crp_seed0_sweep.sbatch
-```
-
-CRP sweep по умолчанию ожидает graph variant `g2_t070_c020_k12`; его можно
-изменить в `train_crp_seed0_sweep.conf`.
-
-Основные значения видны прямо в W&B run name. Например, CRPv3-конфигурация
-выше получит имя:
+Every record produces:
 
 ```text
-waterbirds_S0_resnet18_large_CRP_precision_simclrWei_1.0_splWei_0.01_crpTemp_0.25_graphPos_true_decay_200-350_lr_0.01_e500
+outputs/crpv4_group_screen/<dataset>/<variant>/group_screen.json
+outputs/crpv4_group_screen/<dataset>/<variant>/group_screen.html
 ```
 
-## Sanity-check конкретных изображений
+The HTML is self-contained and includes:
 
-Самодостаточный HTML-аудит с четырьмя типичными парами, выбранными concept
-groups/factors, `cosine before / after / delta`, агрегатной сводкой графа и
-реальными retained teacher edges создаётся так:
+- a clear `FAIL_RECONSTRUCTION`, `FAIL_INTERVENTION`, `REVIEW_GROUPS`, or
+  `PROVISIONAL_GO` decision;
+- the reconstruction coverage curve and resolved hyperparameters;
+- poor, median, and good reconstruction examples;
+- post-hoc target/context slices, clearly isolated from selection;
+- a searchable table of every discovered group;
+- image contact sheets for reconstruction-selected groups;
+- mini-audit null outcomes, the audited/selected group count, and representative
+  anchor/raw-neighbour/projected-neighbour triplets across a rank-spaced group sample.
+
+### Windows
+
+The Windows launcher contains the same three default experiment records and
+automatically looks for the existing local Waterbirds cache and dataset root:
+
+```powershell
+.\scripts\run_crpv4_group_screen.ps1
+```
+
+Inspect paths and records without running the experiment:
+
+```powershell
+.\scripts\run_crpv4_group_screen.ps1 -ValidateOnly
+```
+
+Run one explicit spatial screen after the spatial artifact exists:
+
+```powershell
+.\scripts\run_crpv4_group_screen.ps1 -VariantRecords @("semantic_t065_slots|0.01|0.95|0.65|0.00|vanilla_slots|0.25|0.0")
+```
+
+Use `-SkipMiniAudit` when iterating only on reconstruction and visual grouping.
+
+## 4. Full frozen graph audit
+
+Only configurations that receive a satisfactory group report should proceed to
+the full null-calibrated teacher graph:
 
 ```bash
+sbatch scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
+```
+
+Despite its retained compatibility filename, this launcher uses the current CRP
+graph implementation. Full graph settings live in `train_crp.conf` or in the
+standalone audit launcher, depending on the chosen workflow.
+
+Post-hoc graph diagnostics remain available through:
+
+```bash
+sbatch scripts/SpLiCE_CRP_v2_report.sbatch
+sbatch scripts/SpLiCE_CRP_v2_posthoc_waterbirds.sbatch
 sbatch scripts/concept_ablation_examples.sbatch
 ```
 
-Четыре пары покрывают: одинаковый target при разных backgrounds, разные targets
-при одинаковом background, одинаковые target/background и разные
-target/background. Для каждого типа выбирается пара с исходным CLIP cosine,
-ближайшим к медиане всех допустимых пар; результат interventions на выбор не
-влияет. По умолчанию показываются не более 12 выбранных interventions и одно
-типичное retained edge на группу. `REPORT_MAX_INTERVENTIONS=0` показывает все
-eligible interventions, а `REPORT_EDGES_PER_GROUP=0` скрывает edge examples.
+## 5. SSL training
 
-Graph path автоматически включает все параметры frozen audit. Необязательный
-`RELATIONAL_GRAPH_VARIANT` служит только читаемой меткой: полная конфигурация всё
-равно добавляется ниже неё, поэтому другое содержимое не перезапишет граф.
-`graph_audit.html` сохраняется рядом с соответствующим `teacher_graph.json`.
+Full CRP training uses:
 
-Скрытые Waterbirds labels/background используются только в этом post-hoc
-diagnostic для выбора, подписи четырёх пар и aggregate edge metrics. Frozen cache и teacher graph строятся
-тем же preparation path, что и у соответствующего training entry point.
+```bash
+sbatch scripts/train_crp.sbatch
+```
 
-## KL-only ablation
-
-Обучение backbone только confidence-weighted relational KL, с нулевым весом
-SimCLR/NT-Xent и штатным downstream linear classifier:
+The separate KL-only diagnostic uses:
 
 ```bash
 sbatch scripts/train_kl_only.sbatch
 ```
 
-Запуск включает W&B, начинает KL с первой эпохи, не применяет поздний decay и
-не включает graph positives. Пустой teacher graph считается ошибкой, поскольку
-при нулевом SimCLR он оставил бы модель без обучающего сигнала. Avg Accuracy и
-Worst-Group Accuracy вычисляются существующим periodic linear-probe pipeline.
+Full SSL training must keep W&B enabled. Disabling it is allowed only for an
+explicit smoke test or local debugging.
 
-## CRP-подготовка и диагностика
+## Retained controls and utilities
 
-Оставшиеся `.sbatch`-файлы не обучают ResNet и не содержат альтернативных
-training-гиперпараметров. Они нужны только для построения и проверки CRP teacher
-graph:
-
-| Скрипт | Назначение |
-|---|---|
-| `cache_openimages_crp.sbatch` | один раз кеширует frozen признаки с Open Images V7 vocabulary |
-| `SpLiCE_CRP_v2_frozen_audit.sbatch` | строит и аудирует teacher graph |
-| `SpLiCE_CRP_v2_report.sbatch` | формирует label-free go/no-go отчёт |
-| `SpLiCE_CRP_v2_posthoc_waterbirds.sbatch` | post-hoc проверка по скрытым Waterbirds labels |
-| `SpLiCE_CRP_v2_baseline_graphs.sbatch` | строит raw-CLIP baseline graph |
-| `SpLiCE_CRP_v2_baselines_posthoc.sbatch` | сравнивает CRP и baseline graphs |
-| `SpLiCE_CRP_v2_baseline_compare.sbatch` | объединённый baseline diagnostic job |
-| `concept_ablation_examples.sbatch` | создаёт один HTML с изображениями и cosine ablations |
-| `../CoBalT/scripts/prepare_concepts.sbatch` | обучает label-free CoBalT discovery и сохраняет memberships для `COBALT=true` |
-
-CRP-обучение запускается через `train_crp.sbatch`; entry point автоматически
-подготавливает graph.
-
-Все обучения запускаются на кластере. Локальные PowerShell-launcher-ы удалены;
-для cluster-only workflow используются только Slurm entry points и конфиги выше.
+- `prepare_concepts.conf` and `CoBalT/scripts/prepare_concepts.sbatch` retain the
+  legacy CoBalT compatibility control.
+- `SpLiCE_CRP_v2_baseline_*.sbatch` retain raw-CLIP graph baselines.
+- `scripts/tools/` contains active cache, reporting, evaluation, and baseline
+  modules; these are not retired launchers.
+- `load_config.sh` is the shared trusted `.conf` loader for Slurm entry points.

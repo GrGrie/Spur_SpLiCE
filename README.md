@@ -41,6 +41,8 @@ with `--data_folder` or edit the relevant Slurm `.conf` file.
 - `scripts/download_openimages_vocabulary.py` — download the Open Images V7 class-label dictionary only.
 - `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE cache construction.
 - `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
+- `python -m splice.crp_group_screen` — fast group-prototype reconstruction and sampled intervention audit.
+- `scripts/run_crpv4_group_screen.ps1` / `scripts/crpv4_group_screen.sbatch` — Windows and Slurm group-screen launchers.
 - `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
@@ -63,88 +65,44 @@ python scripts/download_openimages_vocabulary.py --download-root ./data
 ```
 
 No vocabulary flags are needed when building a new SpLiCE/CRP cache. Pass an
-explicit vocabulary and size only for a deliberate ablation. Existing LAION caches
-and graphs must not be reused with the default dictionary; rebuild them with a
-distinct experiment variant. For a graph-only
-Open Images CRP sweep, first build the cache once, then submit the 15-configuration
-array. The cache step is intentionally separate so array jobs do not rebuild the
-same frozen features concurrently:
+explicit vocabulary and size only for a deliberate ablation. Existing caches and
+graphs built with another vocabulary must not be mixed with the Open Images V7
+dictionary.
 
-Edit `scripts/cache_openimages_crp.conf` and
-`scripts/prepare_crp_group_sweep.conf` for the dataset, cache path, vocabulary,
-and graph prefix. Then submit the two jobs in order:
+The current CRPv4 workflow screens concept groups before building a full teacher
+graph. Edit the three experiment records and shared thresholds in
+`scripts/crpv4_group_screen.conf`, then run:
 
 ```bash
 sbatch scripts/cache_openimages_crp.sbatch
-# after the cache job finishes successfully:
-sbatch scripts/prepare_crp_group_sweep.sbatch
+sbatch scripts/crpv4_group_screen.sbatch
 ```
 
-The sweep keeps the original twelve audit settings and adds three semantic-family
-settings. In those three settings, `coactivation_threshold=0` intentionally removes
-the coactivation gate (SpLiCE codes are non-negative), `min_group_size=1` permits
-both singleton and variable-size components, and `max_selected_groups=0` disables
-the post-audit cap. They test whether mutually exclusive names such as different
-bird species collapse into one semantic factor while leaving room for background
-families; every factor must still pass the label-free null and semantic gates.
-The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
-Each task writes its own graph directory and an English-only `graph_audit.html`.
-The three CoBalT semantic-family variants also have a dedicated seed-0
-launcher, so they can be prepared without rerunning the twelve conventional
-grouping variants:
+The screen first collapses each flat CRP group into one text prototype and asks
+whether the prototype mixture preserves the original SpLiCE reconstruction. After
+that gate passes, it runs a small deterministic intervention audit over a
+rank-spaced sample of the reconstruction-selected groups, including the most- and
+least-active selected groups. Every experiment writes `group_screen.json` and a self-contained
+`group_screen.html` with the decision, coverage curve, configuration, class slices,
+poor/median/good reconstruction examples, group contact sheets, the audited/selected
+group count, and raw-versus-projected nearest-neighbour triplets. Dataset annotations
+appear only in the post-hoc HTML section and
+never enter grouping or the mini audit.
 
-```bash
-sbatch scripts/prepare_crp_semantic_family_sweep.sbatch
-```
-
-A separate pure-SpLiCE graph array builds the same two CRP settings without
-loading CoBalT assignments or applying CoBalT-derived sample weights. It reuses the
-same frozen Open Images SpLiCE cache as the CoBalT comparison:
-
-```bash
-sbatch scripts/prepare_crp_splice_only_sweep.sbatch
-```
-
-The five-task, 100-epoch screening array then runs a matched pure SimCLR control,
-two pure-SpLiCE CRP graphs, and the corresponding two CoBalT-balanced CRP graphs
-for `g3_t065_c015_k8` and `g2_t070_c020_k12`. It expects all four graph artifacts
-to already exist and deliberately disables automatic rebuilding:
-
-```bash
-sbatch scripts/train_ssl_graph_shortlist.sbatch
-```
-
-This array is a mechanism screen, not a final comparison. Promote a candidate to
-the full epoch and multi-seed protocol only after inspecting its W&B loss scale,
-supported-anchor fraction, average accuracy, WGA, and per-group accuracy against
-the matched SimCLR task.
-
-For a one-command Windows/RTX quick screen of SpLiCE-only CRP against matched
-SimCLR, run from a fresh repository clone in PowerShell:
+On Windows the same default three-arm story is launched with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_windows.ps1
+.\scripts\run_crpv4_group_screen.ps1
 ```
 
-The script uses the existing `grgrie-train` Conda environment, checks CUDA,
-downloads and materializes Waterbirds plus the Open Images vocabulary, builds a
-no-CoBalT `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
-one 30-epoch final validation probe per arm, and writes `results.csv`, logs,
-checkpoints, an HTML graph audit, and offline W&B records under
-`outputs/windows_splice_only_ablation`. These defaults are a local mechanism
-screen and are not directly comparable with the 500-epoch protocol.
+The default records compare the current coactivation-gated grouping against
+semantic-only thresholds 0.70 and 0.65. Spatial variants can be added after their
+artifacts have been prepared; the configuration contains commented examples.
 
-After that run, add the matched current CRPv3/CoBalT arm with:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_windows.ps1 -IncludeCobalt
-```
-
-Completed SimCLR and SpLiCE-only logs are reused. The additional path trains the
-current 50-epoch CoBalT discovery model, extracts fixed memberships, rebuilds the
-same `g2_t070_c020_k12` configuration with CoBalT weighting enabled, and trains a
-third SSL student with the same quick-screen settings. CoBalT changes graph
-construction; applying it to an already fixed graph would be a no-op.
+This is a mechanism screen, not a final comparison. A failed report should be
+discarded before graph construction. A visually coherent `PROVISIONAL_GO`
+candidate proceeds to the full frozen audit and only then to matched W&B-tracked
+student training.
 
 For a single CRP training run with the same dictionary, use the regular Slurm
 entry point:
@@ -331,13 +289,10 @@ The CRP entry point builds or reuses its teacher graph automatically:
 sbatch scripts/train_crp.sbatch
 ```
 
-CRP training and graph hyperparameters are in `scripts/train_crp.conf`. Graph
-sweep variants are edited in `scripts/prepare_crp_group_sweep.conf`.
-
-For CRP graph sweeps, edit the variant records in
-`scripts/prepare_crp_group_sweep.conf` and submit the pipeline again. The fixed
-feature file is reused without submitting another cache job. ResNet and CRP-loss
-settings live in `scripts/train_crp.conf`.
+CRP training and full-graph hyperparameters remain in `scripts/train_crp.conf`.
+Group-screen variants and their lightweight audit settings live in
+`scripts/crpv4_group_screen.conf`. The frozen feature file is reused across every
+screen record.
 
 The audit still constructs the graph. If it contains no accepted edges, training
 runs but the CRP loss is exactly zero, so the result is the SimCLR fallback. The
