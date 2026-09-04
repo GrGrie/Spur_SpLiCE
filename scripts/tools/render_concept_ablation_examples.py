@@ -20,11 +20,7 @@ from splice.crp import orthonormal_basis, project_out, validate_feature_cache
 from splice.graph_io import load_graph_json
 
 
-CRP_ARTIFACTS = {
-    "splice_crp_v2_teacher_graph",
-    "splice_crp_v3_teacher_graph",
-    "splice_crp_v4_teacher_graph",
-}
+CRP_ARTIFACTS = {"splice_crp_v2_teacher_graph", "splice_crp_v3_teacher_graph"}
 LABEL_NAMES = {0: "landbird", 1: "waterbird"}
 BACKGROUND_NAMES = {0: "land background", 1: "water background"}
 
@@ -131,12 +127,7 @@ def _interventions(
                 continue
             indices = [int(index) for index in group["concept_indices"]]
             concepts = [str(word) for word in group.get("concepts", [])]
-            semantic_label = (
-                "residual SpLiCE agreement"
-                if not bool(graph.get("config", {}).get("use_dino", True))
-                and bool(group.get("residual_splice_gate_enabled", False))
-                else "DINO agreement"
-            )
+            semantic_label = "residual SpLiCE agreement"
             interventions.append(
                 Intervention(
                     identifier=f"G{int(group['group_id'])}",
@@ -401,7 +392,7 @@ def _graph_summary(graph: dict, cache: dict, metadata_rows: Sequence[dict]) -> s
             f"median={float(supported_confidence.median()):.6g}, mean={float(supported_confidence.mean()):.6g}, "
             f"max={float(supported_confidence.max()):.6g}" if supported_confidence.numel() else "no supported anchors"
         )),
-        ("DINO / CoBalT", f"{bool(config.get('use_dino', True))} / {bool(config.get('cobalt', False))}"),
+        ("CoBalT", str(bool(config.get("cobalt", False)))),
     ]
     return '<table><tbody>' + ''.join(
         f'<tr><th>{html.escape(name)}</th><td>{html.escape(value)}</td></tr>' for name, value in rows_html
@@ -456,9 +447,6 @@ def _retained_edge_examples(
             edited = _apply(pair, intervention)
             raw_cosine = float(torch.dot(pair[0], pair[1]))
             projected_cosine = float(torch.dot(edited[0], edited[1]))
-            dino_similarity = "disabled"
-            if bool(graph.get("config", {}).get("use_dino", True)) and cache.get("dino_embeddings") is not None:
-                dino_similarity = f"{float(torch.dot(cache['dino_embeddings'][row], cache['dino_embeddings'][column])):.6f}"
             left_meta = metadata_rows[_source_index(cache["sample_ids"][row])]
             right_meta = metadata_rows[_source_index(cache["sample_ids"][column])]
             same_target = int(left_meta["y"]) == int(right_meta["y"])
@@ -475,7 +463,6 @@ def _retained_edge_examples(
                 f'<tr><th>Raw / projected cosine</th><td>{raw_cosine:.6f} / {projected_cosine:.6f}</td></tr>'
                 f'<tr><th>Stored gain</th><td>{float(gains[row, slot]):+.6f}</td></tr>'
                 f'<tr><th>Group activation A / B</th><td>{activation_text}</td></tr>'
-                f'<tr><th>DINO cosine</th><td>{dino_similarity}</td></tr>'
                 f'<tr><th>Edge confidence / teacher weight</th><td>{float(edge_confidences[row, slot]):.6g} / {float(weights[row, slot]):.6g}</td></tr>'
                 f'<tr><th>Anchor confidence</th><td>{float(anchor_confidence[row]):.6g}</td></tr>'
                 f'<tr><th>Post-hoc relation</th><td>same target={same_target}; opposite background={opposite_background}</td></tr>'
@@ -500,10 +487,7 @@ def generate_report(
     edges_per_group: int = 1,
 ) -> Path:
     graph = load_graph_json(graph_path)
-    cache = validate_feature_cache(
-        torch.load(cache_path, map_location="cpu", weights_only=True),
-        require_dino=False,
-    )
+    cache = validate_feature_cache(torch.load(cache_path, map_location="cpu", weights_only=True))
     if list(map(str, graph.get("sample_ids", []))) != list(map(str, cache["sample_ids"])):
         raise ValueError("Teacher graph and feature cache sample IDs are not aligned.")
     if scope not in {"selected", "all"}:

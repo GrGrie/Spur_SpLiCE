@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=08:00:00
 #SBATCH --job-name=SpurSpLiCE_CQT_graphs
-#SBATCH --array=0-5%2
+#SBATCH --array=0-4%2
 #SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1
@@ -23,7 +23,7 @@ load_splice_config "${CONFIG_FILE}"
 variant_record="${CQT_SWEEP_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
 [[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
 IFS='|' read -r RELATIONAL_GRAPH_VARIANT CQT_MIN_QUOTIENT_EFFICACY \
-    CQT_DINO_DAMAGE_QUANTILE CQT_MAX_FACTORS CQT_MIN_GROUP_SIZE \
+    CQT_MAX_FACTORS CQT_MIN_GROUP_SIZE \
     CQT_TEXT_SIMILARITY_THRESHOLD CQT_COACTIVATION_THRESHOLD <<< "${variant_record}"
 
 CONFIG_ALREADY_LOADED="true"

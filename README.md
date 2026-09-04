@@ -40,13 +40,12 @@ with `--data_folder` or edit the relevant Slurm `.conf` file.
 - `splice_cbm.py` — sparse concept-bottleneck baseline.
 - `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
 - `scripts/download_openimages_vocabulary.py` — download the Open Images V7 class-label dictionary only.
-- `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE/DINOv3 cache construction.
+- `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE cache construction.
 - `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
 - `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
-- `CoBalT/scripts/prepare_crpv4_spatial.sbatch` — four-way CRPv4 spatial evidence preparation.
 - `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
 - `scripts/cache_openimages_crp.sbatch` — Slurm-only Open Images V7 cache preparation.
 - `scripts/*.conf` — editable Slurm configurations for training, sweeps, cache,
@@ -91,7 +90,7 @@ bird species collapse into one semantic factor while leaving room for background
 families; every factor must still pass the label-free null and cross-fold gates.
 The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
 Each task writes its own graph directory and an English-only `graph_audit.html`.
-The three CoBalT/no-DINO semantic-family variants also have a dedicated seed-0
+The three CoBalT-balanced semantic-family variants also have a dedicated seed-0
 launcher, so they can be prepared without rerunning the twelve conventional
 grouping variants:
 
@@ -99,7 +98,7 @@ grouping variants:
 sbatch scripts/prepare_crp_semantic_family_sweep.sbatch
 ```
 
-A separate pure-SpLiCE/no-DINO graph array builds the same two CRP settings without
+A separate pure-SpLiCE graph array builds the same two CRP settings without
 loading CoBalT assignments or applying CoBalT-derived sample weights. It reuses the
 same frozen Open Images SpLiCE cache as the CoBalT comparison:
 
@@ -130,7 +129,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_wind
 
 The script uses the existing `grgrie-train` Conda environment, checks CUDA,
 downloads and materializes Waterbirds plus the Open Images vocabulary, builds a
-no-DINO/no-CoBalT `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
+SpLiCE-only `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
 one 30-epoch final validation probe per arm, and writes `results.csv`, logs,
 checkpoints, an HTML graph audit, and offline W&B records under
 `outputs/windows_splice_only_ablation`. These defaults are a local mechanism
@@ -155,27 +154,6 @@ entry point:
 # edit the matching values in scripts/train_crp.conf first
 sbatch scripts/train_crp.sbatch
 ```
-
-### CRPv4 spatial SpLiCE balancing
-
-CRPv4 keeps the CRP projection and student loss, but replaces the earlier
-anonymous CoBalT concept balance with image-specific evidence in the exact SpLiCE
-vocabulary. Frozen CLIP patch tokens are tested in four controlled variants:
-vanilla patchwise, vanilla plus slots, SCLIP patchwise, and SCLIP plus slots. Slot
-aggregation happens in CLIP's native visual width; CLIP's frozen visual projection
-is applied only afterward. The original SpLiCE cache is never overwritten.
-
-Prepare all four spatial artifacts after the matching CRP cache exists:
-
-```bash
-sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
-```
-
-Then select one artifact in `scripts/train_crp.conf` by setting
-`CRP_SPATIAL_BALANCE=true`, `CRP_SPATIAL_BALANCE_VARIANT`, and
-`CRP_SPATIAL_BALANCE_PATH`, and run the normal CRP entry point. The resulting
-graph is versioned separately as CRPv4; legacy CoBalT balancing remains available
-only as a distinct compatibility ablation.
 
 ## Training length and learning-rate schedules
 
@@ -284,12 +262,12 @@ precomputation before SSL training starts.
 See `experiments/spurious_eval/README.md` for implementation-level details and
 `scripts/README.md` for cluster launch and recovery instructions.
 
-## SpLiCE-CRP v2 frozen audit
+## SpLiCE-CRP v3 frozen audit
 
 The first canonical CRP v2 implementation is deliberately separated from SSL
 training. It consumes one `.pt` cache with dataset-ordered `sample_ids`, normalized
 `clip_embeddings`, `image_mean`, dense non-negative `splice_codes`, `dictionary`,
-`vocabulary`, optional normalized `dino_embeddings`, and `cache_version: 1`. An optional
+`vocabulary`, and `cache_version: 2`. An optional
 `provenance` mapping may record checkpoint and dataset identifiers; users do not
 need to calculate hashes manually. Annotation keys such as `labels`,
 `targets`, `metadata`, or `groups` are rejected at the cache boundary.
@@ -301,20 +279,17 @@ python -m splice.crp \
 ```
 
 The command clusters active concepts, projects the full centered CLIP embedding,
-keeps reciprocal relations supported by DINO by default, calibrates group selection against
+keeps reciprocal relations supported by remaining SpLiCE concepts, calibrates group selection against
 matched random-subspace and shuffled-code nulls, caps donor indegree, and writes one
 complete, readable JSON teacher graph. Selecting no group
 is valid and produces an empty graph, in which case training automatically reduces
 to SimCLR.
 
-Two explicit graph-construction checks are available for both CRP and CQT. Set
-`USE_DINO=false` in the corresponding Slurm entry point to avoid loading DINO,
-omit its cache tensor, and disable the DINO-specific gate. Set `COBALT=true`
-after running `CoBalT/scripts/prepare_concepts.sbatch` to reweight concept
+Set `COBALT=true` after running `CoBalT/scripts/prepare_concepts.sbatch` to reweight concept
 frequency/coactivation by fixed label-free CoBalT memberships. This second mode
 implements only the label-free concept-balancing marginal during group discovery;
-it does not import CoBalT's supervised classifier-balancing stage. Variant caches,
-graphs, run names, and W&B tags record these choices separately.
+it does not import CoBalT's supervised classifier-balancing stage. Variant graphs,
+run names, and W&B tags record this choice separately.
 
 ## SpLiCE-CRP v2 student training
 

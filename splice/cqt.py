@@ -30,7 +30,6 @@ from splice.crp import (
     _build_teacher_graph,
     _parse_bool,
     group_concepts,
-    topk_neighbors,
     validate_feature_cache,
 )
 from splice.graph_io import save_graph_json
@@ -58,8 +57,6 @@ class CqtAuditConfig:
     transport_mass: float = 0.25
     min_transport_pairs: int = 8
     min_word_similarity: float = 0.20
-    dino_neighbors: int = 10
-    dino_damage_quantile: float = 0.50
     min_intervention_gain: float = 1e-4
     min_coverage: float = 0.01
     null_trials: int = 4
@@ -68,19 +65,17 @@ class CqtAuditConfig:
     indegree_factor: float = 3.0
     similarity_chunk_size: int = 512
     seed: int = 0
-    use_dino: bool = True
     cobalt: bool = False
 
 
 def _validate_config(config: CqtAuditConfig) -> None:
-    if not isinstance(config.use_dino, bool) or not isinstance(config.cobalt, bool):
-        raise ValueError("use_dino and cobalt must be booleans.")
+    if not isinstance(config.cobalt, bool):
+        raise ValueError("cobalt must be a boolean.")
     probabilities = {
         "min_concept_frequency": config.min_concept_frequency,
         "max_concept_frequency": config.max_concept_frequency,
         "min_exclusivity": config.min_exclusivity,
         "transport_mass": config.transport_mass,
-        "dino_damage_quantile": config.dino_damage_quantile,
         "min_coverage": config.min_coverage,
         "null_quantile": config.null_quantile,
     }
@@ -96,7 +91,6 @@ def _validate_config(config: CqtAuditConfig) -> None:
         "min_state_samples": config.min_state_samples,
         "transport_candidates": config.transport_candidates,
         "min_transport_pairs": config.min_transport_pairs,
-        "dino_neighbors": config.dino_neighbors,
         "null_trials": config.null_trials,
         "graph_top_k": config.graph_top_k,
         "similarity_chunk_size": config.similarity_chunk_size,
@@ -440,28 +434,13 @@ def _solve_partial_transport(
     return flow
 
 
-def _local_dino_signatures(
-    dino: torch.Tensor,
-    state_indices: torch.Tensor,
-    config: CqtAuditConfig,
-) -> torch.Tensor:
-    _, similarities = topk_neighbors(
-        dino[state_indices],
-        min(config.dino_neighbors, len(state_indices) - 1),
-        config.similarity_chunk_size,
-    )
-    return similarities
-
-
 def _plan_for_states(
     centered_clip: torch.Tensor,
     quotient_clip: torch.Tensor,
     word_embeddings: torch.Tensor,
-    dino: torch.Tensor,
     state_a: torch.Tensor,
     state_b: torch.Tensor,
     config: CqtAuditConfig,
-    include_dino: bool = True,
 ) -> dict | None:
     source, destination, word_similarity = _word_candidates(
         word_embeddings, state_a, state_b, config
@@ -501,24 +480,12 @@ def _plan_for_states(
         "word_similarity": float((flow * word_similarity).sum() / mass),
         "coverage": 2.0 * mass / (len(state_a) + len(state_b)),
     }
-    if include_dino:
-        signature_a = _local_dino_signatures(dino, state_a, config)
-        signature_b = _local_dino_signatures(dino, state_b, config)
-        signature_width = min(signature_a.shape[1], signature_b.shape[1])
-        dino_damage = (
-            signature_a[source, :signature_width] - signature_b[destination, :signature_width]
-        ).abs().mean(dim=1)
-        payload["dino_damage"] = float((flow * dino_damage).sum() / mass)
-        payload["dino_damage_threshold"] = float(
-            torch.quantile(dino_damage, config.dino_damage_quantile)
-        )
     return payload
 
 
 def _random_contrast_scores(
     centered_clip: torch.Tensor,
     word_embeddings: torch.Tensor,
-    dino: torch.Tensor,
     state_a: torch.Tensor,
     state_b: torch.Tensor,
     config: CqtAuditConfig,
@@ -534,11 +501,9 @@ def _random_contrast_scores(
             centered_clip,
             random_quotient,
             word_embeddings,
-            dino,
             state_a,
             state_b,
             config,
-            include_dino=False,
         )
         scores.append(plan["intervention_gain"] if plan is not None else 0.0)
     return scores
@@ -548,7 +513,6 @@ def _shuffled_state_scores(
     centered_clip: torch.Tensor,
     quotient_clip: torch.Tensor,
     word_embeddings: torch.Tensor,
-    dino: torch.Tensor,
     state_a: torch.Tensor,
     state_b: torch.Tensor,
     config: CqtAuditConfig,
@@ -562,11 +526,9 @@ def _shuffled_state_scores(
             centered_clip,
             quotient_clip,
             word_embeddings,
-            dino,
             shuffled[: len(state_a)],
             shuffled[len(state_a) :],
             config,
-            include_dino=False,
         )
         scores.append(plan["intervention_gain"] if plan is not None else 0.0)
     return scores
@@ -630,7 +592,7 @@ def run_cqt_audit(
     """Discover CQT factors and return a CRP-compatible sparse teacher graph."""
 
     _validate_config(config)
-    cache = validate_feature_cache(cache, require_dino=config.use_dino)
+    cache = validate_feature_cache(cache)
     cobalt_check = None
     sample_weights = None
     if config.cobalt:
@@ -742,11 +704,9 @@ def run_cqt_audit(
                 cache["centered_clip"],
                 quotient_clip,
                 factor_word_embeddings,
-                cache["dino_embeddings"],
                 evaluation_a,
                 evaluation_b,
                 config,
-                include_dino=config.use_dino,
             )
             if plan is None:
                 failed_evaluation_fold = evaluation_fold
@@ -762,8 +722,6 @@ def run_cqt_audit(
                     "matched_pairs": plan["matched_pairs"],
                     "intervention_gain": plan["intervention_gain"],
                     "word_similarity": plan["word_similarity"],
-                    "dino_local_damage": plan.get("dino_damage"),
-                    "dino_damage_threshold": plan.get("dino_damage_threshold"),
                     "coverage": plan["coverage"],
                 }
             )
@@ -771,7 +729,6 @@ def run_cqt_audit(
                 _random_contrast_scores(
                     cache["centered_clip"],
                     factor_word_embeddings,
-                    cache["dino_embeddings"],
                     evaluation_a,
                     evaluation_b,
                     config,
@@ -783,7 +740,6 @@ def run_cqt_audit(
                     cache["centered_clip"],
                     quotient_clip,
                     factor_word_embeddings,
-                    cache["dino_embeddings"],
                     evaluation_a,
                     evaluation_b,
                     config,
@@ -808,10 +764,6 @@ def run_cqt_audit(
         gain = float(np.mean([metric["intervention_gain"] for metric in fold_metrics]))
         word_similarity = float(np.mean([metric["word_similarity"] for metric in fold_metrics]))
         coverage = float(np.mean([metric["coverage"] for metric in fold_metrics]))
-        dino_safe = not config.use_dino or all(
-            metric["dino_local_damage"] <= metric["dino_damage_threshold"]
-            for metric in fold_metrics
-        )
         gates = {
             "state_predictable": min(metric["raw_state_balanced_accuracy"] for metric in fold_metrics)
             >= config.min_state_balanced_accuracy,
@@ -821,7 +773,6 @@ def run_cqt_audit(
             > config.min_intervention_gain,
             "beats_null": gain > null_threshold,
             "word_preserved": word_similarity >= config.min_word_similarity,
-            "dino_locally_safe": dino_safe,
             "coverage": coverage >= config.min_coverage,
         }
         selected = all(gates.values())
@@ -838,7 +789,6 @@ def run_cqt_audit(
             "word_similarity": word_similarity,
             "coverage": coverage,
             "matched_pairs": sum(plan["matched_pairs"] for plan in plans),
-            "dino_guard_enabled": config.use_dino,
             "gates": gates,
             "preserved_concepts": _preserved_concepts(
                 plans, cache["splice_codes"], cache["vocabulary"], excluded
@@ -900,7 +850,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Complete CQT teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CqtAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the proposal/null seed.")
-    parser.add_argument("--use-dino", "--use_dino", type=_parse_bool, nargs="?", const=True)
     parser.add_argument("--cobalt", type=_parse_bool, nargs="?", const=True)
     parser.add_argument("--cobalt-concepts", default="", help="Fixed CoBalT Stage-1 concept artifact.")
     return parser.parse_args(argv)
@@ -914,8 +863,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CQT audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
-    if args.use_dino is not None:
-        config_values["use_dino"] = args.use_dino
     if args.cobalt is not None:
         config_values["cobalt"] = args.cobalt
     config = CqtAuditConfig(**config_values)

@@ -11,14 +11,13 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from splice.crp import CRP_GRAPH_VERSION, CRP_V4_GRAPH_VERSION, GRAPH_VERSION
+from splice.crp import CRP_GRAPH_VERSION, GRAPH_VERSION
 from splice.graph_io import graph_fingerprint, load_graph_json
 
 
 TEACHER_GRAPH_ARTIFACTS = {
     "splice_crp_v2_teacher_graph",
     "splice_crp_v3_teacher_graph",
-    "splice_crp_v4_teacher_graph",
     "splice_cqt_v1_teacher_graph",
 }
 REQUIRED_GRAPH_KEYS = {
@@ -65,13 +64,11 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         raise ValueError(f"CRP teacher graph is missing required keys: {sorted(missing)}")
     if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
         raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
-    expected_versions = {
-        "splice_crp_v2_teacher_graph": GRAPH_VERSION,
-        "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
-        "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,
-        "splice_cqt_v1_teacher_graph": GRAPH_VERSION,
-    }
-    expected_version = expected_versions[graph["artifact"]]
+    expected_version = (
+        CRP_GRAPH_VERSION
+        if graph["artifact"] == "splice_crp_v3_teacher_graph"
+        else GRAPH_VERSION
+    )
     if graph["graph_version"] != expected_version:
         raise ValueError(
             f"Unsupported relational graph version {graph['graph_version']!r}; expected {expected_version}."
@@ -152,11 +149,7 @@ def load_teacher_graph(
 def build_crp_concept_report(graph: dict) -> dict:
     """Summarize which CRP concepts actually contribute edges to SSL training."""
 
-    if graph.get("artifact") not in {
-        "splice_crp_v2_teacher_graph",
-        "splice_crp_v3_teacher_graph",
-        "splice_crp_v4_teacher_graph",
-    }:
+    if graph.get("artifact") not in {"splice_crp_v2_teacher_graph", "splice_crp_v3_teacher_graph"}:
         raise ValueError("CRP concept reports require a CRP teacher graph.")
     weights = torch.as_tensor(graph["weights"], dtype=torch.float32)
     group_ids = torch.as_tensor(

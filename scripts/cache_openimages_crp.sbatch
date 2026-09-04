@@ -27,12 +27,6 @@ DATASET="${DATASET:-waterbirds}"
 OUTPUT_PATH="${OUTPUT_PATH:-outputs/crp/${DATASET}_train_features_oi_v7.pt}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
-USE_DINO="${USE_DINO:-true}"
-
-if [[ "${USE_DINO}" != "true" && "${USE_DINO}" != "false" ]]; then
-    echo "USE_DINO must be true or false, got: ${USE_DINO}" >&2
-    exit 2
-fi
 
 cd "${PROJECT_DIR}"
 mkdir -p "$(dirname "${OUTPUT_PATH}")" ./output
@@ -46,7 +40,7 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 echo "=== Open Images V7 SpLiCE/CRP frozen feature cache ==="
-echo "dataset=${DATASET} data=${DATA_FOLDER} output=${OUTPUT_PATH} use_dino=${USE_DINO}"
+echo "dataset=${DATASET} data=${DATA_FOLDER} output=${OUTPUT_PATH}"
 echo "vocabulary=openimages_v7:all labels; time_limit=02:00:00"
 
 python -u -m scripts.tools.cache_crp_features \
@@ -59,9 +53,7 @@ python -u -m scripts.tools.cache_crp_features \
     --splice-pretrained "laion2b_s34b_b79k" \
     --splice-vocab "openimages_v7" \
     --splice-vocab-size "-1" \
-    --splice-l1-penalty "0.25" \
-    --dino-model "vit_small_patch16_dinov3.lvd1689m" \
-    --use-dino "${USE_DINO}"
+    --splice-l1-penalty "0.25"
 
 echo "Finished Open Images V7 frozen cache; output=${OUTPUT_PATH}; $(date --iso-8601=seconds)"
 conda deactivate

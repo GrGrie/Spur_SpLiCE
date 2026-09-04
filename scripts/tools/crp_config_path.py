@@ -9,7 +9,6 @@ from pathlib import PurePosixPath
 
 
 REQUIRED_KEYS = (
-    "use_dino",
     "cobalt",
     "min_concept_frequency",
     "max_concept_frequency",
@@ -18,7 +17,6 @@ REQUIRED_KEYS = (
     "min_group_size",
     "max_selected_groups",
     "projected_neighbors",
-    "dino_neighbors",
     "activation_difference_quantile",
     "min_intervention_gain",
     "min_coverage",
@@ -35,10 +33,6 @@ REQUIRED_KEYS = (
     "cross_fold_count",
     "cross_fold_min_edge_persistence",
     "use_cobalt_confidence",
-    "spatial_balance",
-    "spatial_balance_variant",
-    "spatial_balance_floor",
-    "spatial_frequency_power",
 )
 
 
@@ -69,17 +63,12 @@ def config_path(config: dict, variant: str = "") -> PurePosixPath:
     root = PurePosixPath("configs")
     if variant:
         root /= f"named-{_safe_label(variant)}"
-    if config["spatial_balance"]:
-        root /= (
-            f"spatial-{_safe_label(str(config['spatial_balance_variant']))}-"
-            f"floor{value('spatial_balance_floor')}-freq{value('spatial_frequency_power')}"
-        )
     return root.joinpath(
-        f"dino-{value('use_dino')}_cobalt-{value('cobalt')}",
+        f"cobalt-{value('cobalt')}",
         f"freq-{value('min_concept_frequency')}-{value('max_concept_frequency')}_"
         f"group-{value('min_group_size')}-{value('text_similarity_threshold')}-"
         f"{value('coactivation_threshold')}-cap{value('max_selected_groups')}",
-        f"search-{value('projected_neighbors')}-{value('dino_neighbors')}_"
+        f"search-{value('projected_neighbors')}_"
         f"actq-{value('activation_difference_quantile')}_gain-{value('min_intervention_gain')}_"
         f"cov-{value('min_coverage')}",
         f"graph-k{value('graph_top_k')}-maxdeg{value('max_indegree')}-indeg{value('indegree_factor')}_"

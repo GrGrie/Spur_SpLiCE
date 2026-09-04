@@ -31,7 +31,6 @@ from splice.ssl_regularization import (
     score_cache_path,
 )
 from splice.crp import (
-    CRP_V4_GRAPH_VERSION,
     CrpAuditConfig,
     group_concepts,
     orthonormal_basis,
@@ -42,11 +41,6 @@ from splice.crp import (
 )
 from splice.cqt import CQT_ARTIFACT, CqtAuditConfig, concept_quotient, run_cqt_audit
 from splice.cobalt_check import concept_balanced_sample_weights, load_cobalt_train_concepts
-from splice.spatial_balance import (
-    SPATIAL_BALANCE_ARTIFACT,
-    spatially_balanced_codes,
-    validate_spatial_balance_artifact,
-)
 from splice.crp_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
@@ -120,7 +114,7 @@ class SplicePipelineTests(unittest.TestCase):
     def _tiny_crp_cache():
         generator = torch.Generator().manual_seed(4)
         return {
-            "cache_version": 1,
+            "cache_version": 2,
             "provenance": {"fixture": "tiny-crp-cache"},
             "sample_ids": [f"image-{index}" for index in range(8)],
             "clip_embeddings": torch.nn.functional.normalize(torch.randn(8, 4, generator=generator), dim=1),
@@ -131,7 +125,6 @@ class SplicePipelineTests(unittest.TestCase):
             ),
             "dictionary": torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
             "vocabulary": ["concept_a", "concept_b"],
-            "dino_embeddings": torch.nn.functional.normalize(torch.randn(8, 3, generator=generator), dim=1),
         }
 
     @staticmethod
@@ -139,7 +132,6 @@ class SplicePipelineTests(unittest.TestCase):
         sample_count = 24
         codes = torch.zeros(sample_count, 5)
         clip = torch.zeros(sample_count, 6)
-        dino = torch.zeros(sample_count, 4)
         for index in range(sample_count):
             state = int(index >= sample_count // 2)
             context = index % 2
@@ -150,12 +142,9 @@ class SplicePipelineTests(unittest.TestCase):
             clip[index, 2] = 1.0
             clip[index, 3 + context] = 0.8
             clip[index, 5] = 0.02 * (index % 3)
-            dino[index, 0] = 1.0
-            dino[index, 1 + context] = 0.8
-            dino[index, 3] = 0.02 * (index % 3)
         dictionary = torch.eye(6)[:5]
         return {
-            "cache_version": 1,
+            "cache_version": 2,
             "provenance": {"fixture": "tiny-cqt-cache"},
             "sample_ids": [f"waterbirds:{index}" for index in range(sample_count)],
             "clip_embeddings": torch.nn.functional.normalize(clip, dim=1),
@@ -163,7 +152,6 @@ class SplicePipelineTests(unittest.TestCase):
             "splice_codes": codes,
             "dictionary": dictionary,
             "vocabulary": ["state_a", "state_b", "shared_feature", "context_a", "context_b"],
-            "dino_embeddings": torch.nn.functional.normalize(dino, dim=1),
         }
 
     def test_crp_projection_removes_the_full_group_subspace(self):
@@ -213,26 +201,24 @@ class SplicePipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "forbidden annotation"):
             validate_feature_cache(cache)
 
+    def test_crp_cache_rejects_the_previous_schema(self):
+        cache = self._tiny_crp_cache()
+        cache["cache_version"] = 1
+        with self.assertRaisesRegex(ValueError, "Unsupported CRP cache version"):
+            validate_feature_cache(cache)
+
     def test_crp_cache_does_not_require_manual_hashes(self):
         cache = self._tiny_crp_cache()
         cache.pop("provenance")
         validated = validate_feature_cache(cache)
         self.assertEqual(validated["sample_ids"], cache["sample_ids"])
 
-    def test_crp_cache_can_omit_dino_for_no_dino_audit(self):
-        cache = self._tiny_crp_cache()
-        cache.pop("dino_embeddings")
-        validated = validate_feature_cache(cache, require_dino=False)
-        self.assertIsNone(validated["dino_embeddings"])
-        with self.assertRaisesRegex(ValueError, "dino_embeddings"):
-            validate_feature_cache(cache, require_dino=True)
-
     def test_crp_feature_cache_is_saved_atomically(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "cache.pt"
             save_feature_cache(self._tiny_crp_cache(), path)
             loaded = torch.load(path, map_location="cpu", weights_only=True)
-            self.assertEqual(loaded["cache_version"], 1)
+            self.assertEqual(loaded["cache_version"], 2)
             self.assertFalse(list(path.parent.glob("*.tmp")))
 
     def test_crp_cache_builder_reads_images_without_labels(self):
@@ -257,7 +243,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -284,7 +269,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -296,9 +280,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)
 
-    def test_crp_audit_without_dino_uses_delta_and_reciprocal_support(self):
-        cache = self._tiny_crp_cache()
-        cache.pop("dino_embeddings")
+    def test_crp_audit_can_use_reciprocal_support_without_residual_gate(self):
         config = CrpAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
@@ -308,12 +290,9 @@ class SplicePipelineTests(unittest.TestCase):
             null_quantile=0.0,
             min_coverage=0.0,
             seed=7,
-            use_dino=False,
             use_residual_splice_gate=False,
         )
-        graph = run_frozen_audit(cache, config)
-        self.assertFalse(graph["config"]["use_dino"])
-        self.assertTrue(all(not group["dino_guard_enabled"] for group in graph["groups"]))
+        graph = run_frozen_audit(self._tiny_crp_cache(), config)
         self.assertTrue(all(group["semantic_agreement"] == 1.0 for group in graph["groups"]))
 
     def test_cobalt_memberships_are_aligned_and_concept_balanced_without_labels(self):
@@ -347,7 +326,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -391,82 +369,6 @@ class SplicePipelineTests(unittest.TestCase):
             [[0], [1]],
         )
 
-    def test_spatial_balance_is_aligned_and_preserves_original_splice_mass(self):
-        cache = self._tiny_crp_cache()
-        artifact = {
-            "artifact": SPATIAL_BALANCE_ARTIFACT,
-            "dataset": "waterbirds",
-            "sample_ids": cache["sample_ids"],
-            "vocabulary": cache["vocabulary"],
-            "variant": "vanilla_slots",
-            "concept_indices": torch.tensor([[0, 1]] * 8),
-            "evidence": torch.tensor([[1.0, 0.1], [0.1, 1.0]] * 4),
-            "confidence": torch.tensor([1.0] * 7 + [0.0]),
-            "config": {"feature_source": "vanilla", "use_slots": True},
-        }
-        validated = validate_spatial_balance_artifact(
-            artifact, "waterbirds", cache["sample_ids"], cache["vocabulary"]
-        )
-        original = cache["splice_codes"].clone()
-        balanced, summary = spatially_balanced_codes(original, validated)
-        torch.testing.assert_close(original, cache["splice_codes"])
-        torch.testing.assert_close(balanced.sum(dim=1), original.sum(dim=1))
-        torch.testing.assert_close(balanced[-1], original[-1])
-        self.assertTrue(summary["original_mass_preserved"])
-
-    def test_crpv4_uses_spatial_codes_and_emits_a_distinct_graph_version(self):
-        cache = self._tiny_crp_cache()
-        artifact = validate_spatial_balance_artifact(
-            {
-                "artifact": SPATIAL_BALANCE_ARTIFACT,
-                "dataset": "waterbirds",
-                "sample_ids": cache["sample_ids"],
-                "vocabulary": cache["vocabulary"],
-                "variant": "vanilla_patchwise",
-                "concept_indices": torch.tensor([[0, 1]] * 8),
-                "evidence": torch.tensor([[1.0, 0.25]] * 8),
-                "confidence": torch.ones(8),
-                "config": {"feature_source": "vanilla", "use_slots": False},
-            },
-            "waterbirds",
-            cache["sample_ids"],
-            cache["vocabulary"],
-        )
-        config = CrpAuditConfig(
-            min_concept_frequency=0.1,
-            max_concept_frequency=0.9,
-            projected_neighbors=3,
-            dino_neighbors=4,
-            graph_top_k=2,
-            null_trials=1,
-            null_quantile=0.0,
-            min_coverage=0.0,
-            seed=7,
-            spatial_balance=True,
-            spatial_balance_variant="vanilla_patchwise",
-        )
-        graph = run_frozen_audit(cache, config, spatial_balance_artifact=artifact)
-        self.assertEqual(graph["artifact"], "splice_crp_v4_teacher_graph")
-        self.assertEqual(graph["graph_version"], 4)
-        self.assertEqual(graph["spatial_balance"]["variant"], "vanilla_patchwise")
-        validate_teacher_graph(graph, cache["sample_ids"])
-
-    def test_crpv4_rejects_a_different_spatial_variant(self):
-        cache = self._tiny_crp_cache()
-        artifact = {
-            "artifact": SPATIAL_BALANCE_ARTIFACT,
-            "dataset": "waterbirds",
-            "sample_ids": cache["sample_ids"],
-            "vocabulary": cache["vocabulary"],
-            "variant": "sclip_slots",
-            "concept_indices": torch.tensor([[0, 1]] * 8),
-            "evidence": torch.ones(8, 2),
-            "confidence": torch.ones(8),
-        }
-        config = CrpAuditConfig(spatial_balance=True, spatial_balance_variant="vanilla_slots")
-        with self.assertRaisesRegex(ValueError, "variant does not match"):
-            run_frozen_audit(cache, config, spatial_balance_artifact=artifact)
-
     def test_cqt_quotient_removes_only_the_rank_one_state_contrast(self):
         embeddings = torch.nn.functional.normalize(
             torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]), dim=1
@@ -497,8 +399,6 @@ class SplicePipelineTests(unittest.TestCase):
             transport_mass=0.5,
             min_transport_pairs=2,
             min_word_similarity=0.0,
-            dino_neighbors=2,
-            dino_damage_quantile=1.0,
             min_coverage=0.0,
             null_trials=1,
             null_quantile=0.0,
@@ -525,42 +425,6 @@ class SplicePipelineTests(unittest.TestCase):
         row_sums = graph["weights"].sum(dim=1)
         supported = row_sums > 0
         torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
-
-    def test_cqt_audit_can_disable_dino_guard(self):
-        cache = self._tiny_cqt_cache()
-        cache.pop("dino_embeddings")
-        config = CqtAuditConfig(
-            min_concept_frequency=0.1,
-            max_concept_frequency=0.9,
-            text_similarity_threshold=0.99,
-            coactivation_threshold=0.99,
-            max_candidate_groups=8,
-            max_factors=4,
-            min_state_samples=2,
-            min_context_similarity=0.0,
-            min_state_balanced_accuracy=0.5,
-            min_quotient_efficacy=0.0,
-            transport_candidates=6,
-            transport_mass=0.5,
-            min_transport_pairs=2,
-            min_word_similarity=0.0,
-            min_coverage=0.0,
-            null_trials=1,
-            null_quantile=0.0,
-            graph_top_k=2,
-            seed=3,
-            use_dino=False,
-        )
-        graph = run_cqt_audit(cache, config)
-        self.assertGreater(len(graph["factors"]), 0)
-        self.assertTrue(all(not factor["dino_guard_enabled"] for factor in graph["factors"]))
-        self.assertTrue(
-            all(
-                fold["dino_local_damage"] is None
-                for factor in graph["factors"]
-                for fold in factor["evaluation_folds"]
-            )
-        )
 
     def test_crp_teacher_graph_is_bound_to_exact_training_order(self):
         graph = validate_teacher_graph(
@@ -721,8 +585,6 @@ class SplicePipelineTests(unittest.TestCase):
         graph = self._tiny_teacher_graph()
         graph.update(
             {
-                "artifact": "splice_crp_v4_teacher_graph",
-                "graph_version": CRP_V4_GRAPH_VERSION,
                 "group_ids": torch.tensor([[0, -1], [0, -1], [0, -1], [0, -1]]),
                 "edge_confidences": torch.tensor(
                     [[0.5, 0.0], [0.4, 0.0], [0.3, 0.0], [0.2, 0.0]]

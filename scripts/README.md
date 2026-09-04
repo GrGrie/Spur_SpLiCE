@@ -41,22 +41,11 @@ sbatch scripts/train_crp.sbatch
 sbatch scripts/train_cqt.sbatch
 ```
 
-### DINO-абляция и CoBalT concept check
+### CoBalT concept check
 
-Оба training entry point поддерживают два независимых переключателя:
-
-```bash
-# edit USE_DINO=false in train_crp.conf or train_cqt.conf
-sbatch scripts/train_crp.sbatch
-sbatch scripts/train_cqt.sbatch
-```
-
-При `USE_DINO=false` DINO-модель не загружается, её признаки не кешируются, а
-DINO gate в CRP/CQT отключается. CRPv3 в этом режиме сохраняет reciprocal
-projected-neighbour check, добавляет residual SpLiCE semantic gate и cross-fold
-edge validation. По умолчанию граф ограничен `top_k=3` и
-`max_indegree=10`; эти значения задаются в `train_crp.conf`. No-DINO cache и
-graphs пишутся в отдельные пути, поэтому обычные результаты не перезаписываются.
+CRPv3 использует reciprocal projected-neighbour check, residual SpLiCE semantic
+gate и cross-fold edge validation. По умолчанию граф ограничен `top_k=3` и
+`max_indegree=10`; эти значения задаются в `train_crp.conf`.
 
 Для CoBalT-проверки сначала один раз обучите label-free discovery stage и
 выгрузите фиксированные concept memberships:
@@ -77,7 +66,7 @@ spurious attribute для этого не читаются. Это label-free co
 даже если файл графа уже существует; frozen SpLiCE cache при этом переиспользуется.
 
 При прямом Python-запуске доступны запрошенные CLI-формы
-`--use_dino true|false`, `--cobalt true|false` и
+`--cobalt true|false` и
 `--cobalt-concepts /path/to/concepts.pt`.
 
 В CRPv3 CoBalT concept artifacts, созданные заново через
@@ -200,7 +189,7 @@ graph:
 | `SpLiCE_CRP_v2_frozen_audit.sbatch` | строит и аудирует teacher graph |
 | `SpLiCE_CRP_v2_report.sbatch` | формирует label-free go/no-go отчёт |
 | `SpLiCE_CRP_v2_posthoc_waterbirds.sbatch` | post-hoc проверка по скрытым Waterbirds labels |
-| `SpLiCE_CRP_v2_baseline_graphs.sbatch` | строит raw-CLIP/DINO baseline graphs |
+| `SpLiCE_CRP_v2_baseline_graphs.sbatch` | строит raw-CLIP baseline graph |
 | `SpLiCE_CRP_v2_baselines_posthoc.sbatch` | сравнивает CRP и baseline graphs |
 | `SpLiCE_CRP_v2_baseline_compare.sbatch` | объединённый baseline diagnostic job |
 | `concept_ablation_examples.sbatch` | создаёт один HTML с изображениями и cosine ablations |

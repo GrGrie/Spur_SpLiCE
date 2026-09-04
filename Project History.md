@@ -778,3 +778,37 @@ spatial variants require fresh frozen audits, direct comparison with unbalanced
 CRPv3 and frequency-only controls, inspection of coverage/null margins, and paired
 SSL seeds before any robustness or causal claim. Earlier CRPv2/v3 results and the
 current manuscript snapshot are not retroactively reinterpreted.
+
+### 2026-09-04 — CRPv3 comparison branch separated from CRPv4
+
+**Track:** CRP method, CQT compatibility, experiment infrastructure, and current
+branch documentation. The CRPv4 main-branch implementation and its reporting
+snapshot are unchanged.
+
+**State before:** the newly created `CRPv3` branch pointed at the same tree as the
+main branch after CRPv4 had replaced legacy CoBalT's independent ResNet/VQ concept
+system with CLIP patch or slot evidence in the SpLiCE vocabulary. The repository
+also retained DINO as an optional frozen cache representation and graph gate even
+though active CRPv3 experiments already disabled it.
+
+**Change:** the CRPv4 spatial files and integration were removed from this branch,
+restoring the pre-CRPv4 relationship between the teachers: SpLiCE retains its
+named sparse concept dictionary, while independently trained CoBalT retains its
+own ResNet, Slot Attention, and VQ codebook and contributes aligned memberships
+and confidence only when constructing the teacher graph. DINO cache extraction,
+configuration fields, graph gates, CQT local-damage checks, baseline jobs,
+dependencies, documentation, and tests were removed. The frozen cache version was
+advanced to 2 so legacy cache artifacts cannot be mistaken for the new two-teacher
+schema. Residual SpLiCE agreement is now the CRPv3 semantic relation gate rather
+than an optional fallback selected by a runtime switch.
+
+**Reason:** preserve a clean comparison branch for the architecture immediately
+before CRPv4 and make the chosen two-teacher design explicit, without carrying an
+unused third frozen encoder or CRPv4-only spatial code.
+
+**Consequences:** new cache and graph artifacts have configuration schemas and
+paths without DINO fields, so older artifacts must be treated as historical and
+rebuilt for this branch. CRPv3 graph semantics, CoBalT contribution screens, CQT
+audits, launch metadata, and required controls now use CLIP/SpLiCE plus optional
+legacy CoBalT only. This is an implementation and protocol split, not new evidence
+for WGA, robustness, causal concept removal, or either architecture's superiority.

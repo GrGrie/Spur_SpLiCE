@@ -23,8 +23,8 @@ load_splice_config "${CONFIG_FILE}"
 variant_record="${CQT_TRAIN_SWEEP_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
 [[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
 IFS='|' read -r SPLICE_WEIGHT CRP_GRAPH_POSITIVES \
-    CQT_MIN_QUOTIENT_EFFICACY CQT_DINO_DAMAGE_QUANTILE \
-    CQT_MAX_FACTORS RELATIONAL_GRAPH_VARIANT <<< "${variant_record}"
+    CQT_MIN_QUOTIENT_EFFICACY CQT_MAX_FACTORS \
+    RELATIONAL_GRAPH_VARIANT <<< "${variant_record}"
 
 WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS},sweep_task_${SLURM_ARRAY_TASK_ID}"
 CONFIG_ALREADY_LOADED="true"

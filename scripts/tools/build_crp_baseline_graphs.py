@@ -1,4 +1,4 @@
-"""Build raw-CLIP and DINO-only kNN graphs from a frozen CRP cache."""
+"""Build a raw-CLIP kNN graph from a frozen CRP cache."""
 
 from __future__ import annotations
 
@@ -24,23 +24,18 @@ def build_graphs(cache_path: Path, output_dir: Path, top_k: int, chunk_size: int
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
     cache = validate_feature_cache(cache)
     output_dir.mkdir(parents=True, exist_ok=True)
-    graph_specs = {
-        "raw_clip": cache["centered_clip"],
-        "dino": cache["dino_embeddings"],
+    neighbours, similarities = topk_neighbors(cache["centered_clip"], top_k, chunk_size)
+    graph = {
+        "artifact": "splice_crp_baseline_knn_graph",
+        "graph_version": 1,
+        "baseline": "raw_clip",
+        "sample_ids": cache["sample_ids"],
+        "provenance": dict(cache.get("provenance", {})),
+        **_row_stochastic_knn(neighbours, similarities),
     }
-    for name, features in graph_specs.items():
-        neighbours, similarities = topk_neighbors(features, top_k, chunk_size)
-        graph = {
-            "artifact": "splice_crp_baseline_knn_graph",
-            "graph_version": 1,
-            "baseline": name,
-            "sample_ids": cache["sample_ids"],
-            "provenance": dict(cache.get("provenance", {})),
-            **_row_stochastic_knn(neighbours, similarities),
-        }
-        output_path = output_dir / f"{name}_graph.json"
-        save_graph_json(graph, output_path)
-        print(f"[INFO] Wrote {name} baseline graph to {output_path}", flush=True)
+    output_path = output_dir / "raw_clip_graph.json"
+    save_graph_json(graph, output_path)
+    print(f"[INFO] Wrote raw_clip baseline graph to {output_path}", flush=True)
 
 
 def main() -> None:

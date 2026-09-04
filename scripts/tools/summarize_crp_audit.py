@@ -72,16 +72,6 @@ def summarize(path: Path) -> int:
             f"passed_groups={int(fold.get('passed_groups', 0))}/{len(groups)} "
             f"min_persistence={float(fold.get('min_edge_persistence', 0.0)):.2f}"
         )
-    spatial = report.get("spatial_balance")
-    if isinstance(spatial, dict):
-        print(
-            "spatial_balance="
-            f"variant={spatial.get('variant')} "
-            f"changed_samples={int(spatial.get('changed_sample_count', 0))}/"
-            f"{int(spatial.get('sample_count', 0))} "
-            f"confidence_mean={float(spatial.get('confidence_mean', 0.0)):.4f} "
-            f"mass_preserved={bool(spatial.get('original_mass_preserved', False))}"
-        )
     if selected:
         print(
             "nulls="

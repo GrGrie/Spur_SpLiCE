@@ -122,15 +122,4 @@ print("openimages_v7 vocab sample:", vocab[:5])
 PY
 
 echo
-echo "== DINOv3/timm model check =="
-python - <<'PY'
-import timm
-
-model_name = "vit_small_patch16_dinov3.lvd1689m"
-if model_name not in timm.list_models("*dinov3*", pretrained=True):
-    raise RuntimeError(f"Required DINOv3 model is unavailable in timm: {model_name}")
-print("OK DINOv3 model registration:", model_name)
-PY
-
-echo
 echo "All checks completed."

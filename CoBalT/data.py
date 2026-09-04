@@ -35,64 +35,6 @@ class IndexedSubset(Dataset):
         return image, label, metadata, self.indices[index]
 
 
-class ImageOnlyTrainDataset(Dataset):
-    """Read train images and stable indices without requesting annotations."""
-
-    def __init__(self, dataset, transform) -> None:
-        self.dataset = dataset
-        self.transform = transform
-        self.indices = torch.as_tensor(dataset.get_subset("train", transform=None).indices).long()
-
-    def __len__(self) -> int:
-        return self.indices.numel()
-
-    def __getitem__(self, position: int):
-        source_index = int(self.indices[position])
-        return self.transform(self.dataset.get_input(source_index)), source_index
-
-
-def spatial_train_loader(
-    dataset_name: str,
-    root: str,
-    batch_size: int,
-    workers: int,
-    image_size: int = 224,
-    crop_min: float = 0.2,
-) -> DataLoader:
-    transform = TwoRecordedViews(RecordedViewTransform(image_size, crop_min, clip_normalize=True))
-    dataset = ImageOnlyTrainDataset(full_dataset(dataset_name, root), transform)
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=workers,
-        pin_memory=torch.cuda.is_available(),
-        drop_last=True,
-        persistent_workers=workers > 0,
-    )
-
-
-def spatial_inference_loader(
-    dataset_name: str,
-    root: str,
-    batch_size: int,
-    workers: int,
-    image_size: int = 224,
-) -> DataLoader:
-    dataset = ImageOnlyTrainDataset(
-        full_dataset(dataset_name, root), evaluation_transform(image_size, clip_normalize=True)
-    )
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=workers,
-        pin_memory=torch.cuda.is_available(),
-        drop_last=False,
-        persistent_workers=workers > 0,
-    )
-
-
 def discovery_loader(
     dataset_name: str,
     root: str,

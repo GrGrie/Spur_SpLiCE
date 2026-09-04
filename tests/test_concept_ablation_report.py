@@ -43,14 +43,13 @@ class ConceptAblationReportTests(unittest.TestCase):
             )
             sample_ids = [f"waterbirds:{index}" for index in range(5)]
             cache = {
-                "cache_version": 1,
+                "cache_version": 2,
                 "sample_ids": sample_ids,
                 "clip_embeddings": clip,
                 "image_mean": torch.zeros(3),
                 "splice_codes": torch.tensor([[1.0], [0.0], [1.0], [0.0], [1.0]]),
                 "dictionary": torch.tensor([[1.0, 0.0, 0.0]]),
                 "vocabulary": ["background direction"],
-                "dino_embeddings": clip,
             }
             cache_path = root / "cache.pt"
             torch.save(cache, cache_path)

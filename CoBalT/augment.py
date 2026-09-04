@@ -10,8 +10,6 @@ from torchvision.transforms import functional as TF
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-CLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
-CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
 
 
 class RecordedViewTransform:
@@ -21,14 +19,11 @@ class RecordedViewTransform:
     spatial locations visible in both augmented views.
     """
 
-    def __init__(
-        self, image_size: int = 224, crop_min: float = 0.2, clip_normalize: bool = False
-    ) -> None:
+    def __init__(self, image_size: int = 224, crop_min: float = 0.2) -> None:
         self.image_size = image_size
         self.crop_min = crop_min
         self.color = transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        mean, std = (CLIP_MEAN, CLIP_STD) if clip_normalize else (IMAGENET_MEAN, IMAGENET_STD)
-        self.normalize = transforms.Normalize(mean, std)
+        self.normalize = transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)
 
     def __call__(self, image: Image.Image) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         width, height = image.size
@@ -73,13 +68,12 @@ class TwoRecordedViews:
         )
 
 
-def evaluation_transform(image_size: int = 224, clip_normalize: bool = False):
-    mean, std = (CLIP_MEAN, CLIP_STD) if clip_normalize else (IMAGENET_MEAN, IMAGENET_STD)
+def evaluation_transform(image_size: int = 224):
     return transforms.Compose(
         [
             transforms.Resize((image_size, image_size), interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+            transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
         ]
     )
 
