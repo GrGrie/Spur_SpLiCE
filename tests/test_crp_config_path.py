@@ -7,7 +7,6 @@ from scripts.tools.crp_config_path import config_path
 
 def _config(**overrides):
     values = {
-        "use_dino": True,
         "cobalt": False,
         "min_concept_frequency": 0.01,
         "max_concept_frequency": 0.95,
@@ -16,7 +15,6 @@ def _config(**overrides):
         "min_group_size": 1,
         "max_selected_groups": 0,
         "projected_neighbors": 20,
-        "dino_neighbors": 50,
         "activation_difference_quantile": 0.85,
         "min_intervention_gain": 5e-4,
         "min_coverage": 0.01,
@@ -29,9 +27,6 @@ def _config(**overrides):
         "orthogonal_tolerance": 1e-6,
         "use_residual_splice_gate": True,
         "residual_splice_similarity_threshold": 0.25,
-        "use_cross_fold_validation": True,
-        "cross_fold_count": 2,
-        "cross_fold_min_edge_persistence": 0.5,
         "use_cobalt_confidence": True,
         "spatial_balance": False,
         "spatial_balance_variant": "",

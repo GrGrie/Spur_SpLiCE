@@ -49,13 +49,8 @@ def simclr_forward_loss(
         projections = F.normalize(model.head(embeddings), dim=1)
         f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        extra_positive_mask = None
-        if splice_regularizer is not None and getattr(splice_regularizer, "uses_graph_positives", False):
-            if sample_indices is None:
-                raise ValueError("Graph-positive contrastive learning requires graph-row sample indices.")
-            extra_positive_mask = splice_regularizer.batch_positive_mask(sample_indices)
         simclr_loss, decor_loss, entropy_loss, _, _ = criterion(
-            features, extra_positive_mask=extra_positive_mask
+            features
         )
         loss = simclr_weight * simclr_loss
     else:

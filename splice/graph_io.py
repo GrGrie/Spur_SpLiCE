@@ -1,4 +1,4 @@
-"""Portable JSON storage for CRP/CQT teacher graphs."""
+"""Portable JSON storage for CRP teacher graphs."""
 
 from __future__ import annotations
 

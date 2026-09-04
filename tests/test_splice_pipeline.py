@@ -40,7 +40,6 @@ from splice.crp import (
     save_feature_cache,
     validate_feature_cache,
 )
-from splice.cqt import CQT_ARTIFACT, CqtAuditConfig, concept_quotient, run_cqt_audit
 from splice.cobalt_check import concept_balanced_sample_weights, load_cobalt_train_concepts
 from splice.spatial_balance import (
     SPATIAL_BALANCE_ARTIFACT,
@@ -54,7 +53,6 @@ from splice.crp_training import (
     build_crp_concept_report,
     validate_teacher_graph,
 )
-from splice.graph_io import load_graph_json, save_graph_json
 from splice.model import SPLICE
 from splice.splice import (
     DEFAULT_VOCABULARY,
@@ -63,7 +61,6 @@ from splice.splice import (
 )
 import spur_splice
 from spur_splice import resolve_epoch_schedule
-from scripts.tools.audit_cqt_graph_oracle import audit_graph
 from scripts.tools.discover_splice_spurious_concepts import (
     SparseConceptWeights,
     UtilityProbeFold,
@@ -131,39 +128,7 @@ class SplicePipelineTests(unittest.TestCase):
             ),
             "dictionary": torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
             "vocabulary": ["concept_a", "concept_b"],
-            "dino_embeddings": torch.nn.functional.normalize(torch.randn(8, 3, generator=generator), dim=1),
-        }
 
-    @staticmethod
-    def _tiny_cqt_cache():
-        sample_count = 24
-        codes = torch.zeros(sample_count, 5)
-        clip = torch.zeros(sample_count, 6)
-        dino = torch.zeros(sample_count, 4)
-        for index in range(sample_count):
-            state = int(index >= sample_count // 2)
-            context = index % 2
-            codes[index, state] = 1.0
-            codes[index, 2] = 1.0
-            codes[index, 3 + context] = 0.8
-            clip[index, state] = 1.4
-            clip[index, 2] = 1.0
-            clip[index, 3 + context] = 0.8
-            clip[index, 5] = 0.02 * (index % 3)
-            dino[index, 0] = 1.0
-            dino[index, 1 + context] = 0.8
-            dino[index, 3] = 0.02 * (index % 3)
-        dictionary = torch.eye(6)[:5]
-        return {
-            "cache_version": 1,
-            "provenance": {"fixture": "tiny-cqt-cache"},
-            "sample_ids": [f"waterbirds:{index}" for index in range(sample_count)],
-            "clip_embeddings": torch.nn.functional.normalize(clip, dim=1),
-            "image_mean": torch.zeros(6),
-            "splice_codes": codes,
-            "dictionary": dictionary,
-            "vocabulary": ["state_a", "state_b", "shared_feature", "context_a", "context_b"],
-            "dino_embeddings": torch.nn.functional.normalize(dino, dim=1),
         }
 
     def test_crp_projection_removes_the_full_group_subspace(self):
@@ -219,14 +184,6 @@ class SplicePipelineTests(unittest.TestCase):
         validated = validate_feature_cache(cache)
         self.assertEqual(validated["sample_ids"], cache["sample_ids"])
 
-    def test_crp_cache_can_omit_dino_for_no_dino_audit(self):
-        cache = self._tiny_crp_cache()
-        cache.pop("dino_embeddings")
-        validated = validate_feature_cache(cache, require_dino=False)
-        self.assertIsNone(validated["dino_embeddings"])
-        with self.assertRaisesRegex(ValueError, "dino_embeddings"):
-            validate_feature_cache(cache, require_dino=True)
-
     def test_crp_feature_cache_is_saved_atomically(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "cache.pt"
@@ -257,7 +214,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -277,14 +233,14 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(first["artifact"], "splice_crp_v3_teacher_graph")
         self.assertEqual(first["degree_stats"]["indegree_cap"], 10)
         self.assertEqual(first["degree_stats"]["indegree_rule"], "absolute")
-        self.assertTrue(all("cross_fold" in group for group in first["groups"]))
+        self.assertNotIn("cross_fold_summary", first)
+        self.assertTrue(all("cross_fold" not in group for group in first["groups"]))
 
     def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
         config = CrpAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -295,26 +251,6 @@ class SplicePipelineTests(unittest.TestCase):
         graph = run_frozen_audit(self._tiny_crp_cache(), config)
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)
-
-    def test_crp_audit_without_dino_uses_delta_and_reciprocal_support(self):
-        cache = self._tiny_crp_cache()
-        cache.pop("dino_embeddings")
-        config = CrpAuditConfig(
-            min_concept_frequency=0.1,
-            max_concept_frequency=0.9,
-            projected_neighbors=3,
-            graph_top_k=2,
-            null_trials=1,
-            null_quantile=0.0,
-            min_coverage=0.0,
-            seed=7,
-            use_dino=False,
-            use_residual_splice_gate=False,
-        )
-        graph = run_frozen_audit(cache, config)
-        self.assertFalse(graph["config"]["use_dino"])
-        self.assertTrue(all(not group["dino_guard_enabled"] for group in graph["groups"]))
-        self.assertTrue(all(group["semantic_agreement"] == 1.0 for group in graph["groups"]))
 
     def test_cobalt_memberships_are_aligned_and_concept_balanced_without_labels(self):
         artifact = {
@@ -347,7 +283,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -436,7 +371,6 @@ class SplicePipelineTests(unittest.TestCase):
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
-            dino_neighbors=4,
             graph_top_k=2,
             null_trials=1,
             null_quantile=0.0,
@@ -466,101 +400,6 @@ class SplicePipelineTests(unittest.TestCase):
         config = CrpAuditConfig(spatial_balance=True, spatial_balance_variant="vanilla_slots")
         with self.assertRaisesRegex(ValueError, "variant does not match"):
             run_frozen_audit(cache, config, spatial_balance_artifact=artifact)
-
-    def test_cqt_quotient_removes_only_the_rank_one_state_contrast(self):
-        embeddings = torch.nn.functional.normalize(
-            torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]), dim=1
-        )
-        contrast = torch.tensor([1.0, -1.0, 0.0])
-        quotient = concept_quotient(embeddings, contrast)
-        torch.testing.assert_close(
-            quotient @ torch.nn.functional.normalize(contrast, dim=0),
-            torch.zeros(2),
-            atol=1e-6,
-            rtol=0,
-        )
-        self.assertTrue(torch.all(quotient[:, 2] > 0))
-
-    def test_cqt_audit_is_deterministic_interpretable_and_crp_compatible(self):
-        config = CqtAuditConfig(
-            min_concept_frequency=0.1,
-            max_concept_frequency=0.9,
-            text_similarity_threshold=0.99,
-            coactivation_threshold=0.99,
-            max_candidate_groups=8,
-            max_factors=4,
-            min_state_samples=2,
-            min_context_similarity=0.0,
-            min_state_balanced_accuracy=0.5,
-            min_quotient_efficacy=0.0,
-            transport_candidates=6,
-            transport_mass=0.5,
-            min_transport_pairs=2,
-            min_word_similarity=0.0,
-            dino_neighbors=2,
-            dino_damage_quantile=1.0,
-            min_coverage=0.0,
-            null_trials=1,
-            null_quantile=0.0,
-            graph_top_k=2,
-            seed=3,
-        )
-        first = run_cqt_audit(self._tiny_cqt_cache(), config)
-        second = run_cqt_audit(self._tiny_cqt_cache(), config)
-        self.assertEqual(first["artifact"], CQT_ARTIFACT)
-        self.assertGreater(len(first["factors"]), 0)
-        self.assertGreater(len(first["selected_factor_ids"]), 0)
-        self.assertIn("concepts", first["factors"][0]["state_a"])
-        self.assertIn("representative_pairs", first["factors"][0])
-        json.dumps(
-            {
-                "config": first["config"],
-                "factors": first["factors"],
-                "degree_stats": first["degree_stats"],
-            }
-        )
-        torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
-        torch.testing.assert_close(first["weights"], second["weights"])
-        graph = validate_teacher_graph(first, first["sample_ids"])
-        row_sums = graph["weights"].sum(dim=1)
-        supported = row_sums > 0
-        torch.testing.assert_close(row_sums[supported], torch.ones_like(row_sums[supported]))
-
-    def test_cqt_audit_can_disable_dino_guard(self):
-        cache = self._tiny_cqt_cache()
-        cache.pop("dino_embeddings")
-        config = CqtAuditConfig(
-            min_concept_frequency=0.1,
-            max_concept_frequency=0.9,
-            text_similarity_threshold=0.99,
-            coactivation_threshold=0.99,
-            max_candidate_groups=8,
-            max_factors=4,
-            min_state_samples=2,
-            min_context_similarity=0.0,
-            min_state_balanced_accuracy=0.5,
-            min_quotient_efficacy=0.0,
-            transport_candidates=6,
-            transport_mass=0.5,
-            min_transport_pairs=2,
-            min_word_similarity=0.0,
-            min_coverage=0.0,
-            null_trials=1,
-            null_quantile=0.0,
-            graph_top_k=2,
-            seed=3,
-            use_dino=False,
-        )
-        graph = run_cqt_audit(cache, config)
-        self.assertGreater(len(graph["factors"]), 0)
-        self.assertTrue(all(not factor["dino_guard_enabled"] for factor in graph["factors"]))
-        self.assertTrue(
-            all(
-                fold["dino_local_damage"] is None
-                for factor in graph["factors"]
-                for fold in factor["evaluation_folds"]
-            )
-        )
 
     def test_crp_teacher_graph_is_bound_to_exact_training_order(self):
         graph = validate_teacher_graph(
@@ -663,60 +502,6 @@ class SplicePipelineTests(unittest.TestCase):
         regularizer.set_epoch(8)
         self.assertEqual(regularizer.scheduled_weight, 0.0)
 
-    def test_graph_neighbors_become_symmetric_extra_positives(self):
-        graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
-            graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
-        )
-        regularizer.set_epoch(1)
-        mask = regularizer.batch_positive_mask(torch.tensor([0, 2, 1, 3]))
-        expected = torch.tensor(
-            [
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.6],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.6, 0.0, 0.0],
-            ]
-        )
-        self.assertTrue(torch.equal(mask, expected))
-
-    def test_teacher_graph_json_round_trip_and_oracle_audit(self):
-        graph = self._tiny_teacher_graph()
-        graph.update(
-            {
-                "artifact": CQT_ARTIFACT,
-                "group_ids": torch.tensor([[0, -1], [0, -1], [0, -1], [0, -1]]),
-                "intervention_gains": torch.tensor(
-                    [[0.2, 0.0], [0.2, 0.0], [0.1, 0.0], [0.1, 0.0]]
-                ),
-                "factors": [
-                    {
-                        "factor_id": 0,
-                        "selected": True,
-                        "state_a": {"concepts": ["state_a"]},
-                        "state_b": {"concepts": ["state_b"]},
-                        "preserved_concepts": ["shared_feature"],
-                    }
-                ],
-                "selected_factor_ids": [0],
-            }
-        )
-        metadata = [
-            {"y": "0", "place": "0"},
-            {"y": "0", "place": "1"},
-            {"y": "0", "place": "0"},
-            {"y": "1", "place": "1"},
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            graph_path = Path(directory) / "teacher_graph.json"
-            save_graph_json(graph, graph_path)
-            restored = load_graph_json(graph_path)
-            self.assertTrue(torch.equal(restored["neighbor_indices"], graph["neighbor_indices"]))
-            report = audit_graph(restored, metadata)
-        self.assertEqual(report["removed_concepts"], ["state_a", "state_b"])
-        self.assertAlmostEqual(report["graph_metrics"]["desired_relation_rate"], 0.5)
-        self.assertAlmostEqual(report["graph_metrics"]["different_target_rate"], 0.5)
-
     def test_crp_concept_report_ranks_graph_usage(self):
         graph = self._tiny_teacher_graph()
         graph.update(
@@ -771,7 +556,7 @@ class SplicePipelineTests(unittest.TestCase):
             generator=torch.Generator().manual_seed(0),
         )
         graph = {
-            "artifact": "splice_cqt_v1_teacher_graph",
+            "artifact": "splice_crp_v3_teacher_graph",
             "config": {},
             "neighbor_indices": torch.full((2, 1), -1),
             "weights": torch.zeros(2, 1),
@@ -779,7 +564,7 @@ class SplicePipelineTests(unittest.TestCase):
         }
         args = argparse.Namespace(
             dataset="waterbirds",
-            splice_mode="cqt_relational",
+            splice_mode="crp_relational",
             batch_size=2,
             num_workers=0,
             seed=0,

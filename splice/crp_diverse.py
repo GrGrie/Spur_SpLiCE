@@ -1,9 +1,9 @@
 """Optional diversity-constrained CRPv4 audit.
 
 This module is deliberately separate from :mod:`splice.crp`.  It reuses the
-canonical projection, relation scoring, null controls, cross-fold validation,
-and graph builder, while changing only candidate budgeting and final group
-selection.  Removing this file restores the original behavior completely.
+canonical projection, relation scoring, null controls, and graph builder, while
+changing only candidate budgeting and final group selection. Removing this file
+restores the original behavior completely.
 """
 
 from __future__ import annotations
@@ -299,19 +299,10 @@ def select_diverse_evidence(
     return [passing[position] for position in selected_positions], traces
 
 
-def _validate_feature_cache(cache: dict, *, require_dino: bool) -> dict:
-    """Validate raw or already validated caches with an optional DINO branch."""
+def _validate_feature_cache(cache: dict) -> dict:
+    """Validate a raw or already validated CRP feature cache."""
 
-    # ``validate_feature_cache`` materializes the optional DINO field as ``None``
-    # for no-DINO caches. Such a cache can legitimately reach this isolated API
-    # after an earlier validation pass, so omit only the absent optional value.
-    cache_for_validation = cache
-    if not require_dino and cache.get("dino_embeddings") is None:
-        cache_for_validation = dict(cache)
-        cache_for_validation.pop("dino_embeddings", None)
-    return canonical.validate_feature_cache(
-        cache_for_validation, require_dino=require_dino
-    )
+    return canonical.validate_feature_cache(cache)
 
 
 def run_diverse_frozen_audit(
@@ -330,7 +321,7 @@ def run_diverse_frozen_audit(
         raise ValueError("The isolated diverse audit does not combine legacy CoBalT weighting.")
     if audit_config.max_selected_groups:
         raise ValueError("Use diversity selected_group_count; max_selected_groups must be zero.")
-    cache = _validate_feature_cache(cache, require_dino=audit_config.use_dino)
+    cache = _validate_feature_cache(cache)
     artifact_variant = str(spatial_balance_artifact.get("variant", ""))
     if artifact_variant != audit_config.spatial_balance_variant:
         raise ValueError("Spatial artifact variant does not match the audit configuration.")
@@ -364,19 +355,12 @@ def run_diverse_frozen_audit(
     raw_neighbours, _ = canonical.topk_neighbors(
         cache["centered_clip"], audit_config.projected_neighbors, audit_config.similarity_chunk_size
     )
-    dino_neighbours = None
-    if audit_config.use_dino:
-        dino_neighbours, _ = canonical.topk_neighbors(
-            cache["dino_embeddings"], audit_config.dino_neighbors, audit_config.similarity_chunk_size
-        )
     n_samples = len(cache["sample_ids"])
     generator = torch.Generator().manual_seed(audit_config.seed)
     audit_geometry = canonical._AuditGeometry(
         centered_clip=cache["centered_clip"],
         raw_neighbours=raw_neighbours,
         splice_codes=audit_codes,
-        dino_embeddings=cache["dino_embeddings"],
-        dino_neighbours=dino_neighbours,
     )
 
     audited_groups: list[dict] = []
@@ -413,18 +397,9 @@ def run_diverse_frozen_audit(
             if null_scores.numel()
             else math.inf
         )
-        cross_fold = canonical._cross_fold_validation(
-            audit_geometry,
-            basis,
-            activation,
-            evidence,
-            concept_indices,
-            audit_config,
-        )
         quality_gate_passed = (
             evidence["coverage"] >= audit_config.min_coverage
             and evidence["score"] > threshold
-            and cross_fold["passed"]
         )
         null_excess_score = max(0.0, evidence["score"] - threshold)
         null_excess_ratio = min(
@@ -453,16 +428,12 @@ def run_diverse_frozen_audit(
                 "coverage": evidence["coverage"],
                 "robust_positive_gain": evidence["positive_gain"],
                 "semantic_agreement": evidence["semantic_agreement"],
-                "dino_guard_enabled": audit_config.use_dino,
-                "residual_splice_gate_enabled": (
-                    audit_config.use_residual_splice_gate and not audit_config.use_dino
-                ),
+                "residual_splice_gate_enabled": audit_config.use_residual_splice_gate,
                 "residual_splice_similarity_threshold": (
                     audit_config.residual_splice_similarity_threshold
-                    if audit_config.use_residual_splice_gate and not audit_config.use_dino
+                    if audit_config.use_residual_splice_gate
                     else None
                 ),
-                "cross_fold": cross_fold,
                 "hubness_penalty": evidence["hubness_penalty"],
                 "activation_gain_alignment": evidence["activation_gain_alignment"],
                 "accepted_edges": len(evidence["rows"]),
@@ -481,8 +452,7 @@ def run_diverse_frozen_audit(
                     {
                         **evidence,
                         "confidence": evidence["confidence"]
-                        * null_excess_ratio
-                        * float(cross_fold["edge_persistence"] or 1.0),
+                        * null_excess_ratio,
                     },
                 )
             )
@@ -545,29 +515,8 @@ def run_diverse_frozen_audit(
         },
         "groups": audited_groups,
         "selected_group_ids": [int(group_id) for group_id, _ in selected_evidence],
-        "cross_fold_summary": {
-            "enabled": audit_config.use_cross_fold_validation,
-            "fold_count": audit_config.cross_fold_count
-            if audit_config.use_cross_fold_validation
-            else 0,
-            "min_edge_persistence": audit_config.cross_fold_min_edge_persistence,
-            "passed_groups": sum(
-                bool(group.get("cross_fold", {}).get("passed")) for group in audited_groups
-            ),
-        },
         **graph,
     }
-
-
-def _parse_bool(value: str | bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise argparse.ArgumentTypeError(f"Expected true/false, got {value!r}.")
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -577,15 +526,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--config", required=True, help="CRP audit configuration JSON.")
     parser.add_argument("--diversity-config", default="{}", help="Diversity configuration JSON.")
-    parser.add_argument("--use-dino", type=_parse_bool, nargs="?", const=True)
     args = parser.parse_args(argv)
 
     audit_values = json.loads(args.config)
     unknown_audit = set(audit_values).difference(canonical.CrpAuditConfig.__dataclass_fields__)
     if unknown_audit:
         raise ValueError(f"Unknown CRP audit settings: {sorted(unknown_audit)}")
-    if args.use_dino is not None:
-        audit_values["use_dino"] = args.use_dino
     audit_config = canonical.CrpAuditConfig(**audit_values)
     diversity_values = json.loads(args.diversity_config)
     unknown_diversity = set(diversity_values).difference(
@@ -596,7 +542,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     diversity_config = DiverseSelectionConfig(**diversity_values)
 
     cache = torch.load(args.cache, map_location="cpu", weights_only=True)
-    cache = _validate_feature_cache(cache, require_dino=audit_config.use_dino)
+    cache = _validate_feature_cache(cache)
     spatial_artifact = load_spatial_balance_artifact(
         args.spatial_balance_artifact,
         str(cache.get("provenance", {}).get("dataset", "")),

@@ -116,7 +116,7 @@ Invoke-CondaPython -Arguments @(
 )
 
 Write-Host "=== 3/6: Building or validating the frozen SpLiCE cache ==="
-$CachePath = Join-Path $OutputRoot "waterbirds_train_features_oi_v7_no_dino.pt"
+$CachePath = Join-Path $OutputRoot "waterbirds_train_features_oi_v7.pt"
 if (-not (Test-Path -LiteralPath $CachePath)) {
     Invoke-CondaPython -Arguments @(
         "-u", "-m", "scripts.tools.cache_crp_features",
@@ -129,11 +129,10 @@ if (-not (Test-Path -LiteralPath $CachePath)) {
         "--splice-pretrained", "laion2b_s34b_b79k",
         "--splice-vocab", "openimages_v7",
         "--splice-vocab-size", "-1",
-        "--splice-l1-penalty", "0.25",
-        "--use-dino", "false"
+        "--splice-l1-penalty", "0.25"
     ) -LogPath (Join-Path $LogsRoot "cache.log")
 }
-$CacheValidation = "import sys,torch; from splice.crp import validate_feature_cache; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True),require_dino=False); p=c['provenance']; assert p['splice_vocab']=='openimages_v7' and p['splice_vocab_size']==-1 and not p['use_dino']; print('[OK] cache samples',len(c['sample_ids']))"
+$CacheValidation = "import sys,torch; from splice.crp import validate_feature_cache; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True)); p=c['provenance']; assert p['splice_vocab']=='openimages_v7' and p['splice_vocab_size']==-1; print('[OK] cache samples',len(c['sample_ids']))"
 Invoke-CondaPython -Arguments @("-c", $CacheValidation, $CachePath)
 
 Write-Host "=== 4/6: Building the SpLiCE-only teacher graph ==="
@@ -146,7 +145,6 @@ $GraphConfig = [ordered]@{
     min_group_size = 2
     max_selected_groups = 12
     projected_neighbors = 20
-    dino_neighbors = 50
     activation_difference_quantile = 0.85
     min_intervention_gain = 0.0005
     min_coverage = 0.01
@@ -159,12 +157,8 @@ $GraphConfig = [ordered]@{
     orthogonal_tolerance = 0.000001
     use_residual_splice_gate = $true
     residual_splice_similarity_threshold = 0.25
-    use_cross_fold_validation = $true
-    cross_fold_count = 2
-    cross_fold_min_edge_persistence = 0.5
     use_cobalt_confidence = $false
     seed = 0
-    use_dino = $false
     cobalt = $false
 }
 $GraphConfigJson = $GraphConfig | ConvertTo-Json -Compress
@@ -176,7 +170,6 @@ if (-not (Test-Path -LiteralPath $GraphPath)) {
         "--output", $GraphPath,
         "--seed", "0",
         "--config", $GraphConfigJsonNative,
-        "--use-dino", "false",
         "--cobalt", "false"
     ) -LogPath (Join-Path $LogsRoot "graph.log")
 }
@@ -243,7 +236,7 @@ $CommonTrainingArguments = @(
     "--use_wandb",
     "--wandb_name", "Spur_SpLiCE_windows_screen",
     "--wandb_group", "waterbirds_splice_only_windows_seed0_e$Epochs",
-    "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_dino,no_cobalt"
+    "--wandb_tags", "windows_local,screen,seed_0,openimages_v7,no_cobalt"
 )
 
 Write-Host "=== 5/6: Training the matched SimCLR control ==="
@@ -264,7 +257,6 @@ Invoke-CondaPython -Arguments ($CommonTrainingArguments + @(
     "--crp_warmup_epochs", "5",
     "--crp_decay_start_epoch", "0",
     "--crp_decay_end_epoch", "0",
-    "--crp_graph_positives", "false",
     "--wandb_run_name", "windows_splice_only_crp_seed0_e$Epochs"
 )) -LogPath $SpliceLog
 

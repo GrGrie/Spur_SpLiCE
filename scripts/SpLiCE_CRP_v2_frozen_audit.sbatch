@@ -30,14 +30,9 @@ DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 CACHE_PATH="${CACHE_PATH:-}"
 OUT_DIR="${OUT_DIR:-}"
 SEED_BASE="${SEED_BASE:-0}"
-USE_DINO="${USE_DINO:-true}"
 COBALT="${COBALT:-false}"
 COBALT_CONCEPTS_PATH="${COBALT_CONCEPTS_PATH:-}"
 
-if [[ "${USE_DINO}" != "true" && "${USE_DINO}" != "false" ]]; then
-    echo "USE_DINO must be true or false, got: ${USE_DINO}" >&2
-    exit 2
-fi
 if [[ "${COBALT}" != "true" && "${COBALT}" != "false" ]]; then
     echo "COBALT must be true or false, got: ${COBALT}" >&2
     exit 2
@@ -47,11 +42,7 @@ if [[ "${COBALT}" == "true" && "${DATASET}" == "spur_cifar10" ]]; then
     exit 2
 fi
 if [[ -z "${CACHE_PATH}" ]]; then
-    if [[ "${USE_DINO}" == "true" ]]; then
-        CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
-    else
-        CACHE_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
-    fi
+    CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
 fi
 # Concept filtering and grouping. These are the first settings to tune when
 # the frozen audit reports that the projection is too weak.
@@ -64,7 +55,6 @@ MAX_SELECTED_GROUPS="${MAX_SELECTED_GROUPS:-0}"
 
 # Frozen relation audit and graph construction.
 PROJECTED_NEIGHBORS="${PROJECTED_NEIGHBORS:-20}"
-DINO_NEIGHBORS="${DINO_NEIGHBORS:-50}"
 ACTIVATION_DIFFERENCE_QUANTILE="${ACTIVATION_DIFFERENCE_QUANTILE:-0.85}"
 MIN_INTERVENTION_GAIN="${MIN_INTERVENTION_GAIN:-5e-4}"
 MIN_COVERAGE="${MIN_COVERAGE:-0.01}"
@@ -79,12 +69,9 @@ SIMILARITY_CHUNK_SIZE="${SIMILARITY_CHUNK_SIZE:-512}"
 ORTHOGONAL_TOLERANCE="${ORTHOGONAL_TOLERANCE:-1e-6}"
 USE_RESIDUAL_SPLICE_GATE="${USE_RESIDUAL_SPLICE_GATE:-true}"
 RESIDUAL_SPLICE_SIMILARITY_THRESHOLD="${RESIDUAL_SPLICE_SIMILARITY_THRESHOLD:-0.25}"
-USE_CROSS_FOLD_VALIDATION="${USE_CROSS_FOLD_VALIDATION:-true}"
-CROSS_FOLD_COUNT="${CROSS_FOLD_COUNT:-2}"
-CROSS_FOLD_MIN_EDGE_PERSISTENCE="${CROSS_FOLD_MIN_EDGE_PERSISTENCE:-0.5}"
 USE_COBALT_CONFIDENCE="${USE_COBALT_CONFIDENCE:-true}"
 
-CRP_CONFIG_JSON="{\"use_dino\":${USE_DINO},\"cobalt\":${COBALT},\"min_concept_frequency\":${MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${COACTIVATION_THRESHOLD},\"min_group_size\":${MIN_GROUP_SIZE},\"max_selected_groups\":${MAX_SELECTED_GROUPS},\"projected_neighbors\":${PROJECTED_NEIGHBORS},\"dino_neighbors\":${DINO_NEIGHBORS},\"activation_difference_quantile\":${ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${MIN_INTERVENTION_GAIN},\"min_coverage\":${MIN_COVERAGE},\"graph_top_k\":${GRAPH_TOP_K},\"max_indegree\":${MAX_INDEGREE},\"indegree_factor\":${INDEGREE_FACTOR},\"null_trials\":${NULL_TRIALS},\"null_quantile\":${NULL_QUANTILE},\"similarity_chunk_size\":${SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cross_fold_validation\":${USE_CROSS_FOLD_VALIDATION},\"cross_fold_count\":${CROSS_FOLD_COUNT},\"cross_fold_min_edge_persistence\":${CROSS_FOLD_MIN_EDGE_PERSISTENCE},\"use_cobalt_confidence\":${USE_COBALT_CONFIDENCE}}"
+CRP_CONFIG_JSON="{\"cobalt\":${COBALT},\"min_concept_frequency\":${MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${COACTIVATION_THRESHOLD},\"min_group_size\":${MIN_GROUP_SIZE},\"max_selected_groups\":${MAX_SELECTED_GROUPS},\"projected_neighbors\":${PROJECTED_NEIGHBORS},\"activation_difference_quantile\":${ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${MIN_INTERVENTION_GAIN},\"min_coverage\":${MIN_COVERAGE},\"graph_top_k\":${GRAPH_TOP_K},\"max_indegree\":${MAX_INDEGREE},\"indegree_factor\":${INDEGREE_FACTOR},\"null_trials\":${NULL_TRIALS},\"null_quantile\":${NULL_QUANTILE},\"similarity_chunk_size\":${SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cobalt_confidence\":${USE_COBALT_CONFIDENCE}}"
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 SEED=$((SEED_BASE + TASK_ID))
@@ -122,7 +109,6 @@ ARGS=(
     --output "${OUTPUT_PATH}"
     --seed "${SEED}"
     --config "${CRP_CONFIG_JSON}"
-    --use-dino "${USE_DINO}"
     --cobalt "${COBALT}"
 )
 if [[ "${COBALT}" == "true" ]]; then
@@ -131,7 +117,7 @@ fi
 
 echo "=== SpLiCE-CRP v3 frozen audit ==="
 echo "dataset=${DATASET} seed=${SEED} cache=${CACHE_PATH}"
-echo "use_dino=${USE_DINO} cobalt=${COBALT} cobalt_concepts=${COBALT_CONCEPTS_PATH}"
+echo "cobalt=${COBALT} cobalt_concepts=${COBALT_CONCEPTS_PATH}"
 echo "output=${OUTPUT_PATH}"
 echo "config=${CRP_CONFIG_JSON}"
 

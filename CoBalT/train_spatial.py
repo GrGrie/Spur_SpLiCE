@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> None:
     seed_everything(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cache = validate_feature_cache(
-        torch.load(args.cache, map_location="cpu", weights_only=True), require_dino=False
+        torch.load(args.cache, map_location="cpu", weights_only=True)
     )
     provenance = cache.get("provenance", {})
     if str(provenance.get("dataset", "")).lower() != args.dataset:

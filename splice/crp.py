@@ -22,7 +22,7 @@ from splice.graph_io import save_graph_json
 
 
 CACHE_VERSION = 1
-# GRAPH_VERSION remains the shared v2 format used by CQT. CRP v3 has its own
+# GRAPH_VERSION remains the legacy SpLiCE-CRP v2 format. CRP v3 has its own
 # version because its fixed-density and validation fields are method changes.
 GRAPH_VERSION = 2
 CRP_GRAPH_VERSION = 3
@@ -62,7 +62,6 @@ class CrpAuditConfig:
     min_group_size: int = 1
     max_selected_groups: int = 0
     projected_neighbors: int = 20
-    dino_neighbors: int = 50
     activation_difference_quantile: float = 0.75
     min_intervention_gain: float = 1e-4
     min_coverage: float = 0.01
@@ -76,13 +75,9 @@ class CrpAuditConfig:
     seed: int = 0
     similarity_chunk_size: int = 512
     orthogonal_tolerance: float = 1e-6
-    use_dino: bool = True
     cobalt: bool = False
     use_residual_splice_gate: bool = True
     residual_splice_similarity_threshold: float = 0.25
-    use_cross_fold_validation: bool = True
-    cross_fold_count: int = 2
-    cross_fold_min_edge_persistence: float = 0.5
     use_cobalt_confidence: bool = True
     spatial_balance: bool = False
     spatial_balance_variant: str = ""
@@ -92,10 +87,8 @@ class CrpAuditConfig:
 
 def _validate_config(config: CrpAuditConfig) -> None:
     boolean_fields = {
-        "use_dino": config.use_dino,
         "cobalt": config.cobalt,
         "use_residual_splice_gate": config.use_residual_splice_gate,
-        "use_cross_fold_validation": config.use_cross_fold_validation,
         "use_cobalt_confidence": config.use_cobalt_confidence,
         "spatial_balance": config.spatial_balance,
     }
@@ -108,7 +101,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
         "min_coverage": config.min_coverage,
         "null_quantile": config.null_quantile,
         "residual_splice_similarity_threshold": config.residual_splice_similarity_threshold,
-        "cross_fold_min_edge_persistence": config.cross_fold_min_edge_persistence,
         "spatial_balance_floor": config.spatial_balance_floor,
     }
     for name, value in probabilities.items():
@@ -125,10 +117,8 @@ def _validate_config(config: CrpAuditConfig) -> None:
     integer_fields = {
         "min_group_size": config.min_group_size,
         "projected_neighbors": config.projected_neighbors,
-        "dino_neighbors": config.dino_neighbors,
         "graph_top_k": config.graph_top_k,
         "max_indegree": config.max_indegree,
-        "cross_fold_count": config.cross_fold_count,
         "null_trials": config.null_trials,
         "similarity_chunk_size": config.similarity_chunk_size,
     }
@@ -137,8 +127,6 @@ def _validate_config(config: CrpAuditConfig) -> None:
             raise ValueError(f"{name} must be positive, got {value}.")
     if config.max_selected_groups < 0:
         raise ValueError("max_selected_groups must be non-negative; 0 disables the cap.")
-    if config.use_cross_fold_validation and config.cross_fold_count < 2:
-        raise ValueError("cross_fold_count must be at least 2 when cross-fold validation is enabled.")
 
 
 def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
@@ -153,7 +141,7 @@ def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
     return F.normalize(values, dim=1)
 
 
-def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
+def validate_feature_cache(cache: dict) -> dict:
     """Validate and normalize the frozen cache without accepting hidden labels."""
 
     if not isinstance(cache, dict):
@@ -169,9 +157,10 @@ def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
     forbidden = FORBIDDEN_CACHE_KEYS.intersection(collect_keys(cache))
     if forbidden:
         raise ValueError(f"CRP discovery cache contains forbidden annotation keys: {sorted(forbidden)}")
+    unexpected = set(cache).difference(REQUIRED_CACHE_KEYS, {"provenance", "centered_clip"})
+    if unexpected:
+        raise ValueError(f"CRP cache contains unsupported keys: {sorted(unexpected)}")
     missing = REQUIRED_CACHE_KEYS.difference(cache)
-    if require_dino and "dino_embeddings" not in cache:
-        missing.add("dino_embeddings")
     if missing:
         raise ValueError(f"CRP cache is missing required keys: {sorted(missing)}")
     if cache["cache_version"] != CACHE_VERSION:
@@ -184,11 +173,6 @@ def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
         raise ValueError("sample_ids must be non-empty and unique.")
     n_samples = len(sample_ids)
     clip = _normalized_rows(cache["clip_embeddings"], "clip_embeddings")
-    dino = (
-        _normalized_rows(cache["dino_embeddings"], "dino_embeddings")
-        if "dino_embeddings" in cache
-        else None
-    )
     codes = cache["splice_codes"]
     dictionary = cache["dictionary"]
     mean = cache["image_mean"]
@@ -201,8 +185,6 @@ def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
     mean = torch.as_tensor(mean).detach().float().cpu().view(-1)
     if clip.shape[0] != n_samples or codes.shape[0] != n_samples:
         raise ValueError("All cached representations must have one row per sample_id in the same order.")
-    if dino is not None and dino.shape[0] != n_samples:
-        raise ValueError("DINO embeddings must have one row per sample_id in the same order.")
     if clip.shape[1] != dictionary.shape[1] or mean.numel() != clip.shape[1]:
         raise ValueError("CLIP embeddings, image_mean, and dictionary directions must share a dimension.")
     if codes.shape[1] != dictionary.shape[0] or len(vocabulary) != dictionary.shape[0]:
@@ -219,7 +201,6 @@ def validate_feature_cache(cache: dict, require_dino: bool = True) -> dict:
         "sample_ids": sample_ids,
         "clip_embeddings": clip,
         "centered_clip": F.normalize(centered_clip, dim=1),
-        "dino_embeddings": dino,
         "splice_codes": codes,
         "dictionary": dictionary,
         "image_mean": mean,
@@ -368,22 +349,6 @@ def topk_neighbors(features: torch.Tensor, k: int, chunk_size: int = 512) -> tup
     return torch.cat(indices), torch.cat(similarities)
 
 
-def _edge_membership(
-    reference_neighbours: torch.Tensor,
-    query_rows: torch.Tensor,
-    query_columns: torch.Tensor,
-) -> torch.Tensor:
-    """Test directed-edge membership without an O(n_samples^2) matrix."""
-
-    n_samples = len(reference_neighbours)
-    reference_rows = torch.arange(n_samples).view(-1, 1).expand_as(reference_neighbours)
-    reference_keys = (reference_rows * n_samples + reference_neighbours).flatten().sort().values
-    query_keys = (query_rows * n_samples + query_columns).flatten()
-    positions = torch.searchsorted(reference_keys, query_keys)
-    positions = positions.clamp_max(len(reference_keys) - 1)
-    return (reference_keys[positions] == query_keys).view_as(query_rows)
-
-
 def _gini(values: torch.Tensor) -> float:
     values = values.float().sort().values
     total = float(values.sum())
@@ -399,8 +364,6 @@ class _AuditGeometry:
     centered_clip: torch.Tensor
     raw_neighbours: torch.Tensor
     splice_codes: torch.Tensor
-    dino_embeddings: torch.Tensor | None
-    dino_neighbours: torch.Tensor | None
 
 
 def _residual_splice_similarity(
@@ -437,31 +400,16 @@ def _relation_geometry(
     anchors = torch.arange(len(projected)).view(-1, 1).expand_as(neighbours)
     raw_similarity = (audit.centered_clip[anchors] * audit.centered_clip[neighbours]).sum(dim=2)
     gain = projected_similarity - raw_similarity
-    reciprocal = _edge_membership(neighbours, neighbours, anchors)
     residual_similarity = torch.ones_like(projected_similarity)
-    residual_support = torch.ones_like(reciprocal)
-    if config.use_dino:
-        if audit.dino_embeddings is None or audit.dino_neighbours is None:
-            raise ValueError("use_dino=true requires DINO embeddings in the frozen cache.")
-        dino_support = _edge_membership(audit.dino_neighbours, anchors, neighbours)
-        dino_similarity = (
-            audit.dino_embeddings[anchors] * audit.dino_embeddings[neighbours]
-        ).sum(dim=2).clamp_min(0)
-    else:
-        dino_support = torch.ones_like(reciprocal)
-        if config.use_residual_splice_gate:
-            residual_similarity = _residual_splice_similarity(
-                audit.splice_codes,
-                anchors,
-                neighbours,
-                excluded_concept_indices,
-            )
-            residual_support = residual_similarity >= config.residual_splice_similarity_threshold
-            dino_similarity = residual_similarity
-        else:
-            residual_similarity = torch.ones_like(projected_similarity)
-            residual_support = torch.ones_like(reciprocal)
-            dino_similarity = torch.ones_like(projected_similarity)
+    residual_support = torch.ones_like(projected_similarity, dtype=torch.bool)
+    if config.use_residual_splice_gate:
+        residual_similarity = _residual_splice_similarity(
+            audit.splice_codes,
+            anchors,
+            neighbours,
+            excluded_concept_indices,
+        )
+        residual_support = residual_similarity >= config.residual_splice_similarity_threshold
     raw_overlap = (
         neighbours.unsqueeze(2) == audit.raw_neighbours.unsqueeze(1)
     ).any(dim=2).float().mean(dim=1)
@@ -470,10 +418,10 @@ def _relation_geometry(
         "neighbours": neighbours,
         "projected_similarity": projected_similarity,
         "gain": gain,
-        "semantic_similarity": dino_similarity,
+        "semantic_similarity": residual_similarity,
         "residual_splice_similarity": residual_similarity,
         "residual_splice_support": residual_support,
-        "supported": reciprocal & dino_support & residual_support,
+        "supported": residual_support,
         "top1_neighbor_turnover": float(
             (neighbours[:, 0] != audit.raw_neighbours[:, 0]).float().mean()
         ),
@@ -501,8 +449,8 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
     rows, positions = torch.where(accepted)
     columns = neighbours[rows, positions]
     edge_gain = gain[rows, positions]
-    edge_dino = geometry["semantic_similarity"][rows, positions]
-    confidence = edge_gain * (0.5 + 0.5 * edge_dino)
+    edge_semantic = geometry["semantic_similarity"][rows, positions]
+    confidence = edge_gain * (0.5 + 0.5 * edge_semantic)
     positive_gain_values = gain[gain > config.min_intervention_gain]
     positive_activation_differences = activation_difference[gain > config.min_intervention_gain]
     if positive_gain_values.numel() >= 2:
@@ -524,7 +472,7 @@ def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditC
         covered[rows] = True
     indegree = torch.bincount(columns, minlength=len(neighbours))
     positive_gain = float(edge_gain.median()) if edge_gain.numel() else 0.0
-    semantic_agreement = float(edge_dino.mean()) if edge_dino.numel() else 0.0
+    semantic_agreement = float(edge_semantic.mean()) if edge_semantic.numel() else 0.0
     coverage = float(covered.float().mean())
     hubness_penalty = 1.0 + _gini(indegree) + float(indegree.max()) / max(1, len(neighbours))
     score = (
@@ -569,110 +517,6 @@ def _null_scores(
         shuffled = activation[torch.randperm(len(activation), generator=generator)]
         shuffled_scores.append(_score_relations(group_geometry, shuffled, config)["score"])
     return random_scores, shuffled_scores
-
-
-def _cross_fold_validation(
-    audit: _AuditGeometry,
-    basis: torch.Tensor,
-    activation: torch.Tensor,
-    full_evidence: dict,
-    concept_indices: Sequence[int],
-    config: CrpAuditConfig,
-) -> dict:
-    """Validate accepted group relations on deterministic held-out folds."""
-
-    if not config.use_cross_fold_validation:
-        return {
-            "enabled": False,
-            "fold_count": 0,
-            "edge_persistence": None,
-            "fold_edge_persistence": [],
-            "fold_scores": [],
-            "fold_coverages": [],
-            "fold_edge_counts": [],
-            "passed": True,
-        }
-
-    n_samples = len(audit.centered_clip)
-    fold_count = min(config.cross_fold_count, n_samples // 2)
-    if fold_count < 2:
-        return {
-            "enabled": True,
-            "fold_count": fold_count,
-            "edge_persistence": 0.0,
-            "fold_edge_persistence": [],
-            "fold_scores": [],
-            "fold_coverages": [],
-            "fold_edge_counts": [],
-            "passed": False,
-        }
-
-    split_generator = torch.Generator().manual_seed(config.seed + 104729)
-    permutation = torch.randperm(n_samples, generator=split_generator)
-    folds = [fold for fold in torch.tensor_split(permutation, fold_count) if len(fold) >= 2]
-    full_pairs = {
-        (int(row), int(column))
-        for row, column in zip(
-            full_evidence["rows"].tolist(), full_evidence["columns"].tolist()
-        )
-    }
-    fold_persistence, fold_scores, fold_coverages, fold_edge_counts = [], [], [], []
-    for fold in folds:
-        fold = fold.sort().values
-        fold_members = set(fold.tolist())
-        fold_audit = _AuditGeometry(
-            centered_clip=audit.centered_clip[fold],
-            raw_neighbours=topk_neighbors(
-                audit.centered_clip[fold],
-                config.projected_neighbors,
-                config.similarity_chunk_size,
-            )[0],
-            splice_codes=audit.splice_codes[fold],
-            dino_embeddings=audit.dino_embeddings[fold] if audit.dino_embeddings is not None else None,
-            dino_neighbours=None,
-        )
-        if config.use_dino:
-            fold_audit = _AuditGeometry(
-                centered_clip=fold_audit.centered_clip,
-                raw_neighbours=fold_audit.raw_neighbours,
-                splice_codes=fold_audit.splice_codes,
-                dino_embeddings=fold_audit.dino_embeddings,
-                dino_neighbours=topk_neighbors(
-                    fold_audit.dino_embeddings,
-                    config.dino_neighbors,
-                    config.similarity_chunk_size,
-                )[0],
-            )
-        fold_geometry = _relation_geometry(fold_audit, basis, config, concept_indices)
-        fold_evidence = _score_relations(fold_geometry, activation[fold], config)
-        local_pairs = {
-            (int(fold[row]), int(fold[column]))
-            for row, column in zip(
-                fold_evidence["rows"].tolist(), fold_evidence["columns"].tolist()
-            )
-        }
-        full_pairs_in_fold = {
-            pair for pair in full_pairs if pair[0] in fold_members and pair[1] in fold_members
-        }
-        overlap = len(local_pairs.intersection(full_pairs_in_fold))
-        persistence = overlap / max(1, len(full_pairs_in_fold))
-        fold_persistence.append(float(persistence))
-        fold_scores.append(float(fold_evidence["score"]))
-        fold_coverages.append(float(fold_evidence["coverage"]))
-        fold_edge_counts.append(len(local_pairs))
-
-    edge_persistence = sum(fold_persistence) / len(fold_persistence) if fold_persistence else 0.0
-    return {
-        "enabled": True,
-        "fold_count": len(folds),
-        "edge_persistence": edge_persistence,
-        "edge_persistence_aggregation": "mean",
-        "fold_edge_persistence": fold_persistence,
-        "fold_scores": fold_scores,
-        "fold_coverages": fold_coverages,
-        "fold_edge_counts": fold_edge_counts,
-        "passed": edge_persistence >= config.cross_fold_min_edge_persistence,
-    }
 
 
 def _build_teacher_graph(
@@ -778,7 +622,7 @@ def run_frozen_audit(
     """Run the label-free audit and return a versioned sparse teacher graph."""
 
     _validate_config(config)
-    cache = validate_feature_cache(cache, require_dino=config.use_dino)
+    cache = validate_feature_cache(cache)
     cobalt_check = None
     spatial_balance_summary = None
     sample_weights = None
@@ -820,19 +664,12 @@ def run_frozen_audit(
     raw_neighbours, _ = topk_neighbors(
         cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
     )
-    dino_neighbours = None
-    if config.use_dino:
-        dino_neighbours, _ = topk_neighbors(
-            cache["dino_embeddings"], config.dino_neighbors, config.similarity_chunk_size
-        )
     n_samples = len(cache["sample_ids"])
     generator = torch.Generator().manual_seed(config.seed)
     audit_geometry = _AuditGeometry(
         centered_clip=cache["centered_clip"],
         raw_neighbours=raw_neighbours,
         splice_codes=audit_codes,
-        dino_embeddings=cache["dino_embeddings"],
-        dino_neighbours=dino_neighbours,
     )
     random_geometries_by_group: dict[tuple[int, tuple[int, ...]], list[dict]] = {}
 
@@ -871,18 +708,9 @@ def run_frozen_audit(
         )
         null_scores = torch.tensor(random_scores + shuffled_scores)
         threshold = float(torch.quantile(null_scores, config.null_quantile)) if null_scores.numel() else math.inf
-        cross_fold = _cross_fold_validation(
-            audit_geometry,
-            basis,
-            activation,
-            evidence,
-            concept_indices,
-            config,
-        )
         selected = (
             evidence["coverage"] >= config.min_coverage
             and evidence["score"] > threshold
-            and cross_fold["passed"]
         )
         null_excess_score = max(0.0, evidence["score"] - threshold)
         null_excess_ratio = min(
@@ -902,16 +730,12 @@ def run_frozen_audit(
             "coverage": evidence["coverage"],
             "robust_positive_gain": evidence["positive_gain"],
             "semantic_agreement": evidence["semantic_agreement"],
-            "dino_guard_enabled": config.use_dino,
-            "residual_splice_gate_enabled": (
-                config.use_residual_splice_gate and not config.use_dino
-            ),
+            "residual_splice_gate_enabled": config.use_residual_splice_gate,
             "residual_splice_similarity_threshold": (
                 config.residual_splice_similarity_threshold
-                if config.use_residual_splice_gate and not config.use_dino
+                if config.use_residual_splice_gate
                 else None
             ),
-            "cross_fold": cross_fold,
             "hubness_penalty": evidence["hubness_penalty"],
             "activation_gain_alignment": evidence["activation_gain_alignment"],
             "accepted_edges": len(evidence["rows"]),
@@ -930,8 +754,7 @@ def run_frozen_audit(
                     {
                         **evidence,
                         "confidence": evidence["confidence"]
-                        * null_excess_ratio
-                        * float(cross_fold["edge_persistence"] or 1.0),
+                        * null_excess_ratio,
                     },
                 )
             )
@@ -977,14 +800,6 @@ def run_frozen_audit(
         "spatial_balance": spatial_balance_summary,
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
-        "cross_fold_summary": {
-            "enabled": config.use_cross_fold_validation,
-            "fold_count": config.cross_fold_count if config.use_cross_fold_validation else 0,
-            "min_edge_persistence": config.cross_fold_min_edge_persistence,
-            "passed_groups": sum(
-                bool(group.get("cross_fold", {}).get("passed")) for group in audited_groups
-            ),
-        },
         **graph,
     }
 
@@ -996,10 +811,10 @@ def _atomic_torch_save(payload: dict, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def save_feature_cache(cache: dict, path: str | Path, require_dino: bool = True) -> None:
+def save_feature_cache(cache: dict, path: str | Path) -> None:
     """Validate and atomically save a CRP cache produced by frozen encoders."""
 
-    validate_feature_cache(cache, require_dino=require_dino)
+    validate_feature_cache(cache)
     _atomic_torch_save(cache, Path(path))
 
 
@@ -1020,21 +835,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
-    parser.add_argument("--use-dino", "--use_dino", type=_parse_bool, nargs="?", const=True)
     parser.add_argument("--cobalt", type=_parse_bool, nargs="?", const=True)
     parser.add_argument(
         "--use-residual-splice-gate",
         type=_parse_bool,
         nargs="?",
         const=True,
-        help="Enable the DINO-free residual SpLiCE semantic gate.",
-    )
-    parser.add_argument(
-        "--use-cross-fold-validation",
-        type=_parse_bool,
-        nargs="?",
-        const=True,
-        help="Enable label-free cross-fold relation validation.",
+        help="Enable the residual SpLiCE semantic gate.",
     )
     parser.add_argument(
         "--use-cobalt-confidence",
@@ -1061,14 +868,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CRP audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
-    if args.use_dino is not None:
-        config_values["use_dino"] = args.use_dino
     if args.cobalt is not None:
         config_values["cobalt"] = args.cobalt
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
-    if args.use_cross_fold_validation is not None:
-        config_values["use_cross_fold_validation"] = args.use_cross_fold_validation
     if args.use_cobalt_confidence is not None:
         config_values["use_cobalt_confidence"] = args.use_cobalt_confidence
     if args.spatial_balance is not None:

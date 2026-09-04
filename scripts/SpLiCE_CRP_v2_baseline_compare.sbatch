@@ -13,8 +13,8 @@
 set -euo pipefail
 
 # One-command matched baseline experiment:
-# 1) build raw-CLIP and DINO-only 10-NN graphs;
-# 2) compare them with all three existing CRP v2 graphs post hoc.
+# 1) build a matched raw-CLIP 10-NN graph;
+# 2) compare it with the existing CRP v2 graphs post hoc.
 # No custom shell variables or dependency jobs are required.
 
 PROJECT_DIR="/home/xar68reb/Spur_SpLiCE"
@@ -50,21 +50,20 @@ export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
-echo "=== Building matched raw-CLIP and DINO-only graphs ==="
+echo "=== Building matched raw-CLIP graph ==="
 python -u -m scripts.tools.build_crp_baseline_graphs \
     --cache "${CACHE_PATH}" \
     --output-dir "${BASELINE_DIR}" \
     --top-k 10 \
     --chunk-size 512
 
-echo "=== Comparing CRP v2, raw CLIP, and DINO graphs ==="
+echo "=== Comparing CRP v2 and raw CLIP graphs ==="
 python -u -m scripts.tools.evaluate_crp_graph_waterbirds \
     --graph \
         "${CRP_DIR}/teacher_graph_seed0.json" \
         "${CRP_DIR}/teacher_graph_seed1.json" \
         "${CRP_DIR}/teacher_graph_seed2.json" \
         "${BASELINE_DIR}/raw_clip_graph.json" \
-        "${BASELINE_DIR}/dino_graph.json" \
     --metadata-csv "${METADATA_CSV}"
 
 echo "Finished CRP v2 baseline comparison; $(date --iso-8601=seconds)"

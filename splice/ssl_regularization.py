@@ -103,7 +103,6 @@ def splice_mode_uses_regularizer(mode: str) -> bool:
         "synthesis_distill",
         "oracle_relational",
         "crp_relational",
-        "cqt_relational",
     }
 
 

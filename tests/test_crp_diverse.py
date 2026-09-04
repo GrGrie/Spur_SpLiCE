@@ -127,7 +127,6 @@ class DiverseCrpTests(unittest.TestCase):
                 "splice_vocab": "fixture",
                 "splice_vocab_size": 4,
                 "splice_l1_penalty": 0.25,
-                "use_dino": False,
             },
             "sample_ids": sample_ids,
             "clip_embeddings": F.normalize(torch.randn(12, 4, generator=generator), dim=1),
@@ -135,8 +134,6 @@ class DiverseCrpTests(unittest.TestCase):
             "splice_codes": codes,
             "dictionary": dictionary,
             "vocabulary": ["alpha", "beta", "gamma", "delta"],
-            # Reproduces the shape of an already validated no-DINO cache.
-            "dino_embeddings": None,
         }
         spatial = {
             "artifact": SPATIAL_BALANCE_ARTIFACT,
@@ -169,9 +166,7 @@ class DiverseCrpTests(unittest.TestCase):
                 max_indegree=3,
                 null_trials=1,
                 null_quantile=0.5,
-                use_dino=False,
                 use_residual_splice_gate=False,
-                use_cross_fold_validation=False,
                 spatial_balance=True,
                 spatial_balance_variant="vanilla_patchwise",
             ),

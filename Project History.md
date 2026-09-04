@@ -911,3 +911,64 @@ the seed and probe cadence, W&B identity fields encode the seed, and the result
 table reads the final probe summary. A local side-by-side HTML index was also added
 for presenting the existing seed-zero SpLiCE-only and CoBalT-balanced graph audits;
 this is reporting-only and does not modify either graph artifact.
+
+### 2026-09-04 — CRPv4 overengineering reduction
+
+**Track:** CRPv4 CRP audit, shared relational trainer, and launch/reporting
+configuration. The legacy CoBalT discovery/classifier reproduction and CQT
+behavior remain separate.
+
+**State before:** CRPv4 used projected-neighbour reciprocity and deterministic
+cross-fold edge persistence as relation gates, while the shared CRP trainer still
+exposed graph-linked SimCLR positives even though the canonical CRP configurations
+disabled them. CRPv4 spatial balancing itself already produced image-specific
+weights in the exact SpLiCE vocabulary, but its graph path still carried these
+extra validation and objective switches.
+
+**Change:** projected kNN is now candidate search only; reciprocity and cross-fold
+validation/persistence were removed from CRP relation selection, graph payloads,
+configuration paths, and all CRPv4 launchers. CRP training now fixes the ordinary
+SimCLR objective plus confidence-weighted graph KL, with graph-linked positives
+available only to the explicitly separate CQT ablation. CRPv4 spatial balancing,
+mass preservation, optional DINO support, and residual SpLiCE agreement remain
+available.
+
+**Reason:** align CRPv4 with the simpler falsifiable CoBalT objective: rebalance
+the named SpLiCE concepts and add one graph regularizer without a second
+contrastive objective or a multi-stage relation selector.
+
+**Consequences:** newly built CRPv4 graphs can retain more directed candidate
+relations and no longer contain fold-persistence metadata; existing fold-gated
+artifacts are historical and must be rebuilt. The change alters graph density and
+the CRP training protocol but provides no new WGA, robustness, or causal claim;
+fresh audits and matched controls remain required. This is a CRP/shared-trainer
+method change with CRPv4 spatial infrastructure preserved; CQT and historical
+reporting snapshots are not reinterpreted.
+
+### 2026-09-04 — Remove retired graph variants and auxiliary verifier
+
+**Track:** CRPv4/CRP architecture, shared trainer, experiment configuration,
+baseline tooling, and reporting only; historical snapshots remain archived.
+
+**State before:** the current tree still exposed the experimental CQT training
+path and carried optional DINO embeddings, DINO relation gates, graph-positive
+controls, and their launchers/tests alongside the CRP/CoBalT work.
+
+**Change:** removed the CQT audit/training implementation, configs, launchers,
+oracle tools, and tests. Removed DINO feature extraction, cache fields,
+relation-gate logic, configuration switches, environment checks, baseline graph
+generation, and current launcher/report controls. The CRP path now consumes only
+frozen CLIP/SpLiCE cache data, and the residual SpLiCE agreement gate is the only
+optional semantic relation gate. Graph-linked examples are no longer an exposed
+training option.
+
+**Reason:** narrow the maintained architecture to the project objective: CRP
+rebalance of SpLiCE concepts, with CRPv4 spatial evidence and legacy CoBalT
+compatibility retained where still useful.
+
+**Consequences:** existing CQT/DINO-era caches and graphs are historical inputs
+and are not accepted by the current cache/graph interfaces. Current graph paths,
+reports, and W&B metadata no longer encode those retired dimensions. No empirical
+claim is changed; CRP audits and matched controls must be rerun under the reduced
+protocol. This is a CRP/shared-trainer architecture change with reporting and
+experiment infrastructure updates.

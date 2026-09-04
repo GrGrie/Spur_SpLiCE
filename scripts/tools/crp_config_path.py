@@ -9,7 +9,6 @@ from pathlib import PurePosixPath
 
 
 REQUIRED_KEYS = (
-    "use_dino",
     "cobalt",
     "min_concept_frequency",
     "max_concept_frequency",
@@ -18,7 +17,6 @@ REQUIRED_KEYS = (
     "min_group_size",
     "max_selected_groups",
     "projected_neighbors",
-    "dino_neighbors",
     "activation_difference_quantile",
     "min_intervention_gain",
     "min_coverage",
@@ -31,9 +29,6 @@ REQUIRED_KEYS = (
     "orthogonal_tolerance",
     "use_residual_splice_gate",
     "residual_splice_similarity_threshold",
-    "use_cross_fold_validation",
-    "cross_fold_count",
-    "cross_fold_min_edge_persistence",
     "use_cobalt_confidence",
     "spatial_balance",
     "spatial_balance_variant",
@@ -75,19 +70,18 @@ def config_path(config: dict, variant: str = "") -> PurePosixPath:
             f"floor{value('spatial_balance_floor')}-freq{value('spatial_frequency_power')}"
         )
     return root.joinpath(
-        f"dino-{value('use_dino')}_cobalt-{value('cobalt')}",
+        f"cobalt-{value('cobalt')}",
         f"freq-{value('min_concept_frequency')}-{value('max_concept_frequency')}_"
         f"group-{value('min_group_size')}-{value('text_similarity_threshold')}-"
         f"{value('coactivation_threshold')}-cap{value('max_selected_groups')}",
-        f"search-{value('projected_neighbors')}-{value('dino_neighbors')}_"
+        f"search-{value('projected_neighbors')}_"
         f"actq-{value('activation_difference_quantile')}_gain-{value('min_intervention_gain')}_"
         f"cov-{value('min_coverage')}",
         f"graph-k{value('graph_top_k')}-maxdeg{value('max_indegree')}-indeg{value('indegree_factor')}_"
         f"null-{value('null_trials')}-{value('null_quantile')}_"
         f"num-{value('similarity_chunk_size')}-{value('orthogonal_tolerance')}_"
         f"resid-{value('use_residual_splice_gate')}-{value('residual_splice_similarity_threshold')}_"
-        f"fold-{value('use_cross_fold_validation')}-{value('cross_fold_count')}-"
-        f"{value('cross_fold_min_edge_persistence')}_cbconf-{value('use_cobalt_confidence')}",
+        f"cbconf-{value('use_cobalt_confidence')}",
     )
 
 

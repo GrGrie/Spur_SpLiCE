@@ -43,17 +43,13 @@ if [[ "${CRP_SPATIAL_BALANCE}" == "true" ]]; then
     CRP_SPATIAL_RUN_SUFFIX="_spatial_${CRP_SPATIAL_BALANCE_VARIANT}"
 fi
 case "${MODE}" in
-    none|crp_relational|cqt_relational) ;;
-    *) fail "This entry point supports none, crp_relational, or cqt_relational; got MODE=${MODE}" ;;
+    none|crp_relational) ;;
+    *) fail "This entry point supports none or crp_relational; got MODE=${MODE}" ;;
 esac
-case "${USE_DINO}" in true|false) ;; *) fail "USE_DINO must be true or false." ;; esac
 case "${COBALT}" in true|false) ;; *) fail "COBALT must be true or false." ;; esac
 case "${CRP_SPATIAL_BALANCE}" in true|false) ;; *) fail "CRP_SPATIAL_BALANCE must be true or false." ;; esac
 if [[ "${COBALT}" == "true" && "${CRP_SPATIAL_BALANCE}" == "true" ]]; then
     fail "COBALT and CRP_SPATIAL_BALANCE are separate ablations and cannot both be true."
-fi
-if [[ "${MODE}" == "cqt_relational" && "${CRP_SPATIAL_BALANCE}" == "true" ]]; then
-    fail "CRP_SPATIAL_BALANCE is a CRPv4 option and cannot be used with CQT."
 fi
 if [[ "${CRP_SPATIAL_BALANCE}" == "true" && -z "${CRP_SPATIAL_BALANCE_VARIANT}" ]]; then
     fail "CRP_SPATIAL_BALANCE_VARIANT is required for CRPv4."
@@ -66,20 +62,10 @@ case "${DATASET}" in
 esac
 # Recompute dataset-derived paths after canonicalization.
 SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
-CRP_CACHE_PATH="${CRP_CACHE_PATH:-}"
-if [[ -z "${CRP_CACHE_PATH}" && "${USE_DINO}" == "true" ]]; then
-    CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features.pt"
-elif [[ -z "${CRP_CACHE_PATH}" ]]; then
-    CRP_CACHE_PATH="outputs/crp/${DATASET}_train_features_no_dino.pt"
-fi
+CRP_CACHE_PATH="${CRP_CACHE_PATH:-outputs/crp/${DATASET}_train_features.pt}"
 CRP_GRAPH_DIR="outputs/crp/${DATASET}"
 CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
-CQT_GRAPH_DIR="outputs/cqt/${DATASET}"
-CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
 RELATIONAL_TEACHER_GRAPH="${CRP_TEACHER_GRAPH}"
-if [[ "${MODE}" == "cqt_relational" ]]; then
-    RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
-fi
 if [[ -z "${COBALT_CONCEPTS_PATH}" ]]; then
     COBALT_CONCEPTS_PATH="output/CoBalT/${DATASET}/seed${SEED}/concepts.pt"
 fi
@@ -106,8 +92,8 @@ conda activate "${CONDA_ENV}"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 
 validate_crp_feature_cache() {
-    python -c 'import sys, torch; from splice.crp import validate_feature_cache; validate_feature_cache(torch.load(sys.argv[1], map_location="cpu", weights_only=True), require_dino=sys.argv[2].lower()=="true")' \
-        "${CRP_CACHE_PATH}" "${USE_DINO}" >/dev/null 2>&1
+    python -c 'import sys, torch; from splice.crp import validate_feature_cache; validate_feature_cache(torch.load(sys.argv[1], map_location="cpu", weights_only=True))' \
+        "${CRP_CACHE_PATH}" >/dev/null 2>&1
 }
 
 resolve_relational_graph_config() {
@@ -119,12 +105,7 @@ resolve_relational_graph_config() {
             RELATIONAL_ARTIFACT="splice_crp_v3_teacher_graph"
         fi
         RELATIONAL_MODULE="splice.crp"
-        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"dino_neighbors\":${CRP_DINO_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"max_indegree\":${CRP_MAX_INDEGREE},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${CRP_USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${CRP_RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cross_fold_validation\":${CRP_USE_CROSS_FOLD_VALIDATION},\"cross_fold_count\":${CRP_CROSS_FOLD_COUNT},\"cross_fold_min_edge_persistence\":${CRP_CROSS_FOLD_MIN_EDGE_PERSISTENCE},\"use_cobalt_confidence\":${CRP_USE_COBALT_CONFIDENCE},\"spatial_balance\":${CRP_SPATIAL_BALANCE},\"spatial_balance_variant\":\"${CRP_SPATIAL_BALANCE_VARIANT}\",\"spatial_balance_floor\":${CRP_SPATIAL_BALANCE_FLOOR},\"spatial_frequency_power\":${CRP_SPATIAL_FREQUENCY_POWER},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
-    else
-        RELATIONAL_LABEL="CQT"
-        RELATIONAL_ARTIFACT="splice_cqt_v1_teacher_graph"
-        RELATIONAL_MODULE="splice.cqt"
-        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CQT_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CQT_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CQT_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CQT_COACTIVATION_THRESHOLD},\"min_group_size\":${CQT_MIN_GROUP_SIZE},\"max_candidate_groups\":${CQT_MAX_CANDIDATE_GROUPS},\"max_factors\":${CQT_MAX_FACTORS},\"min_state_samples\":${CQT_MIN_STATE_SAMPLES},\"min_exclusivity\":${CQT_MIN_EXCLUSIVITY},\"min_context_similarity\":${CQT_MIN_CONTEXT_SIMILARITY},\"min_state_balanced_accuracy\":${CQT_MIN_STATE_BALANCED_ACCURACY},\"min_quotient_efficacy\":${CQT_MIN_QUOTIENT_EFFICACY},\"transport_candidates\":${CQT_TRANSPORT_CANDIDATES},\"transport_mass\":${CQT_TRANSPORT_MASS},\"min_transport_pairs\":${CQT_MIN_TRANSPORT_PAIRS},\"min_word_similarity\":${CQT_MIN_WORD_SIMILARITY},\"dino_neighbors\":${CQT_DINO_NEIGHBORS},\"dino_damage_quantile\":${CQT_DINO_DAMAGE_QUANTILE},\"min_intervention_gain\":${CQT_MIN_INTERVENTION_GAIN},\"min_coverage\":${CQT_MIN_COVERAGE},\"null_trials\":${CQT_NULL_TRIALS},\"null_quantile\":${CQT_NULL_QUANTILE},\"graph_top_k\":${CQT_GRAPH_TOP_K},\"indegree_factor\":${CQT_INDEGREE_FACTOR},\"similarity_chunk_size\":${CQT_SIMILARITY_CHUNK_SIZE},\"seed\":${SEED},\"use_dino\":${USE_DINO},\"cobalt\":${COBALT}}"
+        RELATIONAL_CONFIG_JSON="{\"min_concept_frequency\":${CRP_MIN_CONCEPT_FREQUENCY},\"max_concept_frequency\":${CRP_MAX_CONCEPT_FREQUENCY},\"text_similarity_threshold\":${CRP_TEXT_SIMILARITY_THRESHOLD},\"coactivation_threshold\":${CRP_COACTIVATION_THRESHOLD},\"min_group_size\":${CRP_MIN_GROUP_SIZE},\"max_selected_groups\":${CRP_MAX_SELECTED_GROUPS},\"projected_neighbors\":${CRP_PROJECTED_NEIGHBORS},\"activation_difference_quantile\":${CRP_ACTIVATION_DIFFERENCE_QUANTILE},\"min_intervention_gain\":${CRP_MIN_INTERVENTION_GAIN},\"min_coverage\":${CRP_MIN_COVERAGE},\"graph_top_k\":${CRP_GRAPH_TOP_K},\"max_indegree\":${CRP_MAX_INDEGREE},\"indegree_factor\":${CRP_INDEGREE_FACTOR},\"null_trials\":${CRP_NULL_TRIALS},\"null_quantile\":${CRP_NULL_QUANTILE},\"similarity_chunk_size\":${CRP_SIMILARITY_CHUNK_SIZE},\"orthogonal_tolerance\":${CRP_ORTHOGONAL_TOLERANCE},\"use_residual_splice_gate\":${CRP_USE_RESIDUAL_SPLICE_GATE},\"residual_splice_similarity_threshold\":${CRP_RESIDUAL_SPLICE_SIMILARITY_THRESHOLD},\"use_cobalt_confidence\":${CRP_USE_COBALT_CONFIDENCE},\"spatial_balance\":${CRP_SPATIAL_BALANCE},\"spatial_balance_variant\":\"${CRP_SPATIAL_BALANCE_VARIANT}\",\"spatial_balance_floor\":${CRP_SPATIAL_BALANCE_FLOOR},\"spatial_frequency_power\":${CRP_SPATIAL_FREQUENCY_POWER},\"seed\":${SEED},\"cobalt\":${COBALT}}"
     fi
 }
 
@@ -142,25 +123,12 @@ crp_config_path() {
 }
 
 prepare_relational_teacher_graph() {
-    [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]] || return 0
+    [[ "${MODE}" == "crp_relational" ]] || return 0
 
     resolve_relational_graph_config
-    if [[ "${MODE}" == "crp_relational" ]]; then
-        CRP_GRAPH_DIR="outputs/crp/${DATASET}/$(crp_config_path)"
-        CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/seed${SEED}/teacher_graph.json"
-        RELATIONAL_TEACHER_GRAPH="${CRP_TEACHER_GRAPH}"
-    else
-        CQT_GRAPH_VARIANT="q${CQT_MIN_QUOTIENT_EFFICACY}_dinoq${CQT_DINO_DAMAGE_QUANTILE}"
-        if [[ "${USE_DINO}" != "true" || "${COBALT}" == "true" ]]; then
-            CQT_GRAPH_VARIANT="${CQT_GRAPH_VARIANT}_useDino${USE_DINO}_cobalt${COBALT}"
-        fi
-        if [[ -n "${RELATIONAL_GRAPH_VARIANT}" ]]; then
-            CQT_GRAPH_VARIANT="${CQT_GRAPH_VARIANT}_${RELATIONAL_GRAPH_VARIANT}"
-        fi
-        CQT_GRAPH_DIR="outputs/cqt/${DATASET}/${CQT_GRAPH_VARIANT}"
-        CQT_TEACHER_GRAPH="${CQT_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
-        RELATIONAL_TEACHER_GRAPH="${CQT_TEACHER_GRAPH}"
-    fi
+    CRP_GRAPH_DIR="outputs/crp/${DATASET}/$(crp_config_path)"
+    CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/seed${SEED}/teacher_graph.json"
+    RELATIONAL_TEACHER_GRAPH="${CRP_TEACHER_GRAPH}"
 
     if [[ "${CRP_AUTO_BUILD_GRAPH}" != "true" ]]; then
         echo "[${MODE}] Automatic cache/graph preparation disabled."
@@ -204,9 +172,7 @@ prepare_relational_teacher_graph() {
             --splice-pretrained "${SPLICE_PRETRAINED}" \
             --splice-vocab "${SPLICE_VOCAB}" \
             --splice-vocab-size "${SPLICE_VOCAB_SIZE}" \
-            --splice-l1-penalty "${SPLICE_L1_PENALTY}" \
-            --dino-model "${CRP_DINO_MODEL}" \
-            --use-dino "${USE_DINO}"
+            --splice-l1-penalty "${SPLICE_L1_PENALTY}"
     else
         echo "[CRP] Reusing existing feature cache: ${CRP_CACHE_PATH}"
     fi
@@ -230,7 +196,6 @@ prepare_relational_teacher_graph() {
         --output "${RELATIONAL_TEACHER_GRAPH}"
         --seed "${SEED}"
         --config "${RELATIONAL_CONFIG_JSON}"
-        --use-dino "${USE_DINO}"
         --cobalt "${COBALT}"
         --spatial-balance "${CRP_SPATIAL_BALANCE}"
     )
@@ -245,14 +210,7 @@ prepare_relational_teacher_graph() {
 
 prepare_relational_teacher_graph
 
-if [[ "${MODE}" == "cqt_relational" && "${DATASET}" == "waterbirds" && \
-      "${CQT_ORACLE_AUDIT}" == "true" && -f "${WATERBIRDS_METADATA_CSV}" ]]; then
-    python -u -m scripts.tools.audit_cqt_graph_oracle \
-        --graph "${RELATIONAL_TEACHER_GRAPH}" \
-        --metadata-csv "${WATERBIRDS_METADATA_CSV}"
-fi
-
-if [[ ( "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ) && ! -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
+if [[ "${MODE}" == "crp_relational" && ! -f "${RELATIONAL_TEACHER_GRAPH}" ]]; then
     fail "Relational teacher graph does not exist after preparation: ${RELATIONAL_TEACHER_GRAPH}"
 fi
 
@@ -263,16 +221,15 @@ fi
 
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
-    crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_useDino_${USE_DINO}_cobalt_${COBALT}${CRP_SPATIAL_RUN_SUFFIX}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
-    cqt_relational) RUN_LABEL="CQT_${CQT_GRAPH_VARIANT}_useDino_${USE_DINO}_cobalt_${COBALT}_simclrWei_${SIMCLR_WEIGHT}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_graphPos_${CRP_GRAPH_POSITIVES}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
+    crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_cobalt_${COBALT}${CRP_SPATIAL_RUN_SUFFIX}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
     corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
     augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
     augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
 esac
 
 WANDB_RUN_NAME="${DATASET}_S${SEED}_${MODEL}_${RUN_LABEL}_e${EPOCHS}"
-WANDB_GROUP="${DATASET}_${MODE}_${MODEL}_e${EPOCHS}_seed${SEED}_useDino${USE_DINO}_cobalt${COBALT}_spatial${CRP_SPATIAL_BALANCE}"
-WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},model_${MODEL},protocol_e${EPOCHS},graph_${RELATIONAL_GRAPH_VARIANT:-default},use_dino_${USE_DINO},cobalt_${COBALT},spatial_${CRP_SPATIAL_BALANCE},spatial_variant_${CRP_SPATIAL_BALANCE_VARIANT},${WANDB_EXTRA_TAGS}"
+WANDB_GROUP="${DATASET}_${MODE}_${MODEL}_e${EPOCHS}_seed${SEED}_cobalt${COBALT}_spatial${CRP_SPATIAL_BALANCE}"
+WANDB_TAGS="dataset_${DATASET},seed_${SEED},mode_${MODE},model_${MODEL},protocol_e${EPOCHS},graph_${RELATIONAL_GRAPH_VARIANT:-default},cobalt_${COBALT},spatial_${CRP_SPATIAL_BALANCE},spatial_variant_${CRP_SPATIAL_BALANCE_VARIANT},${WANDB_EXTRA_TAGS}"
 
 ARGS=(
     spur_splice.py
@@ -336,7 +293,7 @@ if [[ "${OPTIMIZER}" == "SAM" ]]; then
     [[ "${ONLY_SAM_STEP_SIZE}" == "true" ]] && ARGS+=(--only_sam_step_size)
 fi
 
-if [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]]; then
+if [[ "${MODE}" == "crp_relational" ]]; then
     ARGS+=(
         --splice_weight "${SPLICE_WEIGHT}"
         --crp_teacher_graph "${RELATIONAL_TEACHER_GRAPH}"
@@ -345,7 +302,6 @@ if [[ "${MODE}" == "crp_relational" || "${MODE}" == "cqt_relational" ]]; then
         --crp_warmup_epochs "${CRP_WARMUP_EPOCHS}"
         --crp_decay_start_epoch "${CRP_DECAY_START_EPOCH}"
         --crp_decay_end_epoch "${CRP_DECAY_END_EPOCH}"
-        --crp_graph_positives "${CRP_GRAPH_POSITIVES}"
     )
 elif [[ "${MODE}" != "none" ]]; then
     ARGS+=(
@@ -407,7 +363,7 @@ elif [[ "${MODE}" == "augment" || "${MODE}" == "augment_corr_reg" ]]; then
 fi
 
 echo "=== Spur SpLiCE relational training ==="
-echo "mode=${MODE} dataset=${DATASET} seed=${SEED} epochs=${EPOCHS} use_dino=${USE_DINO} cobalt=${COBALT}"
+echo "mode=${MODE} dataset=${DATASET} seed=${SEED} epochs=${EPOCHS} cobalt=${COBALT}"
 echo "run=${WANDB_RUN_NAME} checkpoints=${CHECKPOINT_DIR}"
 echo "started=$(date --iso-8601=seconds) host=$(hostname)"
 

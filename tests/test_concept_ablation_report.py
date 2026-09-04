@@ -50,7 +50,6 @@ class ConceptAblationReportTests(unittest.TestCase):
                 "splice_codes": torch.tensor([[1.0], [0.0], [1.0], [0.0], [1.0]]),
                 "dictionary": torch.tensor([[1.0, 0.0, 0.0]]),
                 "vocabulary": ["background direction"],
-                "dino_embeddings": clip,
             }
             cache_path = root / "cache.pt"
             torch.save(cache, cache_path)

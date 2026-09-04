@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=08:00:00
 #SBATCH --job-name=SpurSpLiCE_CRP_s0_sweep
-#SBATCH --array=0-7%2
+#SBATCH --array=0-6%2
 #SBATCH --mem=40G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --ntasks=1
@@ -22,7 +22,7 @@ load_splice_config "${CONFIG_FILE}"
 
 variant_record="${CRP_TRAIN_SWEEP_VARIANTS[${SLURM_ARRAY_TASK_ID}]:-}"
 [[ -n "${variant_record}" ]] || { echo "Unknown array task ${SLURM_ARRAY_TASK_ID}" >&2; exit 2; }
-IFS='|' read -r SPLICE_WEIGHT CRP_TEMPERATURE CRP_GRAPH_POSITIVES <<< "${variant_record}"
+IFS='|' read -r SPLICE_WEIGHT CRP_TEMPERATURE <<< "${variant_record}"
 
 WANDB_EXTRA_TAGS="${WANDB_EXTRA_TAGS},sweep_task_${SLURM_ARRAY_TASK_ID}"
 CONFIG_ALREADY_LOADED="true"

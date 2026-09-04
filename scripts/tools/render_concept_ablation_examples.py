@@ -15,7 +15,6 @@ import torch
 from PIL import Image
 
 from experiments.spurious_eval.datasets.waterbirds import WaterbirdsDataset
-from splice.cqt import CQT_ARTIFACT, concept_quotient
 from splice.crp import orthonormal_basis, project_out, validate_feature_cache
 from splice.graph_io import load_graph_json
 
@@ -92,8 +91,6 @@ PAIR_SPECS = (
 def _apply(values: torch.Tensor, intervention: Intervention) -> torch.Tensor:
     if intervention.kind == "crp_projection":
         return project_out(values, intervention.direction)
-    if intervention.kind == "cqt_quotient":
-        return concept_quotient(values, intervention.direction)
     raise ValueError(f"Unknown intervention kind: {intervention.kind}")
 
 
@@ -131,12 +128,7 @@ def _interventions(
                 continue
             indices = [int(index) for index in group["concept_indices"]]
             concepts = [str(word) for word in group.get("concepts", [])]
-            semantic_label = (
-                "residual SpLiCE agreement"
-                if not bool(graph.get("config", {}).get("use_dino", True))
-                and bool(group.get("residual_splice_gate_enabled", False))
-                else "DINO agreement"
-            )
+            semantic_label = "residual SpLiCE agreement"
             interventions.append(
                 Intervention(
                     identifier=f"G{int(group['group_id'])}",
@@ -157,47 +149,6 @@ def _interventions(
                         f"alignment={float(group.get('activation_gain_alignment', 0.0)):.4f}, "
                         f"turnover={float(group.get('mean_neighbor_turnover', 0.0)):.2%}, "
                         f"retained edges={retained_edge_count(int(group['group_id']))}"
-                    ),
-                )
-            )
-    elif graph.get("artifact") == CQT_ARTIFACT:
-        factors = sorted(
-            graph.get("factors", []),
-            key=lambda factor: (
-                -int(bool(factor.get("selected", False))),
-                -retained_edge_count(int(factor["factor_id"])),
-                -float(factor.get("null_excess_gain", 0.0)),
-                -float(factor.get("intervention_gain", 0.0)),
-                int(factor["factor_id"]),
-            ),
-        )
-        for factor in factors:
-            selected = bool(factor.get("selected", False))
-            if selected_only and not selected:
-                continue
-            state_a = factor["state_a"]
-            state_b = factor["state_b"]
-            indices_a = [int(index) for index in state_a["concept_indices"]]
-            indices_b = [int(index) for index in state_b["concept_indices"]]
-            direction_a = torch.nn.functional.normalize(cache["dictionary"][indices_a].mean(0), dim=0)
-            direction_b = torch.nn.functional.normalize(cache["dictionary"][indices_b].mean(0), dim=0)
-            factor_id = int(factor["factor_id"])
-            concepts_a = ", ".join(str(word) for word in state_a.get("concepts", []))
-            concepts_b = ", ".join(str(word) for word in state_b.get("concepts", []))
-            interventions.append(
-                Intervention(
-                    identifier=f"F{factor_id}",
-                    title=f"CQT factor F{factor_id}",
-                    concepts=f"A: {concepts_a} ↔ B: {concepts_b}",
-                    kind="cqt_quotient",
-                    direction=direction_a - direction_b,
-                    concept_indices=tuple(indices_a + indices_b),
-                    selected=selected,
-                    evidence=(
-                        f"gain={float(factor.get('intervention_gain', 0.0)):.6g}, "
-                        f"null threshold={float(factor.get('null_threshold', 0.0)):.6g}, "
-                        f"coverage={float(factor.get('coverage', 0.0)):.2%}, "
-                        f"retained edges={retained_edge_count(factor_id)}"
                     ),
                 )
             )
@@ -401,7 +352,7 @@ def _graph_summary(graph: dict, cache: dict, metadata_rows: Sequence[dict]) -> s
             f"median={float(supported_confidence.median()):.6g}, mean={float(supported_confidence.mean()):.6g}, "
             f"max={float(supported_confidence.max()):.6g}" if supported_confidence.numel() else "no supported anchors"
         )),
-        ("DINO / CoBalT", f"{bool(config.get('use_dino', True))} / {bool(config.get('cobalt', False))}"),
+        ("CoBalT", str(bool(config.get("cobalt", False)))),
     ]
     return '<table><tbody>' + ''.join(
         f'<tr><th>{html.escape(name)}</th><td>{html.escape(value)}</td></tr>' for name, value in rows_html
@@ -456,9 +407,6 @@ def _retained_edge_examples(
             edited = _apply(pair, intervention)
             raw_cosine = float(torch.dot(pair[0], pair[1]))
             projected_cosine = float(torch.dot(edited[0], edited[1]))
-            dino_similarity = "disabled"
-            if bool(graph.get("config", {}).get("use_dino", True)) and cache.get("dino_embeddings") is not None:
-                dino_similarity = f"{float(torch.dot(cache['dino_embeddings'][row], cache['dino_embeddings'][column])):.6f}"
             left_meta = metadata_rows[_source_index(cache["sample_ids"][row])]
             right_meta = metadata_rows[_source_index(cache["sample_ids"][column])]
             same_target = int(left_meta["y"]) == int(right_meta["y"])
@@ -475,7 +423,6 @@ def _retained_edge_examples(
                 f'<tr><th>Raw / projected cosine</th><td>{raw_cosine:.6f} / {projected_cosine:.6f}</td></tr>'
                 f'<tr><th>Stored gain</th><td>{float(gains[row, slot]):+.6f}</td></tr>'
                 f'<tr><th>Group activation A / B</th><td>{activation_text}</td></tr>'
-                f'<tr><th>DINO cosine</th><td>{dino_similarity}</td></tr>'
                 f'<tr><th>Edge confidence / teacher weight</th><td>{float(edge_confidences[row, slot]):.6g} / {float(weights[row, slot]):.6g}</td></tr>'
                 f'<tr><th>Anchor confidence</th><td>{float(anchor_confidence[row]):.6g}</td></tr>'
                 f'<tr><th>Post-hoc relation</th><td>same target={same_target}; opposite background={opposite_background}</td></tr>'
@@ -500,10 +447,7 @@ def generate_report(
     edges_per_group: int = 1,
 ) -> Path:
     graph = load_graph_json(graph_path)
-    cache = validate_feature_cache(
-        torch.load(cache_path, map_location="cpu", weights_only=True),
-        require_dino=False,
-    )
+    cache = validate_feature_cache(torch.load(cache_path, map_location="cpu", weights_only=True))
     if list(map(str, graph.get("sample_ids", []))) != list(map(str, cache["sample_ids"])):
         raise ValueError("Teacher graph and feature cache sample IDs are not aligned.")
     if scope not in {"selected", "all"}:
@@ -556,9 +500,9 @@ def generate_report(
             """
         )
 
-    mode_name = "CRP full-subspace projection" if graph["artifact"] in CRP_ARTIFACTS else "CQT rank-one quotient"
+    mode_name = "CRP full-subspace projection"
     audited_count = len(graph.get("groups", graph.get("factors", [])))
-    all_items = graph.get("groups", graph.get("factors", []))
+    all_items = graph.get("groups", [])
     selected_count = sum(bool(item.get("selected", False)) for item in all_items)
     retained_edges = _retained_edge_examples(
         graph,

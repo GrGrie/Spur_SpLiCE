@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from splice.crp import CRP_GRAPH_VERSION, CRP_V4_GRAPH_VERSION, GRAPH_VERSION
+from splice.crp import CRP_GRAPH_VERSION, CRP_V4_GRAPH_VERSION, CrpAuditConfig, GRAPH_VERSION
 from splice.graph_io import graph_fingerprint, load_graph_json
 
 
@@ -19,7 +19,6 @@ TEACHER_GRAPH_ARTIFACTS = {
     "splice_crp_v2_teacher_graph",
     "splice_crp_v3_teacher_graph",
     "splice_crp_v4_teacher_graph",
-    "splice_cqt_v1_teacher_graph",
 }
 REQUIRED_GRAPH_KEYS = {
     "artifact",
@@ -63,13 +62,17 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
     missing = REQUIRED_GRAPH_KEYS.difference(graph)
     if missing:
         raise ValueError(f"CRP teacher graph is missing required keys: {sorted(missing)}")
+    config = graph.get("config", {})
+    if isinstance(config, dict):
+        unsupported = set(config).difference(CrpAuditConfig.__dataclass_fields__)
+        if unsupported:
+            raise ValueError(f"CRP teacher graph contains unsupported settings: {sorted(unsupported)}")
     if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
         raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
     expected_versions = {
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
         "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
         "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,
-        "splice_cqt_v1_teacher_graph": GRAPH_VERSION,
     }
     expected_version = expected_versions[graph["artifact"]]
     if graph["graph_version"] != expected_version:
@@ -384,7 +387,6 @@ class CrpRelationalRegularizer:
         warmup_epochs: int,
         decay_start_epoch: int = 0,
         decay_end_epoch: int = 0,
-        use_graph_positives: bool = True,
     ) -> None:
         if weight < 0:
             raise ValueError("CRP relational weight must be non-negative.")
@@ -407,7 +409,6 @@ class CrpRelationalRegularizer:
         self.warmup_epochs = int(warmup_epochs)
         self.decay_start_epoch = int(decay_start_epoch)
         self.decay_end_epoch = int(decay_end_epoch)
-        self.uses_graph_positives = bool(use_graph_positives)
         self.epoch = 0
         self.last_diagnostics: dict[str, float] = {}
 
@@ -445,32 +446,6 @@ class CrpRelationalRegularizer:
             )
             scheduled *= min(1.0, max(0.0, remaining))
         return scheduled
-
-    def batch_positive_mask(self, sample_indices: torch.Tensor) -> torch.Tensor:
-        """Return graph-linked examples that should not act as SimCLR negatives."""
-        sample_indices = torch.as_tensor(sample_indices).detach().long().cpu().view(-1)
-        if self.epoch <= self.start_epoch or (
-            self.decay_end_epoch and self.epoch >= self.decay_end_epoch
-        ):
-            return torch.zeros((len(sample_indices), len(sample_indices)), dtype=torch.float32)
-        positions: dict[int, list[int]] = {}
-        for position, sample_index in enumerate(sample_indices.tolist()):
-            positions.setdefault(sample_index, []).append(position)
-        mask = torch.zeros((len(sample_indices), len(sample_indices)), dtype=torch.float32)
-        for anchor_position, anchor_index in enumerate(sample_indices.tolist()):
-            for neighbor_index, edge_weight in zip(
-                self.neighbor_indices[anchor_index].tolist(),
-                self.weights[anchor_index].tolist(),
-            ):
-                if neighbor_index < 0 or edge_weight <= 0:
-                    continue
-                for neighbor_position in positions.get(neighbor_index, []):
-                    if neighbor_position != anchor_position:
-                        confidence = float(self.anchor_confidence[anchor_index]) * edge_weight
-                        mask[anchor_position, neighbor_position] = max(
-                            float(mask[anchor_position, neighbor_position]), confidence
-                        )
-        return torch.maximum(mask, mask.T)
 
     def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
         if embeddings.ndim != 2 or embeddings.shape[0] % 2:

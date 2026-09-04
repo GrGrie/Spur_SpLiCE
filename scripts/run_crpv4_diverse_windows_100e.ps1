@@ -128,9 +128,9 @@ if (-not [string]::IsNullOrWhiteSpace($BalancePath)) {
 
 if ([string]::IsNullOrWhiteSpace($CachePath)) {
     $CacheCandidates = @(
-        (Join-Path $RepoRoot "outputs\crp\waterbirds_train_features_oi_v7_no_dino.pt"),
-        (Join-Path $RepoRoot "outputs\windows_splice_only_ablation\waterbirds_train_features_oi_v7_no_dino.pt"),
-        (Join-Path $SourceAblationRoot "waterbirds_train_features_oi_v7_no_dino.pt")
+        (Join-Path $RepoRoot "outputs\crp\waterbirds_train_features_oi_v7.pt"),
+        (Join-Path $RepoRoot "outputs\windows_splice_only_ablation\waterbirds_train_features_oi_v7.pt"),
+        (Join-Path $SourceAblationRoot "waterbirds_train_features_oi_v7.pt")
     )
     $CachePath = $CacheCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 }
@@ -328,7 +328,6 @@ $AuditConfig = [ordered]@{
     min_group_size = 1
     max_selected_groups = 0
     projected_neighbors = 20
-    dino_neighbors = 50
     activation_difference_quantile = 0.85
     min_intervention_gain = 0.0005
     min_coverage = 0.01
@@ -341,16 +340,12 @@ $AuditConfig = [ordered]@{
     orthogonal_tolerance = 0.000001
     use_residual_splice_gate = $true
     residual_splice_similarity_threshold = 0.25
-    use_cross_fold_validation = $true
-    cross_fold_count = 2
-    cross_fold_min_edge_persistence = 0.5
     use_cobalt_confidence = $false
     spatial_balance = $true
     spatial_balance_variant = $Variant
     spatial_balance_floor = 0.25
     spatial_frequency_power = 0.50
     seed = 0
-    use_dino = $false
     cobalt = $false
 }
 $DiversityConfig = [ordered]@{
@@ -395,12 +390,11 @@ else {
         "--spatial-balance-artifact", $BalancePath,
         "--output", $GraphPath,
         "--config", $AuditConfigNative,
-        "--diversity-config", $DiversityConfigNative,
-        "--use-dino", "false"
+        "--diversity-config", $DiversityConfigNative
     ) -LogPath (Join-Path $LogsRoot "graph_${GraphIdentity}.log")
 }
 
-$GraphValidation = "import json,sys,torch; from splice.crp import validate_feature_cache; from splice.crp_training import validate_teacher_graph; c=validate_feature_cache(torch.load(sys.argv[2],map_location='cpu',weights_only=True),require_dino=False); g=json.load(open(sys.argv[1],encoding='utf-8')); validate_teacher_graph(g,c['sample_ids']); d=g['diverse_selection']; print('[OK] source',d['source_group_count'],'audited',d['preselected_group_count'],'passed',d['quality_gate_count'],'selected',d['selected_group_count']); print('[INFO] concepts',[x['concepts'] for x in g['groups'] if x['selected']]); print('[WARN] empty graph uses SimCLR fallback') if g['degree_stats']['edge_count']==0 else None"
+$GraphValidation = "import json,sys,torch; from splice.crp import validate_feature_cache; from splice.crp_training import validate_teacher_graph; c=validate_feature_cache(torch.load(sys.argv[2],map_location='cpu',weights_only=True)); g=json.load(open(sys.argv[1],encoding='utf-8')); validate_teacher_graph(g,c['sample_ids']); d=g['diverse_selection']; print('[OK] source',d['source_group_count'],'audited',d['preselected_group_count'],'passed',d['quality_gate_count'],'selected',d['selected_group_count']); print('[INFO] concepts',[x['concepts'] for x in g['groups'] if x['selected']]); print('[WARN] empty graph uses SimCLR fallback') if g['degree_stats']['edge_count']==0 else None"
 Invoke-CondaPython -Arguments @("-c", $GraphValidation, $GraphPath, $CachePath)
 Invoke-CondaPython -Arguments @(
     "-u", "-m", "scripts.tools.summarize_crp_audit", $GraphPath
@@ -483,13 +477,12 @@ else {
         "--crp_warmup_epochs", "10",
         "--crp_decay_start_epoch", "0",
         "--crp_decay_end_epoch", "0",
-        "--crp_graph_positives", "false",
         "--use_wandb",
         "--wandb_name", $WandbProject,
         "--entity", $WandbEntity,
         "--wandb_run_name", "windows_crpv4_${Variant}_diverse_s0_e${Epochs}_lp$LinearProbeFrequency",
         "--wandb_group", "waterbirds_crpv4_diverse_seed0_e$Epochs",
-        "--wandb_tags", "windows_local,crpv4,diverse_selector,${Variant},seed_0,openimages_v7,no_dino,linear_probe_every_$LinearProbeFrequency"
+        "--wandb_tags", "windows_local,crpv4,diverse_selector,${Variant},seed_0,openimages_v7,linear_probe_every_$LinearProbeFrequency"
     ) -LogPath $TrainingLog
 }
 

@@ -64,14 +64,6 @@ def summarize(path: Path) -> int:
         f"indegree_gini={float(degree.get('indegree_gini', 0.0)):.4f} "
         f"effective_donor_count={float(degree.get('effective_donor_count', 0.0)):.1f}"
     )
-    fold = report.get("cross_fold_summary", {})
-    if fold.get("enabled"):
-        print(
-            "cross_fold="
-            f"folds={int(fold.get('fold_count', 0))} "
-            f"passed_groups={int(fold.get('passed_groups', 0))}/{len(groups)} "
-            f"min_persistence={float(fold.get('min_edge_persistence', 0.0)):.2f}"
-        )
     spatial = report.get("spatial_balance")
     if isinstance(spatial, dict):
         print(

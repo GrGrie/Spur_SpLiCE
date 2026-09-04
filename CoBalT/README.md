@@ -106,7 +106,7 @@ following targets:
 W&B can be disabled only for an explicit smoke test by passing both `--smoke`
 and `--no-wandb`. Full runs reject `--no-wandb`.
 
-## Label-free check inside CRP/CQT grouping
+## Label-free check inside CRP grouping
 
 To use only Stage 1 concepts as an optional balance check while building SpLiCE
 concept groups, run:
@@ -122,7 +122,7 @@ Edit `scripts/prepare_concepts.conf` before the first command. Its default
 protocol; use `resnet50_pretrained` there for the paper-style discovery backbone.
 
 The preparation job runs discovery and fixed concept extraction, but does not
-train the CoBalT classifier. CRP/CQT converts memberships into mean-one sample
+train the CoBalT classifier. CRP converts memberships into mean-one sample
 weights proportional to the sum of inverse concept frequencies. Those weights
 change concept frequency filtering and coactivation during grouping only. This
 preserves the project's label-free graph boundary and should be reported as a

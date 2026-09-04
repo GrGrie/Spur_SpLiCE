@@ -14,9 +14,7 @@
 
 set -euo pipefail
 
-# CRP by default. Submit a CQT version with:
-#   sbatch --export=ALL,REPORT_METHOD=cqt scripts/concept_ablation_examples.sbatch
-REPORT_METHOD="${REPORT_METHOD:-crp}" # crp | cqt
+# Generate the CRP concept-ablation report.
 REPORT_SCOPE="${REPORT_SCOPE:-selected}" # selected | all
 REPORT_MAX_INTERVENTIONS="${REPORT_MAX_INTERVENTIONS:-12}" # 0 = show every eligible item.
 REPORT_EDGES_PER_GROUP="${REPORT_EDGES_PER_GROUP:-1}" # Typical retained edges shown per group.
@@ -25,22 +23,9 @@ SEED="${SEED:-${SLURM_ARRAY_TASK_ID:-0}}"
 PREPARE_ONLY="true"
 
 export PROJECT_DIR SEED PREPARE_ONLY
-case "${REPORT_METHOD}" in
-    crp)
-        MODE="crp_relational"
-        export MODE
-        source "${PROJECT_DIR}/scripts/train_crp.sbatch"
-        ;;
-    cqt)
-        MODE="cqt_relational"
-        export MODE
-        source "${PROJECT_DIR}/scripts/train_cqt.sbatch"
-        ;;
-    *)
-        echo "ERROR: REPORT_METHOD must be crp or cqt; got ${REPORT_METHOD}" >&2
-        exit 2
-        ;;
-esac
+MODE="crp_relational"
+export MODE
+source "${PROJECT_DIR}/scripts/train_crp.sbatch"
 
 REPORT_DIR="$(dirname "${RELATIONAL_TEACHER_GRAPH}")"
 REPORT_PATH="${REPORT_DIR}/graph_audit.html"

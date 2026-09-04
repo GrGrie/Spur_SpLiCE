@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("batch-size and concepts-per-region must be positive.")
 
     cache = validate_feature_cache(
-        torch.load(args.cache, map_location="cpu", weights_only=True), require_dino=False
+        torch.load(args.cache, map_location="cpu", weights_only=True)
     )
     provenance = cache.get("provenance", {})
     if str(provenance.get("dataset", "")).lower() != args.dataset:

@@ -25,7 +25,6 @@ The cluster and home machine can use the same Conda environment:
 conda activate grgrie-train
 pip install -e .
 ```
-
 RTX 50-series cards require a current Blackwell-capable PyTorch/CUDA build and
 an up-to-date NVIDIA driver. Full training is run on the cluster through the
 Slurm entry points below.
@@ -40,14 +39,13 @@ with `--data_folder` or edit the relevant Slurm `.conf` file.
 - `splice_cbm.py` — sparse concept-bottleneck baseline.
 - `scripts/tools/discover_splice_spurious_concepts.py` — automatic concept discovery.
 - `scripts/download_openimages_vocabulary.py` — download the Open Images V7 class-label dictionary only.
-- `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE/DINOv3 cache construction.
+- `python -m scripts.tools.cache_crp_features` — aligned OpenCLIP/SpLiCE cache construction.
 - `python -m splice.crp` — label-free CRP v2 frozen audit and teacher-graph export.
 - `splice/crp_training.py` — graph-aware batching and confidence-weighted relational distillation.
 - `scripts/tools/summarize_splice_scores.py` — selected-concept score summaries.
 - `scripts/tools/render_report_figure.py` — report figure generation.
 - `scripts/train_crp.sbatch` — CRP training entry point for Slurm.
 - `CoBalT/scripts/prepare_crpv4_spatial.sbatch` — four-way CRPv4 spatial evidence preparation.
-- `scripts/train_cqt.sbatch` — CQT training entry point for Slurm.
 - `scripts/cache_openimages_crp.sbatch` — Slurm-only Open Images V7 cache preparation.
 - `scripts/*.conf` — editable Slurm configurations for training, sweeps, cache,
   and CoBalT concept discovery.
@@ -88,10 +86,10 @@ the coactivation gate (SpLiCE codes are non-negative), `min_group_size=1` permit
 both singleton and variable-size components, and `max_selected_groups=0` disables
 the post-audit cap. They test whether mutually exclusive names such as different
 bird species collapse into one semantic factor while leaving room for background
-families; every factor must still pass the label-free null and cross-fold gates.
+families; every factor must still pass the label-free null and semantic gates.
 The `oi_v7` prefix makes every graph path distinct from historical LAION runs.
 Each task writes its own graph directory and an English-only `graph_audit.html`.
-The three CoBalT/no-DINO semantic-family variants also have a dedicated seed-0
+The three CoBalT semantic-family variants also have a dedicated seed-0
 launcher, so they can be prepared without rerunning the twelve conventional
 grouping variants:
 
@@ -99,7 +97,7 @@ grouping variants:
 sbatch scripts/prepare_crp_semantic_family_sweep.sbatch
 ```
 
-A separate pure-SpLiCE/no-DINO graph array builds the same two CRP settings without
+A separate pure-SpLiCE graph array builds the same two CRP settings without
 loading CoBalT assignments or applying CoBalT-derived sample weights. It reuses the
 same frozen Open Images SpLiCE cache as the CoBalT comparison:
 
@@ -130,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_splice_only_ablation_wind
 
 The script uses the existing `grgrie-train` Conda environment, checks CUDA,
 downloads and materializes Waterbirds plus the Open Images vocabulary, builds a
-no-DINO/no-CoBalT `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
+no-CoBalT `g2_t070_c020_k12` graph, trains both 50-epoch SSL arms, performs
 one 30-epoch final validation probe per arm, and writes `results.csv`, logs,
 checkpoints, an HTML graph audit, and offline W&B records under
 `outputs/windows_splice_only_ablation`. These defaults are a local mechanism
@@ -158,7 +156,7 @@ sbatch scripts/train_crp.sbatch
 
 ### CRPv4 spatial SpLiCE balancing
 
-CRPv4 keeps the CRP projection and student loss, but replaces the earlier
+CRPv4 keeps the CRP projection and simplified student loss, but replaces the earlier
 anonymous CoBalT concept balance with image-specific evidence in the exact SpLiCE
 vocabulary. Frozen CLIP patch tokens are tested in four controlled variants:
 vanilla patchwise, vanilla plus slots, SCLIP patchwise, and SCLIP plus slots. Slot
@@ -176,6 +174,11 @@ Then select one artifact in `scripts/train_crp.conf` by setting
 `CRP_SPATIAL_BALANCE_PATH`, and run the normal CRP entry point. The resulting
 graph is versioned separately as CRPv4; legacy CoBalT balancing remains available
 only as a distinct compatibility ablation.
+
+The CRP student objective is ordinary SimCLR plus the confidence-weighted graph
+KL. Graph-linked examples are not additional SimCLR positives; that behavior is
+Projected kNN is an efficient candidate search; the residual SpLiCE gate is the
+only optional semantic relation check.
 
 ## Training length and learning-rate schedules
 
@@ -232,7 +235,6 @@ Cluster sweeps use the method-specific entry point. Edit the corresponding
 
 ```bash
 sbatch scripts/train_crp.sbatch
-sbatch scripts/train_cqt.sbatch
 ```
 
 ### SpLiCE synthesis and distillation
@@ -289,7 +291,7 @@ See `experiments/spurious_eval/README.md` for implementation-level details and
 The first canonical CRP v2 implementation is deliberately separated from SSL
 training. It consumes one `.pt` cache with dataset-ordered `sample_ids`, normalized
 `clip_embeddings`, `image_mean`, dense non-negative `splice_codes`, `dictionary`,
-`vocabulary`, optional normalized `dino_embeddings`, and `cache_version: 1`. An optional
+`vocabulary`, and `cache_version: 1`. An optional
 `provenance` mapping may record checkpoint and dataset identifiers; users do not
 need to calculate hashes manually. Annotation keys such as `labels`,
 `targets`, `metadata`, or `groups` are rejected at the cache boundary.
@@ -301,15 +303,14 @@ python -m splice.crp \
 ```
 
 The command clusters active concepts, projects the full centered CLIP embedding,
-keeps reciprocal relations supported by DINO by default, calibrates group selection against
+uses projected kNN only as a candidate search, calibrates group selection against
 matched random-subspace and shuffled-code nulls, caps donor indegree, and writes one
 complete, readable JSON teacher graph. Selecting no group
 is valid and produces an empty graph, in which case training automatically reduces
 to SimCLR.
 
-Two explicit graph-construction checks are available for both CRP and CQT. Set
-`USE_DINO=false` in the corresponding Slurm entry point to avoid loading DINO,
-omit its cache tensor, and disable the DINO-specific gate. Set `COBALT=true`
+The CRP graph construction path uses the frozen SpLiCE cache and the residual
+semantic gate. Set `COBALT=true`
 after running `CoBalT/scripts/prepare_concepts.sbatch` to reweight concept
 frequency/coactivation by fixed label-free CoBalT memberships. This second mode
 implements only the label-free concept-balancing marginal during group discovery;
@@ -330,10 +331,8 @@ The CRP entry point builds or reuses its teacher graph automatically:
 sbatch scripts/train_crp.sbatch
 ```
 
-CRP training and graph hyperparameters are in `scripts/train_crp.conf`; CQT has
-an independent configuration in `scripts/train_cqt.conf`. Graph sweep variants
-are edited in `scripts/prepare_crp_group_sweep.conf` and
-`scripts/prepare_cqt_graph_sweep.conf`.
+CRP training and graph hyperparameters are in `scripts/train_crp.conf`. Graph
+sweep variants are edited in `scripts/prepare_crp_group_sweep.conf`.
 
 For CRP graph sweeps, edit the variant records in
 `scripts/prepare_crp_group_sweep.conf` and submit the pipeline again. The fixed
@@ -352,7 +351,7 @@ in the repository.
 Two dedicated sanity-check entry points are also available. The first produces a
 self-contained post-hoc HTML with four deterministic median-case Waterbirds pairs,
 aggregate graph metrics, exact cosine changes, and actual retained teacher edges
-for every shown CRP group (or CQT factor). Each CRP graph path contains its complete
+for every shown CRP group. Each CRP graph path contains its complete
 frozen-audit configuration and the HTML is stored beside that graph, so different
 configurations cannot overwrite one another. The second disables
 the SimCLR term and trains with relational KL alone while retaining the normal
@@ -362,6 +361,3 @@ linear evaluation:
 sbatch scripts/concept_ablation_examples.sbatch
 sbatch scripts/train_kl_only.sbatch
 ```
-
-Set `REPORT_METHOD=cqt` or `KL_METHOD=cqt`, respectively, through Slurm exports to
-run the CQT variant. See `scripts/README.md` for the exact commands and output path.

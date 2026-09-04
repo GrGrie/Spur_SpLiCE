@@ -49,7 +49,7 @@ from scripts.tools import discover_splice_spurious_concepts as concept_discovery
 from scripts.tools import summarize_splice_scores as score_summary
 
 
-RELATIONAL_GRAPH_MODES = {"crp_relational", "cqt_relational"}
+RELATIONAL_GRAPH_MODES = {"crp_relational"}
 
 
 def str_to_bool(value) -> bool:
@@ -457,7 +457,6 @@ def parse_args() -> argparse.Namespace:
             "synthesis_distill",
             "oracle_relational",
             "crp_relational",
-            "cqt_relational",
         ],
     )
     parser.add_argument("--splice_concepts", type=str, default="")
@@ -486,7 +485,7 @@ def parse_args() -> argparse.Namespace:
         "--crp_teacher_graph",
         type=str,
         default="",
-        help="Label-free CRP or CQT teacher graph used by a relational graph mode.",
+        help="Label-free CRP teacher graph used by the relational graph mode.",
     )
     parser.add_argument(
         "--crp_temperature",
@@ -517,12 +516,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
-    )
-    parser.add_argument(
-        "--crp_graph_positives",
-        type=str_to_bool,
-        default=True,
-        help="Treat graph-linked examples as additional SimCLR positives.",
     )
     parser.add_argument(
         "--splice_intervention",
@@ -728,7 +721,7 @@ def parse_args() -> argparse.Namespace:
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
-        parser.error("--simclr_weight 0 is supported only for CRP/CQT relational ablations.")
+        parser.error("--simclr_weight 0 is supported only for CRP relational training.")
     if args.simclr_weight == 0 and args.splice_weight <= 0:
         parser.error("KL-only relational training requires --splice_weight to be positive.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.crp_teacher_graph.strip():
@@ -929,8 +922,6 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         return f"{prefix}_{label}{hyper}{suffix}"
     if args.splice_mode == "crp_relational":
         return f"{prefix}_CRPv2_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
-    if args.splice_mode == "cqt_relational":
-        return f"{prefix}_CQT_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
     if args.splice_mode == "oracle_relational":
         return f"{prefix}_OracleRel_w{args.splice_weight:g}{suffix}"
     conditional = "Y" if args.splice_conditional_on_target else ""
@@ -951,8 +942,6 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "oracle-relational"
     elif args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
-    elif args.splice_mode == "cqt_relational":
-        experiment = "cqt-relational"
     else:
         experiment = "corr"
 
@@ -1011,11 +1000,6 @@ def format_run_name(args: argparse.Namespace) -> str:
     elif args.splice_mode == "crp_relational":
         splice_name = (
             f"crp_relational_w{args.splice_weight:g}_"
-            f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
-        )
-    elif args.splice_mode == "cqt_relational":
-        splice_name = (
-            f"cqt_relational_w{args.splice_weight:g}_"
             f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
         )
     else:
@@ -1428,7 +1412,6 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 warmup_epochs=args.crp_warmup_epochs,
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
-                use_graph_positives=args.crp_graph_positives,
             )
     else:
         splice_regularizer = build_splice_regularizer(build_splice_config(args))

@@ -215,9 +215,9 @@ Invoke-CondaPython -Arguments @(
 
 if ([string]::IsNullOrWhiteSpace($CachePath)) {
     $CacheCandidates = @(
-        (Join-Path $RepoRoot "outputs\crp\waterbirds_train_features_oi_v7_no_dino.pt"),
-        (Join-Path $RepoRoot "outputs\windows_splice_only_ablation\waterbirds_train_features_oi_v7_no_dino.pt"),
-        (Join-Path $OutputRoot "waterbirds_train_features_oi_v7_no_dino.pt")
+        (Join-Path $RepoRoot "outputs\crp\waterbirds_train_features_oi_v7.pt"),
+        (Join-Path $RepoRoot "outputs\windows_splice_only_ablation\waterbirds_train_features_oi_v7.pt"),
+        (Join-Path $OutputRoot "waterbirds_train_features_oi_v7.pt")
     )
     $ExistingCache = $CacheCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     $CachePath = if ($null -ne $ExistingCache) {
@@ -242,11 +242,10 @@ if (-not (Test-Path -LiteralPath $CachePath)) {
         "--splice-pretrained", "laion2b_s34b_b79k",
         "--splice-vocab", "openimages_v7",
         "--splice-vocab-size", "-1",
-        "--splice-l1-penalty", "0.25",
-        "--use-dino", "false"
+        "--splice-l1-penalty", "0.25"
     ) -LogPath (Join-Path $LogsRoot "cache.log")
 }
-$CacheValidation = "import sys,torch; from splice.crp import validate_feature_cache; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True),require_dino=False); p=c['provenance']; assert p['dataset']=='waterbirds' and p['splice_vocab']=='openimages_v7' and p['splice_vocab_size']==-1 and not p['use_dino']; print('[OK] cache samples',len(c['sample_ids']))"
+$CacheValidation = "import sys,torch; from splice.crp import validate_feature_cache; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True)); p=c['provenance']; assert p['dataset']=='waterbirds' and p['splice_vocab']=='openimages_v7' and p['splice_vocab_size']==-1; print('[OK] cache samples',len(c['sample_ids']))"
 Invoke-CondaPython -Arguments @("-c", $CacheValidation, $CachePath) | Out-Null
 Write-Host "[OK] Cache: $CachePath"
 
@@ -258,7 +257,6 @@ $GraphConfigBase = [ordered]@{
     min_group_size = 2
     max_selected_groups = 12
     projected_neighbors = 20
-    dino_neighbors = 50
     activation_difference_quantile = 0.85
     min_intervention_gain = 0.0005
     min_coverage = 0.01
@@ -271,16 +269,12 @@ $GraphConfigBase = [ordered]@{
     orthogonal_tolerance = 0.000001
     use_residual_splice_gate = $true
     residual_splice_similarity_threshold = 0.25
-    use_cross_fold_validation = $true
-    cross_fold_count = 2
-    cross_fold_min_edge_persistence = 0.5
     use_cobalt_confidence = $false
     spatial_balance = $true
     spatial_balance_variant = ""
     spatial_balance_floor = $SpatialBalanceFloor
     spatial_frequency_power = $SpatialFrequencyPower
     seed = 0
-    use_dino = $false
     cobalt = $false
 }
 $FloorToken = $SpatialBalanceFloor.ToString(
@@ -425,7 +419,7 @@ foreach ($Variant in $Variants) {
             -LogPath (Join-Path $VariantLogRoot "spatial_extract_${SpatialIdentity}_k$ConceptsPerRegion.log")
     }
 
-    $BalanceValidation = "import sys,torch; from splice.crp import validate_feature_cache; from splice.spatial_balance import load_spatial_balance_artifact; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True),require_dino=False); a=load_spatial_balance_artifact(sys.argv[2],'waterbirds',c['sample_ids'],c['vocabulary'],c['provenance']); assert a['variant']==sys.argv[3]; print('[OK] spatial rows',len(a['sample_ids']))"
+    $BalanceValidation = "import sys,torch; from splice.crp import validate_feature_cache; from splice.spatial_balance import load_spatial_balance_artifact; c=validate_feature_cache(torch.load(sys.argv[1],map_location='cpu',weights_only=True)); a=load_spatial_balance_artifact(sys.argv[2],'waterbirds',c['sample_ids'],c['vocabulary'],c['provenance']); assert a['variant']==sys.argv[3]; print('[OK] spatial rows',len(a['sample_ids']))"
     Invoke-CondaPython -Arguments @("-c", $BalanceValidation, $CachePath, $BalancePath, $VariantName) | Out-Null
 
     $GraphConfig = [ordered]@{}
@@ -458,7 +452,6 @@ foreach ($Variant in $Variants) {
             "--output", $GraphPath,
             "--seed", "0",
             "--config", $GraphConfigJsonNative,
-            "--use-dino", "false",
             "--cobalt", "false",
             "--spatial-balance", "true",
             "--spatial-balance-artifact", $BalancePath
@@ -504,9 +497,8 @@ foreach ($Variant in $Variants) {
             "--crp_warmup_epochs", "10",
             "--crp_decay_start_epoch", "0",
             "--crp_decay_end_epoch", "0",
-            "--crp_graph_positives", "false",
             "--wandb_run_name", "windows_crpv4_${VariantName}_student_s0_e${Epochs}_lp$LinearProbeFrequency",
-            "--wandb_tags", "windows_local,crpv4,student,${VariantName},seed_0,openimages_v7,no_dino,graph_screen_100ep,linear_probe_every_$LinearProbeFrequency"
+            "--wandb_tags", "windows_local,crpv4,student,${VariantName},seed_0,openimages_v7,graph_screen_100ep,linear_probe_every_$LinearProbeFrequency"
         )) -LogPath $TrainingLog
     }
 
