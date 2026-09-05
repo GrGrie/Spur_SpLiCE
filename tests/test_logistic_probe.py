@@ -111,3 +111,18 @@ def test_probe_entry_saves_converged_last_ten_metrics(tmp_path):
     assert result['Spurious probe converged']
     assert (tmp_path/'probe_features_epoch_100_ds_train_val.json').exists()
     assert (tmp_path/'probe_features_epoch_100_ds_train_val.pt').exists()
+
+
+def test_posthoc_graph_mass_and_coverage_include_unsupported_sources():
+    from scripts.tools.crp_posthoc_diagnostics import group_graph_diagnostics
+    graph = {"neighbor_indices": torch.tensor([[2, 3], [-1, -1], [0, -1], [0, -1]]),
+             "weights": torch.tensor([[0.75, 0.25], [0., 0.], [1., 0.], [1., 0.]]),
+             "anchor_confidence": torch.tensor([0.2, 0., 0.5, 0.8])}
+    result = group_graph_diagnostics(graph, [0, 0, 0, 1], [0, 0, 1, 0])
+    group = result['target=0,context=0']
+    assert group['supported_source_fraction'] == 0.5
+    useful = group['relations']['same_target_cross_context']
+    assert useful['source_fraction_with_donor'] == 0.5
+    assert useful['edge_fraction'] == 0.5
+    assert useful['confidence_weighted_mass_fraction'] == pytest.approx(0.75)
+    assert useful['confidence_weighted_mass_per_source'] == pytest.approx(0.075)

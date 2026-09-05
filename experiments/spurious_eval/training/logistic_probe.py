@@ -6,6 +6,7 @@ for the last-ten-epoch metric. Evaluation never controls fitting or stopping.
 """
 from collections import deque
 from dataclasses import dataclass
+import math
 
 import torch
 import torch.nn.functional as F
@@ -31,13 +32,15 @@ def fit_logistic_probe(train_x, train_y, eval_x, eval_y, *, num_classes,
     AMP/feature-scale instability. A finite cap is a failure, not convergence.
     Only the final ten prediction snapshots are retained (bounded memory).
     """
-    if l2 <= 0 or tolerance <= 0 or max_epochs < 10:
+    if not math.isfinite(l2) or not math.isfinite(tolerance) or l2 <= 0 or tolerance <= 0 or max_epochs < 10:
         raise ValueError("Logistic probe needs l2 > 0, tolerance > 0, max_epochs >= 10.")
     x = train_x.detach().cpu().double()
     v = eval_x.detach().cpu().double()
     y = train_y.detach().cpu().long()
     vy = eval_y.detach().cpu().long()
-    if x.ndim != 2 or v.ndim != 2 or x.shape[1] != v.shape[1] or len(x) != len(y):
+    if (x.ndim != 2 or v.ndim != 2 or x.shape[1] != v.shape[1]
+            or y.ndim != 1 or vy.ndim != 1 or len(x) != len(y)
+            or len(v) != len(vy) or not len(x) or not len(v)):
         raise ValueError("Invalid logistic feature/target dimensions.")
     if not torch.isfinite(x).all() or not torch.isfinite(v).all():
         raise ValueError("Probe features must be finite.")

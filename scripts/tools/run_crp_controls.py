@@ -15,6 +15,7 @@ from splice.crp import CrpAuditConfig, run_frozen_audit, validate_feature_cache
 from splice.crp_training import validate_teacher_graph
 from splice.graph_io import load_graph_json, save_graph_json, graph_fingerprint
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
+from scripts.tools.crp_posthoc_diagnostics import diagnose_fixed_graphs
 
 ARMS = ("simclr", "crp_sampler_only", "raw_clip_kl", "splice_crp_kl")
 
@@ -131,6 +132,11 @@ def main():
         if graph_record.exists() and json.loads(graph_record.read_text()) != graph_identity:
             raise ValueError("Prepared graphs changed. Choose a new output directory.")
         graph_record.write_text(json.dumps(graph_identity, indent=2), encoding="utf-8")
+        if seed == config["seeds"][0]:
+            posthoc = diagnose_fixed_graphs({"crp": crp, "raw_clip": raw},
+                                           config["dataset"], config["data_folder"])
+            (graph_root / "posthoc_group_diagnostics.json").write_text(
+                json.dumps(posthoc, indent=2), encoding="utf-8")
         overlap = ((crp["neighbor_indices"][:, :, None] == raw["neighbor_indices"][:, None, :])
                    & (crp["neighbor_indices"][:, :, None] >= 0)).any(2)
         (seed_root / "graph_diagnostics.json").write_text(json.dumps({
