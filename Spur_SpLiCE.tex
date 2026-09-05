@@ -263,7 +263,8 @@ interval. Setting $\alpha=0$ defines a diagnostic KL-only ablation.
 Waterbirds contains 4,795 training images and four bird/background groups
 \citep{sagawa2020groupdro}. SSL sees only images and identifiers. Every 25 SSL
 epochs, a 100-epoch linear probe is fitted on the frozen backbone and evaluated on
-validation data. Reported Avg. and WGA are means over the final ten probes. A
+validation data. Reported Avg. and WGA are means over the final ten optimization
+epochs of each linear probe, not over ten SSL checkpoints. A
 separate background probe measures accessibility of the spurious attribute.
 
 The student is ResNet-18-large with a 128-dimensional head, trained for 500 epochs

@@ -16,6 +16,7 @@ from splice.graph_io import graph_fingerprint, load_graph_json
 
 
 TEACHER_GRAPH_ARTIFACTS = {
+    "splice_raw_clip_matched_teacher_graph",
     "splice_crp_v2_teacher_graph",
     "splice_crp_v3_teacher_graph",
     "splice_crp_v4_teacher_graph",
@@ -70,6 +71,7 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
     if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
         raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
     expected_versions = {
+        "splice_raw_clip_matched_teacher_graph": 1,
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
         "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
         "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,

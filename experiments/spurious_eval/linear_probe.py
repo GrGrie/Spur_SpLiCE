@@ -4,6 +4,8 @@ import argparse
 import math
 import random
 import time
+import json
+from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
@@ -21,6 +23,7 @@ from experiments.spurious_eval.models.resnet import (
 )
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
+from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 
 
 @dataclass
@@ -81,6 +84,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--probe_solver", choices=["logistic", "sgd"], default="logistic")
+    parser.add_argument("--probe_l2", type=float, default=1e-3)
+    parser.add_argument("--probe_tolerance", type=float, default=1e-6)
+    parser.add_argument("--probe_max_epochs", type=int, default=200)
     parser.add_argument("--learning_rate", type=float, default=1.0)
     parser.add_argument("--lr_decay_epochs", default="auto")
     parser.add_argument("--lr_decay_rate", type=float, default=0.2)
@@ -124,6 +131,10 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "batch_size": 256,
         "num_workers": 32,
         "epochs": 100,
+        "probe_solver": "logistic",
+        "probe_l2": 1e-3,
+        "probe_tolerance": 1e-6,
+        "probe_max_epochs": 200,
         "learning_rate": 1.0,
         "lr_decay_epochs": "auto",
         "lr_decay_rate": 0.2,
@@ -219,9 +230,24 @@ def run_spurious_attribute_probe(
     val_x, _, val_metadata = val_features.tensors
     train_spurious = train_metadata[:, 0].long()
     val_spurious = val_metadata[:, 0].long()
-    n_attributes = max(int(train_spurious.max().item()), int(val_spurious.max().item())) + 1
+    n_attributes = int(train_spurious.max().item()) + 1
     train_dataset = TensorDataset(train_x, train_spurious, train_metadata)
     val_dataset = TensorDataset(val_x, val_spurious, val_metadata)
+    if getattr(args, "probe_solver", "sgd") == "logistic":
+        records, convergence = fit_logistic_probe(
+            train_x, train_spurious, val_x, val_spurious, num_classes=n_attributes,
+            l2=args.probe_l2, tolerance=args.probe_tolerance, max_epochs=args.probe_max_epochs,
+        )
+        auxiliary_metadata = torch.stack((val_metadata[:, 1], val_metadata[:, 0]), dim=1)
+        metrics = [compute_group_metrics(r.eval_predictions, val_spurious, auxiliary_metadata) for r in records]
+        return {
+            "Spurious probe last val acc": metrics[-1].average * 100,
+            "Spurious probe average over last 10 val acc": float(np.mean([m.average for m in metrics])) * 100,
+            "Spurious probe last val worst-group acc": metrics[-1].worst_group * 100,
+            "Spurious probe average over last 10 val worst-group acc": float(np.mean([m.worst_group for m in metrics])) * 100,
+            "Spurious probe converged": convergence["converged"],
+            "Spurious probe gradient max": convergence["gradient_max"],
+        }
     train_loader = make_feature_loader(train_dataset, args.batch_size, args.seed + 10_000, shuffle=True)
     val_loader = make_feature_loader(val_dataset, args.batch_size, args.seed + 10_000, shuffle=False)
 
@@ -309,6 +335,12 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
     train_features = extract_features(encoder, train_loader, device)
     print("[INFO] Extracting frozen validation features")
     val_features = extract_features(encoder, val_loader, device)
+    feature_path = Path(args.ckpt).parent / f"probe_features_epoch_{supcon_epoch}_{args.train_set_linear_layer}_{args.eval_split}.pt"
+    feature_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"train": train_features.tensors, "evaluation": val_features.tensors,
+                "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
+                "eval_split": args.eval_split, "seed": args.seed,
+                "artifact": "downstream_probe_features_v1"}, feature_path)
     feature_loader = make_feature_loader(train_features, args.batch_size, args.seed, shuffle=True)
     val_feature_loader = make_feature_loader(val_features, args.batch_size, args.seed, shuffle=False)
 
@@ -331,18 +363,34 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
             )
             created_wandb_run = True
 
-    for epoch in range(1, args.epochs + 1):
+    convergence = {}
+    logistic_records = None
+    if args.probe_solver == "logistic":
+        logistic_records, convergence = fit_logistic_probe(
+            train_features.tensors[0], train_features.tensors[1],
+            val_features.tensors[0], val_features.tensors[1],
+            num_classes=dataset_spec["num_classes"], l2=args.probe_l2,
+            tolerance=args.probe_tolerance, max_epochs=args.probe_max_epochs,
+        )
+    for epoch in range(1, (len(logistic_records) if logistic_records is not None else args.epochs) + 1):
         adjust_learning_rate(args, optimizer, epoch)
         start = time.time()
-        train_loss, train_acc, train_pred, train_labels, train_metadata = train_one_epoch(
-            feature_loader, classifier, criterion, optimizer, device
-        )
+        if logistic_records is None:
+            train_loss, train_acc, train_pred, train_labels, train_metadata = train_one_epoch(
+                feature_loader, classifier, criterion, optimizer, device
+            )
+        else:
+            record = logistic_records[epoch - 1]
+            train_loss, train_pred = record.train_loss, record.train_predictions
+            train_labels, train_metadata = train_features.tensors[1:]
+            train_acc = float(train_pred.eq(train_labels).float().mean()) * 100
+        display_epoch = record.epoch if logistic_records is not None else epoch
         train_results, _ = train_loader.dataset.eval(train_pred, train_labels, train_metadata)
         train_wg_acc = train_results["acc_wg"] * 100
         train_bg_acc = train_results["best_acc"] * 100
         print(
             "Train epoch {}, total time {:.2f}, loss {:.4f}, accuracy {:.2f}, wg accuracy {:.2f}, bg accuracy {:.2f}".format(
-                epoch, time.time() - start, train_loss, train_acc, train_wg_acc, train_bg_acc
+                display_epoch, time.time() - start, train_loss, train_acc, train_wg_acc, train_bg_acc
             )
         )
 
@@ -351,15 +399,20 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
             best_train_wg_acc = train_wg_acc
             best_train_bg_acc = train_bg_acc
 
-        val_loss, val_acc, val_pred, val_labels, val_metadata = validate(
-            val_feature_loader, classifier, criterion, device
-        )
+        if logistic_records is None:
+            val_loss, val_acc, val_pred, val_labels, val_metadata = validate(
+                val_feature_loader, classifier, criterion, device
+            )
+        else:
+            val_loss, val_pred = record.eval_loss, record.eval_predictions
+            val_labels, val_metadata = val_features.tensors[1:]
+            val_acc = float(val_pred.eq(val_labels).float().mean()) * 100
         val_results, _ = val_loader.dataset.eval(val_pred, val_labels, val_metadata)
         val_wg_acc = val_results["acc_wg"] * 100
         val_bg_acc = val_results["best_acc"] * 100
         print(
             "Val epoch {}, loss {:.4f}, accuracy {:.2f}, wg accuracy {:.2f}, bg accuracy {:.2f}".format(
-                epoch, val_loss, val_acc, val_wg_acc, val_bg_acc
+                display_epoch, val_loss, val_acc, val_wg_acc, val_bg_acc
             )
         )
 
@@ -406,6 +459,9 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
     print(f"Val   - Entropy: {val_entropy:.4f}, Effective Rankuse_wandb: {val_effective_rank:.2f}, Energy-Based Rank: {val_energy_based_rank:.2f}")
 
     final_metrics = {
+        "Probe converged": convergence.get("converged", False),
+        "Probe epochs": convergence.get("epochs", args.epochs),
+        "Probe gradient max": convergence.get("gradient_max", 0.0),
         "Linear train acc": best_train_acc,
         "Linear train worst-group acc": best_train_wg_acc,
         "Linear train best-group acc": best_train_bg_acc,
@@ -435,8 +491,16 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         )
     if wandb_run is not None:
         wandb_run.log(final_metrics, step=supcon_epoch)
+        wandb_run.config.update({"probe_solver": args.probe_solver, "probe_l2": args.probe_l2,
+                                "probe_tolerance": args.probe_tolerance,
+                                "probe_max_epochs": args.probe_max_epochs,
+                                "probe_normalization": convergence.get("normalization", "none")}, allow_val_change=True)
         if created_wandb_run:
             wandb_run.finish()
+    result_path = feature_path.with_suffix(".json")
+    result_path.write_text(json.dumps({"ssl_epoch": supcon_epoch, "solver": args.probe_solver,
+                                      "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
+                                      "convergence": convergence, "metrics": final_metrics}, indent=2), encoding="utf-8")
 
     print(
         "best accuracy: {:.2f} and worst-group accuracy: {:.2f} and best-group accuracy: {:.2f}".format(

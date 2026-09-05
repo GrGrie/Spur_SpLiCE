@@ -364,6 +364,18 @@ class _AuditGeometry:
     centered_clip: torch.Tensor
     raw_neighbours: torch.Tensor
     splice_codes: torch.Tensor
+    code_dot: torch.Tensor | None = None
+    code_norm_squared: torch.Tensor | None = None
+
+    def __post_init__(self):
+        # Reuse sparse code products across interventions on small CPU datasets.
+        # Bound the dense pair cache to 10000² float32 entries; large/GPU audits
+        # use the chunked pair calculation below instead.
+        if self.splice_codes.device.type == "cpu" and len(self.splice_codes) <= 10000:
+            from scipy.sparse import csr_matrix
+            sparse = csr_matrix(self.splice_codes.numpy())
+            object.__setattr__(self, "code_dot", torch.from_numpy((sparse @ sparse.T).toarray()))
+            object.__setattr__(self, "code_norm_squared", self.splice_codes.square().sum(1))
 
 
 def _residual_splice_similarity(
@@ -374,6 +386,12 @@ def _residual_splice_similarity(
 ) -> torch.Tensor:
     """Compare remaining SpLiCE codes for the candidate pairs only."""
 
+    if anchors.shape[0] > 16:
+        return torch.cat([
+            _residual_splice_similarity(codes, anchors[start:start + 16],
+                                       neighbours[start:start + 16], excluded_concept_indices)
+            for start in range(0, anchors.shape[0], 16)
+        ])
     left = codes[anchors]
     right = codes[neighbours]
     excluded = torch.as_tensor(
@@ -405,12 +423,18 @@ def _relation_geometry(
     residual_similarity = torch.ones_like(projected_similarity)
     residual_support = torch.ones_like(projected_similarity, dtype=torch.bool)
     if config.use_residual_splice_gate:
-        residual_similarity = _residual_splice_similarity(
-            audit.splice_codes,
-            anchors,
-            neighbours,
-            excluded_concept_indices,
-        )
+        if audit.code_dot is not None:
+            excluded = audit.splice_codes[:, list(excluded_concept_indices)]
+            left, right = excluded[anchors], excluded[neighbours]
+            numerator = audit.code_dot[anchors, neighbours] - (left * right).sum(2)
+            left_norm = audit.code_norm_squared[anchors] - left.square().sum(2)
+            right_norm = audit.code_norm_squared[neighbours] - right.square().sum(2)
+            denominator = (left_norm.clamp_min(0) * right_norm.clamp_min(0)).sqrt()
+            residual_similarity = (numerator / denominator.clamp_min(1e-12)).masked_fill(denominator <= 1e-12, 0).clamp(0, 1)
+        else:
+            residual_similarity = _residual_splice_similarity(
+                audit.splice_codes, anchors, neighbours, excluded_concept_indices,
+            )
         residual_support = residual_similarity >= config.residual_splice_similarity_threshold
     raw_overlap = (
         neighbours.unsqueeze(2) == audit.raw_neighbours.unsqueeze(1)
@@ -676,7 +700,6 @@ def run_frozen_audit(
         raw_neighbours=raw_neighbours,
         splice_codes=audit_codes,
     )
-    random_geometries_by_group: dict[tuple[int, tuple[int, ...]], list[dict]] = {}
 
     audited_groups, candidate_evidence = [], []
     print(f"[INFO] Auditing {len(groups)} concept groups over {n_samples} samples", flush=True)
@@ -687,8 +710,7 @@ def run_frozen_audit(
         group_geometry = _relation_geometry(audit_geometry, basis, config, concept_indices)
         evidence = _score_relations(group_geometry, activation, config)
         basis_rank = basis.shape[1]
-        null_key = (basis_rank, tuple(concept_indices))
-        if null_key not in random_geometries_by_group:
+        if config.null_trials:
             random_geometries = []
             for _ in range(config.null_trials):
                 random_directions = torch.randn(
@@ -703,10 +725,9 @@ def run_frozen_audit(
                 random_geometries.append(
                     _relation_geometry(audit_geometry, random_basis, config, concept_indices)
                 )
-            random_geometries_by_group[null_key] = random_geometries
         random_scores, shuffled_scores = _null_scores(
             group_geometry,
-            random_geometries_by_group[null_key],
+            random_geometries,
             activation,
             config,
             generator,

@@ -407,6 +407,10 @@ def parse_args() -> argparse.Namespace:
         help="Defaults to periodic on val. --final_test restricts evaluation to one final probe.",
     )
     parser.add_argument("--linear_probe_epochs", type=int, default=100)
+    parser.add_argument("--linear_probe_solver", choices=["logistic", "sgd"], default="logistic")
+    parser.add_argument("--linear_probe_l2", type=float, default=1e-3)
+    parser.add_argument("--linear_probe_tolerance", type=float, default=1e-6)
+    parser.add_argument("--linear_probe_max_epochs", type=int, default=200)
     parser.add_argument(
         "--linear_probe_freq",
         type=int,
@@ -1356,6 +1360,10 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "epochs": args.linear_probe_epochs,
+        "probe_solver": getattr(args, "linear_probe_solver", "logistic"),
+        "probe_l2": getattr(args, "linear_probe_l2", 1e-3),
+        "probe_tolerance": getattr(args, "linear_probe_tolerance", 1e-6),
+        "probe_max_epochs": getattr(args, "linear_probe_max_epochs", 200),
         "learning_rate": args.linear_learning_rate,
         "lr_decay_epochs": args.linear_lr_decay_epochs,
         "lr_decay_rate": args.linear_lr_decay_rate,
