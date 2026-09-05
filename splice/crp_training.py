@@ -20,6 +20,7 @@ TEACHER_GRAPH_ARTIFACTS = {
     "splice_crp_v2_teacher_graph",
     "splice_crp_v3_teacher_graph",
     "splice_crp_v4_teacher_graph",
+    "splice_safe_crp_teacher_graph",
 }
 REQUIRED_GRAPH_KEYS = {
     "artifact",
@@ -75,6 +76,7 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
         "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
         "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,
+        "splice_safe_crp_teacher_graph": 1,
     }
     expected_version = expected_versions[graph["artifact"]]
     if graph["graph_version"] != expected_version:
@@ -127,6 +129,40 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         raise ValueError("CRP anchor_confidence must be in [0, 1].")
     if torch.any((anchor_confidence > 0) != supported):
         raise ValueError("CRP anchor confidence support must match graph edge support.")
+
+    if graph["artifact"] == "splice_safe_crp_teacher_graph":
+        from splice.crp_safe_graph import SAFE_CRP_GRAPH_VERSION, SafeCrpGraphConfig
+
+        if graph["graph_version"] != SAFE_CRP_GRAPH_VERSION:
+            raise ValueError("Unsupported safe CRP graph version.")
+        SafeCrpGraphConfig.from_mapping(graph.get("safe_config"))
+        for fingerprint_key in ("source_crp_fingerprint", "source_raw_fingerprint"):
+            if not isinstance(graph.get(fingerprint_key), str) or not graph[fingerprint_key]:
+                raise ValueError(f"Safe CRP graph requires {fingerprint_key}.")
+        safe_shape = indices.shape
+        edge_source = torch.as_tensor(graph.get("edge_source"), dtype=torch.long).detach().cpu()
+        safe_groups = torch.as_tensor(graph.get("group_ids"), dtype=torch.long).detach().cpu()
+        safe_gains = torch.as_tensor(graph.get("intervention_gains"), dtype=torch.float32).detach().cpu()
+        safe_confidences = torch.as_tensor(graph.get("edge_confidences"), dtype=torch.float32).detach().cpu()
+        if any(value.shape != safe_shape for value in (edge_source, safe_groups, safe_gains, safe_confidences)):
+            raise ValueError("Safe CRP provenance tensors must align with neighbor_indices.")
+        if torch.any(edge_source < 0) or torch.any(edge_source > 2):
+            raise ValueError("Safe CRP edge_source contains an unknown value.")
+        if torch.any(edge_source[~valid] != 0) or torch.any(edge_source[valid] == 0):
+            raise ValueError("Safe CRP edge_source must mark padding and supported edges.")
+        if torch.any((edge_source == 1) & ((safe_groups != -1) | (safe_gains != 0) | (safe_confidences != 0))):
+            raise ValueError("Raw safe edges must have zero CRP provenance.")
+        if torch.any((edge_source == 2) & ((safe_groups < 0) | (safe_gains <= 0) | (safe_confidences <= 0))):
+            raise ValueError("Safe replacement edges must have positive CRP provenance.")
+        stats = graph.get("degree_stats", {})
+        replacement_count = int((edge_source == 2).sum())
+        treated_count = int((edge_source == 2).any(dim=1).sum())
+        if int(stats.get("safe_replaced_edges", -1)) != replacement_count:
+            raise ValueError("Safe replacement count does not match edge provenance.")
+        if int(stats.get("safe_treated_anchors", -1)) != treated_count:
+            raise ValueError("Safe treated-anchor count does not match edge provenance.")
+        if torch.any((edge_source == 2).sum(dim=1) > 1):
+            raise ValueError("Safe CRP graph permits at most one replacement per row.")
 
     return {
         **graph,

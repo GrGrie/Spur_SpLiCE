@@ -84,6 +84,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument(
+        "--ssl_epoch",
+        type=int,
+        default=0,
+        help="SSL checkpoint epoch recorded in downstream feature/result artifacts.",
+    )
     parser.add_argument("--probe_solver", choices=["logistic", "sgd"], default="logistic")
     parser.add_argument("--probe_l2", type=float, default=1e-3)
     parser.add_argument("--probe_tolerance", type=float, default=1e-6)
@@ -131,6 +137,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "batch_size": 256,
         "num_workers": 32,
         "epochs": 100,
+        "ssl_epoch": 0,
         "probe_solver": "logistic",
         "probe_l2": 1e-3,
         "probe_tolerance": 1e-6,
@@ -196,6 +203,33 @@ def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimi
             lr = lr * (args.lr_decay_rate**steps)
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
+
+
+def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, float | int]:
+    """Name validation groups by the stable ``(target, context)`` convention."""
+
+    group_accuracies = torch.as_tensor(group_accuracies).detach().cpu().float().view(-1)
+    group_counts = torch.as_tensor(group_counts).detach().cpu().long().view(-1)
+    metadata = torch.as_tensor(metadata).detach().cpu()
+    if metadata.ndim != 2 or metadata.shape[1] < 2:
+        raise ValueError("Group W&B metrics require metadata columns [context, target].")
+    contexts = metadata[:, 0].long()
+    targets = metadata[:, 1].long()
+    # Waterbirds (the cluster control dataset) has binary target/context
+    # metadata. Keep the complete 2x2 W&B panel even if a validation split
+    # happens to contain an empty group.
+    context_cardinality = max(2, int(contexts.max().item()) + 1 if contexts.numel() else 1)
+    target_cardinality = max(2, int(targets.max().item()) + 1 if targets.numel() else 1)
+    metrics: dict[str, float | int] = {}
+    for target in range(target_cardinality):
+        for context in range(context_cardinality):
+            group_id = context + context_cardinality * target
+            accuracy = float(group_accuracies[group_id]) * 100 if group_id < len(group_accuracies) else 0.0
+            count = int(group_counts[group_id]) if group_id < len(group_counts) else 0
+            prefix = f"Linear val group (target,context)=({target},{context})"
+            metrics[f"{prefix} acc"] = accuracy
+            metrics[f"{prefix} count"] = count
+    return metrics
 
 
 def consume_spurssl_head_rng(feature_dim: int, args: argparse.Namespace) -> None:
@@ -282,8 +316,14 @@ def run_spurious_attribute_probe(
     }
 
 
-def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[str, float]:
+def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None) -> dict[str, float]:
     args = parse_args() if args is None else normalize_args(args)
+    if supcon_epoch is None:
+        supcon_epoch = int(args.ssl_epoch)
+    else:
+        # Keep trainer calls that pass supcon_epoch explicitly authoritative while
+        # making the value visible to callers that inspect the normalized args.
+        args.ssl_epoch = int(supcon_epoch)
     set_seed(args.seed)
     device = torch.device(args.device)
 
@@ -436,6 +476,8 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
     avg_last_10_bg_acc = float(np.mean(history.val_best_group[-window:]))
     group_counts = val_results["group_counts"]
     group_accuracies = val_results["group_accuracy"]
+    train_group_counts = train_results["group_counts"]
+    train_group_accuracies = train_results["group_accuracy"]
     nonempty_group_ids = torch.where(group_counts > 0)[0]
     if len(nonempty_group_ids):
         worst_offset = torch.argmin(group_accuracies[nonempty_group_ids])
@@ -483,6 +525,12 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
         "Average over last 10 linear val best-group acc": avg_last_10_bg_acc,
         "Last linear val worst-group id": last_worst_group_id,
         "Last linear val worst-group count": last_worst_group_count,
+        # Persist every group, including empty groups as zero-count entries.  The
+        # lists are deliberately detached from tensors so result JSON is portable.
+        "Linear val group accuracies": (group_accuracies.detach().cpu().float() * 100).tolist(),
+        "Linear val group counts": group_counts.detach().cpu().long().tolist(),
+        "Linear train group accuracies": (train_group_accuracies.detach().cpu().float() * 100).tolist(),
+        "Linear train group counts": train_group_counts.detach().cpu().long().tolist(),
     }
     if args.spurious_probe:
         print("[INFO] Training auxiliary spurious-attribute leakage probe")
@@ -490,7 +538,31 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
             run_spurious_attribute_probe(train_features, val_features, feature_dim, args, device)
         )
     if wandb_run is not None:
-        wandb_run.log(final_metrics, step=supcon_epoch)
+        wandb_run.log(
+            {key: value for key, value in final_metrics.items() if not isinstance(value, list)},
+            step=supcon_epoch,
+        )
+        wandb_run.log(
+            {
+                **{
+                    f"Linear val group {group_id} acc": float(accuracy)
+                    for group_id, accuracy in enumerate(final_metrics["Linear val group accuracies"])
+                },
+                **{
+                    f"Linear val group {group_id} count": int(count)
+                    for group_id, count in enumerate(final_metrics["Linear val group counts"])
+                },
+            },
+            step=supcon_epoch,
+        )
+        wandb_run.log(
+            build_wandb_group_metrics(
+                group_accuracies,
+                group_counts,
+                val_features.tensors[2],
+            ),
+            step=supcon_epoch,
+        )
         wandb_run.config.update({"probe_solver": args.probe_solver, "probe_l2": args.probe_l2,
                                 "probe_tolerance": args.probe_tolerance,
                                 "probe_max_epochs": args.probe_max_epochs,
@@ -499,8 +571,18 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int = 0) -> dict[
             wandb_run.finish()
     result_path = feature_path.with_suffix(".json")
     result_path.write_text(json.dumps({"ssl_epoch": supcon_epoch, "solver": args.probe_solver,
-                                      "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
-                                      "convergence": convergence, "metrics": final_metrics}, indent=2), encoding="utf-8")
+                                       "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
+                                       "convergence": convergence, "metrics": final_metrics,
+                                       "group_metrics": {
+                                           "val": {
+                                               "accuracy": final_metrics["Linear val group accuracies"],
+                                               "count": final_metrics["Linear val group counts"],
+                                           },
+                                           "train": {
+                                               "accuracy": final_metrics["Linear train group accuracies"],
+                                               "count": final_metrics["Linear train group counts"],
+                                           },
+                                       }}, indent=2), encoding="utf-8")
 
     print(
         "best accuracy: {:.2f} and worst-group accuracy: {:.2f} and best-group accuracy: {:.2f}".format(

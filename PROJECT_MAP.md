@@ -55,7 +55,7 @@ confidence. Empty graphs safely reduce training to ordinary SimCLR.
 | Area | Files |
 |---|---|
 | Training entry | `spur_splice.py`, `scripts/train_crp.sbatch` |
-| CRP audit | `splice/crp.py`, `splice/graph_io.py` |
+| CRP audit | `splice/crp.py`, `splice/graph_io.py`, `splice/crp_safe_graph.py` |
 | CRP training | `splice/crp_training.py`, `experiments/spurious_eval/training/ssl_loop.py` |
 | Group screen | `splice/crp_group_screen.py`, `scripts/tools/render_crp_group_screen.py` |
 | Historical optional diverse audit | `splice/crp_diverse.py` |
@@ -65,7 +65,7 @@ confidence. Empty graphs safely reduce training to ordinary SimCLR.
 | Config paths | `scripts/tools/crp_config_path.py`, `scripts/train_crp.conf`, `scripts/shared_training.conf` |
 | Tests | `tests/test_splice_pipeline.py`, `tests/test_crp_group_screen.py`, `tests/test_crp_diverse.py`, `tests/test_crp_config_path.py` |
 | Converged probe | `experiments/spurious_eval/training/logistic_probe.py`, `experiments/spurious_eval/linear_probe.py` |
-| Control study / interpretation | `scripts/run_crp_controls.ps1`, `scripts/run_crp_controls.conf`, `docs/RESEARCH_PROTOCOL.md` |
+| Control study / interpretation | `scripts/run_crp_controls.ps1`, `scripts/run_crp_controls.conf`, `scripts/run_crp_controls_cluster.conf`, `scripts/run_crp_controls_cluster_array.sbatch`, `scripts/evaluate_crp_control_checkpoints.ps1`, `docs/RESEARCH_PROTOCOL.md` |
 
 ## Canonical commands
 
@@ -77,6 +77,9 @@ sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
 sbatch scripts/train_crp.sbatch
 sbatch scripts/concept_ablation_examples.sbatch
 sbatch scripts/train_kl_only.sbatch
+sbatch scripts/prepare_crp_controls_cluster.sbatch
+sbatch scripts/run_crp_controls_cluster_array.sbatch
+sbatch scripts/summarize_crp_controls_cluster.sbatch
 ```
 
 Edit the referenced `.conf` file before launch. Full SSL training must keep W&B

@@ -48,7 +48,11 @@ def group_graph_diagnostics(graph, targets, contexts):
 
 
 def diagnose_fixed_graphs(graphs, dataset_name, data_folder):
-    """Load annotations only after graph construction; return a separate report."""
+    """Diagnose locked CRP, raw, or safe graphs after construction only.
+
+    Graph names are intentionally opaque here: adding the experimental safe
+    graph changes the report set, not the labelled selection or graph math.
+    """
     from experiments.spurious_eval.datasets.registry import get_dataset_spec
 
     dataset = get_dataset_spec(dataset_name)["dataset"](data_folder)

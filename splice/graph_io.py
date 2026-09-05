@@ -18,6 +18,7 @@ GRAPH_TENSOR_DTYPES = {
     "intervention_gains": torch.float32,
     "anchor_confidence": torch.float32,
     "confidence": torch.float32,
+    "edge_source": torch.long,
 }
 
 

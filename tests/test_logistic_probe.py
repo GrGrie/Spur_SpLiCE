@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,8 @@ from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
 from scripts.tools.run_crp_controls import training_command, ARMS
 from splice.crp import CrpAuditConfig, _AuditGeometry, _relation_geometry, _residual_splice_similarity, topk_neighbors
 from splice.crp_training import validate_teacher_graph, CrpGraphBatchSampler
+from splice.crp_safe_graph import build_safe_crp_graph, validate_safe_crp_graph
+from scripts.tools.evaluate_crp_control_checkpoints import discover_blocks, build_paired_summary
 
 
 def data():
@@ -86,6 +89,10 @@ def test_control_commands_parse_and_preserve_ds_train(tmp_path):
     regularized=training_command(config,0,'splice_crp_kl',Path('graph.json'),tmp_path)
     assert sampler[sampler.index('--crp_teacher_graph')+1] == regularized[regularized.index('--crp_teacher_graph')+1]
     assert sampler[sampler.index('--splice_weight')+1]=='0'
+    raw_sampler=training_command(config,0,'raw_clip_sampler_only',Path('raw.json'),tmp_path)
+    raw_kl=training_command(config,0,'raw_clip_kl',Path('raw.json'),tmp_path)
+    assert raw_sampler[raw_sampler.index('--crp_teacher_graph')+1] == raw_kl[raw_kl.index('--crp_teacher_graph')+1]
+    assert raw_sampler[raw_sampler.index('--splice_weight')+1]=='0'
 
 
 def test_probe_entry_saves_converged_last_ten_metrics(tmp_path):
@@ -111,6 +118,9 @@ def test_probe_entry_saves_converged_last_ten_metrics(tmp_path):
     assert result['Spurious probe converged']
     assert (tmp_path/'probe_features_epoch_100_ds_train_val.json').exists()
     assert (tmp_path/'probe_features_epoch_100_ds_train_val.pt').exists()
+    saved = json.loads((tmp_path/'probe_features_epoch_100_ds_train_val.json').read_text())
+    assert len(saved['group_metrics']['val']['accuracy']) == 4
+    assert len(saved['group_metrics']['val']['count']) == 4
 
 
 def test_posthoc_graph_mass_and_coverage_include_unsupported_sources():
@@ -126,3 +136,58 @@ def test_posthoc_graph_mass_and_coverage_include_unsupported_sources():
     assert useful['edge_fraction'] == 0.5
     assert useful['confidence_weighted_mass_fraction'] == pytest.approx(0.75)
     assert useful['confidence_weighted_mass_per_source'] == pytest.approx(0.075)
+
+
+def test_checkpoint_discovery_requires_paired_seed_blocks(tmp_path):
+    output = tmp_path / 'output'
+    arms = ['simclr', 'crp_sampler_only', 'raw_clip_kl', 'splice_crp_kl']
+    for arm in arms:
+        path = output / 'seed0' / arm / 'training' / 'run'
+        path.mkdir(parents=True)
+        (path / 'epoch_50.pth').write_bytes(b'checkpoint')
+    blocks = discover_blocks(output, [0, 1], arms, [50])
+    assert blocks[0]['status'] == 'complete'
+    assert blocks[1]['status'] == 'incomplete'
+    assert blocks[1]['missing_arms'] == arms
+    rows = [
+        {'seed': 0, 'ssl_epoch': 50, 'arm': 'simclr', 'avg_acc_last10': 1, 'wga_last10': 2, 'best_group_last10': 3},
+        {'seed': 0, 'ssl_epoch': 50, 'arm': 'raw_clip_kl', 'avg_acc_last10': 2, 'wga_last10': 4, 'best_group_last10': 5},
+    ]
+    summary = build_paired_summary(rows)
+    assert summary['raw_clip_kl']['avg_acc_last10']['paired_deltas_vs_simclr'] == [
+        {'seed': 0, 'ssl_epoch': 50, 'delta': 1}
+    ]
+
+
+def test_safe_graph_preserves_raw_structure_and_marks_bounded_replacement():
+    n = 6
+    ids = [f'toy:{i}' for i in range(n)]
+    generator = torch.Generator().manual_seed(2)
+    clip = torch.nn.functional.normalize(torch.randn(n, 5, generator=generator), dim=1)
+    cache = {
+        'cache_version': 1, 'sample_ids': ids, 'clip_embeddings': clip,
+        'image_mean': torch.zeros(5), 'splice_codes': torch.ones(n, 2),
+        'dictionary': torch.eye(2, 5), 'vocabulary': ['a', 'b'],
+    }
+    raw = {
+        'artifact': 'splice_raw_clip_matched_teacher_graph', 'graph_version': 1,
+        'sample_ids': ids, 'neighbor_indices': torch.tensor([[1, 2], [0, 2], [0, 1], [0, 1], [0, 1], [0, 1]]),
+        'weights': torch.tensor([[.6, .4]] * n), 'confidence': torch.ones(n),
+        'anchor_confidence': torch.ones(n), 'degree_stats': {'indegree_cap': 10},
+    }
+    crp = {
+        'artifact': 'splice_crp_v3_teacher_graph', 'graph_version': 3,
+        'sample_ids': ids, 'neighbor_indices': torch.tensor([[3, 4], [3, 4], [3, 4], [2, 4], [2, 3], [2, 3]]),
+        'weights': torch.tensor([[.6, .4]] * n), 'confidence': torch.ones(n),
+        'anchor_confidence': torch.ones(n), 'group_ids': torch.tensor([[0, 0]] * n),
+        'intervention_gains': torch.tensor([[.2, .1]] * n),
+        'edge_confidences': torch.tensor([[.9, .8]] * n),
+        'degree_stats': {'indegree_cap': 10},
+    }
+    safe = build_safe_crp_graph(cache, crp, raw, {'max_replacement_weight': .7})
+    validate_safe_crp_graph(safe, ids)
+    assert torch.equal(safe['weights'], raw['weights'])
+    assert torch.equal(safe['anchor_confidence'], raw['anchor_confidence'])
+    assert int((safe['edge_source'] == 2).sum()) == n
+    assert torch.all(safe['group_ids'][safe['edge_source'] == 2] >= 0)
+    assert torch.all(safe['neighbor_indices'][safe['edge_source'] == 2] != 1)
