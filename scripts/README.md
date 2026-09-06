@@ -131,6 +131,42 @@ sbatch scripts/train_kl_only.sbatch
 Full SSL training must keep W&B enabled. Disabling it is allowed only for an
 explicit smoke test or local debugging.
 
+## 6. Active plan stage 1: one-command replication
+
+The fixed stage-1 experiment from `docs/ACTIVE_PLAN.md` is submitted with one
+command:
+
+```bash
+sbatch scripts/run_active_plan_stage1.sbatch
+```
+
+The launcher verifies the frozen cache/graph fingerprints, locks the two
+replication manifests, and submits the prepare jobs, six GPU runs, branch
+summaries, and final read-only report through Slurm dependencies. It does not
+rebuild the frozen cache or graph and does not start conditional stages 2/3.
+
+Results are written below:
+
+```text
+outputs/crp_lambda05_replication_s34/
+outputs/raw_lambda02_replication_s34/
+outputs/crp_replication_stage1/
+```
+
+The final report is
+`outputs/crp_replication_stage1/final/replication_report.json`; the launcher
+also writes the submitted Slurm job IDs to
+`outputs/crp_replication_stage1/slurm_jobs_<launcher-job-id>.json`.
+
+To copy the complete stage-1 artifacts from the cluster:
+
+```bash
+scp -r USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/crp_lambda05_replication_s34 \
+      USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/raw_lambda02_replication_s34 \
+      USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/crp_replication_stage1 \
+      ./outputs/
+```
+
 ## Retained controls and utilities
 
 - `prepare_concepts.conf` and `CoBalT/scripts/prepare_concepts.sbatch` retain the

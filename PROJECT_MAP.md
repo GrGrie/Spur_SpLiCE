@@ -102,6 +102,8 @@ enabled; disable it only for an explicit smoke test or local debugging.
 
 ## What to read next
 
+- For the completed lambda=0.2/0.5 results and the proposed next experiment:
+  `docs/RESULTS_REVIEW_2026-09-06_TRANSFER.md` and `docs/ACTIVE_PLAN.md`
 - For current method/architecture details:
   `docs/CURRENT_METHOD.md`
 - For experiments, probes, evaluation, reproducibility, and supported claims:
