@@ -57,14 +57,17 @@ def _validate_ids_and_transforms(config: dict, payload: dict) -> dict:
     eval_subset = full_dataset.get_subset(config["eval_split"], transform=None)
     train_tensors = payload["train"]
     eval_tensors = payload["evaluation"]
+    # extract_features preserves the shuffled DataLoader order, not subset order.
+    # A fresh generator reproduces its base-seed draw and RandomSampler draws.
+    order = saved_train_order(len(train_subset), int(payload["seed"]), config["batch_size"])
     checks = {
         "train_count": len(train_subset) == len(train_tensors[1]),
         "eval_count": len(eval_subset) == len(eval_tensors[1]),
-        "train_labels_aligned": torch.equal(train_subset.y_array.cpu(), train_tensors[1].cpu()),
+        "train_labels_aligned": torch.equal(train_subset.y_array[order].cpu(), train_tensors[1].cpu()),
         "eval_labels_aligned": torch.equal(eval_subset.y_array.cpu(), eval_tensors[1].cpu()),
-        "train_metadata_aligned": torch.equal(train_subset.metadata_array.cpu(), train_tensors[2].cpu()),
+        "train_metadata_aligned": torch.equal(train_subset.metadata_array[order].cpu(), train_tensors[2].cpu()),
         "eval_metadata_aligned": torch.equal(eval_subset.metadata_array.cpu(), eval_tensors[2].cpu()),
-        "target_metadata_index": int(getattr(spec, "target_metadata_index", 1)) == 1,
+        "target_metadata_index": int(spec.get("target_metadata_index", 1)) == 1,
         "label_cardinality": int(torch.unique(train_tensors[1]).numel()) == int(spec["num_classes"]),
     }
     train_loader, eval_loader = spec["probe_loaders"](
@@ -81,7 +84,16 @@ def _validate_ids_and_transforms(config: dict, payload: dict) -> dict:
         "metadata_fields": list(full_dataset.metadata_fields),
         "train_count": len(train_subset),
         "eval_count": len(eval_subset),
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
     }
+
+
+def saved_train_order(count: int, seed: int, batch_size: int) -> torch.Tensor:
+    loader = torch.utils.data.DataLoader(
+        range(count), batch_size=batch_size, shuffle=True,
+        generator=torch.Generator().manual_seed(seed), num_workers=0,
+    )
+    return torch.cat(list(loader)).long()
 
 
 def _reproduce_saved_probe(result_path: Path, feature_path: Path, config: dict) -> dict:
@@ -137,7 +149,13 @@ def _reproduce_saved_probe(result_path: Path, feature_path: Path, config: dict) 
 def _check_checkpoint_loading(run_root: Path, config: dict) -> dict:
     checkpoint_paths = sorted(run_root.glob("*/*.pth"))
     if not checkpoint_paths:
-        return {"status": "unavailable_after_successful_cleanup", "checked": []}
+        cleanup_confirmed = False
+        for path in run_root.glob("*/run_status.json"):
+            status = json.loads(path.read_text(encoding="utf-8"))
+            cleanup_confirmed |= bool(status.get("status") == "complete" and
+                status.get("cleanup", {}).get("ssl_checkpoints", {}).get("completed"))
+        return {"status": "unavailable_after_successful_cleanup" if cleanup_confirmed else "unavailable_no_checkpoint",
+                "checked": []}
     checked = []
     run_args_path = checkpoint_paths[0].parent / "args.json"
     run_args = json.loads(run_args_path.read_text(encoding="utf-8")) if run_args_path.is_file() else {}
@@ -211,7 +229,7 @@ def run_diagnostic(config_path: Path) -> Path:
             if not reproduction["matches_existing"] or not reproduction["alignment"]["passed"]:
                 failures.append(f"saved probe check failed for seed{seed}/{arm}")
 
-    for condition, model in (("random_resnet50", "resnet50_large"), ("imagenet_resnet50", "resnet50_pretrained")):
+    for condition, model in (("random_resnet18_large", "resnet18_large"),):
         for seed in config["seeds"]:
             report["frozen_encoder_baselines"].append(
                 _run_frozen_encoder_probe(config, condition, model, int(seed))

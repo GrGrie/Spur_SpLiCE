@@ -67,6 +67,7 @@ confidence. Empty graphs safely reduce training to ordinary SimCLR.
 | Converged probe | `experiments/spurious_eval/training/logistic_probe.py`, `experiments/spurious_eval/linear_probe.py` |
 | Control study / interpretation | `scripts/run_crp_controls.ps1`, `scripts/run_crp_controls.conf`, `scripts/run_crp_controls_cluster.conf`, `scripts/run_crp_controls_cluster_array.sbatch`, `scripts/crp_graph_search.conf`, `scripts/crp_graph_search_array.sbatch`, `scripts/select_crp_graph.sbatch`, `scripts/evaluate_crp_control_checkpoints.ps1`, `docs/RESEARCH_PROTOCOL.md` |
 | Staged cluster follow-up | `scripts/downstream_evaluator_diagnostic.sbatch`, `scripts/prepare_crp_controls_raw_sampler_followup.sbatch`, `scripts/run_crp_controls_raw_sampler_followup_array.sbatch`, `scripts/prepare_crp_controls_seeds34_followup.sbatch`, `scripts/run_crp_controls_seeds34_followup_array.sbatch` |
+| Probe / SpLiCE signal / graph diagnostics and small KL study | `scripts/crp_signal_checks.conf`, `scripts/tools/run_crp_signal_checks.py`, `scripts/crp_signal_diagnostics.sbatch`, `scripts/crp_signal_all.sbatch`, `docs/CRP_SIGNAL_CHECKS.md` |
 
 ## Canonical commands
 
@@ -90,6 +91,10 @@ sbatch scripts/run_crp_controls_seeds34_followup_array.sbatch
 sbatch scripts/summarize_crp_controls_seeds34_followup.sbatch
 sbatch scripts/crp_graph_search_array.sbatch
 sbatch scripts/select_crp_graph.sbatch
+sbatch scripts/crp_signal_diagnostics.sbatch
+sbatch scripts/prepare_crp_transfer_weights.sbatch
+sbatch scripts/crp_transfer_weights_array.sbatch
+sbatch scripts/summarize_crp_transfer_weights.sbatch
 ```
 
 Edit the referenced `.conf` file before launch. Full SSL training must keep W&B

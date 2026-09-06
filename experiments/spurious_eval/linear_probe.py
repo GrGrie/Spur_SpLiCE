@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate a locked final configuration on test instead of the validation default.",
     )
-    parser.add_argument("--model", default="resnet18", choices=RESNET_MODEL_NAMES)
+    parser.add_argument("--model", default="resnet18_large", choices=RESNET_MODEL_NAMES)
     parser.add_argument("--ckpt", default="", help="SpurSSL checkpoint containing encoder.* weights")
     parser.add_argument(
         "--artifact_dir",
@@ -134,7 +134,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "data_folder": "./datasets",
         "train_set_linear_layer": "ds_train",
         "eval_split": "val",
-        "model": "resnet18",
+        "model": "resnet18_large",
         "ckpt": "",
         "artifact_dir": "",
         "method": "SimCLR",
