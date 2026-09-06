@@ -76,10 +76,16 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
         "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
         "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,
-        "splice_safe_crp_teacher_graph": 1,
+        # Safe graph v1 remains readable; v2 adds explicit training-mass
+        # budgeting and per-group treatment accounting.
+        "splice_safe_crp_teacher_graph": {1, 2},
     }
     expected_version = expected_versions[graph["artifact"]]
-    if graph["graph_version"] != expected_version:
+    if graph["artifact"] == "splice_safe_crp_teacher_graph":
+        version_ok = graph["graph_version"] in expected_version
+    else:
+        version_ok = graph["graph_version"] == expected_version
+    if not version_ok:
         raise ValueError(
             f"Unsupported relational graph version {graph['graph_version']!r}; expected {expected_version}."
         )
@@ -131,10 +137,7 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         raise ValueError("CRP anchor confidence support must match graph edge support.")
 
     if graph["artifact"] == "splice_safe_crp_teacher_graph":
-        from splice.crp_safe_graph import SAFE_CRP_GRAPH_VERSION, SafeCrpGraphConfig
-
-        if graph["graph_version"] != SAFE_CRP_GRAPH_VERSION:
-            raise ValueError("Unsupported safe CRP graph version.")
+        from splice.crp_safe_graph import SafeCrpGraphConfig
         SafeCrpGraphConfig.from_mapping(graph.get("safe_config"))
         for fingerprint_key in ("source_crp_fingerprint", "source_raw_fingerprint"):
             if not isinstance(graph.get(fingerprint_key), str) or not graph[fingerprint_key]:

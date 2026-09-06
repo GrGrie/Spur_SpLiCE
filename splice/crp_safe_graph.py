@@ -1,4 +1,4 @@
-"""Experimental target-preserving replacements on a matched raw-CLIP graph.
+"""Experimental raw-neighborhood-constrained replacements on a matched raw-CLIP graph.
 
 This module is deliberately downstream of the ordinary CRP audit.  It never
 selects concepts or computes CRP evidence; it only proposes bounded replacements
@@ -18,13 +18,16 @@ from splice.crp import topk_neighbors, validate_feature_cache
 
 
 SAFE_CRP_GRAPH_ARTIFACT = "splice_safe_crp_teacher_graph"
-SAFE_CRP_GRAPH_VERSION = 1
+SAFE_CRP_GRAPH_VERSION_V1 = 1
+SAFE_CRP_GRAPH_VERSION = 2
 SAFE_CONFIG_FIELDS = {
     "raw_guard_k",
     "max_replacements_per_row",
     "max_replacement_weight",
     "min_treated_anchor_fraction",
     "min_crp_weight_mass_fraction",
+    "max_crp_training_mass_fraction",
+    "max_group_training_mass_fraction",
 }
 
 
@@ -35,6 +38,8 @@ class SafeCrpGraphConfig:
     max_replacement_weight: float = 0.34
     min_treated_anchor_fraction: float = 0.05
     min_crp_weight_mass_fraction: float = 0.01
+    max_crp_training_mass_fraction: float = 1.0
+    max_group_training_mass_fraction: float = 1.0
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> "SafeCrpGraphConfig":
@@ -57,6 +62,10 @@ class SafeCrpGraphConfig:
             raise ValueError("safe_graph.min_treated_anchor_fraction must be in [0, 1]")
         if not 0 <= self.min_crp_weight_mass_fraction <= 1:
             raise ValueError("safe_graph.min_crp_weight_mass_fraction must be in [0, 1]")
+        if not 0 <= self.max_crp_training_mass_fraction <= 1:
+            raise ValueError("safe_graph.max_crp_training_mass_fraction must be in [0, 1]")
+        if not 0 <= self.max_group_training_mass_fraction <= 1:
+            raise ValueError("safe_graph.max_group_training_mass_fraction must be in [0, 1]")
 
 
 def _json_ready(value):
@@ -139,6 +148,8 @@ def build_safe_crp_graph(
     declared_group_ids = {int(group["group_id"]) for group in crp.get("groups", []) if group.get("selected", False)}
     valid_group_ids = selected_group_ids or declared_group_ids
 
+    potential_training_mass = raw["anchor_confidence"].unsqueeze(1) * raw["weights"]
+    total_training_mass = float(potential_training_mass.sum())
     proposals: list[tuple[float, int, int, int, int]] = []
     for row in range(shape[0]):
         for position, donor_tensor in enumerate(crp_indices[row]):
@@ -151,8 +162,9 @@ def build_safe_crp_graph(
                 continue
             if gain <= 0 or group_id < 0 or (valid_group_ids and group_id not in valid_group_ids):
                 continue
-            proposals.append((float(crp_confidence[row, position]), row, donor, position, group_id))
-    proposals.sort(key=lambda item: (-item[0], item[1], item[2]))
+            evidence_density = float(crp_gains[row, position] * crp_confidence[row, position])
+            proposals.append((evidence_density, row, donor, position, group_id))
+    proposals.sort(key=lambda item: (-item[0], item[1], item[2], item[3]))
 
     edge_source = torch.zeros(shape, dtype=torch.long)
     edge_source[indices >= 0] = 1
@@ -161,6 +173,8 @@ def build_safe_crp_graph(
     safe_confidences = torch.zeros(shape, dtype=torch.float32)
     replaced_rows: set[int] = set()
     replacements: list[dict[str, int | float]] = []
+    replacement_training_mass = 0.0
+    group_training_mass: dict[str, float] = {}
     for confidence, row, donor, crp_position, group_id in proposals:
         if row in replaced_rows or len(replaced_rows) >= shape[0]:
             continue
@@ -176,6 +190,19 @@ def build_safe_crp_graph(
             continue
         if int(indegree[donor]) >= indegree_cap:
             continue
+        candidate_mass = float(raw["anchor_confidence"][row]) * replacement_weight
+        if total_training_mass > 0 and (
+            replacement_training_mass + candidate_mass
+            > config.max_crp_training_mass_fraction * total_training_mass + 1e-12
+        ):
+            continue
+        group_key = str(group_id)
+        group_mass = group_training_mass.get(group_key, 0.0)
+        if total_training_mass > 0 and (
+            group_mass + candidate_mass
+            > config.max_group_training_mass_fraction * total_training_mass + 1e-12
+        ):
+            continue
         removed_donor = int(indices[row, replacement_position])
         indices[row, replacement_position] = donor
         indegree[removed_donor] -= 1
@@ -185,6 +212,8 @@ def build_safe_crp_graph(
         safe_gains[row, replacement_position] = crp_gains[row, crp_position]
         safe_confidences[row, replacement_position] = crp_confidence[row, crp_position]
         replaced_rows.add(row)
+        replacement_training_mass += candidate_mass
+        group_training_mass[group_key] = group_mass + candidate_mass
         replacements.append(
             {
                 "row": row,
@@ -193,12 +222,17 @@ def build_safe_crp_graph(
                 "weight": replacement_weight,
                 "confidence": confidence,
                 "group_id": group_id,
+                "training_mass": candidate_mass,
             }
         )
 
     total_weight = float(raw["weights"].sum())
     replacement_weight_mass = sum(float(item["weight"]) for item in replacements)
     safe_stats = dict(raw.get("degree_stats", {}))
+    group_mass_fraction = {
+        group: mass / total_training_mass if total_training_mass else 0.0
+        for group, mass in group_training_mass.items()
+    }
     safe_stats.update(
         {
             "maximum_indegree": int(indegree.max()) if len(indegree) else 0,
@@ -206,6 +240,14 @@ def build_safe_crp_graph(
             "safe_treated_anchors": len(replaced_rows),
             "safe_treated_anchor_fraction": len(replaced_rows) / max(1, len(cache["sample_ids"])),
             "safe_crp_weight_mass_fraction": replacement_weight_mass / total_weight if total_weight else 0.0,
+            "safe_unweighted_replacement_mass": replacement_weight_mass,
+            "safe_training_mass_total": total_training_mass,
+            "safe_training_weighted_replacement_mass": replacement_training_mass,
+            "safe_crp_training_mass_fraction": replacement_training_mass / total_training_mass if total_training_mass else 0.0,
+            "safe_group_training_mass": group_training_mass,
+            "safe_group_training_mass_fraction": group_mass_fraction,
+            "safe_effective_contributing_group_count": sum(mass > 0 for mass in group_training_mass.values()),
+            "safe_treatment_mass_hhi": sum(fraction * fraction for fraction in group_mass_fraction.values()),
         }
     )
     result = {
@@ -227,7 +269,7 @@ def build_safe_crp_graph(
         "edge_confidences": safe_confidences,
         "degree_stats": safe_stats,
         "safe_replacements": replacements,
-        "control": "matched raw-CLIP graph with bounded, target-preserving CRP rerank proposals",
+        "control": "matched raw-CLIP graph with bounded, raw-neighborhood-constrained CRP rerank proposals",
     }
     return validate_safe_crp_graph(result, cache["sample_ids"])
 
@@ -238,7 +280,7 @@ def validate_safe_crp_graph(graph: dict, expected_sample_ids: Sequence[str] | No
     from splice.crp_training import validate_teacher_graph
 
     validated = validate_teacher_graph(graph, expected_sample_ids)
-    if validated["artifact"] != SAFE_CRP_GRAPH_ARTIFACT or validated["graph_version"] != SAFE_CRP_GRAPH_VERSION:
+    if validated["artifact"] != SAFE_CRP_GRAPH_ARTIFACT or validated["graph_version"] not in {SAFE_CRP_GRAPH_VERSION_V1, SAFE_CRP_GRAPH_VERSION}:
         raise ValueError("Unsupported safe CRP graph artifact/version.")
     config = SafeCrpGraphConfig.from_mapping(validated.get("safe_config"))
     shape = validated["neighbor_indices"].shape

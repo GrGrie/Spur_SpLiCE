@@ -114,6 +114,8 @@ def load_and_validate_config(config_path: Path) -> tuple[dict, tuple[str, ...]]:
     if not config["wandb_project"] or not config["wandb_entity"] or not config["wandb_group"]:
         raise ValueError("W&B project, entity and group must be configured.")
     CrpAuditConfig(**config["graph"])
+    if config.get("prebuilt_graph_paths") is not None:
+        _resolve_prebuilt_graph_paths(config, arms)
     return config, arms
 
 
@@ -151,6 +153,41 @@ def _config_fingerprint(config: dict, protocol: str) -> str:
 def _cluster_graph_paths(output: Path) -> dict[str, Path]:
     graph_root = output / "graphs"
     return {"crp": graph_root / "crp_graph.json", "raw_clip": graph_root / "raw_clip_graph.json"}
+
+
+def _resolve_prebuilt_graph_paths(config: dict, arms: Sequence[str]) -> dict[str, Path] | None:
+    """Resolve and fingerprint-check externally selected graph artifacts."""
+
+    declared = config.get("prebuilt_graph_paths")
+    if declared is None:
+        return None
+    if not isinstance(declared, dict):
+        raise ValueError("prebuilt_graph_paths must be a mapping.")
+    required = set()
+    if any(arm in {"crp_sampler_only", "splice_crp_kl"} for arm in arms):
+        required.add("crp")
+    if any(arm.startswith("raw_clip_") for arm in arms):
+        required.add("raw_clip")
+    if any(arm.startswith("safe_crp_") for arm in arms):
+        required.add("safe_crp")
+    missing = sorted(required.difference(declared))
+    if missing:
+        raise ValueError(f"prebuilt_graph_paths is missing graphs required by arms: {missing}")
+    fingerprints = config.get("prebuilt_graph_fingerprints")
+    if not isinstance(fingerprints, dict):
+        raise ValueError("prebuilt_graph_fingerprints is required with prebuilt graphs.")
+    paths = {name: Path(value) for name, value in declared.items()}
+    for name in required:
+        path = paths[name]
+        if not path.is_file():
+            raise FileNotFoundError(f"Prebuilt graph not found: {path}")
+        expected = fingerprints.get(name)
+        if not isinstance(expected, str) or not expected:
+            raise ValueError(f"Missing fingerprint for prebuilt graph {name!r}.")
+        actual = graph_fingerprint(path)
+        if actual != expected:
+            raise ValueError(f"Prebuilt graph fingerprint mismatch for {name}: {path}")
+    return paths
 
 
 def _prepare_cache(config: dict, output: Path) -> tuple[dict, str]:
@@ -451,6 +488,7 @@ def main():
     cache_record.write_text(json.dumps(cache_identity, indent=2), encoding="utf-8")
     if cache.get("provenance", {}).get("dataset") != config["dataset"]:
         raise ValueError("Cache dataset differs from experiment dataset.")
+    prebuilt_paths = _resolve_prebuilt_graph_paths(config, arms)
     rows = []
     group_rows = []
     for seed in config["seeds"]:
@@ -458,34 +496,47 @@ def main():
         seed_root.mkdir(exist_ok=True)
         graph_root = output / "graphs"
         graph_root.mkdir(exist_ok=True)
-        crp_path, raw_path = graph_root / "crp_graph.json", graph_root / "raw_clip_graph.json"
-        audit_config = CrpAuditConfig(**{**config["graph"], "seed": config["graph_seed"]})
-        if crp_path.exists():
-            crp = validate_teacher_graph(load_graph_json(crp_path), cache["sample_ids"])
-            if crp["config"] != asdict(audit_config):
-                raise ValueError("Saved CRP graph configuration differs from this experiment.")
+        if prebuilt_paths is not None:
+            crp_path = prebuilt_paths.get("crp")
+            raw_path = prebuilt_paths.get("raw_clip")
+            safe_path = prebuilt_paths.get("safe_crp")
+            crp = validate_teacher_graph(load_graph_json(crp_path), cache["sample_ids"]) if crp_path else None
+            raw = validate_teacher_graph(load_graph_json(raw_path), cache["sample_ids"]) if raw_path else None
+            safe = validate_safe_crp_graph(load_graph_json(safe_path), cache["sample_ids"]) if safe_path else None
+            if crp is not None and not (crp["weights"].sum(1) > 0).any():
+                raise RuntimeError("Prebuilt CRP graph is empty.")
         else:
-            crp = run_frozen_audit(cache, audit_config)
-            save_graph_json(crp, crp_path)
-        if not (crp["weights"].sum(1) > 0).any():
+            crp_path, raw_path = graph_root / "crp_graph.json", graph_root / "raw_clip_graph.json"
+            audit_config = CrpAuditConfig(**{**config["graph"], "seed": config["graph_seed"]})
+            if crp_path.exists():
+                crp = validate_teacher_graph(load_graph_json(crp_path), cache["sample_ids"])
+                if crp["config"] != asdict(audit_config):
+                    raise ValueError("Saved CRP graph configuration differs from this experiment.")
+            else:
+                crp = run_frozen_audit(cache, audit_config)
+                save_graph_json(crp, crp_path)
+            raw = build_matched_raw_clip_graph(cache, crp)
+            save_graph_json(raw, raw_path)
+            safe_path = graph_root / "safe_crp_graph.json"
+            safe = None
+            if safe_config:
+                safe = build_safe_crp_graph(
+                    cache,
+                    crp,
+                    raw,
+                    safe_config,
+                    source_crp_fingerprint=graph_fingerprint(crp_path),
+                    source_raw_fingerprint=graph_fingerprint(raw_path),
+                )
+                save_graph_json(safe, safe_path)
+                safe = validate_safe_crp_graph(load_graph_json(safe_path), cache["sample_ids"])
+        if crp is not None and not (crp["weights"].sum(1) > 0).any():
             raise RuntimeError("CRP graph is empty: the sampler/KL controls would be identical to SimCLR. Inspect graph diagnostics before training.")
-        # Cheap deterministic rebuild ensures the raw control matches this graph.
-        raw = build_matched_raw_clip_graph(cache, crp)
-        save_graph_json(raw, raw_path)
-        safe_path = graph_root / "safe_crp_graph.json"
-        safe = None
-        if safe_config:
-            safe = build_safe_crp_graph(
-                cache,
-                crp,
-                raw,
-                safe_config,
-                source_crp_fingerprint=graph_fingerprint(crp_path),
-                source_raw_fingerprint=graph_fingerprint(raw_path),
-            )
-            save_graph_json(safe, safe_path)
-            safe = validate_safe_crp_graph(load_graph_json(safe_path), cache["sample_ids"])
-        graph_identity = {"crp": graph_fingerprint(crp_path), "raw_clip": graph_fingerprint(raw_path)}
+        graph_identity = {}
+        if crp_path is not None:
+            graph_identity["crp"] = graph_fingerprint(crp_path)
+        if raw_path is not None:
+            graph_identity["raw_clip"] = graph_fingerprint(raw_path)
         if safe is not None:
             graph_identity["safe_crp"] = graph_fingerprint(safe_path)
         graph_record = graph_root / "graph_identity.json"
@@ -493,21 +544,27 @@ def main():
             raise ValueError("Prepared graphs changed. Choose a new output directory.")
         graph_record.write_text(json.dumps(graph_identity, indent=2), encoding="utf-8")
         if seed == config["seeds"][0]:
-            posthoc_graphs = {"crp": crp, "raw_clip": raw}
+            posthoc_graphs = {name: graph for name, graph in (("crp", crp), ("raw_clip", raw)) if graph is not None}
             if safe is not None:
                 posthoc_graphs["safe_crp"] = safe
-            posthoc = diagnose_fixed_graphs(posthoc_graphs,
-                                           config["dataset"], config["data_folder"])
-            (graph_root / "posthoc_group_diagnostics.json").write_text(
-                json.dumps(posthoc, indent=2), encoding="utf-8")
-        overlap = ((crp["neighbor_indices"][:, :, None] == raw["neighbor_indices"][:, None, :])
-                   & (crp["neighbor_indices"][:, :, None] >= 0)).any(2)
-        (seed_root / "graph_diagnostics.json").write_text(json.dumps({
-            "crp": crp["degree_stats"], "raw_clip": raw["degree_stats"],
-            "crp_edge_overlap_with_raw_clip": float(overlap.sum() / (crp["neighbor_indices"] >= 0).sum()),
-            "selected_groups": crp["selected_group_ids"],
-            "mean_supported_confidence": float(crp["anchor_confidence"][crp["anchor_confidence"] > 0].mean()),
-        }, indent=2), encoding="utf-8")
+            if posthoc_graphs:
+                posthoc = diagnose_fixed_graphs(posthoc_graphs,
+                                               config["dataset"], config["data_folder"])
+                (graph_root / "posthoc_group_diagnostics.json").write_text(
+                    json.dumps(posthoc, indent=2), encoding="utf-8")
+        graph_diagnostics = {}
+        if crp is not None:
+            graph_diagnostics["crp"] = crp["degree_stats"]
+            graph_diagnostics["selected_groups"] = crp["selected_group_ids"]
+            supported = crp["anchor_confidence"] > 0
+            graph_diagnostics["mean_supported_confidence"] = float(crp["anchor_confidence"][supported].mean()) if supported.any() else 0.0
+        if raw is not None:
+            graph_diagnostics["raw_clip"] = raw["degree_stats"]
+        if crp is not None and raw is not None:
+            overlap = ((crp["neighbor_indices"][:, :, None] == raw["neighbor_indices"][:, None, :])
+                       & (crp["neighbor_indices"][:, :, None] >= 0)).any(2)
+            graph_diagnostics["crp_edge_overlap_with_raw_clip"] = float(overlap.sum() / (crp["neighbor_indices"] >= 0).sum())
+        (seed_root / "graph_diagnostics.json").write_text(json.dumps(graph_diagnostics, indent=2), encoding="utf-8")
         safe_allowed, safe_gate_reason = (safe_training_gate(safe) if safe is not None else (True, None))
         for arm in arms:
             arm_root = seed_root / arm

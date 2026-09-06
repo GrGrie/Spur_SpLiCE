@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 
 from splice import crp as canonical
+from splice.crp_graph_selection import grouping_metrics
 from splice.spatial_balance import load_spatial_balance_artifact, spatially_balanced_codes
 
 
@@ -596,6 +597,17 @@ def build_group_screen(
         "groups": summaries,
         "images": image_rows,
     }
+    report["metrics"].update(
+        grouping_metrics(
+            audit_codes,
+            cache["dictionary"],
+            groups,
+            source_fidelity=source_fidelity,
+            fidelity_threshold=screen_config.fidelity_threshold,
+            selected_group_ids=selected_group_ids,
+            centered_embeddings=cache["centered_clip"],
+        )
+    )
     if mini_config.enabled and reconstruction_passed and selected_group_ids:
         report["mini_intervention"] = run_mini_intervention_audit(
             cache,
