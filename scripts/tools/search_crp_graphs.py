@@ -186,7 +186,9 @@ def search_one_candidate(config_path: Path, task_id: int) -> Path:
     }
     atomic_write_json(candidate_root / "group_screen.json", screen)
     if not gates["passed"]:
-        report["rejection_reasons"] = gates["failed_gates"]
+        report["rejection_reasons"] = gates["failed_gates"] + [
+            f"{name}:NOT_EVALUATED" for name in gates.get("not_evaluated_gates", [])
+        ]
         atomic_write_json(candidate_root / "candidate_report.json", report)
         return candidate_root
 

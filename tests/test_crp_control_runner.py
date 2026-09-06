@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
+import spur_splice
 from experiments.spurious_eval.linear_probe import build_wandb_group_metrics
 from scripts.tools import run_crp_controls as runner
 
@@ -26,7 +27,10 @@ def test_cluster_config_has_eight_tasks_and_fixed_periodic_probe():
     assert config["epochs"] == 500
     assert config["linear_probe_mode"] == "periodic"
     assert config["linear_probe_freq"] == 25
-    assert "--use_wandb" in runner.training_command(config, 1, "simclr", None, Path("out"))
+    command = runner.training_command(config, 1, "simclr", None, Path("out"))
+    assert "--use_wandb" in command
+    assert command[command.index("--delete_checkpoints_after_training") + 1] == "true"
+    assert command[command.index("--retain_probe_artifacts_every") + 1] == "100"
 
 
 def test_array_mapping_is_row_major():
@@ -128,3 +132,22 @@ def test_wandb_group_names_are_target_context_and_include_all_four_groups():
     assert metrics["Linear val group (target,context)=(0,1) acc"] == pytest.approx(20.0)
     assert metrics["Linear val group (target,context)=(1,0) acc"] == pytest.approx(30.0)
     assert metrics["Linear val group (target,context)=(1,1) acc"] == pytest.approx(40.0)
+
+
+def test_success_cleanup_removes_only_ssl_weights_and_unselected_probe_tensors(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    for epoch in (25, 100, 200):
+        (run_dir / f"probe_features_epoch_{epoch}_ds_train_val.pt").write_bytes(b"probe")
+        (run_dir / f"probe_features_epoch_{epoch}_ds_train_val.json").write_text("{}", encoding="utf-8")
+    (run_dir / "epoch_500.pth").write_bytes(b"checkpoint")
+    (run_dir / "last.pth").write_bytes(b"checkpoint")
+    (run_dir / "sentinel.txt").write_text("keep", encoding="utf-8")
+
+    args = type("Args", (), {"save_folder": str(run_dir), "retain_probe_artifacts_every": 100})()
+    assert spur_splice.cleanup_all_checkpoints(args)["removed_count"] == 2
+    assert spur_splice.cleanup_probe_artifacts(args)["removed_count"] == 1
+    assert (run_dir / "probe_features_epoch_100_ds_train_val.pt").exists()
+    assert (run_dir / "probe_features_epoch_200_ds_train_val.pt").exists()
+    assert (run_dir / "probe_features_epoch_25_ds_train_val.json").exists()
+    assert (run_dir / "sentinel.txt").exists()

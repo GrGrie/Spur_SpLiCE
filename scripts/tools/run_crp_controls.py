@@ -49,6 +49,9 @@ def run_command(command, log):
 
 
 def training_command(config, seed, arm, graph, output):
+    keep_checkpoints = bool(config.get("keep_checkpoints", True))
+    delete_checkpoints = bool(config.get("delete_checkpoints_after_training", False))
+    retain_probe_artifacts_every = int(config.get("retain_probe_artifacts_every", 0))
     values = {
         "dataset": config["dataset"], "data_folder": config["data_folder"],
         "model": config["model"], "epochs": config["epochs"], "seed": seed,
@@ -65,7 +68,8 @@ def training_command(config, seed, arm, graph, output):
         "train_set_linear_layer": config["train_set_linear_layer"],
         "linear_eval_split": "val",
         "linear_spurious_probe": "true", "checkpoint_dir": str(output / "training"),
-        "delete_checkpoints_after_training": "false",
+        "delete_checkpoints_after_training": str(delete_checkpoints).lower(),
+        "retain_probe_artifacts_every": retain_probe_artifacts_every,
         "wandb_name": config["wandb_project"], "entity": config["wandb_entity"],
         "wandb_run_name": f"{config['wandb_group']}_{arm}_seed{seed}",
         "wandb_group": config["wandb_group"],
@@ -77,7 +81,9 @@ def training_command(config, seed, arm, graph, output):
         values["linear_probe_freq"] = config["linear_probe_freq"]
     if graph is not None:
         values["crp_teacher_graph"] = str(graph)
-    command = [sys.executable, "-u", "spur_splice.py", "--use_wandb", "--keep_checkpoints"]
+    command = [sys.executable, "-u", "spur_splice.py", "--use_wandb"]
+    if keep_checkpoints:
+        command.append("--keep_checkpoints")
     for key, value in values.items():
         command.extend([f"--{key}", str(value)])
     return command
@@ -100,6 +106,12 @@ def load_and_validate_config(config_path: Path) -> tuple[dict, tuple[str, ...]]:
             raise ValueError("The cluster protocol is fixed at 500 SSL epochs.")
         if config.get("linear_probe_mode") != "periodic" or config.get("linear_probe_freq") != 25:
             raise ValueError("The cluster protocol requires periodic linear probing every 25 epochs.")
+        if config.get("keep_checkpoints") is not True:
+            raise ValueError("The cluster protocol must keep checkpoints until post-success cleanup.")
+        if config.get("delete_checkpoints_after_training") is not True:
+            raise ValueError("The cluster protocol must delete SSL checkpoints after successful synchronization.")
+        if config.get("retain_probe_artifacts_every") != 100:
+            raise ValueError("The cluster protocol retains bulky probe artifacts every 100 SSL epochs.")
     safe_arms = {arm for arm in arms if arm.startswith("safe_crp_")}
     if safe_arms:
         if "safe_graph" not in config:
@@ -334,6 +346,12 @@ def run_one_arm(config_path: Path, task_id: int) -> dict:
     result = json.loads(results[0].read_text(encoding="utf-8"))
     if not result.get("convergence", {}).get("converged"):
         raise RuntimeError("Final linear probe did not converge.")
+    run_status_path = results[0].parent / "run_status.json"
+    run_status = None
+    if run_status_path.is_file():
+        run_status = json.loads(run_status_path.read_text(encoding="utf-8"))
+        if run_status.get("status") != "complete":
+            raise RuntimeError(f"Training run did not complete cleanly: {run_status_path}")
     metrics = result["metrics"]
     record = {
         "status": "complete", "seed": seed, "arm": arm,
@@ -342,6 +360,9 @@ def run_one_arm(config_path: Path, task_id: int) -> dict:
         "best_group_last10": metrics["Average over last 10 linear val best-group acc"],
         "probe_epochs": result["convergence"]["epochs"], "result": str(results[0]),
         "run_identity": identity,
+        "run_status": str(run_status_path) if run_status is not None else None,
+        "wandb": run_status.get("wandb") if run_status is not None else None,
+        "cleanup": run_status.get("cleanup") if run_status is not None else None,
     }
     _atomic_write_json(completed, record)
     return record
@@ -351,12 +372,27 @@ def _probe_group_rows(record: dict, config: dict) -> list[dict]:
     result_path = Path(record["result"])
     result = json.loads(result_path.read_text(encoding="utf-8"))
     group_metrics = result.get("group_metrics", {}).get("val", {})
+    named = group_metrics.get("named")
+    if isinstance(named, dict):
+        return [
+            {
+                "seed": record["seed"],
+                "arm": record["arm"],
+                "ssl_epoch": config["epochs"],
+                "group_name": group_name,
+                "group_id": index,
+                "group_count": int(values.get("count", 0)),
+                "group_accuracy": values.get("accuracy"),
+            }
+            for index, (group_name, values) in enumerate(named.items())
+        ]
     accuracies = group_metrics.get("accuracy", result.get("metrics", {}).get("Linear val group accuracies", []))
     counts = group_metrics.get("count", result.get("metrics", {}).get("Linear val group counts", []))
     if len(accuracies) != len(counts):
         raise ValueError(f"Probe group metrics are misaligned: {result_path}")
     return [{"seed": record["seed"], "arm": record["arm"], "ssl_epoch": config["epochs"],
-             "group_id": index, "group_count": int(count), "group_accuracy": float(accuracy)}
+             "group_name": f"group_id={index}", "group_id": index, "group_count": int(count),
+             "group_accuracy": float(accuracy) if int(count) > 0 else None}
             for index, (accuracy, count) in enumerate(zip(accuracies, counts))]
 
 
@@ -398,7 +434,7 @@ def summarize_experiment(config_path: Path) -> Path:
         fields = ["seed", "arm", "ssl_epoch", "avg_acc_last10", "wga_last10", "best_group_last10", "probe_epochs", "result"]
         writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(summary_rows)
     with (output / "group_results.csv").open("w", newline="", encoding="utf-8") as handle:
-        fields = ["seed", "arm", "ssl_epoch", "group_id", "group_count", "group_accuracy"]
+        fields = ["seed", "arm", "ssl_epoch", "group_name", "group_id", "group_count", "group_accuracy"]
         writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(group_rows)
     _atomic_write_json(output / "paired_summary.json", summary)
     _atomic_write_json(output / "summary.json", {"paired_seeds": paired_seeds,

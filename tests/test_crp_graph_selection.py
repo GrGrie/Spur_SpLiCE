@@ -38,8 +38,15 @@ def test_grouping_metrics_and_hard_gates_are_pure():
     assert metrics["compression_gain"] == pytest.approx(1 / 3)
     assert metrics["within_group_text_cosine_p10"] > 0.9
     assert metrics["within_group_coactivation_cosine_p10"] == pytest.approx(1.0)
-    assert evaluate_grouping_gates(metrics, None)["passed"] is False
-    assert "mini_null_passing_group" in evaluate_grouping_gates(metrics, None)["failed_gates"]
+    gates = evaluate_grouping_gates(metrics, None)
+    assert gates["passed"] is False
+    assert "largest_group" in gates["failed_gates"]
+    assert set(gates["not_evaluated_gates"]) == {
+        "mini_null_passing_group",
+        "geometry_change",
+        "destructive_change_guard",
+    }
+    assert gates["gate_status"]["mini_null_passing_group"] == "NOT_EVALUATED"
 
 
 def test_transitive_group_partition_stability_and_selection_key():

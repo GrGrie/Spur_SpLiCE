@@ -132,23 +132,45 @@ def grouping_metrics(
 
 
 def evaluate_grouping_gates(metrics: dict, mini: dict | None, gates: dict | None = None) -> dict:
-    """Apply the fixed Stage-B gates and return reasons for every failure."""
+    """Apply fixed Stage-B gates while distinguishing unmeasured dependent gates."""
 
     gates = gates or {}
-    checks = {
+    checks: dict[str, bool | None] = {
         "reconstruction_source_coverage": float(metrics.get("reconstruction_source_coverage") or 0.0) >= gates.get("min_reconstruction_coverage", 0.99),
         "compression_gain": gates.get("min_compression_gain", 0.05) <= float(metrics.get("compression_gain", 0.0)) <= gates.get("max_compression_gain", 0.50),
         "largest_group": float(metrics.get("largest_group_size", 0)) <= gates.get("max_largest_group_size", 16)
         and float(metrics.get("largest_group_fraction", 1.0)) <= gates.get("max_largest_group_fraction", 0.05),
         "text_coherence": float(metrics.get("within_group_text_cosine_p10") or -1.0) >= gates.get("min_text_cosine_p10", 0.55),
         "coactivation_coherence": float(metrics.get("within_group_coactivation_cosine_p10") or -1.0) >= gates.get("min_coactivation_cosine_p10", 0.05),
-        "mini_null_passing_group": bool(mini and any(item.get("passed_null", False) for item in mini.get("groups", []))),
-        "geometry_change": bool(mini and (float(mini.get("median_top1_neighbor_turnover", 0.0)) >= gates.get("min_top1_turnover", 0.10)
-                                           or float(mini.get("median_jaccard_at_k", 1.0)) <= gates.get("max_jaccard_for_change", 0.90))),
-        "destructive_change_guard": bool(mini and float(mini.get("median_jaccard_at_k", 0.0)) >= gates.get("min_jaccard_guard", 0.50)),
+        "mini_null_passing_group": (
+            any(item.get("passed_null", False) for item in mini.get("groups", []))
+            if mini is not None
+            else None
+        ),
+        "geometry_change": (
+            float(mini.get("median_top1_neighbor_turnover", 0.0)) >= gates.get("min_top1_turnover", 0.10)
+            or float(mini.get("median_jaccard_at_k", 1.0)) <= gates.get("max_jaccard_for_change", 0.90)
+            if mini is not None
+            else None
+        ),
+        "destructive_change_guard": (
+            float(mini.get("median_jaccard_at_k", 0.0)) >= gates.get("min_jaccard_guard", 0.50)
+            if mini is not None
+            else None
+        ),
     }
-    return {"passed": all(checks.values()), "checks": checks,
-            "failed_gates": [name for name, passed in checks.items() if not passed]}
+    not_evaluated = [name for name, passed in checks.items() if passed is None]
+    failed = [name for name, passed in checks.items() if passed is False]
+    return {
+        "passed": not not_evaluated and not failed,
+        "checks": checks,
+        "failed_gates": failed,
+        "not_evaluated_gates": not_evaluated,
+        "gate_status": {
+            name: "NOT_EVALUATED" if passed is None else "PASS" if passed else "FAIL"
+            for name, passed in checks.items()
+        },
+    }
 
 
 def set_jaccard(left: Iterable[object], right: Iterable[object]) -> float:

@@ -205,7 +205,42 @@ def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimi
         param_group["lr"] = lr
 
 
-def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, float | int]:
+def _group_cardinalities(metadata: torch.Tensor) -> tuple[int, int]:
+    metadata = torch.as_tensor(metadata).detach().cpu()
+    if metadata.ndim != 2 or metadata.shape[1] < 2:
+        raise ValueError("Group metrics require metadata columns [context, target].")
+    contexts = metadata[:, 0].long()
+    targets = metadata[:, 1].long()
+    return (
+        max(2, int(contexts.max().item()) + 1 if contexts.numel() else 1),
+        max(2, int(targets.max().item()) + 1 if targets.numel() else 1),
+    )
+
+
+def build_named_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, dict[str, float | int | None]]:
+    """Return portable named group metrics, marking empty-group accuracy unavailable."""
+
+    group_accuracies = torch.as_tensor(group_accuracies).detach().cpu().float().view(-1)
+    group_counts = torch.as_tensor(group_counts).detach().cpu().long().view(-1)
+    context_cardinality, target_cardinality = _group_cardinalities(metadata)
+    named: dict[str, dict[str, float | int | None]] = {}
+    for target in range(target_cardinality):
+        for context in range(context_cardinality):
+            group_id = context + context_cardinality * target
+            count = int(group_counts[group_id]) if group_id < len(group_counts) else 0
+            accuracy = (
+                float(group_accuracies[group_id]) * 100
+                if count > 0 and group_id < len(group_accuracies)
+                else None
+            )
+            named[f"(target,context)=({target},{context})"] = {
+                "accuracy": accuracy,
+                "count": count,
+            }
+    return named
+
+
+def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, float | int | None]:
     """Name validation groups by the stable ``(target, context)`` convention."""
 
     group_accuracies = torch.as_tensor(group_accuracies).detach().cpu().float().view(-1)
@@ -218,14 +253,17 @@ def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[
     # Waterbirds (the cluster control dataset) has binary target/context
     # metadata. Keep the complete 2x2 W&B panel even if a validation split
     # happens to contain an empty group.
-    context_cardinality = max(2, int(contexts.max().item()) + 1 if contexts.numel() else 1)
-    target_cardinality = max(2, int(targets.max().item()) + 1 if targets.numel() else 1)
-    metrics: dict[str, float | int] = {}
+    context_cardinality, target_cardinality = _group_cardinalities(metadata)
+    metrics: dict[str, float | int | None] = {}
     for target in range(target_cardinality):
         for context in range(context_cardinality):
             group_id = context + context_cardinality * target
-            accuracy = float(group_accuracies[group_id]) * 100 if group_id < len(group_accuracies) else 0.0
             count = int(group_counts[group_id]) if group_id < len(group_counts) else 0
+            accuracy = (
+                float(group_accuracies[group_id]) * 100
+                if count > 0 and group_id < len(group_accuracies)
+                else None
+            )
             prefix = f"Linear val group (target,context)=({target},{context})"
             metrics[f"{prefix} acc"] = accuracy
             metrics[f"{prefix} count"] = count
@@ -545,7 +583,11 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
         wandb_run.log(
             {
                 **{
-                    f"Linear val group {group_id} acc": float(accuracy)
+                    f"Linear val group {group_id} acc": (
+                        float(accuracy)
+                        if int(final_metrics["Linear val group counts"][group_id]) > 0
+                        else None
+                    )
                     for group_id, accuracy in enumerate(final_metrics["Linear val group accuracies"])
                 },
                 **{
@@ -577,10 +619,20 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
                                            "val": {
                                                "accuracy": final_metrics["Linear val group accuracies"],
                                                "count": final_metrics["Linear val group counts"],
+                                               "named": build_named_group_metrics(
+                                                   group_accuracies,
+                                                   group_counts,
+                                                   val_features.tensors[2],
+                                               ),
                                            },
                                            "train": {
                                                "accuracy": final_metrics["Linear train group accuracies"],
                                                "count": final_metrics["Linear train group counts"],
+                                               "named": build_named_group_metrics(
+                                                   train_group_accuracies,
+                                                   train_group_counts,
+                                                   train_features.tensors[2],
+                                               ),
                                            },
                                        }}, indent=2), encoding="utf-8")
 
