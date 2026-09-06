@@ -26,6 +26,7 @@ from splice.crp_safe_graph import (
 )
 
 LEGACY_ARMS = ("simclr", "crp_sampler_only", "raw_clip_kl", "splice_crp_kl")
+FOLLOWUP_PROTOCOL = "crp_controls_followup_v1"
 # Backward-compatible import used by existing tests and small local tools.
 ARMS = LEGACY_ARMS
 SUPPORTED_ARMS = LEGACY_ARMS + (
@@ -97,7 +98,7 @@ def load_and_validate_config(config_path: Path) -> tuple[dict, tuple[str, ...]]:
     if not arms or len(set(arms)) != len(arms) or any(arm not in SUPPORTED_ARMS for arm in arms):
         raise ValueError(f"arms must be a unique non-empty subset of {SUPPORTED_ARMS}.")
     protocol = config.get("protocol", "current_crp_controls_logistic_v1")
-    if protocol not in {"current_crp_controls_logistic_v1", "safe_crp_controls_v1", "crp_controls_cluster_v1"}:
+    if protocol not in {"current_crp_controls_logistic_v1", "safe_crp_controls_v1", "crp_controls_cluster_v1", FOLLOWUP_PROTOCOL}:
         raise ValueError(f"Unsupported control protocol: {protocol!r}")
     if protocol == "crp_controls_cluster_v1":
         if arms != LEGACY_ARMS:
@@ -112,6 +113,22 @@ def load_and_validate_config(config_path: Path) -> tuple[dict, tuple[str, ...]]:
             raise ValueError("The cluster protocol must delete SSL checkpoints after successful synchronization.")
         if config.get("retain_probe_artifacts_every") != 100:
             raise ValueError("The cluster protocol retains bulky probe artifacts every 100 SSL epochs.")
+    if protocol == FOLLOWUP_PROTOCOL:
+        if config.get("epochs") != 500:
+            raise ValueError("The follow-up protocol is fixed at 500 SSL epochs.")
+        if config.get("linear_probe_mode") != "periodic" or config.get("linear_probe_freq") != 25:
+            raise ValueError("The follow-up protocol requires periodic linear probing every 25 epochs.")
+        if config.get("keep_checkpoints") is not True or config.get("delete_checkpoints_after_training") is not True:
+            raise ValueError("The follow-up protocol requires post-success checkpoint cleanup.")
+        if config.get("retain_probe_artifacts_every") != 100:
+            raise ValueError("The follow-up protocol retains bulky probe artifacts every 100 SSL epochs.")
+        if config.get("graph_seed") != 0:
+            raise ValueError("The follow-up protocol locks graph_seed=0.")
+        if not config.get("prebuilt_graph_paths") or not config.get("prebuilt_graph_fingerprints"):
+            raise ValueError("The follow-up protocol requires locked prebuilt graphs and fingerprints.")
+        locked = config.get("locked_artifact_fingerprints")
+        if not isinstance(locked, dict) or not locked.get("cache"):
+            raise ValueError("The follow-up protocol requires a locked cache fingerprint.")
     safe_arms = {arm for arm in arms if arm.startswith("safe_crp_")}
     if safe_arms:
         if "safe_graph" not in config:
@@ -165,6 +182,13 @@ def _config_fingerprint(config: dict, protocol: str) -> str:
 def _cluster_graph_paths(output: Path) -> dict[str, Path]:
     graph_root = output / "graphs"
     return {"crp": graph_root / "crp_graph.json", "raw_clip": graph_root / "raw_clip_graph.json"}
+
+
+def _graph_paths_for_config(config: dict, output: Path) -> dict[str, Path]:
+    declared = config.get("prebuilt_graph_paths")
+    if declared:
+        return {name: Path(value) for name, value in declared.items()}
+    return _cluster_graph_paths(output)
 
 
 def _resolve_prebuilt_graph_paths(config: dict, arms: Sequence[str]) -> dict[str, Path] | None:
@@ -278,10 +302,61 @@ def prepare_experiment(config_path: Path) -> dict:
     return prepared
 
 
+def prepare_locked_experiment(config_path: Path) -> dict:
+    """Register already-built cache/graphs without rebuilding frozen artifacts."""
+
+    config, arms = load_and_validate_config(config_path)
+    if config.get("protocol") != FOLLOWUP_PROTOCOL:
+        raise ValueError("Locked preparation requires protocol=crp_controls_followup_v1.")
+    output = Path(config["output"])
+    output.mkdir(parents=True, exist_ok=True)
+    resolved = {"protocol": config["protocol"], **config}
+    manifest = output / "experiment.json"
+    if manifest.exists() and json.loads(manifest.read_text(encoding="utf-8")) != resolved:
+        raise ValueError("Output belongs to another configuration. Choose a new output directory.")
+    _atomic_write_json(manifest, resolved)
+
+    cache_path = Path(config["cache"])
+    cache = validate_feature_cache(torch.load(cache_path, map_location="cpu", weights_only=True))
+    cache_fingerprint = graph_fingerprint(cache_path)
+    if cache_fingerprint != config["locked_artifact_fingerprints"]["cache"]:
+        raise ValueError("Locked cache fingerprint does not match the cache on disk.")
+    if cache.get("provenance", {}).get("dataset") != config["dataset"]:
+        raise ValueError("Cache dataset differs from experiment dataset.")
+    _atomic_write_json(output / "cache_identity.json", {
+        "path": str(cache_path.resolve()), "content_id": cache_fingerprint,
+    })
+
+    graph_paths = _resolve_prebuilt_graph_paths(config, arms)
+    graph_fingerprints = {
+        name: graph_fingerprint(path) for name, path in graph_paths.items()
+    }
+    expected_graphs = config["prebuilt_graph_fingerprints"]
+    if graph_fingerprints != {name: expected_graphs[name] for name in graph_fingerprints}:
+        raise ValueError("Locked graph fingerprints do not match the graphs on disk.")
+    _atomic_write_json(output / "graph_identity.json", graph_fingerprints)
+
+    prepared = {
+        "artifact": "crp_controls_followup_prepared_v1",
+        "protocol": config["protocol"],
+        "config_fingerprint": _config_fingerprint(config, config["protocol"]),
+        "cache_fingerprint": cache_fingerprint,
+        "graph_fingerprints": graph_fingerprints,
+        "seeds": list(config["seeds"]),
+        "arms": list(arms),
+    }
+    marker = output / "prepared.json"
+    if marker.exists() and json.loads(marker.read_text(encoding="utf-8")) != prepared:
+        raise ValueError("Prepared marker differs; choose a new output directory.")
+    _atomic_write_json(marker, prepared)
+    print(f"Registered locked follow-up artifacts at {output}")
+    return prepared
+
+
 def _load_prepared(config_path: Path) -> tuple[dict, tuple[str, ...], Path, dict]:
     config, arms = load_and_validate_config(config_path)
-    if config.get("protocol") != "crp_controls_cluster_v1":
-        raise ValueError("Cluster modes require protocol=crp_controls_cluster_v1.")
+    if config.get("protocol") not in {"crp_controls_cluster_v1", FOLLOWUP_PROTOCOL}:
+        raise ValueError("Array modes require a cluster or follow-up control protocol.")
     output = Path(config["output"])
     marker = output / "prepared.json"
     if not marker.is_file():
@@ -293,17 +368,18 @@ def _load_prepared(config_path: Path) -> tuple[dict, tuple[str, ...], Path, dict
     cache_path = Path(config["cache"])
     if not cache_path.is_file() or graph_fingerprint(cache_path) != prepared.get("cache_fingerprint"):
         raise ValueError("Frozen cache does not match prepared.json.")
-    paths = _cluster_graph_paths(output)
+    paths = _graph_paths_for_config(config, output)
     actual_graphs = {name: graph_fingerprint(path) for name, path in paths.items() if path.is_file()}
     if actual_graphs != prepared.get("graph_fingerprints"):
         raise ValueError("Prepared graph fingerprints do not match current files.")
     return config, arms, output, prepared
 
 
-def _graph_for_arm(arm: str, output: Path) -> Path | None:
+def _graph_for_arm(arm: str, output: Path, config: dict | None = None) -> Path | None:
     if arm == "simclr":
         return None
-    return _cluster_graph_paths(output)["raw_clip" if arm == "raw_clip_kl" else "crp"]
+    paths = _graph_paths_for_config(config or {}, output)
+    return paths["raw_clip" if arm.startswith("raw_clip_") else "crp"]
 
 
 def _run_identity(config: dict, prepared: dict, seed: int, arm: str) -> dict:
@@ -336,7 +412,7 @@ def run_one_arm(config_path: Path, task_id: int) -> dict:
         record = _validate_completed(completed, identity)
         print(f"Reusing completed seed={seed}, arm={arm}")
         return record
-    graph = _graph_for_arm(arm, output)
+    graph = _graph_for_arm(arm, output, config)
     command = training_command(config, seed, arm, graph, arm_root)
     _atomic_write_json(arm_root / "command.json", {"command": command, "run_identity": identity})
     run_command(command, arm_root / "training.log")
@@ -457,7 +533,11 @@ def main():
         if args.validate_only:
             raise ValueError("--validate-only cannot be combined with a cluster execution mode.")
         if args.prepare_only:
-            prepare_experiment(args.config)
+            config = json.loads(args.config.read_text(encoding="utf-8-sig"))
+            if config.get("protocol") == FOLLOWUP_PROTOCOL:
+                prepare_locked_experiment(args.config)
+            else:
+                prepare_experiment(args.config)
         elif args.array_task_id is not None:
             run_one_arm(args.config, args.array_task_id)
         else:

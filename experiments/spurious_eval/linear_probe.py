@@ -70,6 +70,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", default="resnet18", choices=RESNET_MODEL_NAMES)
     parser.add_argument("--ckpt", default="", help="SpurSSL checkpoint containing encoder.* weights")
+    parser.add_argument(
+        "--artifact_dir",
+        default="",
+        help="Directory for downstream probe artifacts; defaults to the checkpoint directory.",
+    )
     parser.add_argument("--method", default="SimCLR", help="Accepted for SpurSSL command compatibility")
     parser.add_argument("--head", default="mlp", choices=["mlp", "linear", "fixed", "identity"], help="Accepted for SpurSSL command compatibility")
     parser.add_argument("--kappa", type=float, default=1.0, help="Accepted for SpurSSL command compatibility")
@@ -131,6 +136,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "eval_split": "val",
         "model": "resnet18",
         "ckpt": "",
+        "artifact_dir": "",
         "method": "SimCLR",
         "head": "mlp",
         "kappa": 1.0,
@@ -413,7 +419,8 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
     train_features = extract_features(encoder, train_loader, device)
     print("[INFO] Extracting frozen validation features")
     val_features = extract_features(encoder, val_loader, device)
-    feature_path = Path(args.ckpt).parent / f"probe_features_epoch_{supcon_epoch}_{args.train_set_linear_layer}_{args.eval_split}.pt"
+    artifact_dir = Path(args.artifact_dir) if args.artifact_dir else Path(args.ckpt).parent
+    feature_path = artifact_dir / f"probe_features_epoch_{supcon_epoch}_{args.train_set_linear_layer}_{args.eval_split}.pt"
     feature_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"train": train_features.tensors, "evaluation": val_features.tensors,
                 "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
