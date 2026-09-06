@@ -1,9 +1,10 @@
 #!/bin/bash
 #
 # One-command entrypoint for docs/ACTIVE_PLAN.md, stage 1.
-# It validates the frozen artifacts, locks both experiment manifests, then
-# submits prepare -> GPU arrays -> summaries -> final read-only report using
-# Slurm dependencies.  The launcher itself does not allocate a GPU.
+# It validates the frozen artifacts, locks and prepares both experiment
+# manifests in the master job, then submits GPU arrays -> summaries -> final
+# read-only report using Slurm dependencies. The launcher itself does not
+# allocate a GPU.
 #
 # Usage:
 #   sbatch scripts/run_active_plan_stage1.sbatch
@@ -92,6 +93,9 @@ lock_one() {
     python -u -m scripts.tools.run_crp_controls \
         --config "${output}" \
         --validate-only
+    python -u -m scripts.tools.run_crp_controls \
+        --config "${output}" \
+        --prepare-only
 }
 
 LOCKED_L05="${PROJECT_DIR}/outputs/crp_lambda05_replication_s34/locked_config.json"
@@ -107,24 +111,22 @@ submit() {
     printf '%s\n' "${job_id}"
 }
 
-PREP_L05="$(submit "${PROJECT_DIR}/scripts/prepare_crp_lambda05_replication_s34.sbatch")"
-PREP_RAW02="$(submit "${PROJECT_DIR}/scripts/prepare_raw_lambda02_replication_s34.sbatch")"
-ARRAY_L05="$(submit --dependency="afterok:${PREP_L05}" "${PROJECT_DIR}/scripts/crp_lambda05_replication_s34_array.sbatch")"
-ARRAY_RAW02="$(submit --dependency="afterok:${PREP_RAW02}" "${PROJECT_DIR}/scripts/raw_lambda02_replication_s34_array.sbatch")"
+ARRAY_L05="$(submit "${PROJECT_DIR}/scripts/crp_lambda05_replication_s34_array.sbatch")"
+ARRAY_RAW02="$(submit "${PROJECT_DIR}/scripts/raw_lambda02_replication_s34_array.sbatch")"
 SUMMARY_L05="$(submit --dependency="afterany:${ARRAY_L05}" "${PROJECT_DIR}/scripts/summarize_crp_lambda05_replication_s34.sbatch")"
 SUMMARY_RAW02="$(submit --dependency="afterany:${ARRAY_RAW02}" "${PROJECT_DIR}/scripts/summarize_raw_lambda02_replication_s34.sbatch")"
 FINAL_SUMMARY="$(submit --dependency="afterany:${SUMMARY_L05}:${SUMMARY_RAW02}" "${PROJECT_DIR}/scripts/summarize_crp_replication_stage1.sbatch")"
 
 MANIFEST="${PROJECT_DIR}/outputs/crp_replication_stage1/slurm_jobs_${SLURM_JOB_ID}.json"
-python - "${MANIFEST}" "${PREP_L05}" "${ARRAY_L05}" "${SUMMARY_L05}" "${PREP_RAW02}" "${ARRAY_RAW02}" "${SUMMARY_RAW02}" "${FINAL_SUMMARY}" <<'PY'
+python - "${MANIFEST}" "${ARRAY_L05}" "${SUMMARY_L05}" "${ARRAY_RAW02}" "${SUMMARY_RAW02}" "${FINAL_SUMMARY}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 names = [
-    "prepare_lambda05", "array_lambda05", "summary_lambda05",
-    "prepare_raw_lambda02", "array_raw_lambda02", "summary_raw_lambda02",
+    "array_lambda05", "summary_lambda05",
+    "array_raw_lambda02", "summary_raw_lambda02",
     "final_summary",
 ]
 payload = {name: job_id for name, job_id in zip(names, sys.argv[2:])}

@@ -141,9 +141,10 @@ sbatch scripts/run_active_plan_stage1.sbatch
 ```
 
 The launcher verifies the frozen cache/graph fingerprints, locks the two
-replication manifests, and submits the prepare jobs, six GPU runs, branch
-summaries, and final read-only report through Slurm dependencies. It does not
-rebuild the frozen cache or graph and does not start conditional stages 2/3.
+replication manifests and prepares them inside the master job, then submits
+the six GPU runs, branch summaries, and final read-only report through Slurm
+dependencies. It does not rebuild the frozen cache or graph and does not start
+conditional stages 2/3.
 
 Results are written below:
 
