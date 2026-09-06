@@ -140,6 +140,12 @@ command:
 sbatch scripts/run_active_plan_stage1.sbatch
 ```
 
+The launcher uses the `grgrie-train` Conda environment by default. If the
+environment has another name, set it explicitly, for example
+`SPLICE_CONDA_ENV=my-env sbatch scripts/run_active_plan_stage1.sbatch`. Each
+job uses `${CONDA_PREFIX}/bin/python` and prints the resolved interpreter and
+`sklearn` location before doing any work.
+
 The launcher verifies the frozen cache/graph fingerprints, locks the two
 replication manifests and prepares them inside the master job, then submits
 the six GPU runs, branch summaries, and final read-only report through Slurm

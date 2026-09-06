@@ -14,11 +14,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 cd "${PROJECT_DIR}"
 mkdir -p output
-module purge
-module load miniforge3/latest
-. "${ANACONDA_HOME}/etc/profile.d/conda.sh"
-conda activate "${CONDA_ENV:-grgrie-train}"
-export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+source "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
 
-python -u -m scripts.tools.summarize_crp_replication \
+"${PYTHON_BIN}" -u -m scripts.tools.summarize_crp_replication \
     --config "${PROJECT_DIR}/scripts/crp_replication_stage1_summary.conf"

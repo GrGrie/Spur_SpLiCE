@@ -10,7 +10,7 @@
 #   sbatch scripts/run_active_plan_stage1.sbatch
 #
 # Optional environment variables are intentionally limited to cluster paths:
-#   PROJECT_DIR=/home/... CONDA_ENV=... sbatch scripts/run_active_plan_stage1.sbatch
+#   PROJECT_DIR=/home/... SPLICE_CONDA_ENV=... sbatch scripts/run_active_plan_stage1.sbatch
 #
 #SBATCH --time=00:30:00
 #SBATCH --job-name=splice_active_plan_s1
@@ -25,16 +25,12 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
-CONDA_ENV="${CONDA_ENV:-grgrie-train}"
-export PROJECT_DIR CONDA_ENV
+SPLICE_CONDA_ENV="${SPLICE_CONDA_ENV:-grgrie-train}"
+export PROJECT_DIR SPLICE_CONDA_ENV
 cd "${PROJECT_DIR}"
 mkdir -p output outputs/crp_replication_stage1
 
-module purge
-module load miniforge3/latest
-. "${ANACONDA_HOME}/etc/profile.d/conda.sh"
-conda activate "${CONDA_ENV}"
-export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+source "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
 
 SOURCE_OUTPUT="${PROJECT_DIR}/outputs/crp_controls_logistic_v1_cluster_seeds12"
 EXPECTED_CACHE="46b1c1fc552769dfbb9c6543347e1a2b"
@@ -42,7 +38,7 @@ EXPECTED_CRP="c50667264bc17a5ef0152a350f0f990c"
 EXPECTED_RAW="c81c93e6f316f69249176929c9d3c4a4"
 
 echo "Validating frozen cache and graphs before submitting training jobs."
-python - "${SOURCE_OUTPUT}" "${EXPECTED_CACHE}" "${EXPECTED_CRP}" "${EXPECTED_RAW}" <<'PY'
+"${PYTHON_BIN}" - "${SOURCE_OUTPUT}" "${EXPECTED_CACHE}" "${EXPECTED_CRP}" "${EXPECTED_RAW}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -86,14 +82,14 @@ lock_one() {
     local template="$1"
     local output="$2"
     mkdir -p "$(dirname "${output}")"
-    python -u -m scripts.tools.lock_crp_followup \
+    "${PYTHON_BIN}" -u -m scripts.tools.lock_crp_followup \
         --template "${PROJECT_DIR}/scripts/${template}" \
         --source-output "${SOURCE_OUTPUT}" \
         --output "${output}"
-    python -u -m scripts.tools.run_crp_controls \
+    "${PYTHON_BIN}" -u -m scripts.tools.run_crp_controls \
         --config "${output}" \
         --validate-only
-    python -u -m scripts.tools.run_crp_controls \
+    "${PYTHON_BIN}" -u -m scripts.tools.run_crp_controls \
         --config "${output}" \
         --prepare-only
 }
@@ -105,7 +101,7 @@ lock_one "raw_lambda02_replication_s34.conf" "${LOCKED_RAW02}"
 
 submit() {
     local job_id
-    job_id="$(sbatch --parsable --export=ALL,PROJECT_DIR="${PROJECT_DIR}",CONDA_ENV="${CONDA_ENV}" "$@")"
+    job_id="$(sbatch --parsable --export=ALL,PROJECT_DIR="${PROJECT_DIR}",SPLICE_CONDA_ENV="${SPLICE_CONDA_ENV}" "$@")"
     job_id="${job_id%%;*}"
     echo "submitted ${1}: ${job_id}" >&2
     printf '%s\n' "${job_id}"
@@ -118,7 +114,7 @@ SUMMARY_RAW02="$(submit --dependency="afterany:${ARRAY_RAW02}" "${PROJECT_DIR}/s
 FINAL_SUMMARY="$(submit --dependency="afterany:${SUMMARY_L05}:${SUMMARY_RAW02}" "${PROJECT_DIR}/scripts/summarize_crp_replication_stage1.sbatch")"
 
 MANIFEST="${PROJECT_DIR}/outputs/crp_replication_stage1/slurm_jobs_${SLURM_JOB_ID}.json"
-python - "${MANIFEST}" "${ARRAY_L05}" "${SUMMARY_L05}" "${ARRAY_RAW02}" "${SUMMARY_RAW02}" "${FINAL_SUMMARY}" <<'PY'
+"${PYTHON_BIN}" - "${MANIFEST}" "${ARRAY_L05}" "${SUMMARY_L05}" "${ARRAY_RAW02}" "${SUMMARY_RAW02}" "${FINAL_SUMMARY}" <<'PY'
 import json
 import sys
 from pathlib import Path

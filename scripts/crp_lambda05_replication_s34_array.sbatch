@@ -16,14 +16,10 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
 cd "${PROJECT_DIR}"
-module purge
-module load miniforge3/latest
-. "${ANACONDA_HOME}/etc/profile.d/conda.sh"
-conda activate "${CONDA_ENV:-grgrie-train}"
-export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+source "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
 export OMP_NUM_THREADS=5
 export MKL_NUM_THREADS=5
 
-python -u -m scripts.tools.run_crp_controls \
+"${PYTHON_BIN}" -u -m scripts.tools.run_crp_controls \
     --config "${PROJECT_DIR}/outputs/crp_lambda05_replication_s34/locked_config.json" \
     --array-task-id "${SLURM_ARRAY_TASK_ID}"
