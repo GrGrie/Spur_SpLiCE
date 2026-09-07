@@ -1,114 +1,59 @@
 # Spur SpLiCE — project map
 
-This is the small navigation layer for the current repository.
+The research question is whether frozen sparse semantic concepts can guide
+self-supervised learning toward spurious-correlation robustness. SpLiCE-CRP is
+the main architecture. Spatial balancing and direct reconstruction transfer
+are implemented follow-ups.
 
-Its purpose is to tell an agent what the project is, where the main code lives,
-and which larger document to read only when needed.
-
-## Current direction
-
-The active method is SpLiCE-CRP v4. It uses a frozen OpenCLIP/SpLiCE model to
-produce language-aligned sparse concept activations, then constructs a label-free
-teacher graph by projecting out selected concept-group subspaces. The trainable
-student is a SimCLR ResNet whose representation is regularized toward the teacher
-relation geometry.
-
-The current CRPv4 extension is a CoBalT-style image-specific spatial amplifier in
-the exact SpLiCE vocabulary. It produces a separate balance signal that directly
-changes the SpLiCE codes used by grouping and relation construction while leaving
-the frozen cache untouched. The original VQ-based CoBalT path remains only as a
-separate legacy compatibility control.
-
-The first active control study isolates ordinary SpLiCE-CRP against SimCLR,
-CRP-sampler-only, and a matched raw-CLIP teacher. Spatial/slots are an optional
-follow-up, not a prerequisite; legacy CoBalT is excluded from this study.
-
-## Core pipeline
+## Data flow
 
 ```text
-image
-  ├─ frozen OpenCLIP → centered CLIP embedding
-  └─ frozen SpLiCE  → sparse concept codes
-                         │
-                         ├─ concept grouping and subspace projection
-                         ├─ projected kNN candidate search
-                         ├─ residual SpLiCE agreement gate (optional)
-                         └─ null-calibrated sparse teacher graph
-                                      │
-                                      └─ graph-aware batching + weighted KL
+training images -> frozen OpenCLIP + SpLiCE -> aligned cache
+  -> concept grouping -> full-subspace projection -> candidate neighbours
+  -> residual concept gate + null audit -> fixed sparse teacher graph
 
-student image views → trainable SimCLR ResNet → SimCLR loss + graph KL
+training views -> ResNet + SimCLR head -> SimCLR loss
+teacher graph -> graph-aware batches + confidence-weighted backbone KL
+frozen trained ResNet -> supervised linear probe -> validation Avg./WGA
 ```
 
-The current student objective is:
+Target and group annotations are confined to evaluation and post-hoc diagnosis.
+The balanced probe subset uses group metadata. External teacher pretraining
+uses image–text pairs. The label-free claim applies to graph discovery and SSL.
 
-```text
-L = L_SimCLR + lambda_graph * L_graph_KL
-```
+## Code navigation
 
-Graph-linked examples are not extra SimCLR positives. The relational term uses
-the fixed row-stochastic teacher graph, scheduled warm-up/decay, and anchor
-confidence. Empty graphs safely reduce training to ordinary SimCLR.
-
-## Main code map
-
-| Area | Files |
+| Responsibility | Source |
 |---|---|
-| Training entry | `spur_splice.py`, `scripts/train_crp.sbatch` |
-| CRP audit | `splice/crp.py`, `splice/graph_io.py`, `splice/crp_safe_graph.py`, `splice/crp_graph_selection.py` |
-| CRP training | `splice/crp_training.py`, `experiments/spurious_eval/training/ssl_loop.py` |
-| Group screen | `splice/crp_group_screen.py`, `scripts/tools/render_crp_group_screen.py` |
-| Historical optional diverse audit | `splice/crp_diverse.py` |
-| Cache | `scripts/tools/cache_crp_features.py` |
-| Spatial CoBalT path | `CoBalT/train_spatial.py`, `CoBalT/extract_spatial_balance.py`, `splice/spatial_balance.py` |
-| Baseline/report tools | `scripts/tools/build_crp_baseline_graphs.py`, `scripts/tools/render_concept_ablation_examples.py` |
-| Config paths | `scripts/tools/crp_config_path.py`, `scripts/train_crp.conf`, `scripts/shared_training.conf` |
-| Tests | `tests/test_splice_pipeline.py`, `tests/test_crp_group_screen.py`, `tests/test_crp_diverse.py`, `tests/test_crp_config_path.py` |
-| Converged probe | `experiments/spurious_eval/training/logistic_probe.py`, `experiments/spurious_eval/linear_probe.py` |
-| Control study / interpretation | `scripts/run_crp_controls.ps1`, `scripts/run_crp_controls.conf`, `scripts/run_crp_controls_cluster.conf`, `scripts/run_crp_controls_cluster_array.sbatch`, `scripts/crp_graph_search.conf`, `scripts/crp_graph_search_array.sbatch`, `scripts/select_crp_graph.sbatch`, `scripts/evaluate_crp_control_checkpoints.ps1`, `docs/RESEARCH_PROTOCOL.md` |
-| Staged cluster follow-up | `scripts/downstream_evaluator_diagnostic.sbatch`, `scripts/prepare_crp_controls_raw_sampler_followup.sbatch`, `scripts/run_crp_controls_raw_sampler_followup_array.sbatch`, `scripts/prepare_crp_controls_seeds34_followup.sbatch`, `scripts/run_crp_controls_seeds34_followup_array.sbatch` |
-| Probe / SpLiCE signal / graph diagnostics and small KL study | `scripts/crp_signal_checks.conf`, `scripts/tools/run_crp_signal_checks.py`, `scripts/crp_signal_diagnostics.sbatch`, `scripts/crp_signal_all.sbatch`, `docs/CRP_SIGNAL_CHECKS.md` |
+| Sparse decomposition | `splice/model.py`, `splice/splice.py`, `splice/admm.py` |
+| Frozen cache | `scripts/tools/cache_crp_features.py` |
+| Graph audit | `splice/crp.py`, `splice/graph_io.py` |
+| Graph sampler and KL | `splice/crp_training.py` |
+| Student training | `spur_splice.py`, `experiments/spurious_eval/training/ssl_loop.py` |
+| Dataset adapters | `experiments/spurious_eval/datasets/` |
+| Logistic evaluation | `experiments/spurious_eval/linear_probe.py`, `experiments/spurious_eval/training/logistic_probe.py` |
+| Group screen | `splice/crp_group_screen.py` |
+| Optional search and safe graph | `scripts/tools/search_crp_graphs.py`, `splice/crp_graph_selection.py`, `splice/crp_safe_graph.py` |
+| Spatial evidence | `CoBalT/spatial.py`, `CoBalT/train_spatial.py`, `CoBalT/extract_spatial_balance.py`, `splice/spatial_balance.py` |
+| CoBalT compatibility control | `CoBalT/train_discovery.py`, `CoBalT/train_classifier.py`, `splice/cobalt_check.py` |
+| Matched raw teacher | `scripts/tools/build_crp_baseline_graphs.py` |
+| Control orchestration | `scripts/tools/run_crp_controls.py` |
+| Saved-probe and signal checks | `scripts/tools/check_saved_probes.py`, `scripts/tools/run_crp_signal_checks.py` |
+| Direct reconstruction transfer | `splice/concept_distillation.py`, `scripts/tools/run_concept_transfer.py` |
+| Gradient diagnostics | `scripts/tools/run_gradient_diagnostic.py` |
+| Evidence and manuscript | `paper_results.json`, `Spur_SpLiCE.tex` |
 
-## Canonical commands
+## Experiment state
 
-```bash
-sbatch scripts/cache_openimages_crp.sbatch
-sbatch scripts/crpv4_group_screen.sbatch
-sbatch scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
-sbatch CoBalT/scripts/prepare_crpv4_spatial.sbatch
-sbatch scripts/train_crp.sbatch
-sbatch scripts/concept_ablation_examples.sbatch
-sbatch scripts/train_kl_only.sbatch
-sbatch scripts/prepare_crp_controls_cluster.sbatch
-sbatch scripts/run_crp_controls_cluster_array.sbatch
-sbatch scripts/summarize_crp_controls_cluster.sbatch
-sbatch scripts/downstream_evaluator_diagnostic.sbatch
-sbatch scripts/prepare_crp_controls_raw_sampler_followup.sbatch
-sbatch scripts/run_crp_controls_raw_sampler_followup_array.sbatch
-sbatch scripts/summarize_crp_controls_raw_sampler_followup.sbatch
-sbatch scripts/prepare_crp_controls_seeds34_followup.sbatch
-sbatch scripts/run_crp_controls_seeds34_followup_array.sbatch
-sbatch scripts/summarize_crp_controls_seeds34_followup.sbatch
-sbatch scripts/crp_graph_search_array.sbatch
-sbatch scripts/select_crp_graph.sbatch
-sbatch scripts/crp_signal_diagnostics.sbatch
-sbatch scripts/prepare_crp_transfer_weights.sbatch
-sbatch scripts/crp_transfer_weights_array.sbatch
-sbatch scripts/summarize_crp_transfer_weights.sbatch
-```
+- The four-seed main study compares five arms at 500 epochs and KL weight 2.
+- The weight screen compares CRP and raw CLIP at 0.2 and 0.5 on seeds 1 and 2.
+- Frozen representations, saved-probe integrity and graph localization have
+  completed reports in `tmp/crp_signal_checks_v1`.
+- Direct transfer is configured in `scripts/concept_transfer_v1.conf` and
+  submitted through `scripts/run_next_tests_2026-09-07.sbatch`.
+- Spatial variants and direct transfer have no completed student result in the
+  retained evidence. Keep their evaluation separate from the main CRP tables.
 
-Edit the referenced `.conf` file before launch. Full SSL training must keep W&B
-enabled; disable it only for an explicit smoke test or local debugging.
-
-## What to read next
-
-- For the completed seed-3/4 replication and the proposed next experiment:
-  `docs/REPLICATION_REVIEW_2026-09-07.md` and `docs/ACTIVE_PLAN.md`
-- For current method/architecture details:
-  `docs/CURRENT_METHOD.md`
-- For experiments, probes, evaluation, reproducibility, and supported claims:
-  `docs/EXPERIMENT_PROTOCOL.md`
-- For an older method, result, launcher, reporting snapshot, or design decision:
-  search `docs/Project History.md` for the relevant term/date.
-
-Do not read all three large documents by default.
+Use [scripts/README.md](scripts/README.md) for commands and the manuscript for
+exact settings and limitations. The generic `train_crp.conf` is not the locked
+configuration of every historical experiment.

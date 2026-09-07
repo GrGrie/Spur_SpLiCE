@@ -86,10 +86,7 @@ def simclr_forward_loss(
     model: SimCLRModel,
     criterion: SimCLRLoss,
     image,
-    splice_concepts=None,
-    targets=None,
     splice_regularizer=None,
-    metadata=None,
     sample_indices=None,
     simclr_weight: float = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
@@ -148,23 +145,7 @@ def simclr_forward_loss(
                 "_embeddings": embeddings,
             }
             return loss, parts, bsz
-        repeated_concepts = None
-        repeated_targets = None
-        if splice_concepts is not None:
-            repeated_concepts = torch.cat([splice_concepts, splice_concepts], dim=0)
-        if targets is not None:
-            repeated_targets = torch.cat([targets, targets], dim=0)
-        if getattr(splice_regularizer, "requires_oracle_metadata", False):
-            if metadata is None:
-                raise ValueError("Oracle relational regularization requires batch metadata.")
-            repeated_targets = torch.cat([metadata, metadata], dim=0)
-        regularized_embeddings = embeddings
-        if getattr(splice_regularizer, "requires_clip_distillation", False):
-            if model.clip_distillation_head is None:
-                raise ValueError("SpLiCE synthesis distillation requires a g_clip head.")
-            regularized_embeddings = model.clip_distillation_head(embeddings)
-        splice_loss = splice_regularizer(regularized_embeddings, repeated_concepts, repeated_targets)
-        loss = loss + splice_loss
+        raise ValueError("Unsupported SSL regularizer.")
     parts = {
         "simclr": simclr_loss,
         "decor": decor_loss,
@@ -215,17 +196,6 @@ def train_one_epoch(
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
         crp_training = getattr(splice_regularizer, "requires_crp_indices", False)
         concept_transfer = getattr(splice_regularizer, "requires_concept_transfer", False)
-        targets = None if (crp_training or concept_transfer) else data[1].to(args.device, non_blocking=True)
-        metadata = (
-            data[2].to(args.device, non_blocking=True)
-            if getattr(splice_regularizer, "requires_oracle_metadata", False)
-            else None
-        )
-        splice_concepts = (
-            data[3].to(args.device, non_blocking=True)
-            if len(data) > 3 and not crp_training
-            else None
-        )
         sample_indices = data[1] if (crp_training or concept_transfer) else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
@@ -238,10 +208,7 @@ def train_one_epoch(
                 model,
                 criterion,
                 image,
-                splice_concepts,
-                targets,
-                splice_regularizer,
-                metadata=metadata,
+                splice_regularizer=splice_regularizer,
                 sample_indices=sample_indices,
                 simclr_weight=getattr(args, "simclr_weight", 1.0),
             )
@@ -269,10 +236,7 @@ def train_one_epoch(
                 model,
                 criterion,
                 image,
-                splice_concepts,
-                targets,
-                splice_regularizer,
-                metadata=metadata,
+                splice_regularizer=splice_regularizer,
                 sample_indices=sample_indices,
                 simclr_weight=getattr(args, "simclr_weight", 1.0),
             )

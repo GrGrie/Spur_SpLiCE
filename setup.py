@@ -24,7 +24,8 @@ setup(
     description="SpLiCE-guided spurious-correlation experiments for self-supervised learning",
     author="Alex Oesterling, Usha Bhalla",
     author_email="aoesterling@g.harvard.edu, usha_bhalla@g.harvard.edu",
-    py_modules=["spur_splice", "linear_probe", "splice_cbm"],
+    py_modules=["spur_splice", "linear_probe"],
     packages=find_packages(exclude=["data*", "helpers*", "tests*"]),
     install_requires=_read_requirements(requirements_path),
+    extras_require={"test": ["pytest>=8"]},
 )

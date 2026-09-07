@@ -1,7 +1,8 @@
 # Experiment launchers
 
-The maintained CRPv4 workflow separates cheap concept-group screening from full
-teacher-graph construction and SSL training.
+The main workflow constructs a frozen CRP teacher graph and trains a SimCLR
+student with matched controls. Spatial CRPv4 screening is optional. The current
+direct reconstruction-transfer experiment has its own matched baseline.
 
 ## 1. Frozen feature cache
 
@@ -95,8 +96,8 @@ Use `-SkipMiniAudit` when iterating only on reconstruction and visual grouping.
 
 ## 4. Full frozen graph audit
 
-Only configurations that receive a satisfactory group report should proceed to
-the full null-calibrated teacher graph:
+The ordinary CRP pipeline builds the full null-calibrated teacher graph directly.
+Spatial prototype screening provides an additional diagnostic:
 
 ```bash
 sbatch scripts/SpLiCE_CRP_v2_frozen_audit.sbatch
@@ -133,8 +134,8 @@ explicit smoke test or local debugging.
 
 ## 6. Active plan stage 1: one-command replication
 
-The fixed stage-1 experiment from `docs/ACTIVE_PLAN.md` is submitted with one
-command:
+The fixed replication configured in `crp_lambda05_replication_s34.conf` and
+`raw_lambda02_replication_s34.conf` is submitted with one command:
 
 ```bash
 sbatch scripts/run_active_plan_stage1.sbatch

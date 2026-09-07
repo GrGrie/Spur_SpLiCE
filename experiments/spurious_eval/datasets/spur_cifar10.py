@@ -11,15 +11,11 @@ from torchvision import datasets, transforms
 
 from experiments.spurious_eval.metrics import compute_group_metrics
 from experiments.spurious_eval.datasets.augmentation import (
-    StrongAugmentationConfig,
-    build_standard_and_strong_ssl_transforms,
+    build_ssl_transform,
 )
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
 from experiments.spurious_eval.datasets.transforms import (
-    ConceptAwareSSLSubset,
-    ConceptAwareTwoCropTransform,
     TwoCropTransform,
-    build_augmentation_routing,
 )
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -28,7 +24,6 @@ from experiments.spurious_eval.datasets.wilds_compat import (
     get_ssl_train_loader,
     get_train_loader,
 )
-from splice.ssl_regularization import dataset_score_cache_key
 
 
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
@@ -59,28 +54,10 @@ LINE_COLORS = [
 ]
 
 
-class RecolorHorizontalLine:
-    """Break the synthetic class/line-colour shortcut in a counterfactual view."""
-
-    def __init__(self, line_width: int, colors=LINE_COLORS) -> None:
-        self.line_width = max(1, int(line_width))
-        self.colors = list(colors)
-
-    def __call__(self, image: Image.Image) -> Image.Image:
-        image = image.copy()
-        draw = ImageDraw.Draw(image)
-        width, height = image.size
-        half_width = self.line_width // 2
-        center_y = height // 2
-        y0 = max(0, center_y - half_width)
-        y1 = min(height - 1, y0 + self.line_width - 1)
-        color_index = int(torch.randint(len(self.colors), size=(1,)).item())
-        draw.rectangle([0, y0, width - 1, y1], fill=self.colors[color_index])
-        return image
 
 
 @dataclass(frozen=True)
-class SpurCIFAR10Config(StrongAugmentationConfig):
+class SpurCIFAR10Config:
     root_dir: str = "./datasets"
     image_size: int = 32
     train_split: str = "ds_train"
@@ -97,20 +74,13 @@ class SpurCIFAR10Config(StrongAugmentationConfig):
 def spur_cifar10_transforms(
     image_size: int = 32,
     ssl_crop_min: float = 0.2,
-    strong_config: SpurCIFAR10Config | None = None,
-) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
+) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
     normalize = transforms.Normalize(mean=CIFAR10_MEAN, std=CIFAR10_STD)
-    strong_config = strong_config or SpurCIFAR10Config(image_size=image_size, ssl_crop_min=ssl_crop_min)
-    ssl_train_transform, strong_ssl_train_transform = build_standard_and_strong_ssl_transforms(
-        image_size=image_size,
-        ssl_crop_min=ssl_crop_min,
-        normalize=normalize,
-        strong_config=strong_config,
+    ssl_train_transform = build_ssl_transform(
+        image_size=image_size, crop_min=ssl_crop_min,
+        color_jitter=(0.4, 0.4, 0.4, 0.1), color_jitter_p=0.8,
+        grayscale_p=0.2, normalize=normalize,
     )
-    if strong_config.splice_strong_line_recolor:
-        strong_ssl_train_transform = transforms.Compose(
-            [RecolorHorizontalLine(strong_config.line_width), strong_ssl_train_transform]
-        )
     linear_train_transform = transforms.Compose(
         [
             transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
@@ -126,7 +96,7 @@ def spur_cifar10_transforms(
             normalize,
         ]
     )
-    return ssl_train_transform, strong_ssl_train_transform, linear_train_transform, eval_transform
+    return ssl_train_transform, linear_train_transform, eval_transform
 
 
 class SpurCIFAR10Dataset(WILDSDataset):
@@ -261,7 +231,7 @@ def make_spur_cifar10_loaders(
     if num_workers is not None:
         train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
         eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, _, linear_train_transform, eval_transform = spur_cifar10_transforms(config.image_size)
+    _, linear_train_transform, eval_transform = spur_cifar10_transforms(config.image_size)
     full_dataset = SpurCIFAR10Dataset(
         config.root_dir,
         val_fraction=config.val_fraction,
@@ -282,20 +252,16 @@ def make_spur_cifar10_ssl_loader(
     config: SpurCIFAR10Config,
     batch_size: int,
     num_workers: int | None = None,
-    concept_scorer=None,
     splice_mode: str = "none",
-    splice_score_threshold: float | None = None,
-    splice_score_quantile: float = 0.75,
-    splice_routing_mode: str = "semantic",
-    splice_routing_seed: int = 0,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
+    if splice_mode not in {"none", "crp_relational"}:
+        raise ValueError(f"Unsupported SSL mode for this dataset: {splice_mode}")
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, strong_ssl_train_transform, _, _ = spur_cifar10_transforms(
+    ssl_train_transform, _, _ = spur_cifar10_transforms(
         config.image_size,
         ssl_crop_min=config.ssl_crop_min,
-        strong_config=config,
     )
     full_dataset = SpurCIFAR10Dataset(
         config.root_dir,
@@ -306,47 +272,7 @@ def make_spur_cifar10_ssl_loader(
         line_width=config.line_width,
         download=config.download,
     )
-    if splice_mode in {"augment", "corr_reg", "augment_corr_reg", "synthesis_distill"}:
-        if concept_scorer is None:
-            raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
-        score_subset = full_dataset.get_subset("train", transform=None)
-        cache_key = dataset_score_cache_key("spur_cifar10", full_dataset, "train")
-        if splice_mode == "synthesis_distill":
-            concept_weights = concept_scorer.synthesis_targets_dataset(
-                score_subset,
-                cache_key=cache_key,
-                spurious_metadata_index=0,
-            )
-            scores = torch.zeros(len(score_subset))
-        else:
-            concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
-            scores = concept_scorer.reduce_selected_weights(concept_weights)
-        uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
-        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"}
-        if uses_augmentation:
-            routing_scores, resolved_threshold, semantic_threshold = build_augmentation_routing(
-                scores,
-                splice_score_threshold,
-                splice_score_quantile,
-                mode=splice_routing_mode,
-                seed=splice_routing_seed,
-            )
-        else:
-            routing_scores, resolved_threshold, semantic_threshold = scores, float("inf"), None
-        train_dataset = ConceptAwareSSLSubset(
-            score_subset,
-            routing_scores,
-            ConceptAwareTwoCropTransform(
-                ssl_train_transform,
-                strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
-                resolved_threshold,
-            ),
-            concept_weights=concept_weights if uses_regularizer else None,
-            routing_mode=splice_routing_mode if uses_augmentation else "disabled",
-            semantic_threshold=semantic_threshold,
-        )
-    else:
-        train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
+    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
     return get_ssl_train_loader(
         "standard",
         train_dataset,
@@ -368,7 +294,7 @@ def make_spur_cifar10_rank_loader(
 
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    _, _, _, eval_transform = spur_cifar10_transforms(config.image_size)
+    _, _, eval_transform = spur_cifar10_transforms(config.image_size)
     full_dataset = SpurCIFAR10Dataset(
         config.root_dir,
         val_fraction=config.val_fraction,

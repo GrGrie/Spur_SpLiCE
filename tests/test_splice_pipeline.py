@@ -11,25 +11,10 @@ import scipy.sparse as sparse
 import torch
 
 from experiments.spurious_eval.datasets.celeba import CelebADataset
-from experiments.spurious_eval.datasets.transforms import (
-    ConceptAwareTwoCropTransform,
-    build_augmentation_routing,
-)
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
-from experiments.spurious_eval.splice_cbm import zero_sparse_columns
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
-from splice.ssl_regularization import (
-    CorrelationSpliceRegularizer,
-    OracleRelationalRegularizer,
-    SpliceSynthesisDistillation,
-    SpliceConfig,
-    edit_spurious_concept_weights,
-    random_dictionary_indices,
-    residual_preserving_intervention,
-    score_cache_path,
-)
 from splice.crp import (
     CRP_V4_GRAPH_VERSION,
     CrpAuditConfig,
@@ -61,14 +46,6 @@ from splice.splice import (
 )
 import spur_splice
 from spur_splice import resolve_epoch_schedule
-from scripts.tools.discover_splice_spurious_concepts import (
-    SparseConceptWeights,
-    UtilityProbeFold,
-    evaluate_concept_set_utility,
-    evaluate_single_concept_utility,
-    fit_cross_fitted_sparse_probes,
-    rank_concepts,
-)
 from scripts.tools.cache_crp_features import IndexedImages
 
 
@@ -76,10 +53,9 @@ class SplicePipelineTests(unittest.TestCase):
     def test_openimages_v7_is_the_default_vocabulary(self):
         self.assertEqual(DEFAULT_VOCABULARY, "openimages_v7")
         self.assertEqual(DEFAULT_VOCABULARY_SIZE, -1)
-        self.assertEqual(SpliceConfig().vocab, DEFAULT_VOCABULARY)
-        self.assertEqual(SpliceConfig().vocab_size, DEFAULT_VOCABULARY_SIZE)
-        with patch("sys.argv", ["spur_splice.py"]):
-            args = spur_splice.parse_args()
+        from scripts.tools.cache_crp_features import parse_args
+        with patch("sys.argv", ["cache_crp_features.py", "--dataset", "waterbirds", "--data-folder", ".", "--output", "cache.pt"]):
+            args = parse_args()
         self.assertEqual(args.splice_vocab, DEFAULT_VOCABULARY)
         self.assertEqual(args.splice_vocab_size, DEFAULT_VOCABULARY_SIZE)
 
@@ -568,7 +544,7 @@ class SplicePipelineTests(unittest.TestCase):
             batch_size=2,
             num_workers=0,
             seed=0,
-            crp_teacher_graph="teacher_graph.json",
+            crp_teacher_graph=str(Path(tempfile.gettempdir()) / "splice_test_empty_graph.json"),
             crp_graph_fingerprint="digest",
             splice_score_threshold=None,
             splice_score_quantile=0.75,
@@ -733,347 +709,24 @@ class SplicePipelineTests(unittest.TestCase):
             torch.testing.assert_close(dataset.metadata_array[:, 0], torch.tensor([1, 0, 1, 0]))
             self.assertEqual(dataset.metadata_fields, ["gender", "y"])
 
-    def test_targeted_transform_keeps_one_standard_view(self):
-        transform = ConceptAwareTwoCropTransform(lambda _: "standard", lambda _: "strong", threshold=0.5)
-        self.assertEqual(transform(object(), 0.7), ["standard", "strong"])
-        self.assertEqual(transform(object(), 0.2), ["standard", "standard"])
 
-    def test_routing_controls_match_the_semantic_augmentation_budget(self):
-        scores = torch.tensor([0.0, 1.0, 2.0, 3.0])
-        semantic, semantic_threshold, _ = build_augmentation_routing(scores, None, 0.5, "semantic", seed=7)
-        shuffled, shuffled_threshold, _ = build_augmentation_routing(scores, None, 0.5, "shuffled", seed=7)
-        random, random_threshold, _ = build_augmentation_routing(scores, None, 0.5, "random", seed=7)
-        all_scores, all_threshold, _ = build_augmentation_routing(scores, None, 0.5, "all", seed=7)
 
-        semantic_count = int((semantic >= semantic_threshold).sum())
-        self.assertEqual(int((shuffled >= shuffled_threshold).sum()), semantic_count)
-        self.assertEqual(int((random >= random_threshold).sum()), semantic_count)
-        self.assertEqual(int((all_scores >= all_threshold).sum()), len(scores))
-        torch.testing.assert_close(torch.sort(shuffled).values, torch.sort(scores).values)
-        repeated, _, _ = build_augmentation_routing(scores, None, 0.5, "random", seed=7)
-        torch.testing.assert_close(random, repeated)
 
-    def test_conditional_regularizer_ignores_target_only_signal(self):
-        targets = torch.tensor([0, 0, 1, 1])
-        concepts = targets.float().unsqueeze(1)
-        embeddings = torch.stack([targets.float(), targets.float()], dim=1).requires_grad_()
-        conditional_loss = CorrelationSpliceRegularizer(1.0, conditional_on_target=True)(
-            embeddings, concepts, targets
-        )
-        unconditional_loss = CorrelationSpliceRegularizer(1.0, conditional_on_target=False)(
-            embeddings, concepts, targets
-        )
-        self.assertEqual(float(conditional_loss), 0.0)
-        self.assertGreater(float(unconditional_loss), 0.9)
 
-    def test_conditional_regularizer_penalizes_within_target_concepts(self):
-        targets = torch.tensor([0, 0, 0, 1, 1, 1])
-        concepts = torch.tensor([[0.0], [1.0], [2.0], [0.0], [1.0], [2.0]])
-        embeddings = torch.tensor(
-            [[0.1, 0.0], [0.7, 1.2], [2.2, 1.8], [0.0, 0.2], [1.4, 0.8], [1.7, 2.4]],
-            requires_grad=True,
-        )
-        loss = CorrelationSpliceRegularizer(0.25, conditional_on_target=True)(embeddings, concepts, targets)
-        loss.backward()
-        self.assertGreater(float(loss), 0.15)
-        self.assertGreater(float(embeddings.grad.norm()), 0.0)
 
-    def test_residual_preserving_intervention_changes_only_selected_direction_before_normalization(self):
-        embeddings = torch.tensor([[0.6, 0.8, 0.0]])
-        weights = torch.tensor([[0.2]])
-        edited = torch.tensor([[0.0]])
-        directions = torch.tensor([[1.0, 0.0, 0.0]])
-        actual = residual_preserving_intervention(embeddings, weights, edited, directions, strength=0.5)
-        expected = torch.nn.functional.normalize(torch.tensor([[0.5, 0.8, 0.0]]), dim=1)
-        torch.testing.assert_close(actual, expected)
 
-    def test_synthesis_edits_include_neutralize_swap_and_donor_controls(self):
-        weights = torch.tensor([[0.0], [2.0], [10.0], [12.0]])
-        embeddings = torch.tensor(
-            [[0.0, 1.0, 0.0], [2.0, 0.0, 1.0], [10.0, 0.9, 0.1], [12.0, 0.1, 0.9]]
-        )
-        directions = torch.tensor([[1.0, 0.0, 0.0]])
-        targets = torch.zeros(4, dtype=torch.long)
-        spurious = torch.tensor([0, 0, 1, 1])
-        neutralized = edit_spurious_concept_weights(
-            "class_neutralize", weights, embeddings, directions, targets, spurious
-        )
-        torch.testing.assert_close(neutralized, torch.full_like(weights, 2.0))
-        matched = edit_spurious_concept_weights(
-            "core_matched_swap", weights, embeddings, directions, targets, spurious
-        )
-        torch.testing.assert_close(matched, torch.tensor([[10.0], [12.0], [0.0], [2.0]]))
-        same_class = edit_spurious_concept_weights(
-            "same_class_random_donor", weights, embeddings, directions, targets, spurious, seed=3
-        )
-        self.assertTrue(torch.all(same_class != weights))
-        zeroed = edit_spurious_concept_weights(
-            "zero_out", weights, embeddings, directions, targets, spurious
-        )
-        torch.testing.assert_close(zeroed, torch.zeros_like(weights))
 
-    def test_random_coordinate_control_excludes_selected_coordinates(self):
-        indices = random_dictionary_indices(5, [1, 3], count=2, seed=7)
-        self.assertEqual(len(indices), 2)
-        self.assertTrue(set(indices).isdisjoint({1, 3}))
 
-    def test_synthesis_distillation_stops_teacher_gradients(self):
-        predictions = torch.tensor([[1.0, 0.0], [0.0, 1.0]], requires_grad=True)
-        teacher = torch.tensor([[0.0, 1.0], [0.0, 1.0]], requires_grad=True)
-        loss = SpliceSynthesisDistillation(0.5)(predictions, teacher)
-        loss.backward()
-        self.assertGreater(float(predictions.grad.norm()), 0.0)
-        self.assertIsNone(teacher.grad)
 
-    def test_oracle_relational_regularizer_uses_same_target_opposite_spurious_pairs(self):
-        metadata = torch.tensor([[0, 0], [1, 0], [0, 1]])
-        aligned = torch.tensor([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        separated = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0]])
-        regularizer = OracleRelationalRegularizer(1.0)
-        aligned_loss = regularizer(aligned, targets=metadata)
-        separated_loss = regularizer(separated, targets=metadata)
-        self.assertLess(float(aligned_loss), float(separated_loss))
 
-    def test_oracle_relational_metadata_reaches_ssl_loss(self):
-        class TinyEncoder(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.encoder = torch.nn.Linear(2, 3)
-                self.head = torch.nn.Linear(3, 2)
 
-        model = TinyEncoder()
-        images = [
-            torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
-            torch.tensor([[0.9, 0.1], [0.1, 0.9], [0.8, 0.8]]),
-        ]
-        metadata = torch.tensor([[0, 0], [1, 0], [0, 1]])
-        loss, parts, _ = simclr_forward_loss(
-            model,
-            SimCLRLoss(temperature=0.1),
-            images,
-            None,
-            metadata[:, 1],
-            OracleRelationalRegularizer(0.1),
-            metadata=metadata,
-        )
-        loss.backward()
-        self.assertGreater(float(model.encoder.weight.grad.norm()), 0.0)
-        self.assertGreater(float(parts["splice"]), 0.0)
 
-    def test_synthesis_mode_trains_simclr_and_clip_distillation_heads(self):
-        class TinyTwoHead(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.encoder = torch.nn.Linear(2, 3, bias=False)
-                self.head = torch.nn.Linear(3, 2, bias=False)
-                self.clip_distillation_head = torch.nn.Linear(3, 2, bias=False)
 
-        model = TinyTwoHead()
-        images = [
-            torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
-            torch.tensor([[0.8, 0.2], [0.2, 0.8]]),
-        ]
-        teacher = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
-        loss, _, _ = simclr_forward_loss(
-            model,
-            SimCLRLoss(temperature=0.1),
-            images,
-            teacher,
-            torch.tensor([0, 1]),
-            SpliceSynthesisDistillation(0.5),
-        )
-        loss.backward()
-        self.assertGreater(float(model.head.weight.grad.norm()), 0.0)
-        self.assertGreater(float(model.clip_distillation_head.weight.grad.norm()), 0.0)
 
-    def test_sparse_discovery_storage_selects_concepts_without_dense_vocab(self):
-        weights = SparseConceptWeights(
-            rows=torch.tensor([0, 0, 1, 2]),
-            columns=torch.tensor([1, 5, 5, 9]),
-            values=torch.tensor([0.1, 0.2, 0.3, 0.4]),
-            n_rows=3,
-            n_columns=10,
-        )
-        torch.testing.assert_close(
-            weights.select_columns([5, 1]),
-            torch.tensor([[0.2, 0.1], [0.3, 0.0], [0.0, 0.0]]),
-        )
 
-    def test_intervention_utility_rewards_repairs_and_penalizes_damage(self):
-        features = sparse.csc_matrix(
-            np.asarray(
-                [
-                    [1.0, 0.0],
-                    [0.0, 0.0],
-                    [0.0, 1.0],
-                    [0.0, 0.0],
-                ]
-            )
-        )
-        logits = np.asarray(
-            [
-                [0.0, 1.0],  # wrong y=0; deleting concept 0 repairs it
-                [0.0, 2.0],
-                [1.0, 0.0],  # correct y=0; deleting concept 1 damages it
-                [0.0, 2.0],
-            ]
-        )
-        probabilities = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
-        fold = UtilityProbeFold(
-            features=features,
-            labels=np.asarray([0, 1, 0, 1]),
-            logits=logits,
-            probabilities=probabilities,
-            predictions=logits.argmax(axis=1),
-            coefficients=np.asarray([[0.0, 2.0], [2.0, 0.0]]),
-        )
-        error_support = np.asarray([1, 0])
-        correct_support = np.asarray([1, 2])
-        repair = evaluate_single_concept_utility([fold], 0, error_support, correct_support)
-        damage = evaluate_single_concept_utility([fold], 1, error_support, correct_support)
-        self.assertEqual(repair["repaired"], 1)
-        self.assertEqual(repair["damaged"], 0)
-        self.assertGreater(repair["score"], 0.0)
-        self.assertEqual(damage["repaired"], 0)
-        self.assertEqual(damage["damaged"], 1)
-        self.assertLess(damage["score"], 0.0)
 
-    def test_intervention_utility_cross_fits_binary_sparse_probe(self):
-        labels = torch.tensor([index % 2 for index in range(40)], dtype=torch.long)
-        weights = SparseConceptWeights(
-            rows=torch.arange(40, dtype=torch.long),
-            columns=labels.clone(),
-            values=torch.ones(40),
-            n_rows=40,
-            n_columns=2,
-        )
-        folds, diagnostics = fit_cross_fitted_sparse_probes(
-            weights,
-            labels,
-            argparse.Namespace(
-                utility_max_samples=0,
-                probe_cv_folds=4,
-                probe_c=1.0,
-                probe_max_iter=1000,
-                seed=7,
-            ),
-        )
-        self.assertEqual(len(folds), 4)
-        self.assertEqual(sum(len(fold.labels) for fold in folds), 40)
-        self.assertTrue(all(fold.logits.shape[1] == 2 for fold in folds))
-        self.assertEqual(diagnostics["audit_sample_count"], 40)
-        self.assertGreaterEqual(diagnostics["probe_cv_accuracy"], 0.95)
 
-    def test_joint_intervention_utility_evaluates_selected_set_exactly(self):
-        features = sparse.csc_matrix(np.asarray([[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]]))
-        logits = np.asarray([[0.0, 1.0], [2.0, 0.0], [0.0, 2.0]])
-        probabilities = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
-        fold = UtilityProbeFold(
-            features=features,
-            labels=np.asarray([0, 0, 1]),
-            logits=logits,
-            probabilities=probabilities,
-            predictions=logits.argmax(axis=1),
-            coefficients=np.asarray([[0.0, 0.0], [0.6, 0.6]]),
-        )
-        metrics = evaluate_concept_set_utility(
-            [fold],
-            [0, 1],
-            np.asarray([1, 0]),
-            np.asarray([1, 1]),
-        )
-        self.assertEqual(metrics["repaired"], 1)
-        self.assertEqual(metrics["damaged"], 0)
-        self.assertGreater(metrics["score"], 0.0)
 
-    def test_discovery_penalizes_target_specific_concept_at_full_scale(self):
-        # concept 0 varies only with the spurious value; concept 1 varies only with target.
-        group_means = {
-            (0, 0): torch.tensor([0.0, 0.0]),
-            (1, 0): torch.tensor([1.0, 0.0]),
-            (0, 1): torch.tensor([0.0, 1.0]),
-            (1, 1): torch.tensor([1.0, 1.0]),
-        }
-        args = argparse.Namespace(label_penalty=1.0, instability_penalty=1.0, use_abs_score=False, min_mean_weight=0.0, top_k=2)
-        candidates = rank_concepts(
-            ["spurious", "target"],
-            group_means,
-            {key: 1 for key in group_means},
-            torch.tensor([0.5, 0.5]),
-            torch.tensor([0, 1]),
-            torch.tensor([0, 1]),
-            {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
-            args,
-        )
-        self.assertEqual([candidate["concept"] for candidate in candidates], ["spurious"])
-
-    def test_discovery_requires_a_consistent_signed_spurious_effect(self):
-        group_means = {
-            (0, 0): torch.tensor([0.0, 0.0]),
-            (1, 0): torch.tensor([1.0, 1.0]),
-            (0, 1): torch.tensor([0.0, 1.0]),
-            (1, 1): torch.tensor([1.0, 0.0]),
-        }
-        args = argparse.Namespace(
-            label_penalty=0.0,
-            instability_penalty=0.0,
-            use_abs_score=False,
-            min_mean_weight=0.0,
-            top_k=2,
-            require_consistent_spurious_direction=True,
-            deduplicate_concepts=False,
-        )
-        candidates = rank_concepts(
-            ["consistent", "reverses"],
-            group_means,
-            {key: 1 for key in group_means},
-            torch.tensor([0.5, 0.5]),
-            torch.tensor([0, 1]),
-            torch.tensor([0, 1]),
-            {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
-            args,
-        )
-        self.assertEqual([candidate["concept"] for candidate in candidates], ["consistent"])
-
-    def test_discovery_deduplicates_plural_concept_variants(self):
-        group_means = {
-            (0, 0): torch.tensor([0.0, 0.0, 0.0]),
-            (1, 0): torch.tensor([3.0, 2.0, 1.0]),
-            (0, 1): torch.tensor([0.0, 0.0, 0.0]),
-            (1, 1): torch.tensor([3.0, 2.0, 1.0]),
-        }
-        args = argparse.Namespace(
-            label_penalty=0.0,
-            instability_penalty=0.0,
-            use_abs_score=False,
-            min_mean_weight=0.0,
-            top_k=2,
-            require_consistent_spurious_direction=True,
-            deduplicate_concepts=True,
-        )
-        candidates = rank_concepts(
-            ["signals", "signal", "anchor"],
-            group_means,
-            {key: 1 for key in group_means},
-            torch.tensor([1.5, 1.0, 0.5]),
-            torch.tensor([0, 1]),
-            torch.tensor([0, 1]),
-            {"spurious": {0: "s0", 1: "s1"}, "target": {0: "y0", 1: "y1"}},
-            args,
-        )
-        self.assertEqual([candidate["concept"] for candidate in candidates], ["signals", "anchor"])
-
-    def test_cache_fingerprint_separates_vectors_and_scalar_reductions(self):
-        config_mean = SpliceConfig(concepts="1,2", score_reduction="mean", pretrained="a")
-        config_max = SpliceConfig(concepts="1,2", score_reduction="max", pretrained="a")
-        vector_mean = score_cache_path(config_mean, 4, [1, 2], "dataset", artifact="concept_weights")
-        vector_max = score_cache_path(config_max, 4, [1, 2], "dataset", artifact="concept_weights")
-        vector_reordered = score_cache_path(config_mean, 4, [2, 1], "dataset", artifact="concept_weights")
-        score_mean = score_cache_path(config_mean, 4, [1, 2], "dataset", artifact="scores")
-        score_max = score_cache_path(config_max, 4, [1, 2], "dataset", artifact="scores")
-        self.assertEqual(vector_mean, vector_max)
-        self.assertNotEqual(vector_mean, vector_reordered)
-        self.assertNotEqual(score_mean, score_max)
 
     def test_splice_cpu_solver_returns_nonnegative_sparse_weights(self):
         model = SPLICE(
@@ -1091,10 +744,6 @@ class SplicePipelineTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             SPLICE(torch.zeros(2), torch.eye(2), solver="unsupported")
 
-    def test_sparse_cbm_intervention_zeroes_only_requested_columns(self):
-        matrix = sparse.csr_matrix(np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
-        intervened = zero_sparse_columns(matrix, [1]).toarray()
-        np.testing.assert_array_equal(intervened, np.asarray([[1.0, 0.0, 3.0], [4.0, 0.0, 6.0]]))
 
     def test_spurious_leakage_probe_reports_last_ten_metrics(self):
         features = torch.tensor(

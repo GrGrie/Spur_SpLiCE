@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# One-command entrypoint for docs/ACTIVE_PLAN.md, stage 1.
+# One-command entrypoint for the fixed CRP/raw-CLIP replication.
 # It validates the frozen artifacts, locks and prepares both experiment
 # manifests in the master job, then submits GPU arrays -> summaries -> final
 # read-only report using Slurm dependencies. The launcher itself does not
@@ -57,10 +57,10 @@ for path in identity_paths.values():
 cache_identity = json.loads(identity_paths["cache"].read_text())
 graph_identity = json.loads(identity_paths["graphs"].read_text())
 if cache_identity.get("content_id") != expected["cache"]:
-    raise SystemExit("frozen cache identity does not match ACTIVE_PLAN.md")
+    raise SystemExit("frozen cache identity does not match the locked replication")
 for name in ("crp", "raw_clip"):
     if graph_identity.get(name) != expected[name]:
-        raise SystemExit(f"frozen {name} graph identity does not match ACTIVE_PLAN.md")
+        raise SystemExit(f"frozen {name} graph identity does not match the locked replication")
 cache_path = Path(cache_identity["path"])
 graph_paths = {
     "crp": source / "graphs" / "crp_graph.json",

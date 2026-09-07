@@ -10,15 +10,11 @@ from torchvision import transforms
 
 from experiments.spurious_eval.metrics import compute_group_metrics
 from experiments.spurious_eval.datasets.augmentation import (
-    StrongAugmentationConfig,
-    build_standard_and_strong_ssl_transforms,
+    build_ssl_transform,
 )
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
 from experiments.spurious_eval.datasets.transforms import (
-    ConceptAwareSSLSubset,
-    ConceptAwareTwoCropTransform,
     TwoCropTransform,
-    build_augmentation_routing,
 )
 from experiments.spurious_eval.datasets.wilds_compat import (
     CombinatorialGrouper,
@@ -27,7 +23,6 @@ from experiments.spurious_eval.datasets.wilds_compat import (
     get_ssl_train_loader,
     get_train_loader,
 )
-from splice.ssl_regularization import dataset_score_cache_key
 
 
 WATERBIRDS_MEAN = (0.485, 0.456, 0.406)
@@ -35,7 +30,7 @@ WATERBIRDS_STD = (0.229, 0.224, 0.225)
 
 
 @dataclass(frozen=True)
-class WaterbirdsConfig(StrongAugmentationConfig):
+class WaterbirdsConfig:
     root_dir: str = "./datasets"
     image_size: int = 224
     train_split: str = "ds_train"
@@ -46,15 +41,12 @@ class WaterbirdsConfig(StrongAugmentationConfig):
 def waterbirds_transforms(
     image_size: int = 224,
     ssl_crop_min: float = 0.2,
-    strong_config: WaterbirdsConfig | None = None,
-) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose, transforms.Compose]:
+) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
     normalize = transforms.Normalize(mean=WATERBIRDS_MEAN, std=WATERBIRDS_STD)
-    strong_config = strong_config or WaterbirdsConfig(image_size=image_size, ssl_crop_min=ssl_crop_min)
-    ssl_train_transform, strong_ssl_train_transform = build_standard_and_strong_ssl_transforms(
-        image_size=image_size,
-        ssl_crop_min=ssl_crop_min,
-        normalize=normalize,
-        strong_config=strong_config,
+    ssl_train_transform = build_ssl_transform(
+        image_size=image_size, crop_min=ssl_crop_min,
+        color_jitter=(0.4, 0.4, 0.4, 0.1), color_jitter_p=0.8,
+        grayscale_p=0.2, normalize=normalize,
     )
     linear_train_transform = transforms.Compose(
         [
@@ -71,7 +63,7 @@ def waterbirds_transforms(
             normalize,
         ]
     )
-    return ssl_train_transform, strong_ssl_train_transform, linear_train_transform, eval_transform
+    return ssl_train_transform, linear_train_transform, eval_transform
 
 
 class WaterbirdsDataset(WILDSDataset):
@@ -151,7 +143,7 @@ def make_waterbirds_loaders(
     if num_workers is not None:
         train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
         eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
+    _, linear_train_transform, eval_transform = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
     train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
     eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
@@ -177,20 +169,14 @@ def make_waterbirds_ssl_loader(
     config: WaterbirdsConfig,
     batch_size: int,
     num_workers: int | None = None,
-    concept_scorer=None,
     splice_mode: str = "none",
-    splice_score_threshold: float | None = None,
-    splice_score_quantile: float = 0.75,
-    splice_routing_mode: str = "semantic",
-    splice_routing_seed: int = 0,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, strong_ssl_train_transform, _, _ = waterbirds_transforms(
+    ssl_train_transform, _, _ = waterbirds_transforms(
         config.image_size,
         ssl_crop_min=config.ssl_crop_min,
-        strong_config=config,
     )
     full_dataset = WaterbirdsDataset(config.root_dir)
     if splice_mode == "frozen_concept_distill":
@@ -216,47 +202,7 @@ def make_waterbirds_ssl_loader(
             drop_last=False,
             **loader_kwargs,
         )
-    if splice_mode in {"augment", "corr_reg", "augment_corr_reg", "synthesis_distill"}:
-        if concept_scorer is None:
-            raise ValueError("SpLiCE modes require a SpLiCE concept scorer.")
-        score_subset = full_dataset.get_subset("train", transform=None)
-        cache_key = dataset_score_cache_key("waterbirds", full_dataset, "train")
-        if splice_mode == "synthesis_distill":
-            concept_weights = concept_scorer.synthesis_targets_dataset(
-                score_subset,
-                cache_key=cache_key,
-                spurious_metadata_index=0,
-            )
-            scores = torch.zeros(len(score_subset))
-        else:
-            concept_weights = concept_scorer.concept_weights_dataset(score_subset, cache_key=cache_key)
-            scores = concept_scorer.reduce_selected_weights(concept_weights)
-        uses_augmentation = splice_mode in {"augment", "augment_corr_reg"}
-        uses_regularizer = splice_mode in {"corr_reg", "augment_corr_reg", "synthesis_distill"}
-        if uses_augmentation:
-            routing_scores, resolved_threshold, semantic_threshold = build_augmentation_routing(
-                scores,
-                splice_score_threshold,
-                splice_score_quantile,
-                mode=splice_routing_mode,
-                seed=splice_routing_seed,
-            )
-        else:
-            routing_scores, resolved_threshold, semantic_threshold = scores, float("inf"), None
-        train_dataset = ConceptAwareSSLSubset(
-            score_subset,
-            routing_scores,
-            ConceptAwareTwoCropTransform(
-                ssl_train_transform,
-                strong_ssl_train_transform if uses_augmentation else ssl_train_transform,
-                resolved_threshold,
-            ),
-            concept_weights=concept_weights if uses_regularizer else None,
-            routing_mode=splice_routing_mode if uses_augmentation else "disabled",
-            semantic_threshold=semantic_threshold,
-        )
-    else:
-        train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
+    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
     return get_ssl_train_loader(
         "standard",
         train_dataset,
@@ -278,7 +224,7 @@ def make_waterbirds_rank_loader(
 
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    _, _, _, eval_transform = waterbirds_transforms(config.image_size)
+    _, _, eval_transform = waterbirds_transforms(config.image_size)
     full_dataset = WaterbirdsDataset(config.root_dir)
     rank_dataset = full_dataset.get_subset("train", transform=eval_transform)
     return get_eval_loader(

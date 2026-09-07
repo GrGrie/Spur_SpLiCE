@@ -39,15 +39,6 @@ from splice.crp_training import (
 from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.graph_io import graph_fingerprint
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
-from splice.ssl_regularization import (
-    SpliceConceptScorer,
-    SpliceConfig,
-    build_splice_regularizer,
-    dataset_score_cache_key,
-    splice_mode_uses_scores,
-)
-from scripts.tools import discover_splice_spurious_concepts as concept_discovery
-from scripts.tools import summarize_splice_scores as score_summary
 
 
 RELATIONAL_GRAPH_MODES = {"crp_relational"}
@@ -63,246 +54,6 @@ def str_to_bool(value) -> bool:
     if value in {"false", "0", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
-
-
-def optional_bool(value: str) -> bool | None:
-    value = str(value).strip().lower()
-    if value in {"true", "yes", "y", "on"}:
-        return True
-    if value in {"", "false", "no", "n", "off", "none", "null"}:
-        return False
-    return None
-
-
-def parse_float_tuple(value: str, expected_len: int, option_name: str) -> tuple[float, ...]:
-    try:
-        values = tuple(float(part.strip()) for part in value.split(",") if part.strip())
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"{option_name} must be a comma-separated list of floats.") from exc
-    if len(values) != expected_len:
-        raise argparse.ArgumentTypeError(f"{option_name} expects {expected_len} comma-separated floats.")
-    return values
-
-
-def parse_optional_float_or_bool(value: str, default_value: float, option_name: str) -> float | None:
-    bool_value = optional_bool(value)
-    if bool_value is not None:
-        return default_value if bool_value else None
-    try:
-        return float(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"{option_name} expects true, false, or a float value.") from exc
-
-
-def parse_optional_color_jitter(value: str) -> tuple[float, float, float, float] | None:
-    bool_value = optional_bool(value)
-    if bool_value is not None:
-        return (0.8, 0.8, 0.8, 0.2) if bool_value else None
-    values = parse_float_tuple(value, 4, "--splice_strong_color_jitter")
-    return values[0], values[1], values[2], values[3]
-
-
-def parse_optional_blur_sigma(value: str) -> tuple[float, float] | None:
-    bool_value = optional_bool(value)
-    if bool_value is not None:
-        return (0.1, 2.0) if bool_value else None
-    values = parse_float_tuple(value, 2, "--splice_strong_blur_sigma")
-    return values[0], values[1]
-
-
-def validate_probability(value: float | None, option_name: str) -> None:
-    if value is not None and not 0 <= value <= 1:
-        raise argparse.ArgumentTypeError(f"{option_name} must be in the interval [0, 1].")
-
-
-def parse_splice_threshold(value: str) -> float | None:
-    if str(value).strip().lower() == "auto":
-        return None
-    threshold = float(value)
-    if threshold < 0:
-        raise argparse.ArgumentTypeError("--splice_score_threshold must be non-negative or 'auto'.")
-    return threshold
-
-
-def auto_discover_splice_concepts(args: argparse.Namespace) -> None:
-    out_dir = Path(args.splice_auto_out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    dataset_name = str(args.dataset)
-    discovery_path = out_dir / f"{dataset_name}_splice_concepts.json"
-    summary_path = out_dir / f"{dataset_name}_splice_score_summary.json"
-
-    discovery_args = argparse.Namespace(
-        dataset=args.dataset,
-        data_folder=args.data_folder,
-        split=args.splice_auto_split,
-        out_path=str(discovery_path),
-        top_k=args.splice_auto_top_k,
-        ranking_method=args.splice_auto_ranking_method,
-        per_image_top_k=args.splice_per_image_top_k,
-        target_metadata_index=None,
-        spurious_metadata_index=None,
-        batch_size=args.splice_batch_size,
-        num_workers=args.splice_num_workers,
-        device=args.device,
-        disable_cudnn=True,
-        splice_model=args.splice_model,
-        splice_pretrained=args.splice_pretrained,
-        splice_score_cache_dir=args.splice_score_cache_dir,
-        splice_vocab=args.splice_vocab,
-        splice_vocab_size=args.splice_vocab_size,
-        splice_l1_penalty=args.splice_l1_penalty,
-        min_mean_weight=args.splice_auto_min_mean_weight,
-        label_penalty=args.splice_auto_label_penalty,
-        instability_penalty=args.splice_auto_instability_penalty,
-        use_abs_score=args.splice_auto_use_abs_score,
-        require_consistent_spurious_direction=args.splice_auto_require_consistent_direction,
-        deduplicate_concepts=args.splice_auto_deduplicate_concepts,
-        gradient_step_scale=0.1,
-        gradient_score="indicator",
-        probe_c=args.splice_auto_probe_c,
-        probe_max_iter=args.splice_auto_probe_max_iter,
-        probe_cv_folds=args.splice_auto_probe_cv_folds,
-        utility_max_samples=args.splice_auto_utility_max_samples,
-        utility_candidate_pool=args.splice_auto_utility_candidate_pool,
-        utility_min_repair=args.splice_auto_utility_min_repair,
-        utility_min_marginal=args.splice_auto_utility_min_marginal,
-        seed=args.seed,
-    )
-    print(
-        "[INFO] Auto-discovering SpLiCE concepts: "
-        f"dataset={args.dataset} split={args.splice_auto_split} top_k={args.splice_auto_top_k}"
-    )
-    if args.splice_auto_ranking_method == "intervention_utility":
-        (
-            vocabulary,
-            _,
-            _,
-            labels,
-            per_image_weights,
-            discovery_dataset,
-        ) = concept_discovery.collect_embeddings_and_codes(discovery_args)
-        candidates, diagnostics = concept_discovery.rank_concepts_by_intervention_utility(
-            vocabulary,
-            per_image_weights,
-            labels,
-            discovery_args,
-        )
-        group_counts = {}
-        total_count = int(labels.numel())
-    else:
-        (
-            vocabulary,
-            group_means,
-            group_counts,
-            dataset_mean,
-            total_count,
-            spurious_values,
-            target_values,
-            metadata_names,
-            per_image_weights,
-            discovery_dataset,
-        ) = concept_discovery.decompose_by_group(discovery_args)
-        candidates = concept_discovery.rank_concepts(
-            vocabulary,
-            group_means,
-            group_counts,
-            dataset_mean,
-            spurious_values,
-            target_values,
-            metadata_names,
-            discovery_args,
-        )
-        diagnostics = None
-    concept_discovery.write_outputs(
-        discovery_args,
-        candidates,
-        group_counts,
-        total_count,
-        diagnostics=diagnostics,
-    )
-    concept_discovery.cache_discovered_scores(
-        discovery_args, candidates, per_image_weights, discovery_dataset
-    )
-    del per_image_weights
-
-    concepts_path = discovery_path.with_suffix(".concepts.txt")
-    concepts = concepts_path.read_text(encoding="utf-8").strip()
-    if not concepts:
-        raise ValueError(f"Automatic concept discovery produced no concepts at {concepts_path}")
-    args.splice_concepts = concepts
-    args.splice_auto_concepts_path = str(concepts_path)
-    args.splice_auto_indices_path = str(discovery_path.with_suffix(".indices.txt"))
-    args.splice_auto_discovery_path = str(discovery_path)
-    args.splice_auto_summary_path = str(summary_path)
-    print(f"[INFO] Auto-selected SpLiCE concepts: {args.splice_concepts}")
-
-    summary_args = argparse.Namespace(
-        dataset=args.dataset,
-        data_folder=args.data_folder,
-        split=args.splice_auto_split,
-        splice_concepts=args.splice_concepts,
-        out_path=str(summary_path),
-        batch_size=args.splice_batch_size,
-        num_workers=args.splice_num_workers,
-        device=args.device,
-        disable_cudnn=True,
-        splice_model=args.splice_model,
-        splice_pretrained=args.splice_pretrained,
-        splice_score_cache_dir=args.splice_score_cache_dir,
-        splice_vocab=args.splice_vocab,
-        splice_vocab_size=args.splice_vocab_size,
-        splice_l1_penalty=args.splice_l1_penalty,
-        splice_score_reduction=args.splice_score_reduction,
-        candidate_thresholds=args.splice_auto_candidate_thresholds,
-    )
-    print(f"[INFO] Summarizing SpLiCE scores for auto-selected concepts -> {summary_path}")
-    score_summary.configure_torch_backend(summary_args)
-    summary_config = SpliceConfig(
-        use_splice=True,
-        mode="augment",
-        concepts=summary_args.splice_concepts,
-        l1_penalty=summary_args.splice_l1_penalty,
-        vocab=summary_args.splice_vocab,
-        vocab_size=summary_args.splice_vocab_size,
-        model=summary_args.splice_model,
-        score_reduction=summary_args.splice_score_reduction,
-        batch_size=summary_args.batch_size,
-        num_workers=summary_args.num_workers,
-        device=summary_args.device,
-        pretrained=summary_args.splice_pretrained,
-        score_cache_dir=summary_args.splice_score_cache_dir,
-    )
-    scorer = SpliceConceptScorer(summary_config)
-    dataset_spec = DATASET_REGISTRY[summary_args.dataset]
-    full_dataset = dataset_spec["dataset"](summary_args.data_folder)
-    subset = full_dataset.get_subset(summary_args.split, transform=None)
-    scores = scorer.score_dataset(
-        subset,
-        cache_key=dataset_score_cache_key(summary_args.dataset, full_dataset, summary_args.split),
-    )
-    thresholds = score_summary.parse_thresholds(summary_args.candidate_thresholds)
-    summary = score_summary.summarize(scores, thresholds)
-    if args.splice_score_threshold is None:
-        args.splice_score_threshold = torch.quantile(
-            scores.float(),
-            torch.tensor(args.splice_score_quantile, dtype=torch.float32),
-        ).item()
-        print(
-            f"[INFO] Auto-calibrated SpLiCE augmentation threshold at q={args.splice_score_quantile:g}: "
-            f"{args.splice_score_threshold:.8f}"
-        )
-    summary["split"] = summary_args.split
-    summary["dataset"] = summary_args.dataset
-    summary["splice_concepts"] = summary_args.splice_concepts
-    summary["resolved_concepts"] = [
-        {"index": index, "concept": scorer.vocabulary[index]} for index in scorer.concept_indices
-    ]
-    summary["score_reduction"] = summary_args.splice_score_reduction
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print("[INFO] Score distribution:")
-    for key in ["count", "min", "p10", "p25", "median", "p75", "p90", "p95", "max"]:
-        print(f"  {key}: {summary[key]}")
-    print(f"[INFO] Wrote score summary to {summary_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -456,18 +207,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--energy_threshold", type=float, default=0.9)
     parser.add_argument("--rank_threshold", type=float, default=0.1)
 
-    parser.add_argument("--use_splice", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument(
         "--splice_mode",
         type=str,
         default="none",
         choices=[
             "none",
-            "augment",
-            "corr_reg",
-            "augment_corr_reg",
-            "synthesis_distill",
-            "oracle_relational",
             "crp_relational",
             "frozen_concept_distill",
         ],
@@ -482,27 +227,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
     parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
     parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
-    parser.add_argument("--splice_concepts", type=str, default="")
-    parser.add_argument(
-        "--splice_score_threshold",
-        type=parse_splice_threshold,
-        default=None,
-        help="Non-negative routing threshold or 'auto' (default), calibrated from --splice_score_quantile.",
-    )
-    parser.add_argument(
-        "--splice_score_quantile",
-        type=float,
-        default=0.75,
-        help="Training-score quantile used when --splice_score_threshold=auto.",
-    )
-    parser.add_argument(
-        "--splice_routing_mode",
-        type=str,
-        default="semantic",
-        choices=["semantic", "shuffled", "random", "all"],
-        help="Which samples receive the targeted second-view augmentation.",
-    )
-    parser.add_argument("--splice_score_reduction", type=str, default="mean", choices=["mean", "max"])
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
         "--crp_teacher_graph",
@@ -547,171 +271,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--gradient_diagnostics_output", type=str, default="")
     parser.add_argument("--gradient_diagnostics_batches", type=int, default=4)
-    parser.add_argument(
-        "--splice_intervention",
-        type=str,
-        default="class_neutralize",
-        choices=[
-            "original",
-            "zero_out",
-            "class_neutralize",
-            "core_matched_swap",
-            "shuffled_donor",
-            "same_class_random_donor",
-            "random_coords",
-        ],
-        help="Sparse-code edit used to synthesize residual-preserving CLIP distillation targets.",
-    )
-    parser.add_argument(
-        "--splice_intervention_strength",
-        type=float,
-        default=1.0,
-        help="Alpha in normalize(z + alpha * D_S(c'_S-c_S)); valid range is [0, 2].",
-    )
-    parser.add_argument(
-        "--splice_conditional_on_target",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Center features/concepts within target classes before correlation regularization.",
-    )
-    parser.add_argument("--splice_l1_penalty", type=float, default=0.25)
-    parser.add_argument("--splice_vocab", type=str, default=DEFAULT_VOCABULARY)
-    parser.add_argument("--splice_vocab_size", type=int, default=DEFAULT_VOCABULARY_SIZE)
-    parser.add_argument("--splice_model", type=str, default="open_clip:ViT-B-32")
-    parser.add_argument("--splice_pretrained", type=str, default="laion2b_s34b_b79k")
-    parser.add_argument(
-        "--splice_score_cache_dir",
-        type=str,
-        default="outputs/splice_score_cache",
-        help="Directory used to cache per-image SpLiCE scores between training runs.",
-    )
-    parser.add_argument("--splice_batch_size", type=int, default=128)
-    parser.add_argument("--splice_num_workers", type=int, default=1)
-    parser.add_argument(
-        "--splice_auto_top_k",
-        type=int,
-        default=5,
-        help="Number of concepts to discover when --splice_concepts is empty or auto.",
-    )
-    parser.add_argument(
-        "--splice_auto_ranking_method",
-        type=str,
-        default="intervention_utility",
-        choices=["intervention_utility", "conditional_group"],
-        help="Automatic concept selector. intervention_utility uses target labels but no spurious metadata.",
-    )
-    parser.add_argument("--splice_auto_probe_c", type=float, default=1.0)
-    parser.add_argument("--splice_auto_probe_max_iter", type=int, default=5000)
-    parser.add_argument("--splice_auto_probe_cv_folds", type=int, default=5)
-    parser.add_argument("--splice_auto_utility_max_samples", type=int, default=20000)
-    parser.add_argument("--splice_auto_utility_candidate_pool", type=int, default=100)
-    parser.add_argument("--splice_auto_utility_min_repair", type=int, default=1)
-    parser.add_argument("--splice_auto_utility_min_marginal", type=float, default=0.0)
-    parser.add_argument(
-        "--splice_per_image_top_k",
-        type=int,
-        default=0,
-        help="Optional per-image concept JSONL audit size; disabled by default to avoid I/O overhead.",
-    )
-    parser.add_argument(
-        "--splice_auto_split",
-        type=str,
-        default="train",
-        choices=["train", "ds_train", "us_train", "balanced_train", "val", "test"],
-        help="Dataset split used for automatic SpLiCE concept discovery and score summary.",
-    )
-    parser.add_argument(
-        "--splice_auto_out_dir",
-        type=str,
-        default="outputs",
-        help="Directory for automatic concept-discovery and score-summary files.",
-    )
-    parser.add_argument(
-        "--splice_auto_candidate_thresholds",
-        type=str,
-        default="0.005,0.01,0.02,0.03,0.05,0.1",
-        help="Candidate thresholds reported in the automatic score summary.",
-    )
-    parser.add_argument("--splice_auto_min_mean_weight", type=float, default=0.0)
-    parser.add_argument("--splice_auto_label_penalty", type=float, default=1.0)
-    parser.add_argument("--splice_auto_instability_penalty", type=float, default=1.0)
-    parser.add_argument("--splice_auto_use_abs_score", action="store_true")
-    parser.add_argument(
-        "--splice_auto_require_consistent_direction",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Require the signed background effect to agree across target classes during automatic discovery.",
-    )
-    parser.add_argument(
-        "--splice_auto_deduplicate_concepts",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Automatically collapse lexical concept variants such as signal/signals.",
-    )
-    parser.add_argument(
-        "--splice_strong_crop",
-        type=lambda value: parse_optional_float_or_bool(value, 0.08, "--splice_strong_crop"),
-        nargs="?",
-        const="true",
-        default=None,
-        help="Enable a stronger crop for high-score samples. Accepts true, false, or a crop min scale. True/no value uses 0.08.",
-    )
-    parser.add_argument(
-        "--splice_strong_color_jitter",
-        type=parse_optional_color_jitter,
-        nargs="?",
-        const="true",
-        default=None,
-        help="Enable stronger ColorJitter. Accepts true, false, or brightness,contrast,saturation,hue. True/no value uses 0.8,0.8,0.8,0.2.",
-    )
-    parser.add_argument(
-        "--splice_strong_color_jitter_p",
-        type=lambda value: parse_optional_float_or_bool(value, 0.9, "--splice_strong_color_jitter_p"),
-        default=None,
-        help="Probability for strong ColorJitter. Accepts true, false, or a probability. True uses 0.9.",
-    )
-    parser.add_argument(
-        "--splice_strong_grayscale_p",
-        type=lambda value: parse_optional_float_or_bool(value, 0.3, "--splice_strong_grayscale_p"),
-        nargs="?",
-        const="true",
-        default=None,
-        help="Enable stronger RandomGrayscale probability. Accepts true, false, or a probability. True/no value uses 0.3.",
-    )
-    parser.add_argument(
-        "--splice_strong_blur_p",
-        type=lambda value: parse_optional_float_or_bool(value, 0.5, "--splice_strong_blur_p"),
-        nargs="?",
-        const="true",
-        default=None,
-        help="Enable GaussianBlur for high-score samples. Accepts true, false, or a probability. True/no value uses 0.5.",
-    )
-    parser.add_argument(
-        "--splice_strong_blur_kernel_size",
-        type=int,
-        default=None,
-        help="GaussianBlur kernel size. Also enables blur with default probability if used alone.",
-    )
-    parser.add_argument(
-        "--splice_strong_blur_sigma",
-        type=parse_optional_blur_sigma,
-        default=None,
-        help="GaussianBlur sigma as min,max. Accepts true, false, or min,max. True uses 0.1,2.0.",
-    )
-    parser.add_argument(
-        "--splice_strong_line_recolor",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Oracle ablation for spur_cifar10: explicitly recolor the synthetic line (default: false).",
-    )
 
     args = parser.parse_args()
     try:
@@ -734,8 +293,6 @@ def parse_args() -> argparse.Namespace:
         )
     except ValueError as exc:
         parser.error(str(exc))
-    if args.use_splice and args.splice_mode == "none":
-        args.splice_mode = "corr_reg"
     args.use_splice = args.splice_mode != "none"
     if args.splice_mode in CONCEPT_TRANSFER_MODES:
         if not args.concept_transfer_targets:
@@ -755,17 +312,6 @@ def parse_args() -> argparse.Namespace:
             parser.error("--concept_transfer_alpha_max must be non-negative.")
         if args.concept_transfer_start_epoch < 0 or args.concept_transfer_warmup_epochs < 0:
             parser.error("Concept-transfer schedule values must be non-negative.")
-    if args.use_splice and splice_mode_uses_scores(args.splice_mode) and not args.splice_concepts.strip():
-        args.splice_concepts = "auto"
-    if args.use_splice and splice_mode_uses_scores(args.splice_mode) and args.splice_concepts.strip().lower() == "auto":
-        auto_discover_splice_concepts(args)
-    if args.splice_mode in {
-        "corr_reg",
-        "augment_corr_reg",
-        "synthesis_distill",
-        "oracle_relational",
-    } and args.splice_weight <= 0:
-        parser.error("--splice_weight must be positive for SpLiCE regularization/distillation modes.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
@@ -791,26 +337,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("CRP decay start/end must both be zero or both be set.")
     if args.crp_decay_end_epoch and args.crp_decay_end_epoch <= args.crp_decay_start_epoch:
         parser.error("--crp_decay_end_epoch must be greater than --crp_decay_start_epoch.")
-    if not 0 <= args.splice_intervention_strength <= 2:
-        parser.error("--splice_intervention_strength must be in the interval [0, 2].")
     if not 0 < args.ssl_crop_min <= 1:
         parser.error("--ssl-crop-min must be in the interval (0, 1].")
-    if args.splice_strong_crop is not None and not 0 < args.splice_strong_crop <= 1:
-        parser.error("--splice_strong_crop must be in the interval (0, 1].")
-    probability_args = {
-        "--splice_strong_color_jitter_p": args.splice_strong_color_jitter_p,
-        "--splice_strong_grayscale_p": args.splice_strong_grayscale_p,
-        "--splice_strong_blur_p": args.splice_strong_blur_p,
-    }
-    for option_name, value in probability_args.items():
-        try:
-            validate_probability(value, option_name)
-        except argparse.ArgumentTypeError as exc:
-            parser.error(str(exc))
-    if args.splice_strong_blur_kernel_size is not None and args.splice_strong_blur_kernel_size <= 0:
-        parser.error("--splice_strong_blur_kernel_size must be positive.")
-    if args.splice_strong_blur_sigma is not None and args.splice_strong_blur_sigma[0] > args.splice_strong_blur_sigma[1]:
-        parser.error("--splice_strong_blur_sigma min must be <= max.")
     if args.dataset == "spur_cifar10" and (
         args.model.endswith("_large") or args.model == "resnet50_pretrained"
     ):
@@ -823,12 +351,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("--cudnn_benchmark must remain false because training is reproducible by default.")
     if args.rank_eval_freq < 0:
         parser.error("--rank_eval_freq must be non-negative.")
-    if args.splice_auto_top_k <= 0:
-        parser.error("--splice_auto_top_k must be positive.")
-    if args.splice_per_image_top_k < 0:
-        parser.error("--splice_per_image_top_k must be non-negative.")
-    if not 0 <= args.splice_score_quantile <= 1:
-        parser.error("--splice_score_quantile must be in the interval [0, 1].")
     if args.linear_probe_freq is not None and args.linear_probe_freq < 0:
         parser.error("--linear_probe_freq must be non-negative.")
     if args.keep_checkpoints and args.save_freq <= 0:
@@ -861,29 +383,6 @@ def parse_args() -> argparse.Namespace:
         args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
     args.runtime_versions = runtime_versions()
-    args.splice_concept_fingerprint = (
-        hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:12]
-        if args.use_splice
-        else ""
-    )
-    discovery_fingerprint_payload = {
-        "split": args.splice_auto_split,
-        "top_k": args.splice_auto_top_k,
-        "min_mean_weight": args.splice_auto_min_mean_weight,
-        "label_penalty": args.splice_auto_label_penalty,
-        "instability_penalty": args.splice_auto_instability_penalty,
-        "use_abs_score": args.splice_auto_use_abs_score,
-        "require_consistent_direction": args.splice_auto_require_consistent_direction,
-        "deduplicate_concepts": args.splice_auto_deduplicate_concepts,
-        "model": args.splice_model,
-        "pretrained": args.splice_pretrained,
-        "vocab": args.splice_vocab,
-        "vocab_size": args.splice_vocab_size,
-        "l1_penalty": args.splice_l1_penalty,
-    }
-    args.splice_discovery_fingerprint = hashlib.sha256(
-        json.dumps(discovery_fingerprint_payload, sort_keys=True).encode("utf-8")
-    ).hexdigest()[:12]
     args.model_name = format_run_name(args)
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
     args.storage_name = format_storage_name(args)
@@ -919,85 +418,23 @@ def resolve_epoch_schedule(value: str, total_epochs: int, fractions: tuple[float
 
 
 def format_wandb_run_name(args: argparse.Namespace) -> str:
-    """Return a short human-facing name; full details remain in W&B config and args.json."""
-    dataset = {
-        "waterbirds": "Waterbirds",
-        "spur_cifar10": "SpurCIFAR10",
-        "celeba": "CelebA",
-        "celebA": "CelebA",
-        "CelebA": "CelebA",
-    }.get(args.dataset, args.dataset)
-    prefix = f"{dataset}_S{args.seed:g}_{args.model}"
+    prefix = f"{args.dataset}_s{args.seed:g}"
     suffix = f"_e{args.epochs}"
-    if not args.use_splice:
-        return f"{prefix}_Baseline{suffix}"
-    if args.splice_mode in {"augment", "augment_corr_reg"}:
-        augmentations = []
-        if args.splice_strong_crop is not None:
-            augmentations.append("Crop")
-        if args.splice_strong_color_jitter is not None or args.splice_strong_color_jitter_p is not None:
-            augmentations.append("ColorJitter")
-        if args.splice_strong_grayscale_p is not None:
-            augmentations.append("Grayscale")
-        if (
-            args.splice_strong_blur_p is not None
-            or args.splice_strong_blur_kernel_size is not None
-            or args.splice_strong_blur_sigma is not None
-        ):
-            augmentations.append("Blur")
-        if args.dataset == "spur_cifar10" and args.splice_strong_line_recolor:
-            augmentations.append("LineRecolor")
-        augmentation = "All" if len(augmentations) >= 4 else "+".join(augmentations) or "StandardAug"
-        route = "" if args.splice_routing_mode == "semantic" else f"_{args.splice_routing_mode.title()}"
-        if args.splice_mode == "augment_corr_reg":
-            return f"{prefix}_{augmentation}{route}_Corr{args.splice_weight:g}{suffix}"
-        return f"{prefix}_{augmentation}{route}{suffix}"
-    if args.splice_mode == "synthesis_distill":
-        intervention_labels = {
-            "original": "OrigCLIP",
-            "class_neutralize": "SynNeutralize",
-            "zero_out": "SynZeroOut",
-            "core_matched_swap": "SynOracleSwap",
-            "shuffled_donor": "SynShuffDonor",
-            "same_class_random_donor": "SynSameClass",
-            "random_coords": "SynRandCoords",
-        }
-        label = intervention_labels.get(args.splice_intervention, args.splice_intervention)
-        # Alpha only scales an actual edit, so it is inert for the unedited-teacher control.
-        hyper = (
-            f"_w{args.splice_weight:g}"
-            if args.splice_intervention == "original"
-            else f"_w{args.splice_weight:g}a{args.splice_intervention_strength:g}"
-        )
-        return f"{prefix}_{label}{hyper}{suffix}"
+    if args.splice_mode == "crp_relational":
+        return f"{prefix}_CRP_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
     if args.splice_mode == "frozen_concept_distill":
         return f"{prefix}_ConceptTransfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}{suffix}"
-    if args.splice_mode == "crp_relational":
-        return f"{prefix}_CRPv2_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
-    if args.splice_mode == "oracle_relational":
-        return f"{prefix}_OracleRel_w{args.splice_weight:g}{suffix}"
-    conditional = "Y" if args.splice_conditional_on_target else ""
-    return f"{prefix}_Corr{args.splice_weight:g}{conditional}{suffix}"
+    return f"{prefix}_SimCLR{suffix}"
 
 
 def format_storage_name(args: argparse.Namespace) -> str:
     """Return a short, deterministic checkpoint directory name safe for Windows paths."""
-    if not args.use_splice:
-        experiment = "base"
-    elif args.splice_mode == "augment":
-        experiment = f"aug-{args.splice_routing_mode}"
-    elif args.splice_mode == "augment_corr_reg":
-        experiment = f"augcorr-{args.splice_routing_mode}"
-    elif args.splice_mode == "synthesis_distill":
-        experiment = f"syn-{args.splice_intervention}"
-    elif args.splice_mode == "oracle_relational":
-        experiment = "oracle-relational"
-    elif args.splice_mode == "crp_relational":
+    if args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
     elif args.splice_mode == "frozen_concept_distill":
         experiment = f"concept-transfer-{args.concept_transfer_target_kind}"
     else:
-        experiment = "corr"
+        experiment = "base"
 
     excluded_from_fingerprint = {
         "checkpoint_dir",
@@ -1036,104 +473,25 @@ def format_run_name(args: argparse.Namespace) -> str:
     optimizer_name = args.optimizer
     if optimizer_name.lower() == "sam":
         optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
-    if not args.use_splice:
-        splice_name = "nosplice"
-    elif args.splice_mode == "augment":
-        score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
-        threshold_name = (
-            f"q{args.splice_score_quantile:g}"
-            if args.splice_score_threshold is None
-            else f"{args.splice_score_threshold:g}"
-        )
-        splice_name = f"augment{threshold_name}_route{args.splice_routing_mode}_{format_strong_aug_name(args)}"
-    elif args.splice_mode == "synthesis_distill":
-        splice_name = (
-            f"synthesis_distill_{args.splice_intervention}_"
-            f"a{args.splice_intervention_strength:g}_w{args.splice_weight:g}"
-        )
-    elif args.splice_mode == "crp_relational":
-        splice_name = (
-            f"crp_relational_w{args.splice_weight:g}_"
-            f"t{args.crp_temperature:g}_start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}"
-        )
+    if args.splice_mode == "crp_relational":
+        splice_name = (f"crp_relational_w{args.splice_weight:g}_t{args.crp_temperature:g}_"
+                       f"start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}")
+    elif args.splice_mode == "frozen_concept_distill":
+        splice_name = f"concept_transfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}"
     else:
-        splice_name = f"{args.splice_mode}_w{args.splice_weight:g}"
-        splice_name = f"{splice_name}_{'condY' if args.splice_conditional_on_target else 'global'}"
-        if args.splice_mode == "augment_corr_reg":
-            threshold_name = (
-                f"q{args.splice_score_quantile:g}"
-                if args.splice_score_threshold is None
-                else f"{args.splice_score_threshold:g}"
-            )
-            splice_name = (
-                f"{splice_name}_augment{threshold_name}_route{args.splice_routing_mode}_"
-                f"{format_strong_aug_name(args)}"
-            )
-    if args.use_splice and args.splice_mode not in RELATIONAL_GRAPH_MODES:
-        concept_digest = hashlib.sha256(args.splice_concepts.encode("utf-8")).hexdigest()[:8]
-        splice_name = f"{splice_name}_concepts{concept_digest}"
+        splice_name = "nosplice"
     run_name = (
         f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"
         f"amp{int(args.amp)}_cl{int(args.channels_last)}_cudnn{int(args.cudnn_enabled)}_"
         f"bench{int(args.cudnn_benchmark)}"
     )
-    if args.use_splice and args.splice_mode in {"augment", "augment_corr_reg"}:
-        score_reduction = args.splice_score_reduction[:1].upper() + args.splice_score_reduction[1:]
-        run_name = f"{run_name}_score{score_reduction}"
     return run_name
-
-
-def format_strong_aug_name(args: argparse.Namespace) -> str:
-    parts = []
-    if args.splice_strong_crop is not None:
-        parts.append(f"crop{args.splice_strong_crop:g}")
-    if args.splice_strong_color_jitter is not None or args.splice_strong_color_jitter_p is not None:
-        jitter = args.splice_strong_color_jitter or (0.8, 0.8, 0.8, 0.2)
-        jitter_values = "-".join(f"{value:g}" for value in jitter)
-        probability = 0.9 if args.splice_strong_color_jitter_p is None else args.splice_strong_color_jitter_p
-        parts.append(f"cj{jitter_values}p{probability:g}")
-    if args.splice_strong_grayscale_p is not None:
-        parts.append(f"gray{args.splice_strong_grayscale_p:g}")
-    if (
-        args.splice_strong_blur_p is not None
-        or args.splice_strong_blur_kernel_size is not None
-        or args.splice_strong_blur_sigma is not None
-    ):
-        probability = 0.5 if args.splice_strong_blur_p is None else args.splice_strong_blur_p
-        kernel_size = "auto" if args.splice_strong_blur_kernel_size is None else args.splice_strong_blur_kernel_size
-        sigma = args.splice_strong_blur_sigma or (0.1, 2.0)
-        parts.append(f"blur{probability:g}k{kernel_size}s{sigma[0]:g}-{sigma[1]:g}")
-    if args.dataset == "spur_cifar10" and args.splice_strong_line_recolor:
-        parts.append("lineRecolor")
-    return "standardAug" if not parts else "_".join(parts)
-
-
-def strong_aug_config(args: argparse.Namespace) -> dict[str, object]:
-    return {
-        "crop": args.splice_strong_crop,
-        "color_jitter": args.splice_strong_color_jitter,
-        "color_jitter_p": args.splice_strong_color_jitter_p,
-        "grayscale_p": args.splice_strong_grayscale_p,
-        "blur_p": args.splice_strong_blur_p,
-        "blur_kernel_size": args.splice_strong_blur_kernel_size,
-        "blur_sigma": args.splice_strong_blur_sigma,
-        "line_recolor": args.splice_strong_line_recolor if args.dataset == "spur_cifar10" else False,
-        "run_name_fragment": format_strong_aug_name(args),
-    }
-
-
-def print_strong_aug_config(args: argparse.Namespace) -> None:
-    config = strong_aug_config(args)
-    print("[INFO] Strong augmentation config:")
-    for key, value in config.items():
-        print(f"  {key}: {value}")
 
 
 def write_run_config(args: argparse.Namespace) -> None:
     config_path = Path(args.save_folder) / "args.json"
     payload = vars(args).copy()
-    payload["strong_aug"] = strong_aug_config(args)
     with config_path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2, sort_keys=True)
         file.write("\n")
@@ -1206,18 +564,8 @@ def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool, seed: int | 
 
 
 def build_dataset_config(args: argparse.Namespace):
-    dataset_spec = DATASET_REGISTRY[args.dataset]
-    return dataset_spec["config"](
-        root_dir=args.data_folder,
-        ssl_crop_min=args.ssl_crop_min,
-        splice_strong_crop=args.splice_strong_crop,
-        splice_strong_color_jitter=args.splice_strong_color_jitter,
-        splice_strong_color_jitter_p=args.splice_strong_color_jitter_p,
-        splice_strong_grayscale_p=args.splice_strong_grayscale_p,
-        splice_strong_blur_p=args.splice_strong_blur_p,
-        splice_strong_blur_kernel_size=args.splice_strong_blur_kernel_size,
-        splice_strong_blur_sigma=args.splice_strong_blur_sigma,
-        splice_strong_line_recolor=args.splice_strong_line_recolor,
+    return DATASET_REGISTRY[args.dataset]["config"](
+        root_dir=args.data_folder, ssl_crop_min=args.ssl_crop_min,
     )
 
 
@@ -1225,18 +573,12 @@ def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
     if args.splice_mode in CONCEPT_TRANSFER_MODES:
         loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
-        concept_scorer=concept_scorer,
         splice_mode=args.splice_mode,
-        splice_score_threshold=args.splice_score_threshold,
-        splice_score_quantile=args.splice_score_quantile,
-        splice_routing_mode=args.splice_routing_mode,
-        splice_routing_seed=args.seed,
         **loader_kwargs,
     )
     if args.splice_mode not in RELATIONAL_GRAPH_MODES:
@@ -1258,16 +600,13 @@ def build_ssl_loader(args: argparse.Namespace):
     args.teacher_graph_config = graph.get("config", {})
     stats = graph.get("degree_stats", {})
     args.teacher_graph_degree_stats = stats
-    args.teacher_graph_selected_factor_ids = graph.get("selected_factor_ids", [])
+    args.teacher_graph_selected_group_ids = graph.get("selected_group_ids", [])
     args.teacher_graph_removed_concepts = sorted(
         {
             concept
-            for factor in graph.get("factors", [])
-            if factor.get("selected")
-            for concept in (
-                factor.get("state_a", {}).get("concepts", [])
-                + factor.get("state_b", {}).get("concepts", [])
-            )
+            for group in graph.get("groups", [])
+            if group.get("selected")
+            for concept in group.get("concepts", [])
         }
     )
     if graph["artifact"] in {
@@ -1332,36 +671,6 @@ def build_rank_loader(args: argparse.Namespace):
         args.batch_size,
         **loader_kwargs,
     )
-
-
-def build_splice_config(args: argparse.Namespace) -> SpliceConfig:
-    return SpliceConfig(
-        use_splice=args.use_splice,
-        splice_weight=args.splice_weight,
-        mode=args.splice_mode,
-        concepts=args.splice_concepts,
-        l1_penalty=args.splice_l1_penalty,
-        vocab=args.splice_vocab,
-        vocab_size=args.splice_vocab_size,
-        model=args.splice_model,
-        pretrained=args.splice_pretrained,
-        score_cache_dir=args.splice_score_cache_dir,
-        score_threshold=args.splice_score_threshold,
-        score_reduction=args.splice_score_reduction,
-        batch_size=args.splice_batch_size,
-        num_workers=args.splice_num_workers,
-        conditional_on_target=args.splice_conditional_on_target,
-        intervention=args.splice_intervention,
-        intervention_strength=args.splice_intervention_strength,
-        intervention_seed=args.seed,
-        device=args.device,
-    )
-
-
-def build_splice_concept_scorer(args: argparse.Namespace) -> SpliceConceptScorer:
-    scorer = SpliceConceptScorer(build_splice_config(args))
-    print("[INFO] SpLiCE concepts:", [(idx, scorer.vocabulary[idx]) for idx in scorer.concept_indices])
-    return scorer
 
 
 @contextmanager
@@ -1438,13 +747,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
-    clip_distillation_dim = (
-        getattr(train_loader.dataset, "control_dim", None)
-        if args.splice_mode == "synthesis_distill"
-        else 512 if args.splice_mode in CONCEPT_TRANSFER_MODES else None
-    )
-    if args.splice_mode == "synthesis_distill" and clip_distillation_dim is None:
-        raise ValueError("SpLiCE synthesis targets must expose their CLIP embedding dimension.")
+    clip_distillation_dim = 512 if args.splice_mode in CONCEPT_TRANSFER_MODES else None
     model = SimCLRModel(
         name=args.model,
         head=args.head,
@@ -1485,37 +788,23 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
             warmup_epochs=args.concept_transfer_warmup_epochs,
         )
     else:
-        splice_regularizer = build_splice_regularizer(build_splice_config(args))
+        splice_regularizer = None
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
 
 
 def record_resolved_training_config(args: argparse.Namespace, train_loader, wandb_run) -> None:
     """Persist values that are resolved only while constructing the dataset."""
 
-    transform = getattr(train_loader.dataset, "transform", None)
-    resolved_threshold = getattr(transform, "threshold", None)
-    args.splice_score_threshold_resolved = (
-        float(resolved_threshold) if resolved_threshold is not None else None
-    )
-    dataset = train_loader.dataset
-    args.splice_semantic_threshold_resolved = getattr(dataset, "semantic_threshold", None)
-    args.splice_routed_count = getattr(dataset, "routed_count", None)
-    args.splice_routed_fraction = getattr(dataset, "routed_fraction", None)
     write_run_config(args)
     if wandb_run is not None:
-        resolved = {
-            "splice_score_threshold_resolved": args.splice_score_threshold_resolved,
-            "splice_semantic_threshold_resolved": args.splice_semantic_threshold_resolved,
-            "splice_routed_count": args.splice_routed_count,
-            "splice_routed_fraction": args.splice_routed_fraction,
-        }
+        resolved = {}
         if args.splice_mode in RELATIONAL_GRAPH_MODES:
             resolved.update(
                 {
                     "teacher_graph_artifact": args.teacher_graph_artifact,
                     "teacher_graph_config": args.teacher_graph_config,
                     "teacher_graph_degree_stats": args.teacher_graph_degree_stats,
-                    "teacher_graph_selected_factor_ids": args.teacher_graph_selected_factor_ids,
+                    "teacher_graph_selected_group_ids": args.teacher_graph_selected_group_ids,
                     "teacher_graph_removed_concepts": args.teacher_graph_removed_concepts,
                     "relational_graph_empty": getattr(args, "relational_graph_empty", False),
                 }
@@ -1657,7 +946,6 @@ def write_run_status(args: argparse.Namespace, payload: dict[str, object]) -> No
 def main() -> None:
     args = parse_args()
     print(args)
-    print_strong_aug_config(args)
     set_seed(args)
     device = torch.device(args.device)
     args.device = str(device)
@@ -1676,7 +964,6 @@ def main() -> None:
                 import wandb
 
                 wandb_config = vars(args).copy()
-                wandb_config["strong_aug"] = strong_aug_config(args)
                 wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
                 wandb_run = wandb.init(
                     project=args.wandb_name,

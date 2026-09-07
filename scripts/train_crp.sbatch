@@ -61,7 +61,6 @@ case "${DATASET}" in
     CelebA|celebA) DATASET="celeba" ;;
 esac
 # Recompute dataset-derived paths after canonicalization.
-SPLICE_AUTO_OUT_DIR="outputs/auto_concepts/${DATASET}_seed${SEED}"
 CRP_CACHE_PATH="${CRP_CACHE_PATH:-outputs/crp/${DATASET}_train_features.pt}"
 CRP_GRAPH_DIR="outputs/crp/${DATASET}"
 CRP_TEACHER_GRAPH="${CRP_GRAPH_DIR}/teacher_graph_seed${SEED}.json"
@@ -83,7 +82,7 @@ if [[ "${FINAL_TEST}" == "true" && "${LINEAR_PROBE_MODE}" != "final" ]]; then
     fail "FINAL_TEST=true requires LINEAR_PROBE_MODE=final."
 fi
 cd "${PROJECT_DIR}"
-mkdir -p ./output "${CHECKPOINT_DIR}" "${SPLICE_AUTO_OUT_DIR}" "${SPLICE_SCORE_CACHE_DIR}"
+mkdir -p ./output "${CHECKPOINT_DIR}" "${SPLICE_SCORE_CACHE_DIR}"
 
 module purge
 module load miniforge3/latest
@@ -222,9 +221,6 @@ fi
 case "${MODE}" in
     none) RUN_LABEL="Baseline_lr_${LEARNING_RATE}" ;;
     crp_relational) RUN_LABEL="CRP_precision_graph_${RELATIONAL_GRAPH_VARIANT:-default}_cobalt_${COBALT}${CRP_SPATIAL_RUN_SUFFIX}_splWei_${SPLICE_WEIGHT}_crpTemp_${CRP_TEMPERATURE}_decay_${CRP_DECAY_START_EPOCH}-${CRP_DECAY_END_EPOCH}_lr_${LEARNING_RATE}" ;;
-    corr_reg) RUN_LABEL="Corr_splWei_${SPLICE_WEIGHT}_lr_${LEARNING_RATE}" ;;
-    augment) RUN_LABEL="Aug_q_${SPLICE_SCORE_QUANTILE}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
-    augment_corr_reg) RUN_LABEL="AugCorr_q_${SPLICE_SCORE_QUANTILE}_splWei_${SPLICE_WEIGHT}_route_${SPLICE_ROUTING_MODE}_lr_${LEARNING_RATE}" ;;
 esac
 
 WANDB_RUN_NAME="${DATASET}_S${SEED}_${MODEL}_${RUN_LABEL}_e${EPOCHS}"
@@ -308,63 +304,6 @@ if [[ "${MODE}" == "crp_relational" ]]; then
         --crp_decay_start_epoch "${CRP_DECAY_START_EPOCH}"
         --crp_decay_end_epoch "${CRP_DECAY_END_EPOCH}"
     )
-elif [[ "${MODE}" != "none" ]]; then
-    ARGS+=(
-        --splice_concepts "${SPLICE_CONCEPTS}"
-        --splice_score_reduction "${SPLICE_SCORE_REDUCTION}"
-        --splice_l1_penalty "${SPLICE_L1_PENALTY}"
-        --splice_auto_top_k "${SPLICE_AUTO_TOP_K}"
-        --splice_auto_ranking_method "${SPLICE_AUTO_RANKING_METHOD}"
-        --splice_auto_split "${SPLICE_AUTO_SPLIT}"
-        --splice_auto_out_dir "${SPLICE_AUTO_OUT_DIR}"
-        --splice_auto_probe_c "${SPLICE_AUTO_PROBE_C}"
-        --splice_auto_probe_max_iter "${SPLICE_AUTO_PROBE_MAX_ITER}"
-        --splice_auto_probe_cv_folds "${SPLICE_AUTO_PROBE_CV_FOLDS}"
-        --splice_auto_utility_max_samples "${SPLICE_AUTO_UTILITY_MAX_SAMPLES}"
-        --splice_auto_utility_candidate_pool "${SPLICE_AUTO_UTILITY_CANDIDATE_POOL}"
-        --splice_auto_utility_min_repair "${SPLICE_AUTO_UTILITY_MIN_REPAIR}"
-        --splice_auto_utility_min_marginal "${SPLICE_AUTO_UTILITY_MIN_MARGINAL}"
-        --splice_auto_min_mean_weight "${SPLICE_AUTO_MIN_MEAN_WEIGHT}"
-        --splice_auto_label_penalty "${SPLICE_AUTO_LABEL_PENALTY}"
-        --splice_auto_instability_penalty "${SPLICE_AUTO_INSTABILITY_PENALTY}"
-        --splice_auto_require_consistent_direction "${SPLICE_AUTO_REQUIRE_CONSISTENT_DIRECTION}"
-        --splice_auto_deduplicate_concepts "${SPLICE_AUTO_DEDUPLICATE_CONCEPTS}"
-        --splice_model "${SPLICE_MODEL}"
-        --splice_pretrained "${SPLICE_PRETRAINED}"
-        --splice_vocab "${SPLICE_VOCAB}"
-        --splice_vocab_size "${SPLICE_VOCAB_SIZE}"
-        --splice_batch_size "${SPLICE_BATCH_SIZE}"
-        --splice_num_workers "${SPLICE_NUM_WORKERS}"
-        --splice_score_cache_dir "${SPLICE_SCORE_CACHE_DIR}"
-    )
-    [[ "${SPLICE_AUTO_USE_ABS_SCORE}" == "true" ]] && ARGS+=(--splice_auto_use_abs_score)
-fi
-
-if [[ "${MODE}" == "corr_reg" ]]; then
-    ARGS+=(
-        --splice_weight "${SPLICE_WEIGHT}"
-        --splice_conditional_on_target "${SPLICE_CONDITIONAL_ON_TARGET}"
-    )
-elif [[ "${MODE}" == "augment" || "${MODE}" == "augment_corr_reg" ]]; then
-    ARGS+=(
-        --splice_score_threshold "${SPLICE_SCORE_THRESHOLD}"
-        --splice_score_quantile "${SPLICE_SCORE_QUANTILE}"
-        --splice_routing_mode "${SPLICE_ROUTING_MODE}"
-        --splice_strong_crop "${SPLICE_STRONG_CROP}"
-        --splice_strong_color_jitter "${SPLICE_STRONG_COLOR_JITTER}"
-        --splice_strong_color_jitter_p "${SPLICE_STRONG_COLOR_JITTER_P}"
-        --splice_strong_grayscale_p "${SPLICE_STRONG_GRAYSCALE_P}"
-        --splice_strong_blur_p "${SPLICE_STRONG_BLUR_P}"
-        --splice_strong_blur_sigma "${SPLICE_STRONG_BLUR_SIGMA}"
-        --splice_strong_line_recolor "${SPLICE_STRONG_LINE_RECOLOR}"
-    )
-    [[ -n "${SPLICE_STRONG_BLUR_KERNEL_SIZE}" ]] && ARGS+=(--splice_strong_blur_kernel_size "${SPLICE_STRONG_BLUR_KERNEL_SIZE}")
-    if [[ "${MODE}" == "augment_corr_reg" ]]; then
-        ARGS+=(
-            --splice_weight "${SPLICE_WEIGHT}"
-            --splice_conditional_on_target "${SPLICE_CONDITIONAL_ON_TARGET}"
-        )
-    fi
 fi
 
 echo "=== Spur SpLiCE relational training ==="
