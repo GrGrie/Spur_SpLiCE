@@ -85,18 +85,32 @@ def _gradient_diagnostic(
     splice_encoder = flatten(splice_encoder_grads, encoder_parameters)
     simclr_head = flatten(simclr_head_grads, head_parameters)
     splice_head = flatten(splice_head_grads, head_parameters)
-    simclr_norm = float(torch.linalg.vector_norm(simclr_encoder))
-    splice_norm = float(torch.linalg.vector_norm(splice_encoder))
-    finite = bool(
-        torch.isfinite(simclr_encoder).all()
-        and torch.isfinite(splice_encoder).all()
-        and torch.isfinite(simclr_head).all()
-        and torch.isfinite(splice_head).all()
-    )
+    finite_components = {
+        "simclr_encoder": bool(torch.isfinite(simclr_encoder).all()),
+        "splice_encoder": bool(torch.isfinite(splice_encoder).all()),
+        "simclr_head": bool(torch.isfinite(simclr_head).all()),
+        "splice_head": bool(torch.isfinite(splice_head).all()),
+    }
+    finite = all(finite_components.values())
+
+    def finite_norm(vector: torch.Tensor) -> float | None:
+        if not torch.isfinite(vector).all():
+            return None
+        return float(torch.linalg.vector_norm(vector))
+
+    simclr_norm = finite_norm(simclr_encoder)
+    splice_norm = finite_norm(splice_encoder)
+    simclr_head_norm = finite_norm(simclr_head)
+    splice_head_norm = finite_norm(splice_head)
     if not finite:
-        raise FloatingPointError(f"Non-finite encoder gradient in diagnostic at epoch={epoch}, batch={batch}.")
+        print(
+            f"[WARN] Non-finite AMP gradient in diagnostic at epoch={epoch}, batch={batch}; "
+            "recording the diagnostic and continuing training. "
+            f"components={finite_components}",
+            flush=True,
+        )
     cosine = None
-    if simclr_norm > 0 and splice_norm > 0:
+    if finite and simclr_norm is not None and splice_norm is not None and simclr_norm > 0 and splice_norm > 0:
         cosine = float(F.cosine_similarity(simclr_encoder.view(1, -1), splice_encoder.view(1, -1)).item())
     embeddings = parts["_embeddings"].detach().float()
     centered = embeddings - embeddings.mean(dim=0, keepdim=True)
@@ -112,9 +126,13 @@ def _gradient_diagnostic(
         "kl_gradient_norm": splice_norm,
         "encoder_simclr_gradient_norm": simclr_norm,
         "encoder_kl_gradient_norm": splice_norm,
-        "direct_head_simclr_gradient_norm": float(torch.linalg.vector_norm(simclr_head)),
-        "direct_head_kl_gradient_norm": float(torch.linalg.vector_norm(splice_head)),
-        "gradient_ratio_kl_to_simclr": None if simclr_norm == 0 else splice_norm / simclr_norm,
+        "direct_head_simclr_gradient_norm": simclr_head_norm,
+        "direct_head_kl_gradient_norm": splice_head_norm,
+        "gradient_ratio_kl_to_simclr": (
+            None
+            if simclr_norm in (None, 0) or splice_norm is None
+            else splice_norm / simclr_norm
+        ),
         "gradient_cosine": cosine,
         "simclr_gradient_zero": simclr_norm == 0,
         "kl_gradient_zero": splice_norm == 0,
@@ -124,6 +142,7 @@ def _gradient_diagnostic(
         "embedding_variance": variance,
         "embedding_effective_rank": effective_rank,
         "finite": finite,
+        "finite_components": finite_components,
     }
     diagnostic.update(getattr(splice_regularizer, "last_diagnostics", {}))
     return diagnostic
