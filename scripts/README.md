@@ -174,6 +174,36 @@ scp -r USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/crp_lambda05_replication_
       ./outputs/
 ```
 
+## 7. Next tests 2026-09-07: integrity, gradient diagnostic, and direct transfer
+
+Run the complete bounded workflow with one command:
+
+```bash
+sbatch scripts/run_next_tests_2026-09-07.sbatch
+```
+
+The launcher first reproduces exactly six saved epoch-500 logistic probes. A
+failed or incomplete integrity gate leaves the eight new transfer jobs pending
+and records the reason in `outputs/next_tests_2026-09-07/integrity/`. The three
+25-epoch gradient jobs are independent of that gate; the eight full transfer
+runs require both the integrity and gradient summaries to finish successfully.
+No winner is selected automatically.
+
+All Slurm `.out`/`.err` files are in
+`outputs/next_tests_2026-09-07/logs/`. Training artifacts are in
+`outputs/next_tests_2026-09-07/concept_transfer/`, gradient records in
+`outputs/next_tests_2026-09-07/gradient/`, and the submitted job IDs in
+`outputs/next_tests_2026-09-07/submitted_<launcher-job-id>.json`.
+
+To copy the complete result directory:
+
+```bash
+scp -r USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/next_tests_2026-09-07 ./outputs/
+```
+
+The GPU array requests at most `--mem=40G` and `--cpus-per-task=5`; prepare,
+smoke, integrity, and summary jobs use less memory but keep the same CPU cap.
+
 ## Retained controls and utilities
 
 - `prepare_concepts.conf` and `CoBalT/scripts/prepare_concepts.sbatch` retain the

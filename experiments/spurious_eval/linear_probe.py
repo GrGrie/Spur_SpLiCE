@@ -179,6 +179,25 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def _saved_probe_sample_ids(dataset, seed: int, batch_size: int, shuffle: bool, dataset_name: str) -> list[str]:
+    """Reconstruct the exact order used by feature extraction for v2 artifacts."""
+
+    source_indices = getattr(dataset, "indices", None)
+    if source_indices is None:
+        return []
+    order = torch.arange(len(source_indices))
+    if shuffle:
+        loader = torch.utils.data.DataLoader(
+            range(len(source_indices)),
+            batch_size=batch_size,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(seed),
+            num_workers=0,
+        )
+        order = torch.cat(list(loader)).long()
+    return [f"{dataset_name}:{int(source_indices[int(index)])}" for index in order]
+
+
 def seed_worker(worker_id: int) -> None:
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
@@ -425,7 +444,16 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
     torch.save({"train": train_features.tensors, "evaluation": val_features.tensors,
                 "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
                 "eval_split": args.eval_split, "seed": args.seed,
-                "artifact": "downstream_probe_features_v1"}, feature_path)
+                "artifact": "downstream_probe_features_v2",
+                "artifact_version": 2,
+                "sample_ids": {
+                    "train": _saved_probe_sample_ids(
+                        train_loader.dataset, args.seed, args.batch_size, True, args.dataset
+                    ),
+                    "evaluation": _saved_probe_sample_ids(
+                        val_loader.dataset, args.seed, args.batch_size, False, args.dataset
+                    ),
+                }}, feature_path)
     feature_loader = make_feature_loader(train_features, args.batch_size, args.seed, shuffle=True)
     val_feature_loader = make_feature_loader(val_features, args.batch_size, args.seed, shuffle=False)
 

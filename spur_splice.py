@@ -36,6 +36,7 @@ from splice.crp_training import (
     load_teacher_graph,
     save_crp_concept_report,
 )
+from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.graph_io import graph_fingerprint
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 from splice.ssl_regularization import (
@@ -50,6 +51,7 @@ from scripts.tools import summarize_splice_scores as score_summary
 
 
 RELATIONAL_GRAPH_MODES = {"crp_relational"}
+CONCEPT_TRANSFER_MODES = {"frozen_concept_distill"}
 
 
 def str_to_bool(value) -> bool:
@@ -467,8 +469,19 @@ def parse_args() -> argparse.Namespace:
             "synthesis_distill",
             "oracle_relational",
             "crp_relational",
+            "frozen_concept_distill",
         ],
     )
+    parser.add_argument("--concept_transfer_targets", type=str, default="")
+    parser.add_argument(
+        "--concept_transfer_target_kind",
+        type=str,
+        default="reconstruction",
+        choices=["raw", "reconstruction", "shuffled_reconstruction"],
+    )
+    parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
+    parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
+    parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
     parser.add_argument("--splice_concepts", type=str, default="")
     parser.add_argument(
         "--splice_score_threshold",
@@ -527,6 +540,13 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
     )
+    parser.add_argument(
+        "--gradient_diagnostics",
+        action="store_true",
+        help="Opt-in first-four-batch encoder gradient diagnostics for CRP transfer debugging.",
+    )
+    parser.add_argument("--gradient_diagnostics_output", type=str, default="")
+    parser.add_argument("--gradient_diagnostics_batches", type=int, default=4)
     parser.add_argument(
         "--splice_intervention",
         type=str,
@@ -717,6 +737,24 @@ def parse_args() -> argparse.Namespace:
     if args.use_splice and args.splice_mode == "none":
         args.splice_mode = "corr_reg"
     args.use_splice = args.splice_mode != "none"
+    if args.splice_mode in CONCEPT_TRANSFER_MODES:
+        if not args.concept_transfer_targets:
+            parser.error("--concept_transfer_targets is required for frozen_concept_distill.")
+        target_path = Path(args.concept_transfer_targets)
+        if not target_path.is_file():
+            parser.error(f"Concept-transfer target artifact does not exist: {target_path}")
+        try:
+            target_artifact = load_target_artifact(target_path)
+        except (OSError, ValueError, RuntimeError) as exc:
+            parser.error(f"Invalid concept-transfer target artifact: {exc}")
+        if int(target_artifact["target_dim"]) != 512:
+            parser.error("frozen_concept_distill requires 512-dimensional CLIP targets.")
+        args.concept_transfer_target_artifact = target_artifact["artifact"]
+        args.concept_transfer_cache_fingerprint = target_artifact.get("cache_fingerprint", "")
+        if args.concept_transfer_alpha_max < 0:
+            parser.error("--concept_transfer_alpha_max must be non-negative.")
+        if args.concept_transfer_start_epoch < 0 or args.concept_transfer_warmup_epochs < 0:
+            parser.error("Concept-transfer schedule values must be non-negative.")
     if args.use_splice and splice_mode_uses_scores(args.splice_mode) and not args.splice_concepts.strip():
         args.splice_concepts = "auto"
     if args.use_splice and splice_mode_uses_scores(args.splice_mode) and args.splice_concepts.strip().lower() == "auto":
@@ -932,6 +970,8 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
             else f"_w{args.splice_weight:g}a{args.splice_intervention_strength:g}"
         )
         return f"{prefix}_{label}{hyper}{suffix}"
+    if args.splice_mode == "frozen_concept_distill":
+        return f"{prefix}_ConceptTransfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}{suffix}"
     if args.splice_mode == "crp_relational":
         return f"{prefix}_CRPv2_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
     if args.splice_mode == "oracle_relational":
@@ -954,6 +994,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "oracle-relational"
     elif args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
+    elif args.splice_mode == "frozen_concept_distill":
+        experiment = f"concept-transfer-{args.concept_transfer_target_kind}"
     else:
         experiment = "corr"
 
@@ -1184,6 +1226,8 @@ def build_ssl_loader(args: argparse.Namespace):
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     concept_scorer = build_splice_concept_scorer(args) if splice_mode_uses_scores(args.splice_mode) else None
+    if args.splice_mode in CONCEPT_TRANSFER_MODES:
+        loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
@@ -1397,7 +1441,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     clip_distillation_dim = (
         getattr(train_loader.dataset, "control_dim", None)
         if args.splice_mode == "synthesis_distill"
-        else None
+        else 512 if args.splice_mode in CONCEPT_TRANSFER_MODES else None
     )
     if args.splice_mode == "synthesis_distill" and clip_distillation_dim is None:
         raise ValueError("SpLiCE synthesis targets must expose their CLIP embedding dimension.")
@@ -1429,6 +1473,17 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
             )
+    elif args.splice_mode in CONCEPT_TRANSFER_MODES:
+        targets = getattr(train_loader.dataset, "targets", None)
+        if targets is None:
+            raise ValueError("Frozen concept transfer loader did not expose its target bank.")
+        splice_regularizer = ConceptDistillationRegularizer(
+            targets,
+            target_kind=args.concept_transfer_target_kind,
+            weight=args.concept_transfer_alpha_max,
+            start_epoch=args.concept_transfer_start_epoch,
+            warmup_epochs=args.concept_transfer_warmup_epochs,
+        )
     else:
         splice_regularizer = build_splice_regularizer(build_splice_config(args))
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
@@ -1653,6 +1708,7 @@ def main() -> None:
         )
         last_probe_epoch = 0
         probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
+        gradient_diagnostics_records: list[dict] = []
         prune_epoch_checkpoints(args)
 
         for epoch in range(start_epoch, args.epochs + 1):
@@ -1661,6 +1717,7 @@ def main() -> None:
             train_metrics = train_one_epoch(
                 train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
             )
+            gradient_diagnostics_records.extend(train_metrics.get("gradient_diagnostics", []))
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
@@ -1735,6 +1792,19 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
+
+        if args.gradient_diagnostics_output:
+            diagnostic_path = Path(args.gradient_diagnostics_output)
+            diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+            diagnostic_payload = {
+                "artifact": "crp_transfer_gradient_diagnostics_v1",
+                "seed": args.seed,
+                "epochs": args.epochs,
+                "gradient_diagnostics": gradient_diagnostics_records,
+            }
+            temporary = diagnostic_path.with_suffix(diagnostic_path.suffix + ".tmp")
+            temporary.write_text(json.dumps(diagnostic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            temporary.replace(diagnostic_path)
 
         if wandb_run is not None:
             wandb_run.finish()

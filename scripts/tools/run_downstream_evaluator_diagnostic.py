@@ -70,6 +70,12 @@ def _validate_ids_and_transforms(config: dict, payload: dict) -> dict:
         "target_metadata_index": int(spec.get("target_metadata_index", 1)) == 1,
         "label_cardinality": int(torch.unique(train_tensors[1]).numel()) == int(spec["num_classes"]),
     }
+    explicit_ids = payload.get("sample_ids")
+    if explicit_ids is not None:
+        train_ids = [f"{config['dataset']}:{int(train_subset.indices[int(index)])}" for index in order]
+        eval_ids = [f"{config['dataset']}:{int(index)}" for index in eval_subset.indices]
+        checks["train_sample_ids_aligned"] = list(explicit_ids.get("train", [])) == train_ids
+        checks["eval_sample_ids_aligned"] = list(explicit_ids.get("evaluation", [])) == eval_ids
     train_loader, eval_loader = spec["probe_loaders"](
         dataset_config,
         config["batch_size"],
@@ -84,7 +90,11 @@ def _validate_ids_and_transforms(config: dict, payload: dict) -> dict:
         "metadata_fields": list(full_dataset.metadata_fields),
         "train_count": len(train_subset),
         "eval_count": len(eval_subset),
-        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "sample_id_verification": (
+            "explicit_artifact_ids_checked"
+            if explicit_ids is not None
+            else "reconstructed_sampler_order; legacy tensors have no explicit sample IDs"
+        ),
     }
 
 

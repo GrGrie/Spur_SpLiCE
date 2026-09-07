@@ -216,9 +216,26 @@ def _validate_root(
                 avg = float(metrics["Average over last 10 linear val acc"])
                 wga = float(metrics["Average over last 10 linear val worst-group acc"])
                 best_group = float(metrics["Average over last 10 linear val best-group acc"])
+                converged = bool(metrics["Probe converged"])
             except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 problems.append(f"{prefix}: invalid probe result {result_path} ({exc})")
                 continue
+            declared_result = str(record.get("result", ""))
+            declared_path = Path(declared_result)
+            if declared_result and not declared_path.is_absolute():
+                declared_path = root / declared_path
+            if declared_result and declared_path.resolve() != result_path.resolve():
+                problems.append(f"{prefix}: completed.json result does not match final probe path")
+            if record.get("seed") is not None and int(record["seed"]) != seed:
+                problems.append(f"{prefix}: completed.json seed disagrees with manifest")
+            if record.get("arm") is not None and str(record["arm"]) != arm:
+                problems.append(f"{prefix}: completed.json arm disagrees with manifest")
+            if record.get("avg_acc_last10") is not None and not _same_number(record["avg_acc_last10"], avg, 1e-6):
+                problems.append(f"{prefix}: completed/final average accuracy disagreement")
+            if record.get("wga_last10") is not None and not _same_number(record["wga_last10"], wga, 1e-6):
+                problems.append(f"{prefix}: completed/final WGA disagreement")
+            if not converged:
+                problems.append(f"{prefix}: final logistic probe did not converge")
             rows.append({
                 "source": name,
                 "root": str(root),
@@ -276,44 +293,51 @@ def _paired_metric(
 
 
 def _gate(rows: list[dict[str, Any]], summary: dict[str, Any]) -> dict[str, Any]:
-    """Report the preregistered practical gate without selecting a winner."""
+    """Report every old gate contrast, preserving missing-vs-negative semantics."""
 
     target = "splice_crp_kl_lambda0.5"
     replication_seeds = {3, 4}
-    comparisons: dict[str, Any] = {}
-    for control in (
-        "simclr",
-        "crp_sampler_only",
-        "raw_clip_kl_lambda0.2",
-        "raw_clip_kl_lambda0.5",
-        "raw_clip_kl_lambda2",
-    ):
-        seeds, avg_deltas = _paired_metric(rows, target, control, "avg_acc_last10", replication_seeds)
-        _, wga_deltas = _paired_metric(rows, target, control, "wga_last10", replication_seeds)
-        comparisons[control] = {
-            "available_replication_seeds": seeds,
-            "mean_delta_avg_acc_pp": statistics.mean(avg_deltas) if avg_deltas else None,
-            "mean_delta_wga_pp": statistics.mean(wga_deltas) if wga_deltas else None,
-            "avg_acc_positive": bool(avg_deltas) and statistics.mean(avg_deltas) > 0,
-            "wga_positive": bool(wga_deltas) and statistics.mean(wga_deltas) > 0,
+
+    def contrast(control: str, expected_seeds: set[int] | None = None) -> dict[str, Any]:
+        available, avg = _paired_metric(rows, target, control, "avg_acc_last10", expected_seeds)
+        _, wga = _paired_metric(rows, target, control, "wga_last10", expected_seeds)
+        expected = sorted(expected_seeds) if expected_seeds is not None else available
+        complete = available == expected
+        avg_mean = statistics.mean(avg) if avg else None
+        wga_mean = statistics.mean(wga) if wga else None
+        positive = avg_mean is not None and wga_mean is not None and avg_mean > 0 and wga_mean > 0
+        return {
+            "available_seeds": available,
+            "expected_seeds": expected,
+            "complete": complete,
+            "status": "NOT_EVALUABLE" if not complete else ("PASS_EFFECT" if positive else "FAIL_EFFECT"),
+            "mean_delta_avg_acc_pp": avg_mean,
+            "mean_delta_wga_pp": wga_mean,
+            "avg_acc_positive": avg_mean is not None and avg_mean > 0,
+            "wga_positive": wga_mean is not None and wga_mean > 0,
         }
-    combined_seeds, combined_avg = _paired_metric(rows, target, "simclr", "avg_acc_last10")
-    _, combined_wga = _paired_metric(rows, target, "simclr", "wga_last10")
-    simclr_avg = statistics.mean(combined_avg) if combined_avg else None
-    simclr_wga = statistics.mean(combined_wga) if combined_wga else None
+
+    controls = ("simclr", "crp_sampler_only", "raw_clip_kl_lambda0.2", "raw_clip_kl_lambda0.5", "raw_clip_kl_lambda2")
+    pooled_seeds = {1, 2, 3, 4}
+    pooled = {control: contrast(control, pooled_seeds) for control in controls}
+    replication = {control: contrast(control, replication_seeds) for control in controls}
+    simclr = pooled["simclr"]
     return {
         "status": "reported_only",
         "target": target,
         "replication_seeds": sorted(replication_seeds),
         "against_simclr": {
-            "available_seeds": combined_seeds,
-            "avg_acc_mean_delta_pp": simclr_avg,
-            "wga_mean_delta_pp": simclr_wga,
-            "avg_acc_at_least_1pp": simclr_avg is not None and simclr_avg >= 1.0,
-            "wga_at_least_2pp": simclr_wga is not None and simclr_wga >= 2.0,
+            **simclr,
+            "avg_acc_at_least_1pp": simclr["mean_delta_avg_acc_pp"] is not None and simclr["mean_delta_avg_acc_pp"] >= 1.0,
+            "wga_at_least_2pp": simclr["mean_delta_wga_pp"] is not None and simclr["mean_delta_wga_pp"] >= 2.0,
         },
-        "comparisons": comparisons,
-        "note": "This is a descriptive gate report; it does not choose a winning method or trigger later stages.",
+        "comparisons": replication,
+        "full_pooled_contrasts": pooled,
+        "scientific_outcomes": {
+            "negative_effects": [control for control, value in pooled.items() if value["status"] == "FAIL_EFFECT"],
+            "not_evaluable": [control for control, value in pooled.items() if value["status"] == "NOT_EVALUABLE"],
+        },
+        "note": "Descriptive only: missing comparisons are NOT_EVALUABLE, negative complete comparisons are scientific outcomes, and no winner is selected.",
     }
 
 
@@ -325,14 +349,14 @@ def summarize(config_path: Path) -> tuple[Path, bool]:
     all_rows: list[dict[str, Any]] = []
     problems: list[str] = []
     reference_fields: dict[str, Any] | None = None
-    seen_keys: set[tuple[int, str, str]] = set()
+    seen_keys: set[tuple[int, str]] = set()
     for spec in manifest["experiments"]:
         rows, root_problems, reference_fields = _validate_root(
             spec, manifest, expected, reference_fields
         )
         problems.extend(root_problems)
         for row in rows:
-            key = (row["seed"], row["condition"], row["source"])
+            key = (row["seed"], row["condition"])
             if key in seen_keys:
                 problems.append(f"duplicate row: {key}")
             seen_keys.add(key)
@@ -358,6 +382,7 @@ def summarize(config_path: Path) -> tuple[Path, bool]:
         "ssl_epoch": manifest.get("ssl_epoch"),
         "expected_fingerprints": expected,
         "problems": problems,
+        "validation_failures": problems,
         "conditions": summary,
         "gate": _gate(all_rows, summary),
         "note": "No epoch or arm is selected automatically; all valid rows are retained.",

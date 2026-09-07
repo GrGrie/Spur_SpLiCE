@@ -460,6 +460,9 @@ class CrpRelationalRegularizer:
         mean_confidence: float = 0.0,
         unweighted_kl: float = 0.0,
         weighted_kl: float = 0.0,
+        row_mass_before: float = 0.0,
+        effective_donor_count: float = 0.0,
+        row_mass_after: float = 0.0,
     ) -> None:
         self.last_diagnostics = {
             "scheduled_weight": self.scheduled_weight,
@@ -467,6 +470,10 @@ class CrpRelationalRegularizer:
             "mean_anchor_confidence": mean_confidence,
             "unweighted_kl": unweighted_kl,
             "confidence_weighted_kl": weighted_kl,
+            "q": mean_confidence,
+            "row_mass_before_renorm": row_mass_before,
+            "effective_donor_count": effective_donor_count,
+            "row_mass_after_renorm": row_mass_after,
         }
 
     def set_epoch(self, epoch: int) -> None:
@@ -497,7 +504,7 @@ class CrpRelationalRegularizer:
             raise ValueError("CRP regularization requires one graph-row index per batch sample.")
         if batch_size < 2 or self.scheduled_weight <= 0:
             self._set_diagnostics()
-            return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
+            return embeddings.sum() * 0.0
 
         first, second = embeddings.float().split(batch_size, dim=0)
         student = F.normalize(F.normalize(first, dim=1) + F.normalize(second, dim=1), dim=1)
@@ -524,8 +531,11 @@ class CrpRelationalRegularizer:
         supported = row_sums > 0
         if not torch.any(supported):
             self._set_diagnostics()
-            return torch.zeros((), device=embeddings.device, dtype=embeddings.dtype)
+            return embeddings.sum() * 0.0
+        donor_counts = (teacher > 0).sum(dim=1).float()
+        mean_row_mass_before = float(row_sums[supported].mean())
         teacher[supported] /= row_sums[supported].unsqueeze(1)
+        mean_row_mass_after = float(teacher.sum(dim=1)[supported].mean())
 
         sample_indices_device = sample_indices.to(embeddings.device)
         same_sample = sample_indices_device.view(-1, 1) == sample_indices_device.view(1, -1)
@@ -547,5 +557,8 @@ class CrpRelationalRegularizer:
             mean_confidence=float(confidence[supported].mean()),
             unweighted_kl=float(unweighted_kl.detach()),
             weighted_kl=float(loss.detach()),
+            row_mass_before=mean_row_mass_before,
+            effective_donor_count=float(donor_counts[supported].mean()),
+            row_mass_after=mean_row_mass_after,
         )
         return (self.scheduled_weight * loss).to(dtype=embeddings.dtype)

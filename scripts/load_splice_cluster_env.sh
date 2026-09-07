@@ -20,6 +20,8 @@ fi
 
 export SPLICE_CONDA_ENV PYTHON_BIN
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-5}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-5}"
 
 "${PYTHON_BIN}" - <<'PY'
 import importlib.util
