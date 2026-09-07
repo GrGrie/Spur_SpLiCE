@@ -1,7 +1,8 @@
 #!/bin/bash
 # One-command launcher for docs/NEXT_ACTIONS_AFTER_TRANSFER_2026-09-07.md.
-# It submits integrity/preflight, corrected direct transfer (8 runs), CRP versus
-# semantic-SpLiCE graph ablation (4 runs), and independent visual panels.
+# It submits frozen-cache/graph preparation, integrity/preflight, corrected
+# direct transfer (8 runs), CRP versus semantic-SpLiCE graph ablation (4 runs),
+# and independent visual panels.
 # All child stdout/stderr files are placed below RUN_ROOT/logs.
 # Full SSL jobs use --mem=40G and --cpus-per-task=5; data loaders use 4 workers.
 #
@@ -60,6 +61,7 @@ wrap_python() {
 
 DIRECT_CONFIG="${PROJECT_DIR}/scripts/next_actions_direct_transfer_2026-09-07.conf"
 GRAPH_CONFIG="${PROJECT_DIR}/scripts/next_actions_graph_ablation_2026-09-07.conf"
+BASE_CONFIG="${PROJECT_DIR}/scripts/run_crp_controls_cluster.conf"
 CACHE_PATH="${PROJECT_DIR}/outputs/crp_controls_logistic_v1_cluster_seeds12/waterbirds_train_features.pt"
 CRP_GRAPH_PATH="${PROJECT_DIR}/outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json"
 TARGET_PATH="${PROJECT_DIR}/outputs/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt"
@@ -68,13 +70,16 @@ SEMANTIC_GRAPH_PATH="${PROJECT_DIR}/outputs/next_actions_after_transfer_2026-09-
 INTEGRITY_CMD="scripts.tools.check_saved_probes --config scripts/downstream_probe_integrity_v1.conf --output '${RUN_ROOT}/integrity'"
 INTEGRITY="$(submit splice-next-integrity 01:00:00 8G integrity-%j.out integrity-%j.err --wrap="$(wrap_python "${INTEGRITY_CMD}")")"
 
+BASE_PREP_CMD="scripts.tools.run_crp_controls --config '${BASE_CONFIG}' --prepare-only"
+BASE_PREP="$(submit splice-next-base-prep 08:00:00 "${TRAIN_MEMORY}" base-prepare-%j.out base-prepare-%j.err --wrap="$(wrap_python "${BASE_PREP_CMD}")")"
+
 DIRECT_PREP_CMD="scripts.tools.run_concept_transfer --config '${DIRECT_CONFIG}' --stage prepare"
-DIRECT_PREP="$(submit splice-next-direct-prep 00:30:00 8G direct-prepare-%j.out direct-prepare-%j.err --dependency="afterok:${INTEGRITY}" --wrap="$(wrap_python "${DIRECT_PREP_CMD}")")"
+DIRECT_PREP="$(submit splice-next-direct-prep 00:30:00 8G direct-prepare-%j.out direct-prepare-%j.err --dependency="afterok:${INTEGRITY}:${BASE_PREP}" --wrap="$(wrap_python "${DIRECT_PREP_CMD}")")"
 
 GRAPH_PREP_CMD="scripts.tools.run_graph_ablation --config '${GRAPH_CONFIG}' --stage prepare"
-# Graph preparation is label-free and independent of the saved-probe gate so
-# the visual panels can still be produced while training remains gated.
-GRAPH_PREP="$(submit splice-next-graph-prep 01:00:00 8G graph-prepare-%j.out graph-prepare-%j.err --wrap="$(wrap_python "${GRAPH_PREP_CMD}")")"
+# Graph preparation is label-free and independent of the saved-probe gate, but
+# it must wait for the shared frozen cache and CRP graph to be restored.
+GRAPH_PREP="$(submit splice-next-graph-prep 01:00:00 8G graph-prepare-%j.out graph-prepare-%j.err --dependency="afterok:${BASE_PREP}" --wrap="$(wrap_python "${GRAPH_PREP_CMD}")")"
 
 SMOKE_CMD="scripts.tools.run_concept_transfer --config '${DIRECT_CONFIG}' --stage smoke && '${PYTHON_BIN}' -u -m scripts.tools.run_next_actions_smoke --cache '${CACHE_PATH}' --targets '${TARGET_PATH}' --graph '${CRP_GRAPH_PATH}' --graph '${SEMANTIC_GRAPH_PATH}' --output '${RUN_ROOT}/integrity/preflight_smoke.json'"
 SMOKE="$(submit splice-next-smoke 00:30:00 8G smoke-%j.out smoke-%j.err --dependency="afterok:${DIRECT_PREP}:${GRAPH_PREP}" --wrap="$(wrap_python "${SMOKE_CMD}")")"
@@ -95,14 +100,15 @@ VISUAL_CMD="scripts.tools.render_next_actions_panels --cache '${CACHE_PATH}' --g
 VISUAL="$(submit splice-next-visual 04:00:00 16G visual-%j.out visual-%j.err --dependency="afterok:${GRAPH_PREP}" --wrap="$(wrap_python "${VISUAL_CMD}")")"
 
 MANIFEST="${RUN_ROOT}/submitted_${SLURM_JOB_ID}.json"
-"${PYTHON_BIN}" - "${MANIFEST}" "${INTEGRITY}" "${DIRECT_PREP}" "${GRAPH_PREP}" "${SMOKE}" "${DIRECT_ARRAY}" "${GRAPH_ARRAY}" "${DIRECT_SUMMARY}" "${GRAPH_SUMMARY}" "${VISUAL}" <<'PY'
+"${PYTHON_BIN}" - "${MANIFEST}" "${INTEGRITY}" "${BASE_PREP}" "${DIRECT_PREP}" "${GRAPH_PREP}" "${SMOKE}" "${DIRECT_ARRAY}" "${GRAPH_ARRAY}" "${DIRECT_SUMMARY}" "${GRAPH_SUMMARY}" "${VISUAL}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 names = [
-    "integrity", "direct_prepare", "graph_prepare", "preflight_smoke",
-    "direct_array", "graph_array", "direct_summary", "graph_summary", "visual",
+    "integrity", "base_prepare", "direct_prepare", "graph_prepare",
+    "preflight_smoke", "direct_array", "graph_array", "direct_summary",
+    "graph_summary", "visual",
 ]
 payload = {name: job_id for name, job_id in zip(names, sys.argv[2:])}
 payload.update({
@@ -120,6 +126,6 @@ Path(sys.argv[1]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n
 print(json.dumps(payload, indent=2, sort_keys=True))
 PY
 
-echo "Submitted corrected direct transfer, CRP-vs-semantic graph ablation, and visual panel jobs."
+echo "Submitted frozen-cache preparation, corrected direct transfer, CRP-vs-semantic graph ablation, and visual panel jobs."
 echo "Job manifest: ${MANIFEST}"
 echo "All child .out/.err files: ${RUN_ROOT}/logs/"

@@ -272,6 +272,7 @@ ARGS=(
     --save_freq "${SAVE_FREQ}"
     --checkpoint_keep_count "${CHECKPOINT_KEEP_COUNT}"
     --delete_checkpoints_after_training "${DELETE_CHECKPOINTS_AFTER_TRAINING}"
+    --delete_epoch_checkpoints_after_training "${DELETE_EPOCH_CHECKPOINTS_AFTER_TRAINING}"
     --retain_probe_artifacts_every "${RETAIN_PROBE_ARTIFACTS_EVERY}"
     --splice_mode "${MODE}"
     --wandb_name "${WANDB_PROJECT}"

@@ -126,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint_keep_count",
         type=int,
-        default=4,
+        default=2,
         help="Number of most recent epoch checkpoints to retain while training.",
     )
     parser.add_argument(
@@ -135,7 +135,15 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const=True,
         default=True,
-        help="Delete all .pth checkpoint files from this run directory after successful training.",
+        help="Delete epoch checkpoint files after successful training while preserving last.pth.",
+    )
+    parser.add_argument(
+        "--delete_epoch_checkpoints_after_training",
+        type=str_to_bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Delete only epoch checkpoint files after training; preserve Linear Probe artifacts.",
     )
     parser.add_argument(
         "--retain_probe_artifacts_every",
@@ -889,12 +897,14 @@ def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
 
 
 def cleanup_all_checkpoints(args: argparse.Namespace) -> dict[str, object]:
-    """Delete checkpoint artifacts for this run while preserving run metadata."""
+    """Delete epoch checkpoint artifacts while preserving the final last.pth."""
 
     checkpoint_dir = Path(args.save_folder)
     removed_count = 0
     for checkpoint_path in checkpoint_dir.iterdir():
         if not checkpoint_path.is_file():
+            continue
+        if checkpoint_path.name == "last.pth":
             continue
         if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
             continue
@@ -1112,9 +1122,16 @@ def main() -> None:
             wandb_finished = True
             status["wandb"].update({"finish_called": True, "finish_succeeded": True})
 
-        if args.delete_checkpoints_after_training:
+        if args.delete_checkpoints_after_training or args.delete_epoch_checkpoints_after_training:
             cleanup_status["ssl_checkpoints"] = cleanup_all_checkpoints(args)
-            cleanup_status["probe_artifacts"] = cleanup_probe_artifacts(args)
+            if args.delete_checkpoints_after_training:
+                cleanup_status["probe_artifacts"] = cleanup_probe_artifacts(args)
+            else:
+                cleanup_status["probe_artifacts"] = {
+                    "requested": False,
+                    "removed_count": 0,
+                    "completed": True,
+                }
         else:
             cleanup_default_checkpoints(args)
             cleanup_status["ssl_checkpoints"] = {

@@ -105,6 +105,7 @@ def run_one(path: Path, task_id: int) -> Path:
         "--keep_checkpoints", "--save_freq", str(cfg["save_frequency"]),
         "--checkpoint_keep_count", str(cfg["checkpoint_keep_count"]),
         "--delete_checkpoints_after_training", "false",
+        "--delete_epoch_checkpoints_after_training", str(cfg.get("delete_epoch_checkpoints_after_training", True)).lower(),
         "--retain_probe_artifacts_every", str(cfg["retain_probe_artifacts_every"]), "--use_wandb",
         "--wandb_name", cfg["wandb_project"], "--entity", cfg["wandb_entity"],
         "--wandb_group", cfg["wandb_group"], "--wandb_run_name",
