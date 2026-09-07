@@ -47,12 +47,14 @@ uses image–text pairs. The label-free claim applies to graph discovery and SSL
 
 - The four-seed main study compares five arms at 500 epochs and KL weight 2.
 - The weight screen compares CRP and raw CLIP at 0.2 and 0.5 on seeds 1 and 2.
-- Frozen representations, saved-probe integrity and graph localization have
-  completed reports in `tmp/crp_signal_checks_v1`.
-- Direct transfer is configured in `scripts/concept_transfer_v1.conf` and
-  submitted through `scripts/run_next_tests_2026-09-07.sbatch`.
-- Spatial variants and direct transfer have no completed student result in the
-  retained evidence. Keep their evaluation separate from the main CRP tables.
+- Frozen representations, earlier saved-probe integrity and graph localization
+  are reviewed in `docs/RESULTS_REVIEW_2026-09-06_TRANSFER.md`.
+- Direct transfer now has eight completed runs; full W&B histories and three
+  gradient diagnostic runs are retained in `outputs/next_tests_2026-09-07/review`.
+  The direct screen failed; diagnostics have AMP measurement and recipe limitations.
+- Read `docs/TRANSFER_REVIEW_2026-09-07.md` and `docs/ACTIVE_PLAN.md` for the
+  current result and follow-up. Keep direct results separate from CRP tables.
+- Spatial variants remain outside this completed direct-transfer review.
 
 Use [scripts/README.md](scripts/README.md) for commands and the manuscript for
 exact settings and limitations. The generic `train_crp.conf` is not the locked
