@@ -56,8 +56,13 @@ def _gradient_diagnostic(
     def gradients(loss, parameters):
         if not parameters:
             return []
+        # ``parts["splice"]`` can be an FP16 scalar after the regularizer's
+        # AMP cast. Promote before applying the GradScaler factor; multiplying
+        # an FP16 scalar by the usual 65536 scale can overflow the diagnostic
+        # itself even when the combined training loss is finite.
+        scaled_loss = loss.float() * scale
         return torch.autograd.grad(
-            loss * scale, parameters, retain_graph=True, allow_unused=True
+            scaled_loss, parameters, retain_graph=True, allow_unused=True
         )
 
     simclr_encoder_grads = gradients(parts["simclr"], encoder_parameters)
