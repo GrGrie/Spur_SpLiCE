@@ -271,6 +271,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--gradient_diagnostics_output", type=str, default="")
     parser.add_argument("--gradient_diagnostics_batches", type=int, default=4)
+    parser.add_argument(
+        "--gradient_diagnostics_epochs",
+        type=str,
+        default="1,11,20,25,500",
+        help="Comma-separated SSL epochs at which the first diagnostic batches are recorded.",
+    )
 
     args = parser.parse_args()
     try:
@@ -278,6 +284,14 @@ def parse_args() -> argparse.Namespace:
         args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
     except ValueError as exc:
         parser.error(str(exc))
+    try:
+        args.gradient_diagnostics_epochs = tuple(
+            sorted({int(value.strip()) for value in args.gradient_diagnostics_epochs.split(",") if value.strip()})
+        )
+    except ValueError as exc:
+        parser.error(f"--gradient_diagnostics_epochs must be comma-separated integers: {exc}")
+    if any(epoch <= 0 for epoch in args.gradient_diagnostics_epochs):
+        parser.error("--gradient_diagnostics_epochs values must be positive.")
     if args.epochs <= 0:
         parser.error("--epochs must be positive.")
     if args.linear_probe_epochs <= 0:

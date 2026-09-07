@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import subprocess
@@ -104,12 +105,42 @@ def run_one(path: Path, task_id: int) -> Path:
         "--checkpoint_keep_count", str(cfg["checkpoint_keep_count"]), "--delete_checkpoints_after_training", "false",
         "--retain_probe_artifacts_every", str(cfg["retain_probe_artifacts_every"]), "--use_wandb",
         "--wandb_name", cfg["wandb_project"], "--entity", cfg["wandb_entity"], "--wandb_group", cfg["wandb_group"],
-        "--wandb_run_name", f"concept_transfer_v1_{arm['name']}_seed{seed}", "--amp", "true", "--channels_last", "true", "--cudnn_enabled", "true",
+        "--wandb_run_name", f"{cfg.get('protocol', 'concept_transfer_v1')}_{arm['name']}_seed{seed}", "--amp", "true", "--channels_last", "true", "--cudnn_enabled", "true",
     ]
+    if cfg.get("gradient_diagnostics", False):
+        command.extend([
+            "--gradient_diagnostics",
+            "--gradient_diagnostics_batches", str(cfg.get("gradient_diagnostic_batches", 4)),
+            "--gradient_diagnostics_epochs", ",".join(str(epoch) for epoch in cfg.get(
+                "gradient_diagnostic_epochs", [1, 11, 20, 25, 500]
+            )),
+            "--gradient_diagnostics_output", str(run_root / "gradient_diagnostics.json"),
+        ])
     (run_root / "command.json").write_text(json.dumps({"command": command, "arm": arm, "seed": seed}, indent=2) + "\n", encoding="utf-8")
     status_path = run_root / "completed.json"
     try:
         subprocess.run(command, cwd=Path(__file__).resolve().parents[2], check=True)
+        if cfg.get("gradient_diagnostics", False):
+            diagnostic_path = run_root / "gradient_diagnostics.json"
+            if not diagnostic_path.is_file():
+                raise RuntimeError(f"Missing gradient diagnostics: {diagnostic_path}")
+            payload = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+            actual = {
+                (int(item["epoch"]), int(item["batch"]))
+                for item in payload.get("gradient_diagnostics", [])
+            }
+            expected = {
+                (int(epoch), batch)
+                for epoch in cfg.get("gradient_diagnostic_epochs", [1, 11, 20, 25, 500])
+                for batch in range(int(cfg.get("gradient_diagnostic_batches", 4)))
+            }
+            if not expected.issubset(actual):
+                raise RuntimeError(
+                    f"Incomplete gradient diagnostics for {arm['name']} seed{seed}: "
+                    f"missing={sorted(expected - actual)}"
+                )
+            if not all(item.get("direct_head_present", False) for item in payload.get("gradient_diagnostics", [])):
+                raise RuntimeError("Direct transfer diagnostics did not include the direct head.")
     except Exception as exc:
         status_path.write_text(json.dumps({"status": "failed", "error": repr(exc), "command": command}, indent=2) + "\n", encoding="utf-8")
         raise
@@ -138,6 +169,42 @@ def summary(path: Path) -> Path:
                 "group_accuracy": metrics["Linear val group accuracies"],
                 "group_count": metrics["Linear val group counts"],
             })
+    paired_deltas = {}
+    for seed in cfg["seeds"]:
+        seed_rows = {row["arm"]: row for row in rows if row["seed"] == seed}
+        baseline = seed_rows.get("matched_simclr")
+        if baseline is None:
+            continue
+        paired_deltas[str(seed)] = {
+            arm["name"]: {
+                "avg_delta_pp": seed_rows[arm["name"]]["avg_acc_last10"] - baseline["avg_acc_last10"],
+                "wga_delta_pp": seed_rows[arm["name"]]["wga_last10"] - baseline["wga_last10"],
+            }
+            for arm in cfg["arms"]
+            if arm["name"] in seed_rows
+        }
+    with (output / "results.csv").open("w", newline="", encoding="utf-8") as handle:
+        fields = ["seed", "arm", "result", "avg_acc_last10", "wga_last10"]
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows({field: row.get(field) for field in fields} for row in rows)
+    paired_deltas_by_baseline = {"matched_simclr": paired_deltas}
+    for baseline_name in ("raw_distillation", "shuffled_reconstruction"):
+        baseline_deltas = {}
+        for seed in cfg["seeds"]:
+            seed_rows = {row["arm"]: row for row in rows if row["seed"] == seed}
+            baseline = seed_rows.get(baseline_name)
+            if baseline is None:
+                continue
+            baseline_deltas[str(seed)] = {
+                arm["name"]: {
+                    "avg_delta_pp": seed_rows[arm["name"]]["avg_acc_last10"] - baseline["avg_acc_last10"],
+                    "wga_delta_pp": seed_rows[arm["name"]]["wga_last10"] - baseline["wga_last10"],
+                }
+                for arm in cfg["arms"]
+                if arm["name"] in seed_rows
+            }
+        paired_deltas_by_baseline[baseline_name] = baseline_deltas
     report = {
         "artifact": "concept_transfer_v1_summary",
         "rows": rows,
@@ -145,6 +212,8 @@ def summary(path: Path) -> Path:
         "passed": not failures and len(rows) == len(cfg["seeds"]) * len(cfg["arms"]),
         "winner_selection": "disabled; report all predeclared arms and seeds",
         "screen_gate": cfg["screen_gate"],
+        "paired_deltas_vs_matched_simclr": paired_deltas,
+        "paired_deltas": paired_deltas_by_baseline,
     }
     report_path = output / "summary.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

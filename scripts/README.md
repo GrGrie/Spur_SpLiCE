@@ -205,6 +205,28 @@ scp -r USER@CLUSTER:/home/xar68reb/Spur_SpLiCE/outputs/next_tests_2026-09-07 ./o
 The GPU array requests at most `--mem=40G` and `--cpus-per-task=5`; prepare,
 smoke, integrity, and summary jobs use less memory but keep the same CPU cap.
 
+## 8. Final pre-meeting series: corrected transfer and graph ablation
+
+The complete series from `docs/NEXT_ACTIONS_AFTER_TRANSFER_2026-09-07.md` is
+submitted with one command:
+
+```bash
+sbatch scripts/run_next_actions_after_transfer_2026-09-07.sbatch
+```
+
+It performs the saved-probe integrity gate, target/graph preflight, 8 corrected
+direct-transfer runs (SimCLR temperature `0.05`), 4 CRP-versus-semantic-SpLiCE
+graph runs (KL temperature `0.25`, weight `0.5`), and up to five independent
+post-hoc visual panels. Every 500-epoch SSL run uses W&B and records the AMP
+gradient diagnostics at epochs `1,11,20,25,500`.
+
+Training uses at most `--mem=40G`, `--cpus-per-task=5`, and `num_workers=4`.
+All submitted Slurm logs are under
+`outputs/next_actions_after_transfer_2026-09-07/logs/`. Results are under the
+same root in `direct_transfer/`, `graph_ablation/`, `visual/`, and
+`integrity/`; the launcher writes submitted job IDs to
+`submitted_<launcher-job-id>.json`.
+
 ## Retained controls and utilities
 
 - `prepare_concepts.conf` and `CoBalT/scripts/prepare_concepts.sbatch` retain the

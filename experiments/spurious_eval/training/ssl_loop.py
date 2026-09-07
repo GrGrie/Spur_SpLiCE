@@ -29,34 +29,70 @@ class AverageMeter:
         self.avg = self.sum / self.count
 
 
-def _gradient_diagnostic(model, parts: dict[str, torch.Tensor], splice_regularizer, epoch: int, batch: int) -> dict:
-    """Inspect both objective gradients without touching ``.grad`` or model state."""
+def _gradient_diagnostic(
+    model,
+    parts: dict[str, torch.Tensor],
+    splice_regularizer,
+    scaler,
+    epoch: int,
+    batch: int,
+) -> dict:
+    """Inspect AMP-scaled objective gradients without touching model state.
 
-    parameters = [parameter for parameter in model.encoder.parameters() if parameter.requires_grad]
-    simclr_grads = torch.autograd.grad(
-        parts["simclr"].float(), parameters, retain_graph=True, allow_unused=True
-    )
-    splice_grads = torch.autograd.grad(
-        parts["splice"].float(), parameters, retain_graph=True, allow_unused=True
-    )
+    AMP can underflow an FP16 objective before a later ``.float()`` cast.  The
+    loss therefore has to be scaled *before* ``autograd.grad``; the returned
+    parameter gradients are then converted to float32 and unscaled.
+    """
 
-    def flatten(grads):
+    encoder_parameters = [parameter for parameter in model.encoder.parameters() if parameter.requires_grad]
+    head_parameters = []
+    if model.clip_distillation_head is not None:
+        head_parameters = [
+            parameter for parameter in model.clip_distillation_head.parameters() if parameter.requires_grad
+        ]
+    scaler_enabled = bool(scaler.is_enabled()) if hasattr(scaler, "is_enabled") else False
+    scale = float(scaler.get_scale()) if scaler_enabled else 1.0
+
+    def gradients(loss, parameters):
+        if not parameters:
+            return []
+        return torch.autograd.grad(
+            loss * scale, parameters, retain_graph=True, allow_unused=True
+        )
+
+    simclr_encoder_grads = gradients(parts["simclr"], encoder_parameters)
+    splice_encoder_grads = gradients(parts["splice"], encoder_parameters)
+    simclr_head_grads = gradients(parts["simclr"], head_parameters)
+    splice_head_grads = gradients(parts["splice"], head_parameters)
+
+    def flatten(grads, parameters):
         pieces = [
-            (gradient.detach().float() if gradient is not None else torch.zeros_like(parameter, dtype=torch.float32)).reshape(-1)
+            (
+                gradient.detach().float() / scale
+                if gradient is not None
+                else torch.zeros_like(parameter, dtype=torch.float32)
+            ).reshape(-1)
             for gradient, parameter in zip(grads, parameters)
         ]
         return torch.cat(pieces) if pieces else torch.zeros(1, dtype=torch.float32)
 
-    simclr_vector = flatten(simclr_grads)
-    splice_vector = flatten(splice_grads)
-    simclr_norm = float(torch.linalg.vector_norm(simclr_vector))
-    splice_norm = float(torch.linalg.vector_norm(splice_vector))
-    finite = bool(torch.isfinite(simclr_vector).all() and torch.isfinite(splice_vector).all())
+    simclr_encoder = flatten(simclr_encoder_grads, encoder_parameters)
+    splice_encoder = flatten(splice_encoder_grads, encoder_parameters)
+    simclr_head = flatten(simclr_head_grads, head_parameters)
+    splice_head = flatten(splice_head_grads, head_parameters)
+    simclr_norm = float(torch.linalg.vector_norm(simclr_encoder))
+    splice_norm = float(torch.linalg.vector_norm(splice_encoder))
+    finite = bool(
+        torch.isfinite(simclr_encoder).all()
+        and torch.isfinite(splice_encoder).all()
+        and torch.isfinite(simclr_head).all()
+        and torch.isfinite(splice_head).all()
+    )
     if not finite:
         raise FloatingPointError(f"Non-finite encoder gradient in diagnostic at epoch={epoch}, batch={batch}.")
     cosine = None
     if simclr_norm > 0 and splice_norm > 0:
-        cosine = float(F.cosine_similarity(simclr_vector.view(1, -1), splice_vector.view(1, -1)).item())
+        cosine = float(F.cosine_similarity(simclr_encoder.view(1, -1), splice_encoder.view(1, -1)).item())
     embeddings = parts["_embeddings"].detach().float()
     centered = embeddings - embeddings.mean(dim=0, keepdim=True)
     variance = float(centered.square().mean())
@@ -69,10 +105,16 @@ def _gradient_diagnostic(model, parts: dict[str, torch.Tensor], splice_regulariz
         "batch": int(batch),
         "simclr_gradient_norm": simclr_norm,
         "kl_gradient_norm": splice_norm,
+        "encoder_simclr_gradient_norm": simclr_norm,
+        "encoder_kl_gradient_norm": splice_norm,
+        "direct_head_simclr_gradient_norm": float(torch.linalg.vector_norm(simclr_head)),
+        "direct_head_kl_gradient_norm": float(torch.linalg.vector_norm(splice_head)),
         "gradient_ratio_kl_to_simclr": None if simclr_norm == 0 else splice_norm / simclr_norm,
         "gradient_cosine": cosine,
         "simclr_gradient_zero": simclr_norm == 0,
         "kl_gradient_zero": splice_norm == 0,
+        "direct_head_present": bool(head_parameters),
+        "amp_scale": scale,
         "embedding_norm_mean": float(embeddings.norm(dim=1).mean()),
         "embedding_variance": variance,
         "embedding_effective_rank": effective_rank,
@@ -179,7 +221,7 @@ def train_one_epoch(
         "row_mass_after_renorm": AverageMeter(),
     }
     gradient_records = []
-    diagnostic_epochs = {1, 11, 20, 25}
+    diagnostic_epochs = set(getattr(args, "gradient_diagnostics_epochs", (1, 11, 20, 25, 500)))
     diagnostic_batches = int(getattr(args, "gradient_diagnostics_batches", 4))
 
     if hasattr(splice_regularizer, "set_epoch"):
@@ -226,7 +268,7 @@ def train_one_epoch(
             and epoch in diagnostic_epochs
             and idx < diagnostic_batches
         ):
-            gradient_records.append(_gradient_diagnostic(model, parts, splice_regularizer, epoch, idx))
+            gradient_records.append(_gradient_diagnostic(model, parts, splice_regularizer, scaler, epoch, idx))
 
         if args.optimizer == "SAM":
             optimizer.zero_grad()
