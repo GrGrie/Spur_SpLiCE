@@ -238,3 +238,35 @@ CSV не перезаписывается повторным рендером. H
 переносить/открывать нужно весь каталог `visual/POLICY`, не один HTML файл.
 Повышение оценок интерпретируемости, качества рёбер и Avg/WGA — три разных вывода;
 один не подставляется вместо другого.
+
+## Сравнение обученных encoder-ов на картинках
+
+Для post-hoc просмотра одного seed есть отдельный renderer
+`scripts/tools/render_trained_comparison.py` и launcher
+`scripts/group_search_07_compare.sbatch`. Он не изменяет обучение и не использует
+test split. Пары фиксируются по raw frozen CLIP cosine: для каждого из четырёх
+типов `(target, background)` выбираются high и low cases. На тех же парах рядом
+показываются raw CLIP, raw CLIP после projection выбранной группы, обученный
+SimCLR и обученный CoSpRo. Отдельный раздел показывает до шести выбранных групп и
+до двух реальных retained edges на группу с teacher weight, edge/anchor confidence,
+activation и intervention gain.
+
+По умолчанию launcher уже использует завершённый pure SimCLR из
+`outputs/paper_completion_2026-09-08/core/seed1/simclr` и
+`outputs/concept_group_search_v1/ssl/seed1/semantic` для CoSpRo. В этих каталогах
+он сам ищет единственный `training/*/last.pth`.
+
+Пример для seed 1:
+
+```bash
+sbatch scripts/group_search_07_compare.sbatch
+```
+
+Меняемые параметры находятся в начале sbatch: `SEED`, `METHOD_POLICY`,
+`BASELINE_ROOT`, `METHOD_ROOT`, `GRAPH_PATH`, `BASELINE_CKPT` и `METHOD_CKPT`.
+Если задан явный `*_CKPT`, он имеет приоритет над соответствующим root.
+
+`BASELINE_CKPT` должен быть именно pure SimCLR checkpoint. `baseline` внутри
+`group_search_05_ssl` использует исходный CRP graph и поэтому не является чистым
+SimCLR-контролем. Если выбранная relation-пара не является retained teacher edge,
+renderer показывает это явно и не приписывает ей искусственный graph weight.
