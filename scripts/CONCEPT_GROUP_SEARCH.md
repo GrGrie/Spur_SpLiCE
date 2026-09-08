@@ -266,8 +266,10 @@ intervention gains:
 sbatch scripts/group_search_07_compare.sbatch
 ```
 
-Меняемые параметры: `METHOD_POLICY`, `CACHE_PATH`, `GRAPH_PATH`, `DATA_FOLDER` и
-`OUTPUT_PATH`. По умолчанию результат записывается в
+Меняемые параметры: `METHOD_POLICY`, `CACHE_PATH`, `GRAPH_PATH`, `DATA_FOLDER`,
+`OUTPUT_PATH` и `GROUP_SCOPE`. По умолчанию `GROUP_SCOPE=selected`, поэтому в
+индекс и каждый sweep входят только прошедшие graph selection группы. Значение
+`GROUP_SCOPE=all` возвращает также отклонённые audited groups. Результат записывается в
 `outputs/concept_group_search_v1/visual/POLICY/group_similarity_sweep.html`.
 Все изображения встроены в HTML как data URI, поэтому файл можно переносить и
 открывать отдельно.

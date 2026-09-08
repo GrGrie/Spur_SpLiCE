@@ -1,5 +1,5 @@
 #!/bin/bash
-# Render one self-contained frozen-CLIP similarity sweep over every concept group.
+# Render one self-contained frozen-CLIP similarity sweep over selected concept groups.
 # The job selects four diagnostic pairs (A+B, A+C, D+E, D+F) and two triplets,
 # then measures the cosine change after removing each CRP group subspace.
 
@@ -20,6 +20,7 @@ CACHE_PATH="${CACHE_PATH:-${PROJECT_DIR}/outputs/crp_controls_logistic_v1_cluste
 METHOD_POLICY="${METHOD_POLICY:-semantic}"
 GRAPH_PATH="${GRAPH_PATH:-${PROJECT_DIR}/outputs/concept_group_search_v1/graphs/${METHOD_POLICY}.json}"
 OUTPUT_PATH="${OUTPUT_PATH:-${PROJECT_DIR}/outputs/concept_group_search_v1/visual/${METHOD_POLICY}/group_similarity_sweep.html}"
+GROUP_SCOPE="${GROUP_SCOPE:-selected}"
 
 cd "${PROJECT_DIR}"
 export OMP_NUM_THREADS=5 MKL_NUM_THREADS=5 OPENBLAS_NUM_THREADS=5
@@ -29,6 +30,7 @@ source scripts/load_splice_cluster_env.sh
     --cache "${CACHE_PATH}" \
     --data-folder "${DATA_FOLDER}" \
     --graph "${GRAPH_PATH}" \
-    --output "${OUTPUT_PATH}"
+    --output "${OUTPUT_PATH}" \
+    --scope "${GROUP_SCOPE}"
 
 echo "Concept-group similarity sweep: ${OUTPUT_PATH}"
