@@ -239,34 +239,35 @@ CSV не перезаписывается повторным рендером. H
 Повышение оценок интерпретируемости, качества рёбер и Avg/WGA — три разных вывода;
 один не подставляется вместо другого.
 
-## Сравнение обученных encoder-ов на картинках
+## Полный concept-group cosine sweep на картинках
 
-Для post-hoc просмотра одного seed есть отдельный renderer
-`scripts/tools/render_trained_comparison.py` и launcher
-`scripts/group_search_07_compare.sbatch`. Он не изменяет обучение и не использует
-test split. Пары фиксируются по raw frozen CLIP cosine: для каждого из четырёх
-типов `(target, background)` выбираются high и low cases. На тех же парах рядом
-показываются raw CLIP, raw CLIP после projection выбранной группы, обученный
-SimCLR и обученный CoSpRo. Отдельный раздел показывает до шести выбранных групп и
-до двух реальных retained edges на группу с teacher weight, edge/anchor confidence,
-activation и intervention gain.
+`scripts/group_search_07_compare.sbatch` запускает
+`scripts/tools/render_group_similarity_sweep.py` и создаёт один self-contained
+HTML. Обученные checkpoints и test split не используются. В начале отчёта
+перечислены все группы `G*`; затем для каждой диагностической пары измеряются
+исходный cosine, cosine после удаления каждой группы и
+`gain = after - initial`.
 
-По умолчанию launcher уже использует завершённый pure SimCLR из
-`outputs/paper_completion_2026-09-08/core/seed1/simclr` и
-`outputs/concept_group_search_v1/ssl/seed1/semantic` для CoSpRo. В этих каталогах
-он сам ищет единственный `training/*/last.pth`.
+Пары выбираются детерминированно только по frozen centered CLIP, до вычисления
+intervention gains:
 
-Пример для seed 1:
+- `A+B` и `A+C`: одинаковый label, разные spurious data, общий anchor A;
+  соответственно высокая и низкая исходная похожесть.
+- `D+E` и `D+F`: одинаковые spurious data, разные labels, общий anchor D;
+  соответственно высокая и низкая исходная похожесть.
+- `K+N` и `K+L`: у всех metadata `(y, place)=(1,1)`, общий anchor K;
+  соответственно высокая и низкая исходная похожесть.
+- `X+Y` и `X+Z`: X имеет `(1,0)`, Y/Z имеют `(0,1)`, общий anchor X;
+  соответственно высокая и низкая исходная похожесть.
+
+Один запуск:
 
 ```bash
 sbatch scripts/group_search_07_compare.sbatch
 ```
 
-Меняемые параметры находятся в начале sbatch: `SEED`, `METHOD_POLICY`,
-`BASELINE_ROOT`, `METHOD_ROOT`, `GRAPH_PATH`, `BASELINE_CKPT` и `METHOD_CKPT`.
-Если задан явный `*_CKPT`, он имеет приоритет над соответствующим root.
-
-`BASELINE_CKPT` должен быть именно pure SimCLR checkpoint. `baseline` внутри
-`group_search_05_ssl` использует исходный CRP graph и поэтому не является чистым
-SimCLR-контролем. Если выбранная relation-пара не является retained teacher edge,
-renderer показывает это явно и не приписывает ей искусственный graph weight.
+Меняемые параметры: `METHOD_POLICY`, `CACHE_PATH`, `GRAPH_PATH`, `DATA_FOLDER` и
+`OUTPUT_PATH`. По умолчанию результат записывается в
+`outputs/concept_group_search_v1/visual/POLICY/group_similarity_sweep.html`.
+Все изображения встроены в HTML как data URI, поэтому файл можно переносить и
+открывать отдельно.
