@@ -38,6 +38,15 @@ def digest(path):
     return h.hexdigest()
 
 
+def artifact_fingerprint(path):
+    """BLAKE2b-128 identity used by the locked CRP artifact protocol."""
+    h = hashlib.blake2b(digest_size=16)
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def run(module, *args):
     subprocess.run([sys.executable, "-u", "-m", module, *map(str, args)], check=True, cwd=ROOT)
 
@@ -94,14 +103,88 @@ def inventory():
 
 
 def check_graphs():
-    from splice.graph_io import graph_fingerprint
+    diagnosis = diagnose_artifacts(write_report=False)
+    mismatches = [name for name, record in diagnosis["artifacts"].items()
+                  if not record["matches_expected"]]
+    if mismatches:
+        details = "; ".join(
+            f"{name}: exists={diagnosis['artifacts'][name]['exists']}, "
+            f"expected={diagnosis['artifacts'][name]['expected']}, "
+            f"actual={diagnosis['artifacts'][name]['actual']}"
+            for name in mismatches
+        )
+        raise RuntimeError(
+            "Frozen artifact identity mismatch. " + details +
+            ". Run `sbatch scripts/paper_00_diagnose_artifacts.sbatch` and inspect "
+            "outputs/paper_completion_2026-09-08/artifact_diagnosis.json. "
+            "Do not replace the expected fingerprint or rebuild a graph before comparing the report."
+        )
+    return {name: Path(record["path"]) for name, record in diagnosis["artifacts"].items()}
+
+
+def diagnose_artifacts(write_report: bool = True) -> dict:
+    """Read-only identity report for the frozen cache and its two historical graphs."""
     expected = read(ROOT / "scripts/crp_signal_checks.conf")["expected_fingerprints"]
     paths = {"cache": BASE / "waterbirds_train_features.pt",
              "crp": BASE / "graphs/crp_graph.json", "raw_clip": BASE / "graphs/raw_clip_graph.json"}
+    recorded = {
+        "cache": read(BASE / "cache_identity.json") if (BASE / "cache_identity.json").is_file() else None,
+        "graphs": read(BASE / "graph_identity.json") if (BASE / "graph_identity.json").is_file() else None,
+    }
+    artifacts = {}
     for name, path in paths.items():
-        if not path.is_file() or graph_fingerprint(path) != expected[name]:
-            raise RuntimeError(f"Restore the original frozen {name} artifact: {path}; do not rebuild a different graph.")
-    return paths
+        exists = path.is_file()
+        actual = artifact_fingerprint(path) if exists else None
+        record = {"path": str(path), "exists": exists, "expected": expected[name],
+                  "actual": actual, "matches_expected": actual == expected[name]}
+        if exists:
+            stat = path.stat()
+            record.update(size_bytes=stat.st_size, modified_unix_seconds=stat.st_mtime)
+        if name == "cache" and recorded["cache"]:
+            record["recorded_identity"] = recorded["cache"].get("content_id")
+        if name != "cache" and recorded["graphs"]:
+            record["recorded_identity"] = recorded["graphs"].get(name)
+        artifacts[name] = record
+
+    compatibility = {"cache_loaded": False, "graph_sample_ids_match_cache": {}}
+    try:
+        if artifacts["cache"]["exists"]:
+            import hashlib
+            import torch
+            from splice.crp import validate_feature_cache
+            cache = validate_feature_cache(torch.load(paths["cache"], map_location="cpu", weights_only=True))
+            compatibility["cache_loaded"] = True
+            compatibility["cache_sample_count"] = len(cache["sample_ids"])
+            compatibility["cache_sample_ids_sha256"] = hashlib.sha256(
+                "\n".join(map(str, cache["sample_ids"])).encode("utf-8")
+            ).hexdigest()
+            for name in ("crp", "raw_clip"):
+                if not artifacts[name]["exists"]:
+                    continue
+                from splice.graph_io import load_graph_json
+                graph = load_graph_json(paths[name])
+                matches = [str(value) for value in graph.get("sample_ids", [])] == [str(value) for value in cache["sample_ids"]]
+                compatibility["graph_sample_ids_match_cache"][name] = matches
+                compatibility[f"{name}_sample_count"] = len(graph.get("sample_ids", []))
+    except Exception as exc:
+        compatibility["load_error"] = repr(exc)
+
+    result = {"artifact": "paper_completion_artifact_diagnosis_v1",
+              "artifacts": artifacts, "recorded_identity_files": recorded,
+              "compatibility": compatibility,
+              "interpretation": {
+                  "file_exists_but_fingerprint_differs": "The file is present but its bytes are not the frozen artifact referenced by the historical protocol.",
+                  "recorded_identity_matches_actual_but_expected_differs": "The local identity file was created for a different cache/graph than the paper's locked historical fingerprint.",
+                  "sample_ids_match_but_fingerprint_differs": "Row alignment alone is insufficient to establish that frozen features/codes/dictionary are identical. Do not accept it as a protocol match without recovery evidence."
+              }}
+    if write_report:
+        write(OUT / "artifact_diagnosis.json", result)
+    return result
+
+
+def diagnose():
+    result = diagnose_artifacts()
+    print(json.dumps(result, indent=2, sort_keys=True))
 
 
 def prepare():
@@ -285,7 +368,7 @@ def test_summary():
 
 def main():
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("stage", choices=["prepare", "inventory", "direct", "graph", "core", "lock", "test", "summary", "test_summary"])
+    parser.add_argument("stage", choices=["prepare", "inventory", "diagnose", "direct", "graph", "core", "lock", "test", "summary", "test_summary"])
     parser.add_argument("--task", type=int, default=0)
     args = parser.parse_args()
     limit = 8 if args.stage == "direct" else 4 if args.stage == "graph" else 20

@@ -45,17 +45,9 @@ dispatch="$(sbatch --parsable --dependency="afterok:${inventory}" \
 dispatch="${dispatch%%;*}"
 
 manifest="outputs/paper_completion_2026-09-08/submitted_all_${SLURM_JOB_ID}.json"
-python - "${manifest}" "${inventory}" "${prepare}" "${direct}" "${graph}" "${summary}" "${dispatch}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-keys = ["inventory", "prepare", "direct", "graph", "meeting_summary", "core_test_dispatch"]
-payload = dict(zip(keys, sys.argv[2:]))
-payload.update({"status": "submitted", "launcher": "paper_all.sbatch"})
-Path(sys.argv[1]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-print(json.dumps(payload, indent=2, sort_keys=True))
-PY
+printf '{\n  "core_test_dispatch": "%s",\n  "direct": "%s",\n  "graph": "%s",\n  "inventory": "%s",\n  "launcher": "paper_all.sbatch",\n  "meeting_summary": "%s",\n  "prepare": "%s",\n  "status": "submitted"\n}\n' \
+    "${dispatch}" "${direct}" "${graph}" "${inventory}" "${summary}" "${prepare}" > "${manifest}"
+cat "${manifest}"
 
 echo "Submitted paper pipeline. Initial manifest: ${manifest}"
 echo "The dispatcher (${dispatch}) will create the conditional core/test chain after inventory."

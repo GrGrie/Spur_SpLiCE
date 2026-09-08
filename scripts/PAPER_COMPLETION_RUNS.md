@@ -186,3 +186,20 @@ probe runner ключи метрик называются `val` даже при 
 `sacct -j JOBID --format=JobID,State,ExitCode,Elapsed,MaxRSS`.
 `afterok` не продолжает цепочку после ошибки: сначала прочитайте соответствующий
 `.err/.out`, затем повторите неуспешный элемент и нужные последующие этапы.
+
+## Если frozen cache или graph не проходит fingerprint-проверку
+
+Файл может существовать, но отличаться от исторического frozen artifact на уровне
+байтов. Для read-only диагностики используйте:
+
+```bash
+sbatch scripts/paper_00_diagnose_artifacts.sbatch
+```
+
+Отчёт: `outputs/paper_completion_2026-09-08/artifact_diagnosis.json`. Он содержит
+ожидаемый и фактический BLAKE2b fingerprint, размер/время файла, значения из
+`cache_identity.json` / `graph_identity.json` и совпадение `sample_ids` cache/graph.
+Не заменяйте expected fingerprint на фактический только для разблокировки запуска:
+совпадение sample IDs не доказывает совпадение frozen CLIP features, SpLiCE codes
+или dictionary. Сначала восстановите исторический cache и соответствующие graphs
+из сохранённого вывода или W&B artifact, затем повторите pipeline.

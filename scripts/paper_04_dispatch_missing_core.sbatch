@@ -48,14 +48,6 @@ test_summary_job="$(sbatch --parsable --dependency="afterok:${test_job}" scripts
 test_summary_job="${test_summary_job%%;*}"
 
 manifest="outputs/paper_completion_2026-09-08/submitted_test_chain_${SLURM_JOB_ID}.json"
-python - "${manifest}" "${PAPER_SUMMARY_JOB}" "${core_job}" "${lock_job}" "${test_job}" "${test_summary_job}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-keys = ["meeting_summary", "missing_core", "final_test_lock", "test_probes", "test_summary"]
-payload = dict(zip(keys, sys.argv[2:]))
-payload["status"] = "submitted"
-Path(sys.argv[1]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-print(json.dumps(payload, indent=2, sort_keys=True))
-PY
+printf '{\n  "final_test_lock": "%s",\n  "meeting_summary": "%s",\n  "missing_core": "%s",\n  "status": "submitted",\n  "test_probes": "%s",\n  "test_summary": "%s"\n}\n' \
+    "${lock_job}" "${PAPER_SUMMARY_JOB}" "${core_job}" "${test_job}" "${test_summary_job}" > "${manifest}"
+cat "${manifest}"

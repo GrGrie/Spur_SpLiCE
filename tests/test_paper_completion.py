@@ -9,6 +9,26 @@ from scripts.tools import paper_completion as p
 
 
 class PaperCompletionTests(unittest.TestCase):
+    def test_diagnosis_reports_mismatch_without_accepting_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / 'outputs' / 'crp_controls_logistic_v1_cluster_seeds12'
+            (base / 'graphs').mkdir(parents=True)
+            for path in (base / 'waterbirds_train_features.pt',
+                         base / 'graphs' / 'crp_graph.json',
+                         base / 'graphs' / 'raw_clip_graph.json'):
+                path.write_bytes(b'different-artifact')
+            config = root / 'scripts' / 'crp_signal_checks.conf'
+            config.parent.mkdir()
+            config.write_text(json.dumps({'expected_fingerprints': {
+                'cache': 'expected-cache', 'crp': 'expected-crp', 'raw_clip': 'expected-raw'}}))
+            with patch.object(p, 'ROOT', root), patch.object(p, 'BASE', base), patch.object(p, 'OUT', root / 'diagnosis'):
+                report = p.diagnose_artifacts()
+                self.assertTrue(all(not item['matches_expected'] for item in report['artifacts'].values()))
+                self.assertIn('load_error', report['compatibility'])
+                with self.assertRaisesRegex(RuntimeError, 'actual='):
+                    p.check_graphs()
+
     def test_all_launcher_preserves_the_pipeline_and_conditional_dispatch(self):
         script = Path('scripts/paper_all.sbatch').read_text(encoding='utf-8')
         dispatcher = Path('scripts/paper_04_dispatch_missing_core.sbatch').read_text(encoding='utf-8')
