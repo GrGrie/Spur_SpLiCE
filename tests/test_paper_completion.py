@@ -26,8 +26,24 @@ class PaperCompletionTests(unittest.TestCase):
                 report = p.diagnose_artifacts()
                 self.assertTrue(all(not item['matches_expected'] for item in report['artifacts'].values()))
                 self.assertIn('load_error', report['compatibility'])
-                with self.assertRaisesRegex(RuntimeError, 'actual='):
+                with self.assertRaisesRegex(RuntimeError, 'cache_loaded=False'):
                     p.check_graphs()
+
+    def test_valid_aligned_artifacts_are_accepted_despite_historical_hash_difference(self):
+        report = {
+            'artifacts': {
+                name: {'path': f'/tmp/{name}', 'exists': True, 'matches_expected': False}
+                for name in ('cache', 'crp', 'raw_clip')
+            },
+            'compatibility': {
+                'cache_loaded': True,
+                'graph_sample_ids_match_cache': {'crp': True, 'raw_clip': True},
+                'graph_validated': {'crp': True, 'raw_clip': True},
+            },
+        }
+        with patch.object(p, 'diagnose_artifacts', return_value=report):
+            paths = p.check_graphs()
+        self.assertEqual(paths['cache'], Path('/tmp/cache'))
 
     def test_all_launcher_preserves_the_pipeline_and_conditional_dispatch(self):
         script = Path('scripts/paper_all.sbatch').read_text(encoding='utf-8')

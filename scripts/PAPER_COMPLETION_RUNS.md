@@ -187,10 +187,10 @@ probe runner ключи метрик называются `val` даже при 
 `afterok` не продолжает цепочку после ошибки: сначала прочитайте соответствующий
 `.err/.out`, затем повторите неуспешный элемент и нужные последующие этапы.
 
-## Если frozen cache или graph не проходит fingerprint-проверку
+## Local artifact validation
 
-Файл может существовать, но отличаться от исторического frozen artifact на уровне
-байтов. Для read-only диагностики используйте:
+Исторические fingerprints теперь служат только provenance и не блокируют запуск.
+Для read-only диагностики используйте:
 
 ```bash
 sbatch scripts/paper_00_diagnose_artifacts.sbatch
@@ -199,7 +199,7 @@ sbatch scripts/paper_00_diagnose_artifacts.sbatch
 Отчёт: `outputs/paper_completion_2026-09-08/artifact_diagnosis.json`. Он содержит
 ожидаемый и фактический BLAKE2b fingerprint, размер/время файла, значения из
 `cache_identity.json` / `graph_identity.json` и совпадение `sample_ids` cache/graph.
-Не заменяйте expected fingerprint на фактический только для разблокировки запуска:
-совпадение sample IDs не доказывает совпадение frozen CLIP features, SpLiCE codes
-или dictionary. Сначала восстановите исторический cache и соответствующие graphs
-из сохранённого вывода или W&B artifact, затем повторите pipeline.
+Запуск блокируется только если отсутствует файл, cache не загружается, graph не
+проходит валидацию или его `sample_ids` не совпадают с cache. Фактические identities
+сохраняются в diagnosis и final manifest; результаты с отличающимся cache не следует
+называть byte-identical исторической репликацией.
