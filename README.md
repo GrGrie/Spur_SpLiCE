@@ -19,8 +19,9 @@ student inference.
 - `outputs/` — Git-friendly run records, shared JSON artifacts, aggregate reports and ignored Slurm logs.
 - `tests/` — tests for the current method only.
 
-See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow and
-the README inside the selected artifact root for artifact navigation.
+See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow,
+[`docs/REPO_STRUCTURE.md`](docs/REPO_STRUCTURE.md) for the canonical storage
+policy, and `outputs/README.md` for result navigation.
 
 ## Run the canonical experiment
 
@@ -40,8 +41,8 @@ python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 
 
 Existing execution directories are protected by default. Choose
 `--existing reuse`, `resume`, or `new-attempt` explicitly; reuse/resume require
-the recorded command to match. Use `--output-root outputs/output_cluster` or
-set `SPUR_SPLICE_OUTPUT_ROOT` to inspect a packaged artifact layout. This is
+the recorded command to match. Use `--output-root PATH` or set
+`SPUR_SPLICE_OUTPUT_ROOT` to inspect a packaged artifact layout. This is
 independent of `SPUR_SPLICE_SCRATCH_ROOT`, which stores large binaries.
 
 Build shared inputs directly:
@@ -50,7 +51,7 @@ Build shared inputs directly:
 python -m scripts.tools.cache_crp_features --help
 python -m splice.crp --help
 python -m scripts.tools.build_crp_baseline_graphs --help
-python -m scripts.tools.build_paper_results --artifact-root outputs/output_cluster
+python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
 ```
 
 ## Verification
@@ -62,8 +63,8 @@ python -m unittest discover -s tests -p 'test_*.py'
 ```
 
 The checked root `paper_results.json` is regenerated from the selected artifact
-tree. In the packaged copy, its source aggregate is
-`outputs/output_cluster/reports/paper/test_summary.json`.
+tree. Its historical source aggregate is `reports/paper/test_summary.json`
+inside the archived pre-unification artifact package.
 
 For this study, DONE means: a predeclared split/protocol, unique run identity,
 linked endpoint metrics, completed and converged status, and explicit limits.
@@ -72,6 +73,6 @@ detail or rerunning training when no scientific claim would change.
 
 The final aggregate for a study is `outputs/reports/<study>/results.json`.
 Run records are under `outputs/seeds/<study>/seed_XX/<arm>/<attempt_id>/`;
-large SSL checkpoints
-and probe feature tensors are retained under `/scratch/xar68reb/CoSpRo` and
+SSL checkpoints and large probe feature tensors are retained under
+`/scratch/xar68reb/CoSpRo` and
 attested by size and SHA-256 in each `run.json`.

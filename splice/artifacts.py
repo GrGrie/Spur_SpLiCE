@@ -120,10 +120,14 @@ def scratch_binary_directory(kind: str, identity: Mapping[str, Any]) -> Path:
 
 
 def binary_destination(local_path: str | Path, payload_bytes: int, *, kind: str, identity: Mapping[str, Any] | None) -> Path:
-    """Route only binary SSL/probe payloads larger than 10 MiB to scratch."""
+    """Route canonical checkpoints and large feature payloads to scratch."""
 
     path = Path(local_path)
-    if path.suffix.lower() not in BINARY_SUFFIXES or payload_bytes <= BINARY_SIZE_THRESHOLD:
+    if path.suffix.lower() not in BINARY_SUFFIXES:
+        return path
+    canonical_checkpoint = kind == "checkpoints" and identity is not None
+    large_payload = payload_bytes > BINARY_SIZE_THRESHOLD
+    if not canonical_checkpoint and not large_payload:
         return path
     if identity is None:
         raise ValueError("Large binary artifacts require study/seed/arm/attempt identity")

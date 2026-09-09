@@ -40,19 +40,28 @@ class ArtifactPathTests(unittest.TestCase):
                 self.assertEqual(resolve_output_root(), root)
                 self.assertEqual(shared("waterbirds"), root / "shared" / "waterbirds")
 
-    def test_binary_routing_uses_strict_ten_mib_boundary(self):
+    def test_canonical_checkpoints_always_route_to_scratch(self):
         identity = {"study": "paper", "seed": 1, "arm": "simclr", "attempt_id": "attempt"}
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": directory}
         ):
             local = Path(directory).parent / "result.pth"
-            self.assertEqual(
-                binary_destination(local, BINARY_SIZE_THRESHOLD, kind="checkpoints", identity=identity),
-                local,
-            )
-            routed = binary_destination(local, BINARY_SIZE_THRESHOLD + 1, kind="checkpoints", identity=identity)
+            routed = binary_destination(local, 1, kind="checkpoints", identity=identity)
             self.assertTrue(str(routed).startswith(directory))
             self.assertIn("checkpoints", routed.parts)
+
+    def test_feature_routing_uses_strict_ten_mib_boundary(self):
+        identity = {"study": "paper", "seed": 1, "arm": "simclr", "attempt_id": "attempt"}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": directory}
+        ):
+            local = Path(directory).parent / "features.pt"
+            self.assertEqual(
+                binary_destination(local, BINARY_SIZE_THRESHOLD, kind="features", identity=identity),
+                local,
+            )
+            routed = binary_destination(local, BINARY_SIZE_THRESHOLD + 1, kind="features", identity=identity)
+            self.assertTrue(str(routed).startswith(directory))
 
 
 if __name__ == "__main__":

@@ -20,10 +20,11 @@ size and SHA-256 verification.
 
 The versioned contract is [`schemas/run-record-v1.schema.json`](../schemas/run-record-v1.schema.json).
 
-Binary `.pth`, `.pt` and `.ckpt` payloads larger than 10 MiB are written under
-`/scratch/xar68reb/CoSpRo/{checkpoints,features}/Spur_SpLiCE/`. Smaller binaries
-may remain beside a run but are ignored by Git. Slurm output is kept in
-`outputs/SLURM/` and is also ignored.
+Canonical checkpoints are written under
+`/scratch/xar68reb/CoSpRo/checkpoints/Spur_SpLiCE/` regardless of size. Feature
+payloads larger than 10 MiB go under the sibling `features/` tree. Small local
+feature tensors may remain beside a run but are ignored by Git. Slurm output is
+kept in `outputs/SLURM/` and is also ignored.
 
 Set `SPUR_SPLICE_SCRATCH_ROOT` to override the binary location. The legacy
 cluster variable `SPUR_SPLICE_ARTIFACT_ROOT` is accepted as a fallback, but it
@@ -38,6 +39,12 @@ copied historical output tree.
 `python -m scripts.tools.archive_legacy` to inventory it, then archive it to
 scratch. The verified archive manifest is written under
 `outputs/reports/legacy-archive/` and is suitable for Git.
+
+On Windows, `python scripts/tools/cleanup_local_outputs.py` performs a dry-run
+classification of quarantined tensors. Add `--apply` only after review: the
+tool writes `outputs/reports/local-cleanup/windows-pre-unification.json`,
+promotes legacy CSV results into that JSON, removes result-backed checkpoints
+and reproducible caches, and retains ambiguous tensors.
 
 Run the collector manually when needed:
 

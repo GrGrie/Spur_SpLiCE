@@ -1,5 +1,8 @@
 # Project map
 
+Storage and synchronization rules are defined in
+[`docs/REPO_STRUCTURE.md`](docs/REPO_STRUCTURE.md).
+
 ## Data flow
 
 ```text
@@ -40,7 +43,7 @@ graph assembly. Training consumes only validated graphs through
 - `outputs/shared/waterbirds/` contains the frozen cache and teacher graphs.
 - `outputs/reports/` contains aggregate results and completed-study provenance.
 - `outputs/reference/` contains vocabularies and external exports.
-- `/scratch/xar68reb/CoSpRo/` contains binary SSL/probe payloads larger than 10 MiB.
+- `/scratch/xar68reb/CoSpRo/` contains every canonical checkpoint and feature payloads larger than 10 MiB.
 
 Historical source paths embedded in result JSON files are retained as
 provenance. New code must obtain destinations through `splice.artifacts`.
