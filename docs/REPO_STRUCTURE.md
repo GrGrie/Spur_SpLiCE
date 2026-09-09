@@ -26,6 +26,7 @@ Spur_SpLiCE/
   outputs/                       Git-synchronized records; never bulk tensors
   docs/
     REPO_STRUCTURE.md            this canonical policy
+    history/                     dated migration and recovery records
   paper_results.json             checked compact registry for paper claims
   CoSpRo.tex                     paper source
 ```
@@ -186,6 +187,12 @@ bash scripts/submit_legacy_archive.sh --delete-after-verify pre-unification
 
 If scratch has an automatic purge policy, copy the archive to durable storage
 before deleting quarantine. A manifest proves integrity but is not a backup.
+
+If a historical archive manifest was already lost, promote its compact run and
+analysis records first. Reconstructing a full per-file manifest is optional
+when the retained archive is not being deleted; the recovery status must state
+that limitation and provide a reproducible reconstruction command. New archive
+operations still require a manifest before source deletion.
 
 ## Rules for changing the layout
 

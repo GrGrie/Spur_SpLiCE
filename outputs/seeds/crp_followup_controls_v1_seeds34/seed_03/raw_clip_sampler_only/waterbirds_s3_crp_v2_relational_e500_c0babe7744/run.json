@@ -1,0 +1,3115 @@
+{
+  "artifacts": [
+    {
+      "availability": "cluster-only",
+      "bytes": 2951476,
+      "kind": "probe_features",
+      "present_at_finish": true,
+      "retention_state": "recovery",
+      "sha256": "26c8be4151d1f39a4333826929ba87ae7beb4ef56e77977fa29d34f3812b654e",
+      "stage": "legacy_recovery",
+      "storage_path": "/scratch/xar68reb/CoSpRo/legacy_archives/Spur_SpLiCE/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744/probe_features_epoch_500_ds_train_val.pt",
+      "uri": "artifact://legacy_archives/Spur_SpLiCE/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744/probe_features_epoch_500_ds_train_val.pt",
+      "verified_at": "2026-09-09T21:33:23.526122+00:00"
+    }
+  ],
+  "cleanup": {
+    "probe_artifacts": {
+      "completed": true,
+      "removed_count": 15,
+      "requested": true,
+      "retained_epochs": [
+        100,
+        200,
+        300,
+        400,
+        500
+      ]
+    },
+    "ssl_checkpoints": {
+      "completed": true,
+      "removed_count": 5,
+      "requested": true
+    }
+  },
+  "config": {
+    "amp": true,
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_dir": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training",
+    "checkpoint_keep_count": 4,
+    "cosine": false,
+    "crp_decay_end_epoch": 0,
+    "crp_decay_start_epoch": 0,
+    "crp_graph_fingerprint": "c81c93e6f316f69249176929c9d3c4a4",
+    "crp_start_epoch": 10,
+    "crp_teacher_graph": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/raw_clip_graph.json",
+    "crp_temperature": 0.25,
+    "crp_warmup_epochs": 10,
+    "cudnn_benchmark": false,
+    "cudnn_enabled": true,
+    "data_folder": "/home/xar68reb/Datasets",
+    "dataset": "waterbirds",
+    "delete_checkpoints_after_training": true,
+    "device": "cuda",
+    "energy_threshold": 0.9,
+    "entity": "gsgrechkin-rptu",
+    "epochs": 500,
+    "feat_dim": 128,
+    "final_test": false,
+    "head": "mlp",
+    "keep_checkpoints": true,
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_learning_rate": 1.0,
+    "linear_lr_decay_epochs": [
+      60,
+      75,
+      90
+    ],
+    "linear_lr_decay_rate": 0.2,
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "linear_weight_decay": 0.0,
+    "lr_decay_epochs": [
+      350,
+      400,
+      450
+    ],
+    "lr_decay_rate": 0.1,
+    "method": "SimCLR",
+    "model": "resnet18_large",
+    "model_name": "SimCLR_waterbirds_SGD_resnet18_large_mlp_crp_relational_w0_t0.25_start10_warm10_seed3_lr0.01_bs128_temp0.05_amp1_cl1_cudnn1_bench0",
+    "momentum": 0.9,
+    "n_cls": 2,
+    "num_workers": 4,
+    "only_sam_step_size": false,
+    "optimizer": "SGD",
+    "print_freq": 10,
+    "rank_eval_freq": 100,
+    "rank_threshold": 0.1,
+    "relational_graph_empty": false,
+    "resume": "",
+    "retain_probe_artifacts_every": 100,
+    "rho": 0.05,
+    "runtime_versions": {
+      "numpy": "2.2.6",
+      "open-clip-torch": "3.3.0",
+      "platform": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+      "python": "3.10.20",
+      "scikit-learn": "1.7.2",
+      "scipy": "1.15.3",
+      "torch": "2.5.1+cu118",
+      "torchvision": "0.20.1+cu118",
+      "wandb": "0.26.0"
+    },
+    "sam_base_optimizer": "SGD",
+    "sam_no_grad_norm": false,
+    "save_folder": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744",
+    "save_freq": 50,
+    "seed": 3,
+    "simclr_weight": 1.0,
+    "splice_auto_candidate_thresholds": "0.005,0.01,0.02,0.03,0.05,0.1",
+    "splice_auto_deduplicate_concepts": true,
+    "splice_auto_instability_penalty": 1.0,
+    "splice_auto_label_penalty": 1.0,
+    "splice_auto_min_mean_weight": 0.0,
+    "splice_auto_out_dir": "outputs",
+    "splice_auto_probe_c": 1.0,
+    "splice_auto_probe_cv_folds": 5,
+    "splice_auto_probe_max_iter": 5000,
+    "splice_auto_ranking_method": "intervention_utility",
+    "splice_auto_require_consistent_direction": true,
+    "splice_auto_split": "train",
+    "splice_auto_top_k": 5,
+    "splice_auto_use_abs_score": false,
+    "splice_auto_utility_candidate_pool": 100,
+    "splice_auto_utility_max_samples": 20000,
+    "splice_auto_utility_min_marginal": 0.0,
+    "splice_auto_utility_min_repair": 1,
+    "splice_batch_size": 128,
+    "splice_concept_fingerprint": "e3b0c44298fc",
+    "splice_concepts": "",
+    "splice_conditional_on_target": true,
+    "splice_discovery_fingerprint": "e2c20f82310c",
+    "splice_intervention": "class_neutralize",
+    "splice_intervention_strength": 1.0,
+    "splice_l1_penalty": 0.25,
+    "splice_mode": "crp_relational",
+    "splice_model": "open_clip:ViT-B-32",
+    "splice_num_workers": 1,
+    "splice_per_image_top_k": 0,
+    "splice_pretrained": "laion2b_s34b_b79k",
+    "splice_routed_count": null,
+    "splice_routed_fraction": null,
+    "splice_routing_mode": "semantic",
+    "splice_score_cache_dir": "outputs/splice_score_cache",
+    "splice_score_quantile": 0.75,
+    "splice_score_reduction": "mean",
+    "splice_score_threshold": null,
+    "splice_score_threshold_resolved": null,
+    "splice_semantic_threshold_resolved": null,
+    "splice_strong_blur_kernel_size": null,
+    "splice_strong_blur_p": null,
+    "splice_strong_blur_sigma": null,
+    "splice_strong_color_jitter": null,
+    "splice_strong_color_jitter_p": null,
+    "splice_strong_crop": null,
+    "splice_strong_grayscale_p": null,
+    "splice_strong_line_recolor": false,
+    "splice_vocab": "openimages_v7",
+    "splice_vocab_size": -1,
+    "splice_weight": 0.0,
+    "ssl_crop_min": 0.2,
+    "storage_name": "waterbirds_s3_crp-v2-relational_e500_c0babe7744",
+    "strong_aug": {
+      "blur_kernel_size": null,
+      "blur_p": null,
+      "blur_sigma": null,
+      "color_jitter": null,
+      "color_jitter_p": null,
+      "crop": null,
+      "grayscale_p": null,
+      "line_recolor": false,
+      "run_name_fragment": "standardAug"
+    },
+    "teacher_graph_artifact": "splice_raw_clip_matched_teacher_graph",
+    "teacher_graph_config": {
+      "activation_difference_quantile": 0.75,
+      "coactivation_threshold": 0.35,
+      "cobalt": false,
+      "graph_top_k": 3,
+      "indegree_factor": 3.0,
+      "max_concept_frequency": 0.95,
+      "max_indegree": 10,
+      "max_selected_groups": 12,
+      "min_concept_frequency": 0.01,
+      "min_coverage": 0.01,
+      "min_group_size": 1,
+      "min_intervention_gain": 0.0001,
+      "null_quantile": 0.95,
+      "null_trials": 32,
+      "orthogonal_tolerance": 1e-06,
+      "projected_neighbors": 20,
+      "residual_splice_similarity_threshold": 0.25,
+      "seed": 0,
+      "similarity_chunk_size": 512,
+      "spatial_balance": false,
+      "spatial_balance_floor": 0.25,
+      "spatial_balance_variant": "",
+      "spatial_frequency_power": 0.0,
+      "text_similarity_threshold": 0.8,
+      "use_cobalt_confidence": true,
+      "use_residual_splice_gate": true
+    },
+    "teacher_graph_degree_stats": {
+      "coverage": 0.9555787444114685,
+      "edge_count": 12239,
+      "indegree_cap": 10,
+      "maximum_indegree": 10
+    },
+    "teacher_graph_removed_concepts": [],
+    "teacher_graph_selected_factor_ids": [],
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "trial": "0",
+    "use_splice": true,
+    "use_wandb": true,
+    "wandb_group": "crp_followup_controls_v1_seeds34",
+    "wandb_name": "Spur_SpLiCE",
+    "wandb_run_name": "crp_followup_controls_v1_seeds34_raw_clip_sampler_only_seed3",
+    "wandb_tags": "controls,current_crp,logistic,seed3,raw_clip_sampler_only",
+    "warm": false,
+    "warm_epochs": 0,
+    "warmup_from": 0.0,
+    "warmup_to": 0.01,
+    "weight_decay": 0.0001
+  },
+  "final_metrics": {
+    "Average over 10 last linear val acc": 50.04169940948486,
+    "Average over last 10 linear val acc": 50.04169940948486,
+    "Average over last 10 linear val best-group acc": 65.41353464126587,
+    "Average over last 10 linear val worst-group acc": 40.042826533317566,
+    "Last linear val acc": 50.04169940948486,
+    "Last linear val best-group acc": 65.41353464126587,
+    "Last linear val worst-group acc": 40.042826533317566,
+    "Last linear val worst-group count": 467,
+    "Last linear val worst-group id": 0,
+    "Linear train acc": 100.0,
+    "Linear train best-group acc": 100.0,
+    "Linear train group accuracies": [
+      100.0,
+      100.0,
+      100.0,
+      100.0
+    ],
+    "Linear train group counts": [
+      56,
+      56,
+      56,
+      56
+    ],
+    "Linear train worst-group acc": 100.0,
+    "Linear val acc": 50.04169940948486,
+    "Linear val best-group acc": 65.41353464126587,
+    "Linear val group accuracies": [
+      40.04282760620117,
+      52.575103759765625,
+      60.90225601196289,
+      65.41353607177734
+    ],
+    "Linear val group counts": [
+      467,
+      466,
+      133,
+      133
+    ],
+    "Linear val worst-group acc": 40.042826533317566,
+    "Probe converged": true,
+    "Probe epochs": 14,
+    "Probe gradient max": 9.140784878284582e-08,
+    "Spurious probe average over last 10 val acc": 91.99332594871521,
+    "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+    "Spurious probe converged": true,
+    "Spurious probe gradient max": 4.7349184036728264e-08,
+    "Spurious probe last val acc": 91.99332594871521,
+    "Spurious probe last val worst-group acc": 89.47368264198303,
+    "Train linear effective rank": 3.5611412525177,
+    "Train linear energy-based rank": 1.5720632076263428,
+    "Train linear entropy": 1.2700810432434082,
+    "Val linear effective rank": 3.887528657913208,
+    "Val linear energy-based rank": 1.6263612508773804,
+    "Val linear entropy": 1.3577736616134644
+  },
+  "identity": {
+    "arm": "raw_clip_sampler_only",
+    "attempt_id": "waterbirds_s3_crp_v2_relational_e500_c0babe7744",
+    "seed": 3,
+    "study": "crp_followup_controls_v1_seeds34"
+  },
+  "manifest": {
+    "definition": {
+      "legacy_recovery": true,
+      "original_path": "crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744/run_status.json"
+    },
+    "sha256": "3a38a9921c9174f76b7a2ecda8aa00e148c618dc29b38e89e984485dcdb7f11d"
+  },
+  "metrics": [
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 15,
+        "gradient_max": 9.745442999086601e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.039271419654971954,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            44.96788024902344,
+            53.004295349121094,
+            57.894737243652344,
+            55.63909912109375
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 44.967880845069885,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 53.004294633865356,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 57.894736528396606,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 55.639100074768066,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "097e99e33ca015cfaec3cde95329b127bc3d9179cea5582e9827c6321a738cbf",
+      "stage": "linear_probe",
+      "step": 25,
+      "values": {
+        "Average over 10 last linear val acc": 50.70892572402954,
+        "Average over last 10 linear val acc": 50.70892572402954,
+        "Average over last 10 linear val best-group acc": 57.894736528396606,
+        "Average over last 10 linear val worst-group acc": 44.967880845069885,
+        "Last linear val acc": 50.70892572402954,
+        "Last linear val best-group acc": 57.894736528396606,
+        "Last linear val worst-group acc": 44.967880845069885,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 50.70892572402954,
+        "Linear val best-group acc": 57.894736528396606,
+        "Linear val group accuracies": [
+          44.96788024902344,
+          53.004295349121094,
+          57.894737243652344,
+          55.63909912109375
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 44.967880845069885,
+        "Probe converged": true,
+        "Probe epochs": 15,
+        "Probe gradient max": 9.745442999086601e-08,
+        "Spurious probe average over last 10 val acc": 88.99082541465759,
+        "Spurious probe average over last 10 val worst-group acc": 84.96240377426147,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.378765817108178e-08,
+        "Spurious probe last val acc": 88.99082541465759,
+        "Spurious probe last val worst-group acc": 84.96240377426147,
+        "Train linear effective rank": 2.9055981636047363,
+        "Train linear energy-based rank": 1.480995535850525,
+        "Train linear entropy": 1.0666393041610718,
+        "Val linear effective rank": 3.2541797161102295,
+        "Val linear energy-based rank": 1.5687874555587769,
+        "Val linear entropy": 1.1799402236938477
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.060139535055952e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03936397912703176,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            38.75802993774414,
+            54.93562316894531,
+            60.90225601196289,
+            60.90225601196289
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 38.75803053379059,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 54.935622215270996,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "d2d5931081127fab88ea465e0e959193a8d89433542989f117c4a7882a6e92d3",
+      "stage": "linear_probe",
+      "step": 50,
+      "values": {
+        "Average over 10 last linear val acc": 49.9582976102829,
+        "Average over last 10 linear val acc": 49.9582976102829,
+        "Average over last 10 linear val best-group acc": 60.90225577354431,
+        "Average over last 10 linear val worst-group acc": 38.75803053379059,
+        "Last linear val acc": 49.9582976102829,
+        "Last linear val best-group acc": 60.90225577354431,
+        "Last linear val worst-group acc": 38.75803053379059,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.9582976102829,
+        "Linear val best-group acc": 60.90225577354431,
+        "Linear val group accuracies": [
+          38.75802993774414,
+          54.93562316894531,
+          60.90225601196289,
+          60.90225601196289
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 38.75803053379059,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.060139535055952e-08,
+        "Spurious probe average over last 10 val acc": 89.741450548172,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.763625381670475e-08,
+        "Spurious probe last val acc": 89.741450548172,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 2.774066925048828,
+        "Train linear energy-based rank": 1.4409762620925903,
+        "Train linear entropy": 1.0203144550323486,
+        "Val linear effective rank": 3.2037692070007324,
+        "Val linear energy-based rank": 1.539711356163025,
+        "Val linear entropy": 1.1643279790878296
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.752201941140375e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03632995158397961,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            35.11777114868164,
+            55.57939910888672,
+            62.40601348876953,
+            54.13534164428711
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 35.11777222156525,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 55.579400062561035,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 62.406015396118164,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 54.135340452194214,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "c7a2bf46cbda3244a4e31f4cc81be1d685c251b4e75fe3d239b9b026c3dd1b7e",
+      "stage": "linear_probe",
+      "step": 75,
+      "values": {
+        "Average over 10 last linear val acc": 48.19849878549576,
+        "Average over last 10 linear val acc": 48.19849878549576,
+        "Average over last 10 linear val best-group acc": 62.406015396118164,
+        "Average over last 10 linear val worst-group acc": 35.096358954906464,
+        "Last linear val acc": 48.206838965415955,
+        "Last linear val best-group acc": 62.406015396118164,
+        "Last linear val worst-group acc": 35.11777222156525,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 48.206838965415955,
+        "Linear val best-group acc": 62.406015396118164,
+        "Linear val group accuracies": [
+          35.11777114868164,
+          55.57939910888672,
+          62.40601348876953,
+          54.13534164428711
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 35.11777222156525,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.752201941140375e-08,
+        "Spurious probe average over last 10 val acc": 90.82568883895874,
+        "Spurious probe average over last 10 val worst-group acc": 87.96992301940918,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 6.335647583948237e-08,
+        "Spurious probe last val acc": 90.82568883895874,
+        "Spurious probe last val worst-group acc": 87.96992301940918,
+        "Train linear effective rank": 3.1059041023254395,
+        "Train linear energy-based rank": 1.5030051469802856,
+        "Train linear entropy": 1.1333048343658447,
+        "Val linear effective rank": 3.498875141143799,
+        "Val linear energy-based rank": 1.5896164178848267,
+        "Val linear entropy": 1.2524415254592896
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.982475024430777e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03838915348894205,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            38.54389953613281,
+            51.28755569458008,
+            57.894737243652344,
+            62.40601348876953
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 38.54389786720276,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 51.28755569458008,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 57.894736528396606,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 62.406015396118164,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "78bb0136c9b70be34d6c4c73db84eab5fda52db3908cd94792f0d958443e1076",
+      "stage": "linear_probe",
+      "step": 100,
+      "values": {
+        "Average over 10 last linear val acc": 48.29858124256134,
+        "Average over last 10 linear val acc": 48.29858124256134,
+        "Average over last 10 linear val best-group acc": 62.406015396118164,
+        "Average over last 10 linear val worst-group acc": 38.54389786720276,
+        "Last linear val acc": 48.29024076461792,
+        "Last linear val best-group acc": 62.406015396118164,
+        "Last linear val worst-group acc": 38.54389786720276,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 48.373645544052124,
+        "Linear val best-group acc": 62.406015396118164,
+        "Linear val group accuracies": [
+          38.54389953613281,
+          51.28755569458008,
+          57.894737243652344,
+          62.40601348876953
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 38.54389786720276,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 8.982475024430777e-08,
+        "Spurious probe average over last 10 val acc": 91.25104129314423,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.614476207509643e-08,
+        "Spurious probe last val acc": 91.2427008152008,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.0810794830322266,
+        "Train linear energy-based rank": 1.4931772947311401,
+        "Train linear entropy": 1.1252800226211548,
+        "Val linear effective rank": 3.3900017738342285,
+        "Val linear energy-based rank": 1.5609804391860962,
+        "Val linear entropy": 1.2208304405212402
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.523771194598805e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.037900343056532344,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            35.11777114868164,
+            48.71244812011719,
+            68.42105102539062,
+            60.90225601196289
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 35.11777222156525,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 48.71244728565216,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 68.42105388641357,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "f64f0a2fe8b62dd6229cb31132f7e2b45a38f0752d5450382a1418a5d94d8c91",
+      "stage": "linear_probe",
+      "step": 125,
+      "values": {
+        "Average over 10 last linear val acc": 46.95579707622528,
+        "Average over last 10 linear val acc": 46.95579707622528,
+        "Average over last 10 linear val best-group acc": 68.42105388641357,
+        "Average over last 10 linear val worst-group acc": 35.11777222156525,
+        "Last linear val acc": 46.95579707622528,
+        "Last linear val best-group acc": 68.42105388641357,
+        "Last linear val worst-group acc": 35.11777222156525,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 46.95579707622528,
+        "Linear val best-group acc": 68.42105388641357,
+        "Linear val group accuracies": [
+          35.11777114868164,
+          48.71244812011719,
+          68.42105102539062,
+          60.90225601196289
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 35.11777222156525,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.523771194598805e-08,
+        "Spurious probe average over last 10 val acc": 91.65971875190735,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.066607008767446e-08,
+        "Spurious probe last val acc": 91.65971875190735,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.024458408355713,
+        "Train linear energy-based rank": 1.4787814617156982,
+        "Train linear entropy": 1.1067320108413696,
+        "Val linear effective rank": 3.332779884338379,
+        "Val linear energy-based rank": 1.5438281297683716,
+        "Val linear entropy": 1.203806757926941
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.562151162979121e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.038492455111057616,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            42.18415451049805,
+            48.49785232543945,
+            64.66165161132812,
+            68.42105102539062
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 42.18415319919586,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 48.49785268306732,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 64.6616518497467,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 68.42105388641357,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "c3fe14595111859ecce772616be3bd885b04fa0090ec89ae2a78f0c46e32d52e",
+      "stage": "linear_probe",
+      "step": 150,
+      "values": {
+        "Average over 10 last linear val acc": 50.04169940948486,
+        "Average over last 10 linear val acc": 50.04169940948486,
+        "Average over last 10 linear val best-group acc": 68.42105388641357,
+        "Average over last 10 linear val worst-group acc": 42.18415319919586,
+        "Last linear val acc": 50.04169940948486,
+        "Last linear val best-group acc": 68.42105388641357,
+        "Last linear val worst-group acc": 42.18415319919586,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 50.04169940948486,
+        "Linear val best-group acc": 68.42105388641357,
+        "Linear val group accuracies": [
+          42.18415451049805,
+          48.49785232543945,
+          64.66165161132812,
+          68.42105102539062
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 42.18415319919586,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.562151162979121e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 8.896594684349769e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.1944265365600586,
+        "Train linear energy-based rank": 1.513779640197754,
+        "Train linear entropy": 1.1614075899124146,
+        "Val linear effective rank": 3.538123607635498,
+        "Val linear energy-based rank": 1.5837864875793457,
+        "Val linear entropy": 1.263596534729004
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.903928332397624e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03854520144577039,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            34.90364074707031,
+            49.57081604003906,
+            66.16541290283203,
+            61.65413284301758
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 34.90363955497742,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.5708167552948,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 66.16541147232056,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 61.654132604599,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "e44b348f2723b1ab2d926e6aa9effc63d06a6bc7aad73b19eaf33a4e07e42606",
+      "stage": "linear_probe",
+      "step": 175,
+      "values": {
+        "Average over 10 last linear val acc": 47.039198875427246,
+        "Average over last 10 linear val acc": 47.039198875427246,
+        "Average over last 10 linear val best-group acc": 66.16541147232056,
+        "Average over last 10 linear val worst-group acc": 34.90363955497742,
+        "Last linear val acc": 47.039198875427246,
+        "Last linear val best-group acc": 66.16541147232056,
+        "Last linear val worst-group acc": 34.90363955497742,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 47.039198875427246,
+        "Linear val best-group acc": 66.16541147232056,
+        "Linear val group accuracies": [
+          34.90364074707031,
+          49.57081604003906,
+          66.16541290283203,
+          61.65413284301758
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 34.90363955497742,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.903928332397624e-08,
+        "Spurious probe average over last 10 val acc": 91.32610559463501,
+        "Spurious probe average over last 10 val worst-group acc": 90.2255654335022,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.899544446468928e-08,
+        "Spurious probe last val acc": 91.32610559463501,
+        "Spurious probe last val worst-group acc": 90.2255654335022,
+        "Train linear effective rank": 3.422302484512329,
+        "Train linear energy-based rank": 1.559652328491211,
+        "Train linear entropy": 1.2303135395050049,
+        "Val linear effective rank": 3.739933490753174,
+        "Val linear energy-based rank": 1.6208930015563965,
+        "Val linear entropy": 1.3190678358078003
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 1.515432875479712e-07,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03806746710719215,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            43.254817962646484,
+            55.79398727416992,
+            55.63909912109375,
+            58.6466178894043
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 43.25481653213501,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 55.7939887046814,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 55.639100074768066,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 58.64661931991577,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "b2c544b5105b56658f35d4e938aa76378613a4f5af8837ae0d3a273abfab52b5",
+      "stage": "linear_probe",
+      "step": 200,
+      "values": {
+        "Average over 10 last linear val acc": 51.20934247970581,
+        "Average over last 10 linear val acc": 51.20934247970581,
+        "Average over last 10 linear val best-group acc": 58.64661931991577,
+        "Average over last 10 linear val worst-group acc": 43.25481653213501,
+        "Last linear val acc": 51.20934247970581,
+        "Last linear val best-group acc": 58.64661931991577,
+        "Last linear val worst-group acc": 43.25481653213501,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 51.20934247970581,
+        "Linear val best-group acc": 58.64661931991577,
+        "Linear val group accuracies": [
+          43.254817962646484,
+          55.79398727416992,
+          55.63909912109375,
+          58.6466178894043
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 43.25481653213501,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 1.515432875479712e-07,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 90.2255654335022,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.095046861713545e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 90.2255654335022,
+        "Train linear effective rank": 3.2891111373901367,
+        "Train linear energy-based rank": 1.527087688446045,
+        "Train linear entropy": 1.190617322921753,
+        "Val linear effective rank": 3.6248040199279785,
+        "Val linear energy-based rank": 1.5925806760787964,
+        "Val linear entropy": 1.2878001928329468
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 15,
+        "gradient_max": 8.590542006534866e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.039253996924491594,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            37.6873664855957,
+            52.78969955444336,
+            60.90225601196289,
+            64.66165161132812
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 37.68736720085144,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.78970003128052,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.6616518497467,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "390095050ad2bb3e9fd69396240b715cf22c4c588d9d82eba599d7365d6e1bf4",
+      "stage": "linear_probe",
+      "step": 225,
+      "values": {
+        "Average over 10 last linear val acc": 49.12427067756653,
+        "Average over last 10 linear val acc": 49.12427067756653,
+        "Average over last 10 linear val best-group acc": 64.6616518497467,
+        "Average over last 10 linear val worst-group acc": 37.68736720085144,
+        "Last linear val acc": 49.12427067756653,
+        "Last linear val best-group acc": 64.6616518497467,
+        "Last linear val worst-group acc": 37.68736720085144,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.12427067756653,
+        "Linear val best-group acc": 64.6616518497467,
+        "Linear val group accuracies": [
+          37.6873664855957,
+          52.78969955444336,
+          60.90225601196289,
+          64.66165161132812
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 37.68736720085144,
+        "Probe converged": true,
+        "Probe epochs": 15,
+        "Probe gradient max": 8.590542006534866e-08,
+        "Spurious probe average over last 10 val acc": 91.40951037406921,
+        "Spurious probe average over last 10 val worst-group acc": 87.96992301940918,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 8.337116988681029e-08,
+        "Spurious probe last val acc": 91.40951037406921,
+        "Spurious probe last val worst-group acc": 87.96992301940918,
+        "Train linear effective rank": 3.243546962738037,
+        "Train linear energy-based rank": 1.513242483139038,
+        "Train linear entropy": 1.1766674518585205,
+        "Val linear effective rank": 3.6318135261535645,
+        "Val linear energy-based rank": 1.5853171348571777,
+        "Val linear entropy": 1.2897320985794067
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.357722319004826e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03433360499025087,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            31.691650390625,
+            48.71244812011719,
+            65.41353607177734,
+            63.15789031982422
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 31.691649556159973,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 48.71244728565216,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 65.41353464126587,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 63.15789222717285,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "80c50aef43267e5a20e719bdd7f20f283c9e617ad62cefe0bdb7f79c39546b24",
+      "stage": "linear_probe",
+      "step": 250,
+      "values": {
+        "Average over 10 last linear val acc": 45.53794860839844,
+        "Average over last 10 linear val acc": 45.53794860839844,
+        "Average over last 10 linear val best-group acc": 65.41353464126587,
+        "Average over last 10 linear val worst-group acc": 31.691649556159973,
+        "Last linear val acc": 45.53794860839844,
+        "Last linear val best-group acc": 65.41353464126587,
+        "Last linear val worst-group acc": 31.691649556159973,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 45.53794860839844,
+        "Linear val best-group acc": 65.41353464126587,
+        "Linear val group accuracies": [
+          31.691650390625,
+          48.71244812011719,
+          65.41353607177734,
+          63.15789031982422
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 31.691649556159973,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.357722319004826e-08,
+        "Spurious probe average over last 10 val acc": 91.65971875190735,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.230973078382511e-08,
+        "Spurious probe last val acc": 91.65971875190735,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.634876012802124,
+        "Train linear energy-based rank": 1.5977472066879272,
+        "Train linear entropy": 1.2905750274658203,
+        "Val linear effective rank": 4.107246398925781,
+        "Val linear energy-based rank": 1.6885322332382202,
+        "Val linear entropy": 1.4127528667449951
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 3.2842686162565075e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.0386105670052814,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            37.473236083984375,
+            52.575103759765625,
+            63.15789031982422,
+            64.66165161132812
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 37.47323453426361,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.57510542869568,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 63.15789222717285,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.6616518497467,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "64c19c75f77af3ed081f98a39b08393ef438bcd6610b800d8b1680ce55c789c0",
+      "stage": "linear_probe",
+      "step": 275,
+      "values": {
+        "Average over 10 last linear val acc": 49.207672476768494,
+        "Average over last 10 linear val acc": 49.207672476768494,
+        "Average over last 10 linear val best-group acc": 64.6616518497467,
+        "Average over last 10 linear val worst-group acc": 37.47323453426361,
+        "Last linear val acc": 49.207672476768494,
+        "Last linear val best-group acc": 64.6616518497467,
+        "Last linear val worst-group acc": 37.47323453426361,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.207672476768494,
+        "Linear val best-group acc": 64.6616518497467,
+        "Linear val group accuracies": [
+          37.473236083984375,
+          52.575103759765625,
+          63.15789031982422,
+          64.66165161132812
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 37.47323453426361,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 3.2842686162565075e-08,
+        "Spurious probe average over last 10 val acc": 91.49290919303894,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 5.651127415307096e-08,
+        "Spurious probe last val acc": 91.49290919303894,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.3740315437316895,
+        "Train linear energy-based rank": 1.5429818630218506,
+        "Train linear entropy": 1.2161083221435547,
+        "Val linear effective rank": 3.746088981628418,
+        "Val linear energy-based rank": 1.6136146783828735,
+        "Val linear entropy": 1.3207123279571533
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.569600410735306e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03548385007449003,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            39.61456298828125,
+            54.72102737426758,
+            61.65413284301758,
+            55.63909912109375
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 39.61456120014191,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 54.72102761268616,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 61.654132604599,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 55.639100074768066,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "fefb24e393b09ae2bd6cc23f2ff2548166087591133a979af03d845a55833a42",
+      "stage": "linear_probe",
+      "step": 300,
+      "values": {
+        "Average over 10 last linear val acc": 49.70808923244476,
+        "Average over last 10 linear val acc": 49.70808923244476,
+        "Average over last 10 linear val best-group acc": 61.654132604599,
+        "Average over last 10 linear val worst-group acc": 39.61456120014191,
+        "Last linear val acc": 49.70808923244476,
+        "Last linear val best-group acc": 61.654132604599,
+        "Last linear val worst-group acc": 39.61456120014191,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.70808923244476,
+        "Linear val best-group acc": 61.654132604599,
+        "Linear val group accuracies": [
+          39.61456298828125,
+          54.72102737426758,
+          61.65413284301758,
+          55.63909912109375
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 39.61456120014191,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.569600410735306e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 7.575706087255729e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.623586416244507,
+        "Train linear energy-based rank": 1.5932708978652954,
+        "Train linear entropy": 1.2874642610549927,
+        "Val linear effective rank": 3.9827229976654053,
+        "Val linear energy-based rank": 1.6624712944030762,
+        "Val linear entropy": 1.3819657564163208
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.001901424222827e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03704807881283666,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            39.400428771972656,
+            52.36051559448242,
+            57.142860412597656,
+            57.894737243652344
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 39.40042853355408,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.36051678657532,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 57.14285969734192,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 57.894736528396606,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "05d673979146d2aa9b52861b075600e1adcbb1e8b86bde18a108fdf1f8cec7af",
+      "stage": "linear_probe",
+      "step": 325,
+      "values": {
+        "Average over 10 last linear val acc": 48.45704734325409,
+        "Average over last 10 linear val acc": 48.45704734325409,
+        "Average over last 10 linear val best-group acc": 57.894736528396606,
+        "Average over last 10 linear val worst-group acc": 39.40042853355408,
+        "Last linear val acc": 48.45704734325409,
+        "Last linear val best-group acc": 57.894736528396606,
+        "Last linear val worst-group acc": 39.40042853355408,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 48.45704734325409,
+        "Linear val best-group acc": 57.894736528396606,
+        "Linear val group accuracies": [
+          39.400428771972656,
+          52.36051559448242,
+          57.142860412597656,
+          57.894737243652344
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 39.40042853355408,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.001901424222827e-08,
+        "Spurious probe average over last 10 val acc": 91.65971875190735,
+        "Spurious probe average over last 10 val worst-group acc": 88.72180581092834,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.04428570862135e-08,
+        "Spurious probe last val acc": 91.65971875190735,
+        "Spurious probe last val worst-group acc": 88.72180581092834,
+        "Train linear effective rank": 3.5708231925964355,
+        "Train linear energy-based rank": 1.5808204412460327,
+        "Train linear entropy": 1.2727961540222168,
+        "Val linear effective rank": 3.8773281574249268,
+        "Val linear energy-based rank": 1.6336003541946411,
+        "Val linear entropy": 1.3551462888717651
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.796565021104786e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03355969072067365,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            41.54175567626953,
+            52.78969955444336,
+            56.39097595214844,
+            60.15037155151367
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 41.54175519943237,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.78970003128052,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 56.390976905822754,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 60.15037298202515,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "b2aaadc4f883219db0a94c830b3367770dca1f5bbeaea3a5e5a7f5d76d483b65",
+      "stage": "linear_probe",
+      "step": 350,
+      "values": {
+        "Average over 10 last linear val acc": 49.6246874332428,
+        "Average over last 10 linear val acc": 49.6246874332428,
+        "Average over last 10 linear val best-group acc": 60.15037298202515,
+        "Average over last 10 linear val worst-group acc": 41.54175519943237,
+        "Last linear val acc": 49.6246874332428,
+        "Last linear val best-group acc": 60.15037298202515,
+        "Last linear val worst-group acc": 41.54175519943237,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.6246874332428,
+        "Linear val best-group acc": 60.15037298202515,
+        "Linear val group accuracies": [
+          41.54175567626953,
+          52.78969955444336,
+          56.39097595214844,
+          60.15037155151367
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 41.54175519943237,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.796565021104786e-08,
+        "Spurious probe average over last 10 val acc": 91.74311757087708,
+        "Spurious probe average over last 10 val worst-group acc": 90.2255654335022,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.7226099646024e-08,
+        "Spurious probe last val acc": 91.74311757087708,
+        "Spurious probe last val worst-group acc": 90.2255654335022,
+        "Train linear effective rank": 3.5909652709960938,
+        "Train linear energy-based rank": 1.5836360454559326,
+        "Train linear entropy": 1.2784210443496704,
+        "Val linear effective rank": 3.9859166145324707,
+        "Val linear energy-based rank": 1.6498594284057617,
+        "Val linear entropy": 1.3827673196792603
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.816256585701419e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03318237659532397,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            39.400428771972656,
+            51.716739654541016,
+            60.90225601196289,
+            67.66917419433594
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 39.40042853355408,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 51.71673893928528,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 67.66917109489441,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "5cec2457d422faa941c4b73ca0e8e2afdf078778e4169dc48b52b1f36e7c254d",
+      "stage": "linear_probe",
+      "step": 375,
+      "values": {
+        "Average over 10 last linear val acc": 49.70808923244476,
+        "Average over last 10 linear val acc": 49.70808923244476,
+        "Average over last 10 linear val best-group acc": 67.66917109489441,
+        "Average over last 10 linear val worst-group acc": 39.40042853355408,
+        "Last linear val acc": 49.70808923244476,
+        "Last linear val best-group acc": 67.66917109489441,
+        "Last linear val worst-group acc": 39.40042853355408,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.70808923244476,
+        "Linear val best-group acc": 67.66917109489441,
+        "Linear val group accuracies": [
+          39.400428771972656,
+          51.716739654541016,
+          60.90225601196289,
+          67.66917419433594
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 39.40042853355408,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.816256585701419e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 6.268874680453041e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.560805082321167,
+        "Train linear energy-based rank": 1.5736677646636963,
+        "Train linear entropy": 1.269986629486084,
+        "Val linear effective rank": 3.882638931274414,
+        "Val linear energy-based rank": 1.6277848482131958,
+        "Val linear entropy": 1.3565150499343872
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.495765651210909e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.033728166501267934,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            40.04282760620117,
+            52.78969955444336,
+            60.15037155151367,
+            63.90977478027344
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 40.042826533317566,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.78970003128052,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.15037298202515,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 63.90977501869202,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "69b0fc4b3cfbc7fa68f12219b541b3fd9522be642229da1e05f1238c7a251c7e",
+      "stage": "linear_probe",
+      "step": 400,
+      "values": {
+        "Average over 10 last linear val acc": 49.87489581108093,
+        "Average over last 10 linear val acc": 49.87489581108093,
+        "Average over last 10 linear val best-group acc": 63.90977501869202,
+        "Average over last 10 linear val worst-group acc": 40.042826533317566,
+        "Last linear val acc": 49.87489581108093,
+        "Last linear val best-group acc": 63.90977501869202,
+        "Last linear val worst-group acc": 40.042826533317566,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.87489581108093,
+        "Linear val best-group acc": 63.90977501869202,
+        "Linear val group accuracies": [
+          40.04282760620117,
+          52.78969955444336,
+          60.15037155151367,
+          63.90977478027344
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 40.042826533317566,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 8.495765651210909e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.834899882521893e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.566887378692627,
+        "Train linear energy-based rank": 1.57392418384552,
+        "Train linear entropy": 1.2716933488845825,
+        "Val linear effective rank": 3.9119951725006104,
+        "Val linear energy-based rank": 1.6309746503829956,
+        "Val linear entropy": 1.3640475273132324
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 13,
+        "gradient_max": 7.694702770254572e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03344275474393258,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            39.82869338989258,
+            53.004295349121094,
+            60.90225601196289,
+            64.66165161132812
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 39.828693866729736,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 53.004294633865356,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.6616518497467,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "85db08bd109b04b4051ece5a4d1d302a7f6401893ac5a47cd3bc6a5a0dd12c7d",
+      "stage": "linear_probe",
+      "step": 425,
+      "values": {
+        "Average over 10 last linear val acc": 50.04169940948486,
+        "Average over last 10 linear val acc": 50.04169940948486,
+        "Average over last 10 linear val best-group acc": 64.6616518497467,
+        "Average over last 10 linear val worst-group acc": 39.828693866729736,
+        "Last linear val acc": 50.04169940948486,
+        "Last linear val best-group acc": 64.6616518497467,
+        "Last linear val worst-group acc": 39.828693866729736,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 50.04169940948486,
+        "Linear val best-group acc": 64.6616518497467,
+        "Linear val group accuracies": [
+          39.82869338989258,
+          53.004295349121094,
+          60.90225601196289,
+          64.66165161132812
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 39.828693866729736,
+        "Probe converged": true,
+        "Probe epochs": 13,
+        "Probe gradient max": 7.694702770254572e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 7.520619731215628e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.5655648708343506,
+        "Train linear energy-based rank": 1.5730857849121094,
+        "Train linear entropy": 1.27132248878479,
+        "Val linear effective rank": 3.9029762744903564,
+        "Val linear energy-based rank": 1.6296675205230713,
+        "Val linear entropy": 1.3617393970489502
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.018265041557051e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03329682089557875,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            40.2569580078125,
+            52.36051559448242,
+            60.15037155151367,
+            64.66165161132812
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 40.256959199905396,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.36051678657532,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.15037298202515,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.6616518497467,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "105e389b2be4a6581ec2d3eeced9294707748b423ed4711ee079ca9358b5de37",
+      "stage": "linear_probe",
+      "step": 450,
+      "values": {
+        "Average over 10 last linear val acc": 49.87489581108093,
+        "Average over last 10 linear val acc": 49.87489581108093,
+        "Average over last 10 linear val best-group acc": 64.6616518497467,
+        "Average over last 10 linear val worst-group acc": 40.256959199905396,
+        "Last linear val acc": 49.87489581108093,
+        "Last linear val best-group acc": 64.6616518497467,
+        "Last linear val worst-group acc": 40.256959199905396,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.87489581108093,
+        "Linear val best-group acc": 64.6616518497467,
+        "Linear val group accuracies": [
+          40.2569580078125,
+          52.36051559448242,
+          60.15037155151367,
+          64.66165161132812
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 40.256959199905396,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 8.018265041557051e-08,
+        "Spurious probe average over last 10 val acc": 91.82652235031128,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 4.676257537910611e-08,
+        "Spurious probe last val acc": 91.82652235031128,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.5477845668792725,
+        "Train linear energy-based rank": 1.5693835020065308,
+        "Train linear entropy": 1.2663233280181885,
+        "Val linear effective rank": 3.8746628761291504,
+        "Val linear energy-based rank": 1.6238772869110107,
+        "Val linear entropy": 1.3544586896896362
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.354313032850013e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03364341324982805,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            39.400428771972656,
+            52.575103759765625,
+            60.15037155151367,
+            65.41353607177734
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 39.40042853355408,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.57510542869568,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.15037298202515,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.41353464126587,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "c66f223660a79dec58c1f216d798488bcc9cb3c67e1c764c10d705cd492d3feb",
+      "stage": "linear_probe",
+      "step": 475,
+      "values": {
+        "Average over 10 last linear val acc": 49.70808923244476,
+        "Average over last 10 linear val acc": 49.70808923244476,
+        "Average over last 10 linear val best-group acc": 65.41353464126587,
+        "Average over last 10 linear val worst-group acc": 39.40042853355408,
+        "Last linear val acc": 49.70808923244476,
+        "Last linear val best-group acc": 65.41353464126587,
+        "Last linear val worst-group acc": 39.40042853355408,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 49.70808923244476,
+        "Linear val best-group acc": 65.41353464126587,
+        "Linear val group accuracies": [
+          39.400428771972656,
+          52.575103759765625,
+          60.15037155151367,
+          65.41353607177734
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 39.40042853355408,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.354313032850013e-08,
+        "Spurious probe average over last 10 val acc": 91.90992712974548,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 9.240822952001751e-08,
+        "Spurious probe last val acc": 91.90992712974548,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.555452585220337,
+        "Train linear energy-based rank": 1.5709354877471924,
+        "Train linear entropy": 1.2684823274612427,
+        "Val linear effective rank": 3.879159450531006,
+        "Val linear energy-based rank": 1.6247479915618896,
+        "Val linear entropy": 1.3556184768676758
+      }
+    },
+    {
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.140784878284582e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03351957312019331,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "group_metrics": {
+        "train": {
+          "accuracy": [
+            100.0,
+            100.0,
+            100.0,
+            100.0
+          ],
+          "count": [
+            56,
+            56,
+            56,
+            56
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 100.0,
+              "count": 56
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 100.0,
+              "count": 56
+            }
+          }
+        },
+        "val": {
+          "accuracy": [
+            40.04282760620117,
+            52.575103759765625,
+            60.90225601196289,
+            65.41353607177734
+          ],
+          "count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 40.042826533317566,
+              "count": 467
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 52.57510542869568,
+              "count": 466
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.90225577354431,
+              "count": 133
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.41353464126587,
+              "count": 133
+            }
+          }
+        }
+      },
+      "source_sha256": "a57b4ac8a13dbf158c7d20393a8a5b22f0c12572c86eafc78ddfbc4da5deea18",
+      "stage": "linear_probe",
+      "step": 500,
+      "values": {
+        "Average over 10 last linear val acc": 50.04169940948486,
+        "Average over last 10 linear val acc": 50.04169940948486,
+        "Average over last 10 linear val best-group acc": 65.41353464126587,
+        "Average over last 10 linear val worst-group acc": 40.042826533317566,
+        "Last linear val acc": 50.04169940948486,
+        "Last linear val best-group acc": 65.41353464126587,
+        "Last linear val worst-group acc": 40.042826533317566,
+        "Last linear val worst-group count": 467,
+        "Last linear val worst-group id": 0,
+        "Linear train acc": 100.0,
+        "Linear train best-group acc": 100.0,
+        "Linear train group accuracies": [
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ],
+        "Linear train group counts": [
+          56,
+          56,
+          56,
+          56
+        ],
+        "Linear train worst-group acc": 100.0,
+        "Linear val acc": 50.04169940948486,
+        "Linear val best-group acc": 65.41353464126587,
+        "Linear val group accuracies": [
+          40.04282760620117,
+          52.575103759765625,
+          60.90225601196289,
+          65.41353607177734
+        ],
+        "Linear val group counts": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "Linear val worst-group acc": 40.042826533317566,
+        "Probe converged": true,
+        "Probe epochs": 14,
+        "Probe gradient max": 9.140784878284582e-08,
+        "Spurious probe average over last 10 val acc": 91.99332594871521,
+        "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+        "Spurious probe converged": true,
+        "Spurious probe gradient max": 4.7349184036728264e-08,
+        "Spurious probe last val acc": 91.99332594871521,
+        "Spurious probe last val worst-group acc": 89.47368264198303,
+        "Train linear effective rank": 3.5611412525177,
+        "Train linear energy-based rank": 1.5720632076263428,
+        "Train linear entropy": 1.2700810432434082,
+        "Val linear effective rank": 3.887528657913208,
+        "Val linear energy-based rank": 1.6263612508773804,
+        "Val linear entropy": 1.3577736616134644
+      }
+    }
+  ],
+  "runtime": {
+    "numpy": "2.2.6",
+    "open-clip-torch": "3.3.0",
+    "platform": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.20",
+    "scikit-learn": "1.7.2",
+    "scipy": "1.15.3",
+    "torch": "2.5.1+cu118",
+    "torchvision": "0.20.1+cu118",
+    "wandb": "0.26.0"
+  },
+  "schema": "run-record-v1",
+  "slurm": {},
+  "source": {
+    "archive_uri": "artifact://legacy_archives/Spur_SpLiCE/pre-unification.tar.gz",
+    "migration": "pre-unification-archive-recovery",
+    "original_status_sha256": "27d3610b40deb885ba464acceeadc6c758969e469886fb236c54c6dd38d2823c"
+  },
+  "status": "complete",
+  "timestamps": {
+    "finished_at": "2026-09-09T12:13:46+00:00",
+    "updated_at": "2026-09-09T12:13:46+00:00"
+  },
+  "wandb": {
+    "entity": "gsgrechkin-rptu",
+    "id": "xv39p6pu",
+    "name": "crp_followup_controls_v1_seeds34_raw_clip_sampler_only_seed3",
+    "project": "Spur_SpLiCE",
+    "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/xv39p6pu"
+  }
+}

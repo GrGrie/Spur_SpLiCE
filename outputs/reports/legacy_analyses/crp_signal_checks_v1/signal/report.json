@@ -1,0 +1,18 @@
+{
+  "fingerprints": {
+    "cache": "46b1c1fc552769dfbb9c6543347e1a2b",
+    "crp": "c50667264bc17a5ef0152a350f0f990c",
+    "raw_clip": "c81c93e6f316f69249176929c9d3c4a4"
+  },
+  "limitations": [
+    "Frozen comparisons share CLIP spatial preprocessing; legacy students use original probe views",
+    "Fusion requires the teacher at inference and is not a standalone SSL-student improvement",
+    "Full unbalanced train changes both sample count and distribution",
+    "Random and ImageNet ResNet18_large are diagnostic baselines, not matched SSL runs"
+  ],
+  "passed": true,
+  "preprocessing": {
+    "clip": "Compose(\n    Resize(size=224, interpolation=bicubic, max_size=None, antialias=True)\n    CenterCrop(size=(224, 224))\n    MaybeConvertMode()\n    MaybeToTensor()\n    Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))\n)",
+    "resnet18_large": "Compose(\n    Resize(size=224, interpolation=bicubic, max_size=None, antialias=True)\n    CenterCrop(size=(224, 224))\n    MaybeConvertMode()\n    MaybeToTensor()\n    Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))\n)"
+  }
+}

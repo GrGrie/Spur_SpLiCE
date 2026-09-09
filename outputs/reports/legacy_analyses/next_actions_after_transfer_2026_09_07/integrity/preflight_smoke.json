@@ -1,0 +1,27 @@
+{
+  "artifact": "next_actions_preflight_smoke_v1",
+  "checks": {
+    "fixed_shuffle_is_valid_derangement": true,
+    "graph_sample_ids_match_cache": true,
+    "matched_pre_loss_updates_equal": true,
+    "nonzero_encoder_gradient_and_update": true,
+    "target_image_ids_match_cache": true
+  },
+  "graphs": [
+    {
+      "artifact": "splice_crp_v3_teacher_graph",
+      "edge_count": 12239,
+      "path": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json",
+      "supported_anchors": 4582
+    },
+    {
+      "artifact": "splice_semantic_splice_matched_teacher_graph",
+      "edge_count": 12239,
+      "path": "project://outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+      "supported_anchors": 4582
+    }
+  ],
+  "passed": true,
+  "selection": "all checks are label/spurious-metadata-free",
+  "target_valid_count": 4795
+}

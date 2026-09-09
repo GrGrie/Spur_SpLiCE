@@ -39,11 +39,11 @@ graph assembly. Training consumes only validated graphs through
 
 ## Results
 
-- `outputs/seeds/<study>/seed_01/` through `seed_04/` contain Git-friendly run records.
-- `outputs/shared/waterbirds/` contains the frozen cache and teacher graphs.
-- `outputs/reports/` contains aggregate results and completed-study provenance.
-- `outputs/reference/` contains vocabularies and external exports.
-- `/scratch/xar68reb/CoSpRo/` contains every canonical checkpoint and feature payloads larger than 10 MiB.
+- `outputs/seeds/<study>/seed_<NN>/<arm>/<attempt>/` contains Git-friendly run records.
+- `outputs/reports/<study>/results.json` contains aggregate metrics and run provenance.
+- `outputs/reports/legacy_analyses/` preserves compact pre-unification analyses.
+- `outputs/reference/` contains external and pre-unification registry exports.
+- `/scratch/xar68reb/CoSpRo/` contains checkpoints, tensor features, and archive payloads.
 
 Historical source paths embedded in result JSON files are retained as
 provenance. New code must obtain destinations through `splice.artifacts`.

@@ -1,0 +1,1506 @@
+{
+  "checks": [
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "simclr",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.222924161799632e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03152888716577397,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 50.291907787323,
+        "wga_last10": 44.539615511894226
+      },
+      "feature_fingerprint": "a8dfa7660352557adb08179ae5122b26",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 50.291907787323,
+        "group_accuracy": [
+          44.539615631103516,
+          50.0,
+          54.8872184753418,
+          66.91729736328125
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 44.539615511894226
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/simclr/training/waterbirds_s1_base_e500_83305f14e8/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "crp_sampler_only",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.381205895329849e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.030845792900874854,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 49.87489581108093,
+        "wga_last10": 43.25481653213501
+      },
+      "feature_fingerprint": "19956d9b247e4d9fb3a758273efca907",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 49.87489581108093,
+        "group_accuracy": [
+          43.254817962646484,
+          50.0,
+          57.894737243652344,
+          64.66165161132812
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 43.25481653213501
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/crp_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_407c7bb80e/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_kl",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.787733297232773e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03657802981312303,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 53.127604722976685,
+        "wga_last10": 45.396146178245544
+      },
+      "feature_fingerprint": "c957cee6ac23387cca6af764093f3af8",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 53.127604722976685,
+        "group_accuracy": [
+          45.39614486694336,
+          59.22746658325195,
+          57.142860412597656,
+          54.8872184753418
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 45.396146178245544
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/raw_clip_kl/training/waterbirds_s1_crp-v2-relational_e500_14d1c329c4/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "splice_crp_kl",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.729352130904718e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03020640905045282,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.37614607810974,
+        "wga_last10": 46.89507484436035
+      },
+      "feature_fingerprint": "58ae887a5c167121b3b2cebb6ea7b21c",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.37614607810974,
+        "group_accuracy": [
+          46.89507293701172,
+          48.068668365478516,
+          57.894737243652344,
+          72.18045043945312
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 46.89507484436035
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed1/splice_crp_kl/training/waterbirds_s1_crp-v2-relational_e500_a07f5725cb/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "simclr",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.09561236544379e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03127383405199897,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.959967613220215,
+        "wga_last10": 43.68308484554291
+      },
+      "feature_fingerprint": "43572ac15b8b2858166b7c6b728e01b3",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.959967613220215,
+        "group_accuracy": [
+          43.68308639526367,
+          58.36909866333008,
+          52.6315803527832,
+          57.894737243652344
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 43.68308484554291
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/simclr/training/waterbirds_s2_base_e500_539f7de404/probe_features_epoch_500_ds_train_val.json",
+      "seed": 2
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "crp_sampler_only",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.965356847615394e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03014154519473909,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 52.21017599105835,
+        "wga_last10": 48.28326106071472
+      },
+      "feature_fingerprint": "44bfe75386884acd72779c1b9c069ad9",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 52.21017599105835,
+        "group_accuracy": [
+          50.321197509765625,
+          48.283260345458984,
+          57.142860412597656,
+          67.66917419433594
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 48.28326106071472
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/crp_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_a1740042d0/probe_features_epoch_500_ds_train_val.json",
+      "seed": 2
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_kl",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.557707973559216e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.030624360248966708,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.79315805435181,
+        "wga_last10": 48.17987084388733
+      },
+      "feature_fingerprint": "d20da96bc4e2945dfe72138ccac44db5",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.79315805435181,
+        "group_accuracy": [
+          48.17987060546875,
+          49.356224060058594,
+          55.63909912109375,
+          69.17292785644531
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 48.17987084388733
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/raw_clip_kl/training/waterbirds_s2_crp-v2-relational_e500_9971fb6cc2/probe_features_epoch_500_ds_train_val.json",
+      "seed": 2
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "splice_crp_kl",
+      "checkpoint_loading": {
+        "checked": [
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/epoch_350.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/epoch_400.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/epoch_450.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/epoch_500.pth",
+          "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/last.pth"
+        ],
+        "model": "resnet18_large",
+        "status": "passed"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.018940226101309e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03179719660111528,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.959967613220215,
+        "wga_last10": 49.25053417682648
+      },
+      "feature_fingerprint": "e52f92bfb6d02de34f92f5d223742d5b",
+      "features": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.959967613220215,
+        "group_accuracy": [
+          49.25053405761719,
+          50.858367919921875,
+          58.6466178894043,
+          58.6466178894043
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 49.25053417682648
+      },
+      "result": "project://outputs/crp_controls_logistic_v1_cluster_seeds12/seed2/splice_crp_kl/training/waterbirds_s2_crp-v2-relational_e500_d7f567aba2/probe_features_epoch_500_ds_train_val.json",
+      "seed": 2
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.845962559092191e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03350683775425252,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 54.0450394153595,
+        "wga_last10": 46.25267684459686
+      },
+      "feature_fingerprint": "ab04a830c0337b785a1dd5f98d1e4883",
+      "features": "project://outputs/crp_followup_raw_sampler_only_v1_seeds12/seed1/raw_clip_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_952dfd701a/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 54.0450394153595,
+        "group_accuracy": [
+          46.25267791748047,
+          59.44206237792969,
+          57.142860412597656,
+          59.398494720458984
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 46.25267684459686
+      },
+      "result": "project://outputs/crp_followup_raw_sampler_only_v1_seeds12/seed1/raw_clip_sampler_only/training/waterbirds_s1_crp-v2-relational_e500_952dfd701a/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 13,
+        "gradient_max": 9.473679974224681e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.028981449654292127,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 48.45704734325409,
+        "wga_last10": 44.420599937438965
+      },
+      "feature_fingerprint": "1cc84abf09de5ccd665484606165c975",
+      "features": "project://outputs/crp_followup_raw_sampler_only_v1_seeds12/seed2/raw_clip_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_f3e4863a29/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 48.45704734325409,
+        "group_accuracy": [
+          45.82441329956055,
+          44.42060089111328,
+          56.39097595214844,
+          63.90977478027344
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 44.420599937438965
+      },
+      "result": "project://outputs/crp_followup_raw_sampler_only_v1_seeds12/seed2/raw_clip_sampler_only/training/waterbirds_s2_crp-v2-relational_e500_f3e4863a29/probe_features_epoch_500_ds_train_val.json",
+      "seed": 2
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "simclr",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.878455084591812e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03393009800855008,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 52.627187967300415,
+        "wga_last10": 47.32334017753601
+      },
+      "feature_fingerprint": "933f293955d1e15c5b3b2ad7da3c123e",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed3/simclr/training/waterbirds_s3_base_e500_0d1102dbfd/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 52.627187967300415,
+        "group_accuracy": [
+          47.323341369628906,
+          56.22317886352539,
+          51.87969970703125,
+          59.398494720458984
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 47.32334017753601
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed3/simclr/training/waterbirds_s3_base_e500_0d1102dbfd/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "crp_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.038487022521545e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03365109363348129,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 50.12510418891907,
+        "wga_last10": 45.396146178245544
+      },
+      "feature_fingerprint": "6a2ecf99347b91902977e8c51cded686",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed3/crp_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_bc2d303621/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 50.12510418891907,
+        "group_accuracy": [
+          45.39614486694336,
+          48.49785232543945,
+          57.894737243652344,
+          64.66165161132812
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 45.396146178245544
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed3/crp_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_bc2d303621/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_kl",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.899178788757817e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03779184582569584,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 50.04169940948486,
+        "wga_last10": 38.75803053379059
+      },
+      "feature_fingerprint": "5ce4f54da74b6e8e1b48fd460dabba89",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_kl/training/waterbirds_s3_crp-v2-relational_e500_c3e377ed9f/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 50.04169940948486,
+        "group_accuracy": [
+          38.75802993774414,
+          56.22317886352539,
+          62.40601348876953,
+          55.63909912109375
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 38.75803053379059
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_kl/training/waterbirds_s3_crp-v2-relational_e500_c3e377ed9f/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.140784878284582e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03351957312019331,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 50.04169940948486,
+        "wga_last10": 40.042826533317566
+      },
+      "feature_fingerprint": "84d55073049e290c4d4b43f9549d94f5",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 50.04169940948486,
+        "group_accuracy": [
+          40.04282760620117,
+          52.575103759765625,
+          60.90225601196289,
+          65.41353607177734
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 40.042826533317566
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed3/raw_clip_sampler_only/training/waterbirds_s3_crp-v2-relational_e500_c0babe7744/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "splice_crp_kl",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.547326740219324e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03491645730382245,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 47.62302041053772,
+        "wga_last10": 40.899357199668884
+      },
+      "feature_fingerprint": "bde849182dcad1bc98b899e3d4eee052",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed3/splice_crp_kl/training/waterbirds_s3_crp-v2-relational_e500_9b716b9a57/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 47.62302041053772,
+        "group_accuracy": [
+          40.899356842041016,
+          46.3519287109375,
+          59.398494720458984,
+          63.90977478027344
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 40.899357199668884
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed3/splice_crp_kl/training/waterbirds_s3_crp-v2-relational_e500_9b716b9a57/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "simclr",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.185664025205685e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03150823080255597,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 53.54462265968323,
+        "wga_last10": 46.61654233932495
+      },
+      "feature_fingerprint": "6868f48b9467c6f08f9ffa7d40aaeca4",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed4/simclr/training/waterbirds_s4_base_e500_967d8597a4/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 53.54462265968323,
+        "group_accuracy": [
+          53.7473258972168,
+          50.42918395996094,
+          46.61654281616211,
+          70.67668914794922
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 46.61654233932495
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed4/simclr/training/waterbirds_s4_base_e500_967d8597a4/probe_features_epoch_500_ds_train_val.json",
+      "seed": 4
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "crp_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.353602109722439e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.032783345962276556,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 57.63136148452759,
+        "wga_last10": 52.63158082962036
+      },
+      "feature_fingerprint": "1430b26ebe818efbba0bc43d92ffbcfe",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed4/crp_sampler_only/training/waterbirds_s4_crp-v2-relational_e500_f5da9ba907/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 57.63136148452759,
+        "group_accuracy": [
+          59.31477355957031,
+          54.72102737426758,
+          52.6315803527832,
+          66.91729736328125
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 52.63158082962036
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed4/crp_sampler_only/training/waterbirds_s4_crp-v2-relational_e500_f5da9ba907/probe_features_epoch_500_ds_train_val.json",
+      "seed": 4
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_kl",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 9.386316146092711e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.031952158538757006,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.459550857543945,
+        "wga_last10": 48.06866943836212
+      },
+      "feature_fingerprint": "17c6a613a975a0f30e84aac4a524070f",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed4/raw_clip_kl/training/waterbirds_s4_crp-v2-relational_e500_ba59c47a03/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.459550857543945,
+        "group_accuracy": [
+          50.53533172607422,
+          48.068668365478516,
+          53.38345718383789,
+          64.66165161132812
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 48.06866943836212
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed4/raw_clip_kl/training/waterbirds_s4_crp-v2-relational_e500_ba59c47a03/probe_features_epoch_500_ds_train_val.json",
+      "seed": 4
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "raw_clip_sampler_only",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 13,
+        "gradient_max": 8.534282088781733e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.028584433521965352,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 51.29274129867554,
+        "wga_last10": 46.35193049907684
+      },
+      "feature_fingerprint": "85e613ff5dcff8b6e76ca7da4cfdccaf",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed4/raw_clip_sampler_only/training/waterbirds_s4_crp-v2-relational_e500_64e50d2e02/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 51.29274129867554,
+        "group_accuracy": [
+          51.39186477661133,
+          46.3519287109375,
+          56.39097595214844,
+          63.15789031982422
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 46.35193049907684
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed4/raw_clip_sampler_only/training/waterbirds_s4_crp-v2-relational_e500_64e50d2e02/probe_features_epoch_500_ds_train_val.json",
+      "seed": 4
+    },
+    {
+      "alignment": {
+        "checks": {
+          "eval_count": true,
+          "eval_labels_aligned": true,
+          "eval_metadata_aligned": true,
+          "label_cardinality": true,
+          "target_metadata_index": true,
+          "train_count": true,
+          "train_labels_aligned": true,
+          "train_metadata_aligned": true
+        },
+        "eval_count": 1199,
+        "eval_transform": "Compose",
+        "metadata_fields": [
+          "background",
+          "y"
+        ],
+        "passed": true,
+        "sample_id_verification": "reconstructed_sampler_order; legacy tensors have no explicit sample IDs",
+        "train_count": 224,
+        "train_transform": "Compose"
+      },
+      "arm": "splice_crp_kl",
+      "checkpoint_loading": {
+        "checked": [],
+        "status": "unavailable_after_successful_cleanup"
+      },
+      "comparisons": {
+        "avg_acc_last10": true,
+        "group_accuracy": true,
+        "group_count": true,
+        "wga_last10": true
+      },
+      "convergence": {
+        "averaging_window": 10,
+        "converged": true,
+        "epochs": 14,
+        "gradient_max": 8.185614208737436e-08,
+        "l2": 0.001,
+        "normalization": "train_feature_standardization",
+        "objective": 0.03558648915415649,
+        "solver": "full_batch_lbfgs",
+        "stable_epochs": 10,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "avg_acc_last10": 53.87822985649109,
+        "wga_last10": 46.61654233932495
+      },
+      "feature_fingerprint": "7dea2cf9c3479d96013c5c20ff573f76",
+      "features": "project://outputs/crp_followup_controls_v1_seeds34/seed4/splice_crp_kl/training/waterbirds_s4_crp-v2-relational_e500_d3683da610/probe_features_epoch_500_ds_train_val.pt",
+      "matches_existing": true,
+      "reproduced": {
+        "avg_acc_last10": 53.87822985649109,
+        "group_accuracy": [
+          52.89078903198242,
+          53.648067474365234,
+          46.61654281616211,
+          65.41353607177734
+        ],
+        "group_count": [
+          467,
+          466,
+          133,
+          133
+        ],
+        "wga_last10": 46.61654233932495
+      },
+      "result": "project://outputs/crp_followup_controls_v1_seeds34/seed4/splice_crp_kl/training/waterbirds_s4_crp-v2-relational_e500_d3683da610/probe_features_epoch_500_ds_train_val.json",
+      "seed": 4
+    }
+  ],
+  "limitations": [
+    "Legacy IDs inferred from seeded loader; no explicit IDs in old tensors",
+    "14/28-per-group subsets test smaller sample budgets, not >224 student examples",
+    "Deleted checkpoints cannot be checked or used for new feature extraction"
+  ],
+  "passed": true
+}

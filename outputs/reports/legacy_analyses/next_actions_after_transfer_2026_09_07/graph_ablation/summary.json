@@ -1,0 +1,64 @@
+{
+  "artifact": "graph_ablation_v1_summary",
+  "comparison": "CRP versus semantic SpLiCE graph; report both seeds; no automatic selection",
+  "failures": [],
+  "paired_deltas_crp_minus_semantic": {
+    "1": {
+      "avg_acc_last10": 1.7514586448669434,
+      "best_group_last10": 3.007519245147705,
+      "wga_last10": 7.24509060382843
+    },
+    "3": {
+      "avg_acc_last10": -0.5838215351104736,
+      "best_group_last10": -3.007519245147705,
+      "wga_last10": 1.5963435173034668
+    }
+  },
+  "passed": true,
+  "rows": [
+    {
+      "arm": "crp",
+      "avg_acc_last10": 55.79649806022644,
+      "best_group_last10": 66.16541147232056,
+      "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/crp/gradient_diagnostics.json",
+      "graph": "outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json",
+      "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/crp/training/waterbirds_s1_crp-v2-relational_e500_03e011704e/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1,
+      "status": "complete",
+      "wga_last10": 51.6059935092926
+    },
+    {
+      "arm": "semantic_splice",
+      "avg_acc_last10": 54.0450394153595,
+      "best_group_last10": 63.15789222717285,
+      "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/gradient_diagnostics.json",
+      "graph": "project://outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+      "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/training/waterbirds_s1_crp-v2-relational_e500_084ea2f3a5/probe_features_epoch_500_ds_train_val.json",
+      "seed": 1,
+      "status": "complete",
+      "wga_last10": 44.36090290546417
+    },
+    {
+      "arm": "crp",
+      "avg_acc_last10": 49.207672476768494,
+      "best_group_last10": 62.406015396118164,
+      "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/crp/gradient_diagnostics.json",
+      "graph": "outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json",
+      "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/crp/training/waterbirds_s3_crp-v2-relational_e500_976f887f83/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3,
+      "status": "complete",
+      "wga_last10": 45.493561029434204
+    },
+    {
+      "arm": "semantic_splice",
+      "avg_acc_last10": 49.79149401187897,
+      "best_group_last10": 65.41353464126587,
+      "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/gradient_diagnostics.json",
+      "graph": "project://outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+      "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/training/waterbirds_s3_crp-v2-relational_e500_b1d2a200ff/probe_features_epoch_500_ds_train_val.json",
+      "seed": 3,
+      "status": "complete",
+      "wga_last10": 43.89721751213074
+    }
+  ]
+}

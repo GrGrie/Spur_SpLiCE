@@ -46,6 +46,12 @@ tool writes `outputs/reports/local-cleanup/windows-pre-unification.json`,
 promotes legacy CSV results into that JSON, removes result-backed checkpoints
 and reproducible caches, and retains ambiguous tensors.
 
+Recovered pre-unification executions follow the same attempt layout. Their
+`run.json` files embed periodic probe metrics so another machine can inspect
+the training history without the scratch-only tensors. See
+`docs/history/LEGACY_RECOVERY-2026-09-09.md` for the recovery boundary and the
+optional full archive-manifest command.
+
 Run the collector manually when needed:
 
 ```bash
