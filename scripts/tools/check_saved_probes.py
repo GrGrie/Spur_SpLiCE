@@ -9,9 +9,9 @@ from pathlib import Path
 from scripts.tools.run_downstream_evaluator_diagnostic import _find_probe_artifacts, _reproduce_saved_probe
 
 
-def run(config_path: Path) -> Path:
+def run(config_path: Path, output_override: Path | None = None) -> Path:
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    output = Path(config["output"])
+    output = output_override or Path(config["output"])
     output.mkdir(parents=True, exist_ok=True)
     records = []
     validation_failures = []
@@ -73,8 +73,9 @@ def run(config_path: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
-    run(args.config)
+    run(args.config, args.output)
 
 
 if __name__ == "__main__":

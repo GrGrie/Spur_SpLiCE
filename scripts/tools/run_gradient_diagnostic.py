@@ -58,6 +58,7 @@ def run_one(config_path: Path, task_id: int) -> Path:
         "--crp_start_epoch", str(config["start_epoch"]), "--crp_warmup_epochs", str(config["warmup_epochs"]),
         "--linear_probe_mode", "none", "--rank_eval_freq", "0", "--checkpoint_dir", str(training_root),
         "--gradient_diagnostics", "--gradient_diagnostics_batches", str(config["diagnostic_batches"]),
+        "--gradient_diagnostics_epochs", ",".join(str(epoch) for epoch in config["diagnostic_epochs"]),
         "--gradient_diagnostics_output", str(run_root / "gradient_diagnostics.json"),
         "--use_wandb", "--wandb_name", config["wandb_project"], "--entity", config["wandb_entity"],
         "--wandb_group", config["wandb_group"], "--wandb_run_name", f"{config['protocol']}_{arm['name']}_seed{config['seed']}",

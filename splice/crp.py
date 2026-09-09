@@ -647,6 +647,7 @@ def run_frozen_audit(
     cobalt_concepts: torch.Tensor | None = None,
     cobalt_confidence: torch.Tensor | None = None,
     spatial_balance_artifact: dict | None = None,
+    candidate_groups: Sequence[Sequence[int]] | None = None,
 ) -> dict:
     """Run the label-free audit and return a versioned sparse teacher graph."""
 
@@ -690,6 +691,19 @@ def run_frozen_audit(
         config,
         sample_weights=sample_weights,
     )
+    if candidate_groups is not None:
+        # Explicit research candidates use exactly the same relation/null audit.
+        # The default historical grouping path is unchanged.
+        groups = [list(indices) for indices in candidate_groups]
+        if not groups or any(
+            not indices or len(indices) != len(set(indices))
+            or any(not isinstance(i, int) or isinstance(i, bool)
+                   or i < 0 or i >= len(cache["vocabulary"]) for i in indices)
+            for indices in groups
+        ):
+            raise ValueError("candidate_groups must contain nonempty unique valid concept indices.")
+        if len({tuple(sorted(indices)) for indices in groups}) != len(groups):
+            raise ValueError("candidate_groups contains duplicate groups.")
     raw_neighbours, _ = topk_neighbors(
         cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
     )
@@ -826,6 +840,7 @@ def run_frozen_audit(
         "spatial_balance": spatial_balance_summary,
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
+        **({"candidate_groups_override": groups} if candidate_groups is not None else {}),
         **graph,
     }
 
