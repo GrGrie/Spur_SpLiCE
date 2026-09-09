@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _artifact_root(value: Path | None) -> Path:
-    configured = value or os.environ.get("SPUR_SPLICE_ARTIFACT_ROOT")
+    configured = value or os.environ.get("SPUR_SPLICE_OUTPUT_ROOT")
     if configured is None or not str(configured).strip():
         return PROJECT_ROOT / "outputs"
     path = Path(configured).expanduser()

@@ -24,6 +24,7 @@ from experiments.spurious_eval.models.resnet import (
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
+from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
 
 
 @dataclass
@@ -148,6 +149,12 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "wandb_name": "Spur_SpLiCE",
         "entity": "gsgrechkin-rptu",
         "spurious_probe": True,
+        "run_recorder": None,
+        "study": "adhoc",
+        "arm": "linear_probe",
+        "attempt_id": "standalone",
+        "retain_probe_artifacts_every": 0,
+        "ssl_total_epochs": 0,
     }
     for key, value in defaults.items():
         if not hasattr(args, key):
@@ -426,20 +433,42 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
     val_features = extract_features(encoder, val_loader, device)
     artifact_dir = Path(args.artifact_dir) if args.artifact_dir else Path(args.ckpt).parent
     feature_path = artifact_dir / f"probe_features_epoch_{supcon_epoch}_{args.train_set_linear_layer}_{args.eval_split}.pt"
-    feature_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"train": train_features.tensors, "evaluation": val_features.tensors,
-                "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
-                "eval_split": args.eval_split, "seed": args.seed,
-                "artifact": "downstream_probe_features_v2",
-                "artifact_version": 2,
-                "sample_ids": {
+    feature_payload = {"train": train_features.tensors, "evaluation": val_features.tensors,
+                       "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
+                       "eval_split": args.eval_split, "seed": args.seed,
+                       "artifact": "downstream_probe_features_v2",
+                       "artifact_version": 2,
+                       "sample_ids": {
                     "train": _saved_probe_sample_ids(
                         train_loader.dataset, args.seed, args.batch_size, True, args.dataset
                     ),
                     "evaluation": _saved_probe_sample_ids(
                         val_loader.dataset, args.seed, args.batch_size, False, args.dataset
                     ),
-                }}, feature_path)
+                }}
+    identity = {name: getattr(args, name) for name in ("study", "seed", "arm", "attempt_id")}
+    stored_feature_path = binary_destination(
+        feature_path,
+        tensor_payload_bytes(feature_payload),
+        kind="features",
+        identity=identity,
+    )
+    stored_feature_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(feature_payload, stored_feature_path)
+    retention_interval = int(getattr(args, "retain_probe_artifacts_every", 0))
+    is_final_feature = bool(args.ssl_total_epochs and supcon_epoch == args.ssl_total_epochs)
+    feature_retention = "final" if is_final_feature else (
+        "retained" if retention_interval > 0 and supcon_epoch > 0 and supcon_epoch % retention_interval == 0
+        else "temporary"
+    )
+    if args.run_recorder is not None:
+        args.run_recorder.register_artifact(
+            stored_feature_path,
+            kind="probe_features",
+            stage="linear_probe",
+            epoch=supcon_epoch,
+            retention_state=feature_retention,
+        )
     feature_loader = make_feature_loader(train_features, args.batch_size, args.seed, shuffle=True)
     val_feature_loader = make_feature_loader(val_features, args.batch_size, args.seed, shuffle=False)
 
@@ -518,6 +547,22 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
         history.val_accuracy.append(val_acc)
         history.val_worst_group.append(val_wg_acc)
         history.val_best_group.append(val_bg_acc)
+        if args.run_recorder is not None:
+            args.run_recorder.log_metrics(
+                "linear_probe",
+                display_epoch,
+                {
+                    "ssl_epoch": supcon_epoch,
+                    "train_loss": train_loss,
+                    "train_accuracy": train_acc,
+                    "train_worst_group_accuracy": train_wg_acc,
+                    "train_best_group_accuracy": train_bg_acc,
+                    "eval_loss": val_loss,
+                    "eval_accuracy": val_acc,
+                    "eval_worst_group_accuracy": val_wg_acc,
+                    "eval_best_group_accuracy": val_bg_acc,
+                },
+            )
 
         if val_acc > best_val_acc or (
             val_acc == best_val_acc and (val_wg_acc, val_bg_acc) > (best_val_wg_acc, best_val_bg_acc)
@@ -633,11 +678,25 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
         if created_wandb_run:
             wandb_run.finish()
     result_path = feature_path.with_suffix(".json")
-    result_path.write_text(json.dumps({"ssl_epoch": supcon_epoch, "solver": args.probe_solver,
-                                       "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
-                                       "convergence": convergence, "metrics": final_metrics,
-                                       "group_metrics": {
-                                           "val": {
+    result_payload = {"schema": "linear-probe-result-v3", "ssl_epoch": supcon_epoch,
+                      "solver": args.probe_solver,
+                      "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
+                      "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
+                      "metric_semantics": {
+                          "accuracy_unit": "percent",
+                          "average_accuracy": "sample-weighted accuracy on eval_split",
+                          "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups",
+                          "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
+                          "history_window": min(10, len(history.val_accuracy)),
+                      },
+                      "feature_artifact": {
+                          "uri": artifact_uri(stored_feature_path),
+                          "payload_bytes": tensor_payload_bytes(feature_payload),
+                          "retention_state": feature_retention,
+                      },
+                      "convergence": convergence, "metrics": final_metrics,
+                      "group_metrics": {
+                                            "val": {
                                                "accuracy": final_metrics["Linear val group accuracies"],
                                                "count": final_metrics["Linear val group counts"],
                                                "named": build_named_group_metrics(
@@ -654,8 +713,17 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
                                                    train_group_counts,
                                                    train_features.tensors[2],
                                                ),
-                                           },
-                                       }}, indent=2), encoding="utf-8")
+                                            },
+                                        }}
+    atomic_write_json(result_path, result_payload)
+    if args.run_recorder is not None:
+        args.run_recorder.register_artifact(
+            result_path,
+            kind="probe_result",
+            stage="linear_probe",
+            epoch=supcon_epoch,
+        )
+        args.run_recorder.log_metrics("linear_probe_final", supcon_epoch, result_payload)
 
     print(
         "best accuracy: {:.2f} and worst-group accuracy: {:.2f} and best-group accuracy: {:.2f}".format(

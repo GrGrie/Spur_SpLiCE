@@ -10,10 +10,12 @@ from pathlib import Path
 import subprocess
 import sys
 
-from splice.artifacts import PROJECT_ROOT, resolve_output_root, seed_run
+from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory
+from splice.run_recording import portable_json
 
 
 EXECUTION_SCHEMA_VERSION = 1
+PRIMARY_ATTEMPT_ID = "primary"
 
 
 def load_manifest(path: str | Path) -> dict:
@@ -32,7 +34,8 @@ def matrix(manifest: dict) -> list[tuple[int, str]]:
 
 
 def manifest_fingerprint(manifest: dict) -> str:
-    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    public_manifest = {key: value for key, value in manifest.items() if not key.startswith("_")}
+    payload = json.dumps(public_manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -40,24 +43,34 @@ def command_for(
     manifest: dict,
     seed: int,
     arm: str,
+    attempt_id: str | None = None,
     *,
+    output_root: str | Path | None = None,
     artifact_root: str | Path | None = None,
     output: Path | None = None,
 ) -> tuple[list[str], Path]:
+    """Build a command; ``artifact_root`` remains an alias for old local callers."""
+
     if arm not in manifest["arms"]:
         raise ValueError(f"Unknown arm {arm!r}")
-    root = resolve_output_root(artifact_root)
-    output = output or seed_run(seed, str(manifest["name"]), arm, root=root)
+    if output_root is not None and artifact_root is not None:
+        raise ValueError("Pass only one of output_root and artifact_root")
+    root = resolve_output_root(output_root if output_root is not None else artifact_root)
+    attempt_id = attempt_id or PRIMARY_ATTEMPT_ID
+    output = output or run_directory(seed, str(manifest["name"]), arm, attempt_id, root=root)
+    attempt_id = output.name
     values = {**manifest["common"], **manifest["arms"][arm].get("args", {})}
     values.update(seed=seed, checkpoint_dir=str(output / "training"))
     substitutions = {
-        "project": str(PROJECT_ROOT),
-        "artifacts": str(root),
-        "seed": seed,
-        "arm": arm,
-        "output": str(output),
+        "project": str(PROJECT_ROOT), "artifacts": str(root), "seed": seed,
+        "arm": arm, "output": str(output),
     }
     command = [sys.executable, "-u", str(PROJECT_ROOT / "spur_splice.py")]
+    command.extend((
+        "--study", str(manifest["name"]), "--arm", arm, "--attempt_id", attempt_id,
+        "--run_record", str(output / "run.json"), "--artifact_dir", str(output / "training"),
+        "--manifest_path", str(manifest.get("_manifest_path", "")),
+    ))
     for flag in [*manifest.get("flags", []), *manifest["arms"][arm].get("flags", [])]:
         command.append(f"--{flag}")
     for key, value in values.items():
@@ -71,9 +84,10 @@ def command_for(
 
 def _read_command(path: Path) -> list[str]:
     try:
-        command = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Cannot read existing command identity at {path}.") from exc
+    command = payload.get("command") if isinstance(payload, dict) else payload
     if not isinstance(command, list) or not all(isinstance(value, str) for value in command):
         raise RuntimeError(f"Existing command identity at {path} is invalid.")
     return command
@@ -83,37 +97,37 @@ def _without_resume(command: list[str]) -> list[str]:
     normalized = list(command)
     while "--resume" in normalized:
         index = normalized.index("--resume")
-        del normalized[index : index + 2]
+        del normalized[index:index + 2]
     return normalized
 
 
 def _require_same_command(output: Path, command: list[str]) -> None:
-    existing = _read_command(output / "command.json")
-    if _without_resume(existing) != _without_resume(command):
-        raise RuntimeError(
-            f"Refusing to reuse {output}: its command does not match this manifest execution."
-        )
+    existing = portable_json({"command": _read_command(output / "command.json")})["command"]
+    requested = portable_json({"command": command})["command"]
+    if _without_resume(existing) != _without_resume(requested):
+        raise RuntimeError(f"Refusing to reuse {output}: its command does not match this manifest execution.")
 
 
-def _statuses(output: Path) -> list[dict]:
+def _is_complete(output: Path) -> bool:
+    record = output / "run.json"
+    if record.is_file():
+        try:
+            return json.loads(record.read_text(encoding="utf-8")).get("status") == "complete"
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Cannot read run record at {record}.") from exc
     statuses = []
     for path in sorted((output / "training").glob("*/run_status.json")):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            statuses.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"Cannot read run status at {path}.") from exc
-        payload["_path"] = str(path)
-        statuses.append(payload)
-    return statuses
+    return len([status for status in statuses if status.get("status") == "complete"]) == 1
 
 
 def _resume_checkpoint(output: Path) -> Path:
-    checkpoints = [
-        path for path in (output / "training").glob("*/*.pth")
-        if path.name != "probe_tmp.pth"
-    ]
+    checkpoints = [path for path in (output / "training").glob("**/*.pth") if path.name != "probe_tmp.pth"]
     if not checkpoints:
-        raise RuntimeError(f"Cannot resume {output}: no training checkpoint was found.")
+        raise RuntimeError(f"Cannot resume {output}: no local training checkpoint was found.")
 
     def checkpoint_rank(path: Path) -> tuple[int, float]:
         if path.name == "last.pth":
@@ -125,20 +139,6 @@ def _resume_checkpoint(output: Path) -> Path:
     return max(checkpoints, key=checkpoint_rank)
 
 
-def _next_attempt_output(base_output: Path) -> Path:
-    attempts = base_output / "attempts"
-    number = 1
-    while (attempts / f"attempt_{number:04d}").exists():
-        number += 1
-    return attempts / f"attempt_{number:04d}"
-
-
-def _write_json(path: Path, payload: object) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
 def run(
     manifest: dict,
     seed: int,
@@ -146,37 +146,32 @@ def run(
     dry_run: bool = False,
     *,
     existing: str = "error",
+    output_root: str | Path | None = None,
     artifact_root: str | Path | None = None,
+    attempt_id: str | None = None,
 ) -> Path:
-    command, base_output = command_for(manifest, seed, arm, artifact_root=artifact_root)
-    output = base_output
+    if existing == "new-attempt" and attempt_id is None:
+        attempt_id = make_attempt_id()
+    attempt_id = attempt_id or PRIMARY_ATTEMPT_ID
+    command, output = command_for(
+        manifest, seed, arm, attempt_id, output_root=output_root, artifact_root=artifact_root,
+    )
     populated = output.exists() and any(output.iterdir())
-
-    if existing == "new-attempt":
-        output = _next_attempt_output(base_output)
-        command, _ = command_for(
-            manifest, seed, arm, artifact_root=artifact_root, output=output
-        )
-    elif populated:
-        if existing == "error":
+    if populated:
+        if existing in {"error", "new-attempt"}:
             raise RuntimeError(
-                f"Execution directory already exists: {output}. "
-                "Choose --existing reuse, resume, or new-attempt explicitly."
+                f"Execution directory already exists: {output}. Choose a new attempt ID or an explicit reuse/resume policy."
             )
         _require_same_command(output, command)
-        statuses = _statuses(output)
-        complete = [status for status in statuses if status.get("status") == "complete"]
+        complete = _is_complete(output)
         if existing == "reuse":
-            if len(complete) != 1:
-                raise RuntimeError(
-                    f"Cannot reuse {output}: expected exactly one complete run status, found {len(complete)}."
-                )
+            if not complete:
+                raise RuntimeError(f"Cannot reuse {output}: the run is not complete.")
             print(f"[INFO] Reusing completed execution at {output}")
             return output
-        if existing == "resume":
-            if complete:
-                raise RuntimeError(f"Execution at {output} is complete; use --existing reuse or new-attempt.")
-            command.extend(("--resume", str(_resume_checkpoint(output))))
+        if complete:
+            raise RuntimeError(f"Execution at {output} is complete; use --existing reuse or new-attempt.")
+        command.extend(("--resume", str(_resume_checkpoint(output))))
     elif existing in {"reuse", "resume"}:
         raise RuntimeError(f"Cannot {existing} {output}: the execution directory is empty or absent.")
 
@@ -184,19 +179,13 @@ def run(
     if dry_run:
         return output
     output.mkdir(parents=True, exist_ok=True)
-    _write_json(output / "command.json", command)
-    _write_json(
-        output / "execution.json",
-        {
-            "schema_version": EXECUTION_SCHEMA_VERSION,
-            "manifest_sha256": manifest_fingerprint(manifest),
-            "study": str(manifest["name"]),
-            "seed": seed,
-            "arm": arm,
-            "existing_policy": existing,
-            "command": command,
-        },
-    )
+    atomic_write_json(output / "command.json", portable_json({"schema": "experiment-command-v1", "command": command}))
+    atomic_write_json(output / "execution.json", portable_json({
+        "schema_version": EXECUTION_SCHEMA_VERSION,
+        "manifest_sha256": manifest_fingerprint(manifest), "study": str(manifest["name"]),
+        "seed": seed, "arm": arm, "attempt_id": attempt_id, "existing_policy": existing,
+        "command": command,
+    }))
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
     return output
 
@@ -210,19 +199,15 @@ def main() -> None:
     parser.add_argument("--arm")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--existing", choices=("error", "reuse", "resume", "new-attempt"), default="error")
+    parser.add_argument("--attempt-id", help="Stable run attempt to reuse or resume; defaults to 'primary'.")
     parser.add_argument(
-        "--existing",
-        choices=("error", "reuse", "resume", "new-attempt"),
-        default="error",
-        help="Explicit policy when this seed/arm execution already exists.",
-    )
-    parser.add_argument(
-        "--artifact-root",
-        type=Path,
-        help="Artifact tree root; overrides SPUR_SPLICE_ARTIFACT_ROOT and outputs/.",
+        "--output-root", "--artifact-root", dest="output_root", type=Path,
+        help="Git-facing results tree; overrides SPUR_SPLICE_OUTPUT_ROOT and outputs/.",
     )
     args = parser.parse_args()
     manifest = load_manifest(args.manifest)
+    manifest["_manifest_path"] = str(Path(args.manifest).resolve())
     tasks = matrix(manifest)
     if args.list:
         for task, (seed, arm) in enumerate(tasks):
@@ -239,12 +224,8 @@ def main() -> None:
     else:
         parser.error("choose --task or both --seed and --arm")
     run(
-        manifest,
-        seed,
-        arm,
-        args.dry_run,
-        existing=args.existing,
-        artifact_root=args.artifact_root,
+        manifest, seed, arm, args.dry_run, existing=args.existing,
+        output_root=args.output_root, attempt_id=args.attempt_id,
     )
 
 

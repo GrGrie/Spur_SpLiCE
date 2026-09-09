@@ -12,11 +12,13 @@ class ExperimentRunnerTests(unittest.TestCase):
         manifest = {"name": "study", "seeds": [1, 2], "common": {}, "arms": {"a": {}, "b": {}}}
         self.assertEqual(matrix(manifest), [(1, "a"), (1, "b"), (2, "a"), (2, "b")])
 
-    def test_command_uses_seed_first_output(self):
+    def test_command_uses_attempt_scoped_output_and_run_record(self):
         manifest = {"name": "study", "seeds": [1], "common": {}, "arms": {"arm": {"args": {"splice_mode": "none"}}}}
-        command, output = command_for(manifest, 1, "arm")
+        command, output = command_for(manifest, 1, "arm", "attempt")
         self.assertIn("seed_01", str(output))
+        self.assertEqual(output.name, "attempt")
         self.assertIn("--checkpoint_dir", command)
+        self.assertIn("--run_record", command)
 
     def test_missing_manifest_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -37,7 +39,7 @@ class ExperimentRunnerTests(unittest.TestCase):
     def test_existing_execution_is_refused_without_an_explicit_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            output = root / "seeds" / "seed_01" / "study" / "arm"
+            output = root / "seeds" / "study" / "seed_01" / "arm" / "primary"
             output.mkdir(parents=True)
             marker = output / "do-not-overwrite.txt"
             marker.write_text("kept", encoding="utf-8")
@@ -85,14 +87,15 @@ class ExperimentRunnerTests(unittest.TestCase):
     def test_new_attempt_gets_a_separate_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            base = root / "seeds" / "seed_01" / "study" / "arm"
+            base = root / "seeds" / "study" / "seed_01" / "arm" / "attempt_0001"
             base.mkdir(parents=True)
             (base / "command.json").write_text("[]", encoding="utf-8")
             with patch("experiments.runner.subprocess.run"):
                 output = run(
-                    self._manifest(), 1, "arm", existing="new-attempt", artifact_root=root
+                    self._manifest(), 1, "arm", existing="new-attempt",
+                    artifact_root=root, attempt_id="attempt_0002"
                 )
-            self.assertEqual(output, base / "attempts" / "attempt_0001")
+            self.assertEqual(output, base.parent / "attempt_0002")
             self.assertTrue((output / "execution.json").is_file())
 
     def test_negative_task_id_is_rejected(self):

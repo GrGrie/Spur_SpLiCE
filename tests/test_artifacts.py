@@ -1,16 +1,26 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from splice.artifacts import OUTPUT_ROOT, reference, report, resolve_output_root, seed_run, shared
+from splice.artifacts import (
+    BINARY_SIZE_THRESHOLD,
+    OUTPUT_ROOT,
+    binary_destination,
+    reference,
+    report,
+    resolve_output_root,
+    seed_run,
+    shared,
+)
 
 
 class ArtifactPathTests(unittest.TestCase):
-    def test_seed_runs_are_grouped_by_seed_then_study_and_arm(self):
+    def test_seed_runs_are_grouped_by_study_then_seed_and_arm(self):
         self.assertEqual(
             seed_run(1, "paper", "simclr"),
-            OUTPUT_ROOT / "seeds" / "seed_01" / "paper" / "simclr",
+            OUTPUT_ROOT / "seeds" / "paper" / "seed_01" / "simclr",
         )
 
     def test_shared_and_report_paths_have_distinct_meanings(self):
@@ -22,13 +32,27 @@ class ArtifactPathTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             seed_run(1, "../outside")
 
-    def test_artifact_root_can_be_configured_explicitly_or_by_environment(self):
+    def test_output_root_is_independent_from_scratch_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            self.assertEqual(seed_run(2, "paper", root=root), root / "seeds" / "seed_02" / "paper")
-            with patch.dict("os.environ", {"SPUR_SPLICE_ARTIFACT_ROOT": str(root)}):
+            self.assertEqual(seed_run(2, "paper", root=root), root / "seeds" / "paper" / "seed_02")
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root)}):
                 self.assertEqual(resolve_output_root(), root)
                 self.assertEqual(shared("waterbirds"), root / "shared" / "waterbirds")
+
+    def test_binary_routing_uses_strict_ten_mib_boundary(self):
+        identity = {"study": "paper", "seed": 1, "arm": "simclr", "attempt_id": "attempt"}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": directory}
+        ):
+            local = Path(directory).parent / "result.pth"
+            self.assertEqual(
+                binary_destination(local, BINARY_SIZE_THRESHOLD, kind="checkpoints", identity=identity),
+                local,
+            )
+            routed = binary_destination(local, BINARY_SIZE_THRESHOLD + 1, kind="checkpoints", identity=identity)
+            self.assertTrue(str(routed).startswith(directory))
+            self.assertIn("checkpoints", routed.parts)
 
 
 if __name__ == "__main__":

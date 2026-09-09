@@ -1,14 +1,29 @@
 # Scripts
 
-This directory intentionally has one Slurm adapter.
+Submit an experiment matrix and its dependent result collector with:
 
 ```bash
-sbatch --array=0-19 scripts/run_experiment.sbatch
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
 ```
 
 `run_experiment.sbatch` activates the cluster environment and calls
-`experiments.runner`. Experiment parameters live in immutable JSON manifests,
-not in chains of prepare/array/summary launchers.
+`experiments.runner`; `collect_results.sbatch` runs with an `afterany`
+dependency. Slurm output is kept in `outputs/SLURM/`, and cluster setup verifies
+`/scratch/xar68reb/CoSpRo` before training starts.
+
+Inspect and migrate an existing cluster `outputs` tree through Slurm with:
+
+```bash
+bash scripts/submit_outputs_migration.sh --scan
+bash scripts/submit_outputs_migration.sh --dry-run
+bash scripts/submit_outputs_migration.sh --apply
+```
+
+`--apply` prints the complete dry-run plan first, then migrates files, verifies
+sizes and SHA-256 hashes, and removes source copies only after successful
+verification. The default source is `<project>/outputs`; an explicit legacy root
+can be passed as the second argument. Discovery handles both direct and nested
+layouts and stops if more than one plausible results root exists.
 
 Small Python tools remain for operations that are not training matrices:
 
@@ -19,9 +34,13 @@ Small Python tools remain for operations that are not training matrices:
 - `download_waterbirds_hf.py` — dataset helper;
 - `summarize_crp_audit.py` — concise graph summary;
 - `render_report.py` — the single HTML report adapter.
+- `collect_results.py` — validate a manifest matrix and build one results JSON;
+- `promote_checkpoint.py` — explicitly retain a checkpoint with rationale;
+- `migrate_outputs.py` — discover and safely migrate direct or nested legacy trees.
 
 Use `python -m <module> --help` for their interfaces.
 
-Artifact paths default to `outputs/`. Set `SPUR_SPLICE_ARTIFACT_ROOT` or pass
-`experiments.runner --artifact-root PATH` when using a packaged tree such as
-`outputs/output_cluster`; the runner substitutes `{artifacts}` in manifests.
+Git-facing artifact paths default to `outputs/`. Set `SPUR_SPLICE_OUTPUT_ROOT`
+or pass `experiments.runner --output-root PATH` when inspecting a packaged tree
+such as `outputs/output_cluster`; the runner substitutes `{artifacts}` in
+manifests. `SPUR_SPLICE_SCRATCH_ROOT` separately controls large binary storage.

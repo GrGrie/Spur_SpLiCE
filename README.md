@@ -16,7 +16,7 @@ student inference.
 - `experiments/runner.py` — the single seed/arm experiment runner.
 - `experiments/manifests/` — reproducible experiment definitions.
 - `scripts/` — one Slurm adapter plus small cache/report tools.
-- `outputs/` — seed-first results, shared artifacts and aggregate reports.
+- `outputs/` — Git-friendly run records, shared JSON artifacts, aggregate reports and ignored Slurm logs.
 - `tests/` — tests for the current method only.
 
 See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow and
@@ -24,11 +24,11 @@ the README inside the selected artifact root for artifact navigation.
 
 ## Run the canonical experiment
 
-On the cluster, set `DATA_FOLDER` if it differs from the default and submit the
-20-task matrix:
+On the cluster, set `DATA_FOLDER` if it differs from the default. The submission
+helper launches the matrix and a dependent result collector:
 
 ```bash
-sbatch --array=0-19 scripts/run_experiment.sbatch
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
 ```
 
 Inspect the matrix without training:
@@ -40,8 +40,9 @@ python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 
 
 Existing execution directories are protected by default. Choose
 `--existing reuse`, `resume`, or `new-attempt` explicitly; reuse/resume require
-the recorded command to match. Use `--artifact-root outputs/output_cluster` or
-set `SPUR_SPLICE_ARTIFACT_ROOT` to operate on the packaged artifact layout.
+the recorded command to match. Use `--output-root outputs/output_cluster` or
+set `SPUR_SPLICE_OUTPUT_ROOT` to inspect a packaged artifact layout. This is
+independent of `SPUR_SPLICE_SCRATCH_ROOT`, which stores large binaries.
 
 Build shared inputs directly:
 
@@ -68,3 +69,9 @@ For this study, DONE means: a predeclared split/protocol, unique run identity,
 linked endpoint metrics, completed and converged status, and explicit limits.
 It does not mean producing a new standalone report for every implementation
 detail or rerunning training when no scientific claim would change.
+
+The final aggregate for a study is `outputs/reports/<study>/results.json`.
+Run records are under `outputs/seeds/<study>/seed_XX/<arm>/<attempt_id>/`;
+large SSL checkpoints
+and probe feature tensors are retained under `/scratch/xar68reb/CoSpRo` and
+attested by size and SHA-256 in each `run.json`.

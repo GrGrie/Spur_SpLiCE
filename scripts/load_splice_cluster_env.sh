@@ -6,6 +6,13 @@
 
 : "${PROJECT_DIR:?PROJECT_DIR must be set before loading the SpLiCE environment}"
 SPLICE_CONDA_ENV="${SPLICE_CONDA_ENV:-grgrie-train}"
+SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${SPUR_SPLICE_ARTIFACT_ROOT:-/scratch/xar68reb/CoSpRo}}"
+
+mkdir -p "${SPUR_SPLICE_SCRATCH_ROOT}"
+if [[ ! -w "${SPUR_SPLICE_SCRATCH_ROOT}" ]]; then
+    echo "ERROR: scratch root is not writable: ${SPUR_SPLICE_SCRATCH_ROOT}" >&2
+    exit 2
+fi
 
 module purge
 module load miniforge3/latest
@@ -18,7 +25,7 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
     exit 2
 fi
 
-export SPLICE_CONDA_ENV PYTHON_BIN
+export SPLICE_CONDA_ENV PYTHON_BIN SPUR_SPLICE_SCRATCH_ROOT
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-5}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-5}"
