@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.tools.archive_legacy import archive_legacy
 from scripts.tools.collect_results import collect
 from scripts.tools.migrate_outputs import apply_migration, discover_result_root, migration_plan
 from splice.artifacts import BINARY_SIZE_THRESHOLD
@@ -12,6 +13,25 @@ from splice.run_recording import RunRecorder
 
 
 class ResultLifecycleTests(unittest.TestCase):
+    def test_legacy_archive_is_verified_before_source_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "legacy"
+            (source / "study").mkdir(parents=True)
+            (source / "study" / "result.json").write_text('{"metric": 1}\n', encoding="utf-8")
+            (source / "notes.txt").write_text("historical\n", encoding="utf-8")
+            archive = root / "scratch" / "legacy.tar.gz"
+            manifest = root / "reports" / "legacy.json"
+
+            payload = archive_legacy(source, archive, manifest, delete_source=True)
+
+            self.assertEqual(payload["file_count"], 2)
+            self.assertEqual(payload["suffix_counts"], {".json": 1, ".txt": 1})
+            self.assertTrue(payload["source_deleted_after_verification"])
+            self.assertTrue(archive.is_file())
+            self.assertTrue(manifest.is_file())
+            self.assertFalse(source.exists())
+
     def test_recorder_redacts_secrets_and_attests_scratch_artifact(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": directory}

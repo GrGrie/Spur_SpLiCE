@@ -25,6 +25,22 @@ verification. The default source is `<project>/outputs`; an explicit legacy root
 can be passed as the second argument. Discovery handles both direct and nested
 layouts and stops if more than one plausible results root exists.
 
+After migration, unknown historical files remain quarantined under
+`outputs/shared/legacy/`. Inventory them without changing files:
+
+```bash
+python -m scripts.tools.archive_legacy
+```
+
+Create and verify a compressed archive under the configured scratch root:
+
+```bash
+python -m scripts.tools.archive_legacy --apply
+```
+
+Only after the archive and its Git-friendly manifest have been reviewed, remove
+the quarantine source with `--apply --delete-source-after-verify`.
+
 Small Python tools remain for operations that are not training matrices:
 
 - `cache_crp_features.py` — build the frozen CRP cache;
@@ -37,6 +53,7 @@ Small Python tools remain for operations that are not training matrices:
 - `collect_results.py` — validate a manifest matrix and build one results JSON;
 - `promote_checkpoint.py` — explicitly retain a checkpoint with rationale;
 - `migrate_outputs.py` — discover and safely migrate direct or nested legacy trees.
+- `archive_legacy.py` — inventory and verify a recoverable archive of quarantined legacy files.
 
 Use `python -m <module> --help` for their interfaces.
 

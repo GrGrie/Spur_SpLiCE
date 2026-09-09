@@ -34,6 +34,11 @@ Git admits files only from the canonical `seeds/`, `reports/`, `shared/` and
 the migration tool classifies them, preventing an accidental bulk commit of a
 copied historical output tree.
 
+`outputs/shared/legacy/` is a quarantine area and is also ignored. Use
+`python -m scripts.tools.archive_legacy` to inventory it, then archive it to
+scratch. The verified archive manifest is written under
+`outputs/reports/legacy-archive/` and is suitable for Git.
+
 Run the collector manually when needed:
 
 ```bash
