@@ -212,7 +212,8 @@ def log_rank_metrics(
     args,
     wandb_run,
     compute_rank: bool = True,
-) -> None:
+    run_recorder=None,
+) -> dict[str, float]:
     rank_metrics = {}
     if compute_rank:
         if rank_loader is None:
@@ -229,8 +230,7 @@ def log_rank_metrics(
             "Effective rank": effective_rank,
             "Energy-based rank": energy_based_rank,
         }
-    if wandb_run is not None:
-        payload = {
+    payload = {
                 **rank_metrics,
                 "SSL train loss": train_metrics["loss"],
                 "SSL SimCLR loss": train_metrics["simclr_loss"],
@@ -253,5 +253,9 @@ def log_rank_metrics(
                 "SSL relational confidence-weighted KL": train_metrics.get(
                     "relational_confidence_weighted_kl", 0.0
                 ),
-        }
+    }
+    if run_recorder is not None:
+        run_recorder.log_metrics("ssl", epoch, payload)
+    if wandb_run is not None:
         wandb_run.log(payload, step=epoch)
+    return payload

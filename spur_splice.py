@@ -37,6 +37,8 @@ from splice.crp_training import (
     save_crp_concept_report,
 )
 from splice.graph_io import graph_fingerprint
+from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
+from splice.run_recording import RunRecorder, portable_json
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
@@ -110,6 +112,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
+    parser.add_argument("--artifact_dir", type=str, default="")
+    parser.add_argument("--study", type=str, default="adhoc")
+    parser.add_argument("--arm", type=str, default="training")
+    parser.add_argument("--attempt_id", type=str, default="standalone")
+    parser.add_argument("--run_record", type=str, default="")
+    parser.add_argument("--manifest_path", type=str, default="")
     parser.add_argument(
         "--keep_checkpoints",
         action="store_true",
@@ -140,8 +148,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--retain_probe_artifacts_every",
         type=int,
-        default=100,
-        help="Retain bulky downstream probe tensors only at these SSL epochs; 0 keeps all probe tensors.",
+        default=0,
+        help="Additionally retain bulky probe tensors every N SSL epochs; 0 retains only the final tensor.",
     )
     parser.add_argument("--resume", type=str, default="")
 
@@ -310,8 +318,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--linear_probe_freq must be non-negative.")
     if args.keep_checkpoints and args.save_freq <= 0:
         parser.error("--save_freq must be positive when --keep_checkpoints is enabled.")
-    if args.checkpoint_keep_count <= 0:
-        parser.error("--checkpoint_keep_count must be positive.")
+    if not 1 <= args.checkpoint_keep_count <= 2:
+        parser.error("--checkpoint_keep_count must be 1 or 2.")
     if args.retain_probe_artifacts_every < 0:
         parser.error("--retain_probe_artifacts_every must be non-negative.")
     if args.batch_size > 256:
@@ -341,9 +349,9 @@ def parse_args() -> argparse.Namespace:
     args.model_name = format_run_name(args)
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
     args.storage_name = format_storage_name(args)
-    args.save_folder = str(
-        Path(args.checkpoint_dir or f"./save/SimCLR/{args.dataset}_models") / args.storage_name
-    )
+    artifact_base = Path(args.artifact_dir or args.checkpoint_dir or f"./outputs/seeds/adhoc/seed_{args.seed:02d}/training")
+    args.save_folder = str(artifact_base / args.storage_name)
+    args.run_record = args.run_record or str(artifact_base.parent / "run.json")
     os.makedirs(args.save_folder, exist_ok=True)
     write_run_config(args)
     return args
@@ -389,11 +397,17 @@ def format_storage_name(args: argparse.Namespace) -> str:
 
     excluded_from_fingerprint = {
         "checkpoint_dir",
+        "artifact_dir",
+        "attempt_id",
+        "arm",
         "data_folder",
+        "manifest_path",
         "resume",
+        "run_record",
         "runtime_versions",
         "save_folder",
         "storage_name",
+        "study",
         "use_wandb",
         "wandb_group",
         "wandb_name",
@@ -437,16 +451,16 @@ def format_run_name(args: argparse.Namespace) -> str:
 
 def write_run_config(args: argparse.Namespace) -> None:
     config_path = Path(args.save_folder) / "args.json"
-    payload = vars(args).copy()
-    with config_path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, indent=2, sort_keys=True)
-        file.write("\n")
+    payload = {key: value for key, value in vars(args).items() if key != "run_recorder_instance"}
+    atomic_write_json(config_path, portable_json(payload))
 
 
 def runtime_versions() -> dict[str, str]:
     versions = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
+        "cuda": str(torch.version.cuda or "not-available"),
+        "cudnn": str(torch.backends.cudnn.version() or "not-available"),
     }
     for distribution in [
         "torch",
@@ -671,6 +685,13 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "wandb_name": args.wandb_name,
         "entity": args.entity,
         "spurious_probe": args.linear_spurious_probe,
+        "artifact_dir": args.save_folder,
+        "run_recorder": getattr(args, "run_recorder_instance", None),
+        "study": args.study,
+        "arm": args.arm,
+        "attempt_id": args.attempt_id,
+        "retain_probe_artifacts_every": args.retain_probe_artifacts_every,
+        "ssl_total_epochs": args.epochs,
     }
     return argparse.Namespace(**probe_settings)
 
@@ -717,6 +738,24 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
     """Persist values that are resolved only while constructing the dataset."""
 
     write_run_config(args)
+    recorder = getattr(args, "run_recorder_instance", None)
+    if recorder is not None:
+        recorder.update_config({
+            **{key: value for key, value in vars(args).items() if key != "run_recorder_instance"},
+            "dataset_identity": {
+                "name": args.dataset,
+                "ssl_training_examples": len(train_loader.dataset),
+                "linear_train_split": args.train_set_linear_layer,
+                "linear_eval_split": args.linear_eval_split,
+            },
+        })
+        if args.splice_mode in RELATIONAL_GRAPH_MODES:
+            recorder.register_artifact(
+                Path(args.crp_teacher_graph),
+                kind="teacher_graph",
+                stage="input",
+                retention_state="retained",
+            )
     if wandb_run is not None:
         resolved = {}
         if args.splice_mode in RELATIONAL_GRAPH_MODES:
@@ -777,19 +816,21 @@ def prune_epoch_checkpoints(args: argparse.Namespace) -> None:
 
     if not args.keep_checkpoints:
         return
-    checkpoint_dir = Path(args.save_folder)
     epoch_checkpoints: list[tuple[int, Path]] = []
-    for checkpoint_path in checkpoint_dir.glob("epoch_*.pth"):
-        match = re.fullmatch(r"epoch_(\d+)\.pth", checkpoint_path.name)
-        if match:
-            epoch_checkpoints.append((int(match.group(1)), checkpoint_path))
+    for checkpoint_dir in checkpoint_directories(args):
+        for checkpoint_path in checkpoint_dir.glob("epoch_*.pth"):
+            match = re.fullmatch(r"epoch_(\d+)\.pth", checkpoint_path.name)
+            if match:
+                epoch_checkpoints.append((int(match.group(1)), checkpoint_path))
     epoch_checkpoints.sort(key=lambda item: item[0], reverse=True)
     for _, checkpoint_path in epoch_checkpoints[args.checkpoint_keep_count :]:
         checkpoint_path.unlink()
 
 
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
-    temporary_paths = [Path(args.save_folder) / "probe_tmp.pth", Path(args.save_folder) / "probe_tmp.pth.tmp"]
+    temporary_paths = []
+    for directory in checkpoint_directories(args):
+        temporary_paths.extend((directory / "probe_tmp.pth", directory / "probe_tmp.pth.tmp"))
     for temporary_path in temporary_paths:
         if temporary_path.exists():
             temporary_path.unlink()
@@ -798,18 +839,18 @@ def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
 def cleanup_all_checkpoints(args: argparse.Namespace) -> dict[str, object]:
     """Delete epoch checkpoint artifacts while preserving the final last.pth."""
 
-    checkpoint_dir = Path(args.save_folder)
     removed_count = 0
-    for checkpoint_path in checkpoint_dir.iterdir():
-        if not checkpoint_path.is_file():
+    for checkpoint_dir in checkpoint_directories(args):
+        if not checkpoint_dir.exists():
             continue
-        if checkpoint_path.name == "last.pth":
-            continue
-        if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
-            continue
-        checkpoint_path.unlink()
-        removed_count += 1
-    print(f"[INFO] Removed {removed_count} checkpoint files from {checkpoint_dir}")
+        for checkpoint_path in checkpoint_dir.iterdir():
+            if not checkpoint_path.is_file() or checkpoint_path.name == "last.pth":
+                continue
+            if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
+                continue
+            checkpoint_path.unlink()
+            removed_count += 1
+    print(f"[INFO] Removed {removed_count} recovery checkpoint files")
     return {"requested": True, "removed_count": removed_count, "completed": True}
 
 
@@ -817,18 +858,17 @@ def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
     """Keep small probe JSONs and only selected bulky feature tensors."""
 
     interval = args.retain_probe_artifacts_every
-    if interval == 0:
-        return {"requested": True, "removed_count": 0, "retained_epochs": "all", "completed": True}
-
     removed_count = 0
     retained_epochs: set[int] = set()
-    checkpoint_dir = Path(args.save_folder)
-    for feature_path in checkpoint_dir.glob("probe_features_epoch_*.pt"):
+    feature_paths = []
+    for feature_dir in feature_directories(args):
+        feature_paths.extend(feature_dir.glob("probe_features_epoch_*.pt"))
+    for feature_path in feature_paths:
         match = re.fullmatch(r"probe_features_epoch_(\d+)(?:_.+)?\.pt", feature_path.name)
         if match is None:
             continue
         epoch = int(match.group(1))
-        if epoch > 0 and epoch % interval == 0:
+        if epoch == args.epochs or (interval > 0 and epoch > 0 and epoch % interval == 0):
             retained_epochs.add(epoch)
             continue
         feature_path.unlink()
@@ -839,6 +879,18 @@ def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
         "retained_epochs": sorted(retained_epochs),
         "completed": True,
     }
+
+
+def artifact_identity(args: argparse.Namespace) -> dict[str, object]:
+    return {name: getattr(args, name) for name in ("study", "seed", "arm", "attempt_id")}
+
+
+def checkpoint_directories(args: argparse.Namespace) -> list[Path]:
+    return [Path(args.save_folder), scratch_binary_directory("checkpoints", artifact_identity(args))]
+
+
+def feature_directories(args: argparse.Namespace) -> list[Path]:
+    return [Path(args.save_folder), scratch_binary_directory("features", artifact_identity(args))]
 
 
 def _wandb_identity(wandb_run) -> dict[str, object] | None:
@@ -873,12 +925,25 @@ def main() -> None:
     device = torch.device(args.device)
     args.device = str(device)
 
+    manifest_payload = {}
+    if args.manifest_path and Path(args.manifest_path).is_file():
+        manifest_payload = json.loads(Path(args.manifest_path).read_text(encoding="utf-8"))
+    recorder = RunRecorder(
+        args.run_record,
+        identity=artifact_identity(args),
+        config=vars(args),
+        runtime=args.runtime_versions,
+        manifest=manifest_payload,
+    )
+    args.run_recorder_instance = recorder
+
     wandb_run = None
     wandb_finished = False
     cleanup_status: dict[str, object] = {}
+    final_probe_metrics: dict[str, object] = {}
     status: dict[str, object] = {
         "status": "running",
-        "run_identity": {"storage_name": args.storage_name, "save_folder": args.save_folder},
+        "run_identity": {"storage_name": args.storage_name, "save_folder": artifact_uri(args.save_folder)},
         "wandb": {"enabled": bool(args.use_wandb), "finish_called": False, "finish_succeeded": False},
     }
     try:
@@ -886,7 +951,9 @@ def main() -> None:
             with preserve_rng_state():
                 import wandb
 
-                wandb_config = vars(args).copy()
+                wandb_config = {
+                    key: value for key, value in vars(args).items() if key != "run_recorder_instance"
+                }
                 wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
                 wandb_run = wandb.init(
                     project=args.wandb_name,
@@ -897,6 +964,7 @@ def main() -> None:
                     tags=wandb_tags or None,
                 )
             status["run_identity"]["wandb"] = _wandb_identity(wandb_run)
+            recorder.set_wandb(_wandb_identity(wandb_run))
 
         train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(
             args, device
@@ -929,7 +997,7 @@ def main() -> None:
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
-            log_metrics = wandb_run is not None or epoch % args.print_freq == 0
+            log_metrics = True
             log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
             if log_metrics or log_rank:
                 with preserve_rng_state():
@@ -942,6 +1010,7 @@ def main() -> None:
                         args,
                         wandb_run,
                         compute_rank=log_rank,
+                        run_recorder=recorder,
                     )
 
             should_probe = (
@@ -950,7 +1019,7 @@ def main() -> None:
                 and epoch % args.linear_probe_freq == 0
             )
             if should_probe:
-                save_checkpoint(
+                actual_probe_file = save_checkpoint(
                     model,
                     optimizer,
                     args,
@@ -959,13 +1028,13 @@ def main() -> None:
                     scaler=scaler,
                     loader_generator=train_loader.generator,
                 )
-                run_linear_probe(args, probe_file, epoch)
+                final_probe_metrics = run_linear_probe(args, str(actual_probe_file), epoch)
                 last_probe_epoch = epoch
-                if os.path.exists(probe_file):
-                    os.remove(probe_file)
+                if actual_probe_file.exists():
+                    actual_probe_file.unlink()
 
             if args.keep_checkpoints and epoch % args.save_freq == 0:
-                save_checkpoint(
+                recovery_checkpoint = save_checkpoint(
                     model,
                     optimizer,
                     args,
@@ -974,10 +1043,17 @@ def main() -> None:
                     scaler=scaler,
                     loader_generator=train_loader.generator,
                 )
+                recorder.register_artifact(
+                    recovery_checkpoint,
+                    kind="ssl_checkpoint",
+                    stage="ssl",
+                    epoch=epoch,
+                    retention_state="recovery",
+                )
                 prune_epoch_checkpoints(args)
 
         if args.linear_probe_mode != "none" and last_probe_epoch != args.epochs:
-            save_checkpoint(
+            actual_probe_file = save_checkpoint(
                 model,
                 optimizer,
                 args,
@@ -986,12 +1062,12 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
-            run_linear_probe(args, probe_file, args.epochs)
-            if os.path.exists(probe_file):
-                os.remove(probe_file)
+            final_probe_metrics = run_linear_probe(args, str(actual_probe_file), args.epochs)
+            if actual_probe_file.exists():
+                actual_probe_file.unlink()
 
         if args.keep_checkpoints:
-            save_checkpoint(
+            final_checkpoint = save_checkpoint(
                 model,
                 optimizer,
                 args,
@@ -999,6 +1075,13 @@ def main() -> None:
                 os.path.join(args.save_folder, "last.pth"),
                 scaler=scaler,
                 loader_generator=train_loader.generator,
+            )
+            recorder.register_artifact(
+                final_checkpoint,
+                kind="ssl_checkpoint",
+                stage="ssl",
+                epoch=args.epochs,
+                retention_state="final",
             )
 
         if wandb_run is not None:
@@ -1030,6 +1113,7 @@ def main() -> None:
             }
         status.update({"status": "complete", "cleanup": cleanup_status})
         write_run_status(args, status)
+        recorder.finish(final_metrics=final_probe_metrics, cleanup=cleanup_status)
     except Exception as exc:
         if wandb_run is not None and not wandb_finished:
             try:
@@ -1044,6 +1128,7 @@ def main() -> None:
             "cleanup": cleanup_status,
         })
         write_run_status(args, status)
+        recorder.fail(exc, cleanup_status)
         raise
 
 

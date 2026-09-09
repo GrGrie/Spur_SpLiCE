@@ -17,7 +17,8 @@ training images
 | Responsibility | Source |
 |---|---|
 | Sparse decomposition | `splice/model.py`, `splice/splice.py`, `splice/admm.py` |
-| Artifact locations | `splice/artifacts.py` |
+| Artifact locations and threshold routing | `splice/artifacts.py` |
+| Run lifecycle records | `splice/run_recording.py` |
 | Frozen feature cache | `scripts/tools/cache_crp_features.py` |
 | CRP teacher graph | `splice/crp.py`, `splice/graph_io.py` |
 | Graph sampler and relational KL | `splice/crp_training.py` |
@@ -34,10 +35,12 @@ graph assembly. Training consumes only validated graphs through
 
 ## Results
 
-- `outputs/seeds/seed_01/` through `seed_04/` contain every seed-specific run.
+- `outputs/seeds/<study>/seed_01/` through `seed_04/` contain Git-friendly run records.
 - `outputs/shared/waterbirds/` contains the frozen cache and teacher graphs.
 - `outputs/reports/` contains aggregate results and completed-study provenance.
 - `outputs/reference/` contains vocabularies and external exports.
+- `/scratch/xar68reb/CoSpRo/` contains binary SSL/probe payloads larger than 10 MiB.
 
-Historical source paths embedded in result JSON files are retained as
-provenance. New code must obtain destinations through `splice.artifacts`.
+Historical source paths are normalized during migration. New code must obtain
+destinations through `splice.artifacts`; a run becomes complete only after
+`splice.run_recording` verifies every retained artifact attestation.

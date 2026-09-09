@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import os
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
+
+from splice.artifacts import binary_destination, tensor_payload_bytes
+
+
+def _artifact_identity(args) -> dict[str, object] | None:
+    required = ("study", "seed", "arm", "attempt_id")
+    if not all(hasattr(args, name) for name in required):
+        return None
+    return {name: getattr(args, name) for name in required}
 
 
 def save_checkpoint(
@@ -15,12 +25,14 @@ def save_checkpoint(
     path: str,
     scaler=None,
     loader_generator: torch.Generator | None = None,
-) -> None:
-    print(f"==> Saving checkpoint to {path}")
-    tmp_path = f"{path}.tmp"
-    torch.save(
-        {
-            "opt": args,
+) -> Path:
+    options = {
+        key: value
+        for key, value in vars(args).items()
+        if key not in {"run_recorder", "run_recorder_instance"}
+    }
+    payload = {
+            "opt": options,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scaler": scaler.state_dict() if scaler is not None else None,
@@ -30,10 +42,19 @@ def save_checkpoint(
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "loader_generator_state": loader_generator.get_state() if loader_generator is not None else None,
-        },
-        tmp_path,
+        }
+    destination = binary_destination(
+        path,
+        tensor_payload_bytes(payload),
+        kind="checkpoints",
+        identity=_artifact_identity(args),
     )
-    os.replace(tmp_path, path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    print(f"==> Saving checkpoint to {destination}")
+    tmp_path = destination.with_suffix(destination.suffix + ".tmp")
+    torch.save(payload, tmp_path)
+    os.replace(tmp_path, destination)
+    return destination
 
 
 def load_checkpoint(

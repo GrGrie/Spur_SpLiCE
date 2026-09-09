@@ -9,7 +9,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from splice.artifacts import PROJECT_ROOT, seed_run
+from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, run_directory
+from splice.run_recording import portable_json
 
 
 def load_manifest(path: str | Path) -> dict:
@@ -27,14 +28,25 @@ def matrix(manifest: dict) -> list[tuple[int, str]]:
     return [(int(seed), str(arm)) for seed in manifest["seeds"] for arm in manifest["arms"]]
 
 
-def command_for(manifest: dict, seed: int, arm: str) -> tuple[list[str], Path]:
+def command_for(manifest: dict, seed: int, arm: str, attempt_id: str | None = None) -> tuple[list[str], Path]:
     if arm not in manifest["arms"]:
         raise ValueError(f"Unknown arm {arm!r}")
-    output = seed_run(seed, str(manifest["name"]), arm)
+    attempt_id = attempt_id or make_attempt_id()
+    output = run_directory(seed, str(manifest["name"]), arm, attempt_id)
     values = {**manifest["common"], **manifest["arms"][arm].get("args", {})}
     values.update(seed=seed, checkpoint_dir=str(output / "training"))
     substitutions = {"project": str(PROJECT_ROOT), "seed": seed, "arm": arm, "output": str(output)}
     command = [sys.executable, "-u", str(PROJECT_ROOT / "spur_splice.py")]
+    command.extend(
+        (
+            "--study", str(manifest["name"]),
+            "--arm", arm,
+            "--attempt_id", attempt_id,
+            "--run_record", str(output / "run.json"),
+            "--artifact_dir", str(output / "training"),
+            "--manifest_path", str(manifest.get("_manifest_path", "")),
+        )
+    )
     for flag in [*manifest.get("flags", []), *manifest["arms"][arm].get("flags", [])]:
         command.append(f"--{flag}")
     for key, value in values.items():
@@ -47,12 +59,15 @@ def command_for(manifest: dict, seed: int, arm: str) -> tuple[list[str], Path]:
 
 
 def run(manifest: dict, seed: int, arm: str, dry_run: bool = False) -> Path:
-    command, output = command_for(manifest, seed, arm)
+    command, output = command_for(manifest, seed, arm, make_attempt_id())
     print(" ".join(command))
     if dry_run:
         return output
     output.mkdir(parents=True, exist_ok=True)
-    (output / "command.json").write_text(json.dumps(command, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(
+        output / "command.json",
+        portable_json({"schema": "experiment-command-v1", "command": command}),
+    )
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
     return output
 
@@ -68,6 +83,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     manifest = load_manifest(args.manifest)
+    manifest["_manifest_path"] = str(Path(args.manifest).resolve())
     tasks = matrix(manifest)
     if args.list:
         for task, (seed, arm) in enumerate(tasks):

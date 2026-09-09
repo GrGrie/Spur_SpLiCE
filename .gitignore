@@ -163,12 +163,20 @@ cython_debug/
 # GrGrie's files
 *.cmd
 /datasets/
-/outputs/*
-!/outputs/next_tests_2026-09-07/
-outputs/next_tests_2026-09-07/*
-!/outputs/next_tests_2026-09-07/logs/
-outputs/next_tests_2026-09-07/logs/*
-!/outputs/next_tests_2026-09-07/logs/.gitkeep
+# Structured JSON/CSV/Markdown under outputs is intentionally versioned.
+/outputs/SLURM/*
+!/outputs/SLURM/.gitkeep
+/outputs/**/*.pt
+/outputs/**/*.pth
+/outputs/**/*.ckpt
+/outputs/**/*.wandb
+/outputs/**/*.html
+/outputs/**/*.jpg
+/outputs/**/*.jpeg
+/outputs/**/*.png
+/outputs/**/*.pdf
+/outputs/**/*.gz
+/outputs/outputs/
 wandb/
 /save/
 /scripts/output

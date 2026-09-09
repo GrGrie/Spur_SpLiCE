@@ -13,9 +13,11 @@ class ExperimentRunnerTests(unittest.TestCase):
 
     def test_command_uses_seed_first_output(self):
         manifest = {"name": "study", "seeds": [1], "common": {}, "arms": {"arm": {"args": {"splice_mode": "none"}}}}
-        command, output = command_for(manifest, 1, "arm")
+        command, output = command_for(manifest, 1, "arm", "attempt")
         self.assertIn("seed_01", str(output))
+        self.assertEqual(output.name, "attempt")
         self.assertIn("--checkpoint_dir", command)
+        self.assertIn("--run_record", command)
 
     def test_missing_manifest_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -16,7 +16,7 @@ student inference.
 - `experiments/runner.py` — the single seed/arm experiment runner.
 - `experiments/manifests/` — reproducible experiment definitions.
 - `scripts/` — one Slurm adapter plus small cache/report tools.
-- `outputs/` — seed-first results, shared artifacts and aggregate reports.
+- `outputs/` — Git-friendly run records, shared JSON artifacts, aggregate reports and ignored Slurm logs.
 - `tests/` — tests for the current method only.
 
 See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow and
@@ -24,11 +24,11 @@ See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow and
 
 ## Run the canonical experiment
 
-On the cluster, set `DATA_FOLDER` if it differs from the default and submit the
-20-task matrix:
+On the cluster, set `DATA_FOLDER` if it differs from the default. The submission
+helper launches the matrix and a dependent result collector:
 
 ```bash
-sbatch --array=0-19 scripts/run_experiment.sbatch
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
 ```
 
 Inspect the matrix without training:
@@ -53,7 +53,7 @@ pip install -e .
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The final four-seed paper aggregate is
-`outputs/reports/paper/test_summary.json`. Raw run folders are grouped under
-`outputs/seeds/seed_XX/`; shared Waterbirds cache and graphs are under
-`outputs/shared/waterbirds/`.
+The final aggregate for a study is `outputs/reports/<study>/results.json`.
+Run records are under `outputs/seeds/<study>/seed_XX/`; large SSL checkpoints
+and probe feature tensors are retained under `/scratch/xar68reb/CoSpRo` and
+attested by size and SHA-256 in each `run.json`.
