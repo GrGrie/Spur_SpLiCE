@@ -76,17 +76,18 @@ def archive_legacy(
     entries = inventory(source)
     archive.parent.mkdir(parents=True, exist_ok=True)
     if archive.exists():
-        raise FileExistsError(f"Refusing to overwrite archive: {archive}")
-    temporary = archive.with_suffix(archive.suffix + ".tmp")
-    try:
-        with tarfile.open(temporary, "w:gz") as bundle:
-            for entry in entries:
-                bundle.add(source / entry["path"], arcname=entry["path"], recursive=False)
-        _verify_archive(temporary, entries)
-        temporary.replace(archive)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+        _verify_archive(archive, entries)
+    else:
+        temporary = archive.with_suffix(archive.suffix + ".tmp")
+        try:
+            with tarfile.open(temporary, "w:gz") as bundle:
+                for entry in entries:
+                    bundle.add(source / entry["path"], arcname=entry["path"], recursive=False)
+            _verify_archive(temporary, entries)
+            temporary.replace(archive)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
 
     suffix_counts: dict[str, int] = {}
     for entry in entries:
@@ -94,7 +95,7 @@ def archive_legacy(
     payload = {
         "schema": "legacy-archive-v1",
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "source": source.as_posix(),
+        "source_uri": artifact_uri(source),
         "archive_uri": artifact_uri(archive),
         "archive_bytes": archive.stat().st_size,
         "archive_sha256": sha256_file(archive),

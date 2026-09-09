@@ -32,14 +32,17 @@ After migration, unknown historical files remain quarantined under
 python -m scripts.tools.archive_legacy
 ```
 
-Create and verify a compressed archive under the configured scratch root:
+Create and verify a compressed archive at explicit, reusable paths:
 
 ```bash
-python -m scripts.tools.archive_legacy --apply
+python -m scripts.tools.archive_legacy --apply \
+  --archive /scratch/xar68reb/CoSpRo/legacy_archives/Spur_SpLiCE/pre-unification.tar.gz \
+  --manifest outputs/reports/legacy-archive/pre-unification.json
 ```
 
-Only after the archive and its Git-friendly manifest have been reviewed, remove
-the quarantine source with `--apply --delete-source-after-verify`.
+Only after the archive and its Git-friendly manifest have been reviewed, rerun
+the same command with `--delete-source-after-verify`. The existing archive is
+fully reverified against the source before deletion; it is never overwritten.
 
 Small Python tools remain for operations that are not training matrices:
 

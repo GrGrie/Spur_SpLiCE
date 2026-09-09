@@ -23,8 +23,10 @@ class ResultLifecycleTests(unittest.TestCase):
             archive = root / "scratch" / "legacy.tar.gz"
             manifest = root / "reports" / "legacy.json"
 
+            initial = archive_legacy(source, archive, manifest)
             payload = archive_legacy(source, archive, manifest, delete_source=True)
 
+            self.assertFalse(initial["source_deleted_after_verification"])
             self.assertEqual(payload["file_count"], 2)
             self.assertEqual(payload["suffix_counts"], {".json": 1, ".txt": 1})
             self.assertTrue(payload["source_deleted_after_verification"])
