@@ -163,7 +163,19 @@ cython_debug/
 # GrGrie's files
 *.cmd
 /datasets/
-# Structured JSON/CSV/Markdown under outputs is intentionally versioned.
+# Only the canonical result tree is versioned. Flat legacy directories remain
+# local until scripts/tools/migrate_outputs.py classifies them.
+/outputs/*
+!/outputs/README.md
+!/outputs/SLURM/
+!/outputs/seeds/
+!/outputs/seeds/**
+!/outputs/reports/
+!/outputs/reports/**
+!/outputs/shared/
+!/outputs/shared/**
+!/outputs/reference/
+!/outputs/reference/**
 /outputs/SLURM/*
 !/outputs/SLURM/.gitkeep
 /outputs/**/*.pt

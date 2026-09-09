@@ -29,6 +29,11 @@ Set `SPUR_SPLICE_SCRATCH_ROOT` to override the binary location. The legacy
 cluster variable `SPUR_SPLICE_ARTIFACT_ROOT` is accepted as a fallback, but it
 never changes the Git-facing `outputs/` root.
 
+Git admits files only from the canonical `seeds/`, `reports/`, `shared/` and
+`reference/` trees. Flat legacy directories are intentionally ignored until
+the migration tool classifies them, preventing an accidental bulk commit of a
+copied historical output tree.
+
 Run the collector manually when needed:
 
 ```bash
