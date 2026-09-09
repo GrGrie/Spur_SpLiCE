@@ -23,6 +23,8 @@ echo "  source:  ${SOURCE}"
 echo "  scratch: ${SPUR_SPLICE_ARTIFACT_ROOT:-/scratch/xar68reb/CoSpRo}"
 
 sbatch \
+    --chdir="${PROJECT_DIR}" \
+    --export="ALL,PROJECT_DIR=${PROJECT_DIR}" \
     --output="${LOG_DIR}/migrate_outputs_%j.out" \
     --error="${LOG_DIR}/migrate_outputs_%j.err" \
     "${PROJECT_DIR}/scripts/migrate_outputs.sbatch" \

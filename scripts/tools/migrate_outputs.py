@@ -36,10 +36,31 @@ def discover_result_root(source: str | Path) -> Path:
         children = {path.name for path in candidate.iterdir() if path.is_dir()}
         if len(children & MARKERS) >= 2:
             candidates.append(candidate)
+    if not candidates and source.name.lower() == "outputs":
+        legacy_entries = [path for path in source.iterdir() if path.name not in {"SLURM", "README.md"}]
+        if legacy_entries:
+            return source
     if len(candidates) != 1:
         rendered = ", ".join(str(path) for path in candidates) or "none"
         raise ValueError(f"Expected exactly one result root; found {rendered}")
     return candidates[0]
+
+
+def _heavy_binary_kind(path: Path, relative: Path) -> str | None:
+    if path.stat().st_size <= BINARY_SIZE_THRESHOLD:
+        return None
+    suffix = path.suffix.lower()
+    name = path.name.lower()
+    parts = {part.lower() for part in relative.parts}
+    if suffix in {".pth", ".ckpt"}:
+        return "checkpoints"
+    if suffix != ".pt":
+        return None
+    if name.startswith("probe_features_epoch_"):
+        return "features"
+    checkpoint_name = name == "last.pt" or name.startswith(("epoch_", "checkpoint"))
+    checkpoint_context = bool(parts & {"ssl", "training", "linear_probe", "linear-probe", "probe"})
+    return "checkpoints" if checkpoint_name or checkpoint_context else None
 
 
 def _normalize_json(value: Any) -> Any:
@@ -60,21 +81,26 @@ def _normalize_json(value: Any) -> Any:
 
 def migration_plan(source: str | Path) -> list[dict[str, Any]]:
     root = discover_result_root(source)
+    root_children = {path.name for path in root.iterdir() if path.is_dir()}
+    flat_legacy_root = len(root_children & MARKERS) < 2
     plan = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         relative = path.relative_to(root)
-        suffix = path.suffix.lower()
-        ssl_checkpoint = suffix in {".pth", ".ckpt"} and (
-            "training" in relative.parts or path.name == "last.pth" or path.name.startswith("epoch_")
-        )
-        probe_feature = suffix == ".pt" and path.name.startswith("probe_features_epoch_")
-        heavy_binary = (ssl_checkpoint or probe_feature) and path.stat().st_size > BINARY_SIZE_THRESHOLD
+        binary_kind = _heavy_binary_kind(path, relative)
+        heavy_binary = binary_kind is not None
         if heavy_binary:
-            kind = "features" if probe_feature else "checkpoints"
-            destination = scratch_root() / kind / "Spur_SpLiCE" / "legacy" / relative
+            destination = scratch_root() / binary_kind / "Spur_SpLiCE" / "legacy" / relative
+        elif flat_legacy_root and relative.parts[0] not in MARKERS | {"SLURM", "README.md"}:
+            destination = OUTPUT_ROOT / "shared" / "legacy" / relative
         else:
             destination = OUTPUT_ROOT / relative
-        plan.append({"source": path, "destination": destination, "bytes": path.stat().st_size, "heavy_binary": heavy_binary})
+        plan.append({
+            "root": root,
+            "source": path,
+            "destination": destination,
+            "bytes": path.stat().st_size,
+            "heavy_binary": heavy_binary,
+        })
     return plan
 
 
@@ -226,6 +252,16 @@ def apply_migration(plan: list[dict[str, Any]], *, delete_source: bool = False) 
         for item in copied:
             if not item["unchanged"]:
                 item["source"].unlink()
+        for root in {item["root"] for item in copied}:
+            for directory in sorted(
+                (path for path in root.rglob("*") if path.is_dir()),
+                key=lambda path: len(path.parts),
+                reverse=True,
+            ):
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
     return {"files": len(copied), "bytes": sum(item["bytes"] for item in copied), "backfilled_run_records": backfilled_records, "deleted_source": delete_source}
 
 

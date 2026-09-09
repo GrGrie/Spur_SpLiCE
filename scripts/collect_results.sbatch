@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=spur-splice-collect
+#SBATCH --partition=informatik-mind
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=00:30:00
@@ -7,7 +8,7 @@
 #SBATCH --error=outputs/SLURM/collect-%j.err
 
 set -euo pipefail
-PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
+PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be exported by submit_experiment.sh}"
 MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_crp.json}"
 cd "${PROJECT_DIR}"
 source scripts/load_splice_cluster_env.sh

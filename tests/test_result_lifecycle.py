@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from scripts.tools.collect_results import collect
 from scripts.tools.migrate_outputs import apply_migration, discover_result_root, migration_plan
+from splice.artifacts import BINARY_SIZE_THRESHOLD
 from splice.run_recording import RunRecorder
 
 
@@ -79,6 +80,42 @@ class ResultLifecycleTests(unittest.TestCase):
             (nested / "seeds").mkdir(parents=True)
             (nested / "shared").mkdir()
             self.assertEqual(discover_result_root(wrapper), nested.resolve())
+
+    def test_migration_discovers_flat_legacy_outputs_and_routes_last_pt(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": str(Path(directory) / "scratch")}
+        ):
+            base = Path(directory)
+            source = base / "outputs"
+            run = source / "legacy_study" / "seed_01"
+            run.mkdir(parents=True)
+            checkpoint = run / "last.pt"
+            with checkpoint.open("wb") as stream:
+                stream.seek(BINARY_SIZE_THRESHOLD)
+                stream.write(b"x")
+            graph = run / "teacher_graph.json"
+            graph.write_text(json.dumps({"schema": "teacher-graph-v1"}), encoding="utf-8")
+            readme = source / "README.md"
+            readme.write_text("# Outputs\n", encoding="utf-8")
+
+            self.assertEqual(discover_result_root(source), source.resolve())
+            with patch("scripts.tools.migrate_outputs.OUTPUT_ROOT", base / "canonical"):
+                plan = migration_plan(source)
+                by_name = {item["source"].name: item for item in plan}
+                self.assertTrue(by_name["last.pt"]["heavy_binary"])
+                self.assertIn("scratch", by_name["last.pt"]["destination"].parts)
+                self.assertFalse(by_name["teacher_graph.json"]["heavy_binary"])
+                self.assertEqual(by_name["README.md"]["destination"], base / "canonical" / "README.md")
+                graph_destination = (
+                    base / "canonical" / "shared" / "legacy" / "legacy_study" / "seed_01" / "teacher_graph.json"
+                )
+                self.assertEqual(by_name["teacher_graph.json"]["destination"], graph_destination)
+                summary = apply_migration(plan, delete_source=True)
+
+            self.assertTrue(graph_destination.is_file())
+            self.assertTrue(by_name["last.pt"]["destination"].is_file())
+            self.assertFalse(run.exists())
+            self.assertTrue(summary["deleted_source"])
 
     def test_migration_backfills_legacy_run_record(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(

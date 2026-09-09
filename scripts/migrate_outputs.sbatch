@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be exported by submit_outputs_migration.sh}"
 MODE="${1:---scan}"
 SOURCE="${2:-${PROJECT_DIR}/outputs}"
 
