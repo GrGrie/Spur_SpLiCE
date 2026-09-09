@@ -29,125 +29,6 @@ class AverageMeter:
         self.avg = self.sum / self.count
 
 
-def _gradient_diagnostic(
-    model,
-    parts: dict[str, torch.Tensor],
-    splice_regularizer,
-    scaler,
-    epoch: int,
-    batch: int,
-) -> dict:
-    """Inspect AMP-scaled objective gradients without touching model state.
-
-    AMP can underflow an FP16 objective before a later ``.float()`` cast.  The
-    loss therefore has to be scaled *before* ``autograd.grad``; the returned
-    parameter gradients are then converted to float32 and unscaled.
-    """
-
-    encoder_parameters = [parameter for parameter in model.encoder.parameters() if parameter.requires_grad]
-    head_parameters = []
-    if model.clip_distillation_head is not None:
-        head_parameters = [
-            parameter for parameter in model.clip_distillation_head.parameters() if parameter.requires_grad
-        ]
-    scaler_enabled = bool(scaler.is_enabled()) if hasattr(scaler, "is_enabled") else False
-    scale = float(scaler.get_scale()) if scaler_enabled else 1.0
-
-    def gradients(loss, parameters):
-        if not parameters:
-            return []
-        # ``parts["splice"]`` can be an FP16 scalar after the regularizer's
-        # AMP cast. Promote before applying the GradScaler factor; multiplying
-        # an FP16 scalar by the usual 65536 scale can overflow the diagnostic
-        # itself even when the combined training loss is finite.
-        scaled_loss = loss.float() * scale
-        return torch.autograd.grad(
-            scaled_loss, parameters, retain_graph=True, allow_unused=True
-        )
-
-    simclr_encoder_grads = gradients(parts["simclr"], encoder_parameters)
-    splice_encoder_grads = gradients(parts["splice"], encoder_parameters)
-    simclr_head_grads = gradients(parts["simclr"], head_parameters)
-    splice_head_grads = gradients(parts["splice"], head_parameters)
-
-    def flatten(grads, parameters):
-        pieces = [
-            (
-                gradient.detach().float() / scale
-                if gradient is not None
-                else torch.zeros_like(parameter, dtype=torch.float32)
-            ).reshape(-1)
-            for gradient, parameter in zip(grads, parameters)
-        ]
-        return torch.cat(pieces) if pieces else torch.zeros(1, dtype=torch.float32)
-
-    simclr_encoder = flatten(simclr_encoder_grads, encoder_parameters)
-    splice_encoder = flatten(splice_encoder_grads, encoder_parameters)
-    simclr_head = flatten(simclr_head_grads, head_parameters)
-    splice_head = flatten(splice_head_grads, head_parameters)
-    finite_components = {
-        "simclr_encoder": bool(torch.isfinite(simclr_encoder).all()),
-        "splice_encoder": bool(torch.isfinite(splice_encoder).all()),
-        "simclr_head": bool(torch.isfinite(simclr_head).all()),
-        "splice_head": bool(torch.isfinite(splice_head).all()),
-    }
-    finite = all(finite_components.values())
-
-    def finite_norm(vector: torch.Tensor) -> float | None:
-        if not torch.isfinite(vector).all():
-            return None
-        return float(torch.linalg.vector_norm(vector))
-
-    simclr_norm = finite_norm(simclr_encoder)
-    splice_norm = finite_norm(splice_encoder)
-    simclr_head_norm = finite_norm(simclr_head)
-    splice_head_norm = finite_norm(splice_head)
-    if not finite:
-        print(
-            f"[WARN] Non-finite AMP gradient in diagnostic at epoch={epoch}, batch={batch}; "
-            "recording the diagnostic and continuing training. "
-            f"components={finite_components}",
-            flush=True,
-        )
-    cosine = None
-    if finite and simclr_norm is not None and splice_norm is not None and simclr_norm > 0 and splice_norm > 0:
-        cosine = float(F.cosine_similarity(simclr_encoder.view(1, -1), splice_encoder.view(1, -1)).item())
-    embeddings = parts["_embeddings"].detach().float()
-    centered = embeddings - embeddings.mean(dim=0, keepdim=True)
-    variance = float(centered.square().mean())
-    singular_values = torch.linalg.svdvals(centered) if centered.shape[0] > 1 else torch.zeros(1)
-    effective_rank = float(
-        (singular_values.square().sum() ** 2 / singular_values.pow(4).sum().clamp_min(1e-12)).item()
-    )
-    diagnostic = {
-        "epoch": int(epoch),
-        "batch": int(batch),
-        "simclr_gradient_norm": simclr_norm,
-        "kl_gradient_norm": splice_norm,
-        "encoder_simclr_gradient_norm": simclr_norm,
-        "encoder_kl_gradient_norm": splice_norm,
-        "direct_head_simclr_gradient_norm": simclr_head_norm,
-        "direct_head_kl_gradient_norm": splice_head_norm,
-        "gradient_ratio_kl_to_simclr": (
-            None
-            if simclr_norm in (None, 0) or splice_norm is None
-            else splice_norm / simclr_norm
-        ),
-        "gradient_cosine": cosine,
-        "simclr_gradient_zero": simclr_norm == 0,
-        "kl_gradient_zero": splice_norm == 0,
-        "direct_head_present": bool(head_parameters),
-        "amp_scale": scale,
-        "embedding_norm_mean": float(embeddings.norm(dim=1).mean()),
-        "embedding_variance": variance,
-        "embedding_effective_rank": effective_rank,
-        "finite": finite,
-        "finite_components": finite_components,
-    }
-    diagnostic.update(getattr(splice_regularizer, "last_diagnostics", {}))
-    return diagnostic
-
-
 def simclr_forward_loss(
     model: SimCLRModel,
     criterion: SimCLRLoss,
@@ -190,27 +71,6 @@ def simclr_forward_loss(
                 "_embeddings": embeddings,
             }
             return loss, parts, bsz
-        if getattr(splice_regularizer, "requires_concept_transfer", False):
-            if sample_indices is None:
-                raise ValueError("Frozen concept transfer requires target-bank row indices.")
-            if model.clip_distillation_head is None:
-                raise ValueError("Frozen concept transfer requires the g_clip head.")
-            target_rows, valid_rows = splice_regularizer.targets_for_indices(
-                sample_indices, embeddings.device
-            )
-            repeated_targets = torch.cat([target_rows, target_rows], dim=0)
-            repeated_valid = valid_rows
-            predictions = model.clip_distillation_head(embeddings)
-            splice_loss = splice_regularizer(predictions, repeated_targets, repeated_valid)
-            loss = loss + splice_loss
-            parts = {
-                "simclr": simclr_loss,
-                "decor": decor_loss,
-                "entropy": entropy_loss,
-                "splice": splice_loss,
-                "_embeddings": embeddings,
-            }
-            return loss, parts, bsz
         raise ValueError("Unsupported SSL regularizer.")
     parts = {
         "simclr": simclr_loss,
@@ -244,10 +104,6 @@ def train_one_epoch(
         "effective_donor_count": AverageMeter(),
         "row_mass_after_renorm": AverageMeter(),
     }
-    gradient_records = []
-    diagnostic_epochs = set(getattr(args, "gradient_diagnostics_epochs", (1, 11, 20, 25, 500)))
-    diagnostic_batches = int(getattr(args, "gradient_diagnostics_batches", 4))
-
     if hasattr(splice_regularizer, "set_epoch"):
         splice_regularizer.set_epoch(epoch)
 
@@ -261,8 +117,7 @@ def train_one_epoch(
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
         crp_training = getattr(splice_regularizer, "requires_crp_indices", False)
-        concept_transfer = getattr(splice_regularizer, "requires_concept_transfer", False)
-        sample_indices = data[1] if (crp_training or concept_transfer) else None
+        sample_indices = data[1] if crp_training else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(
@@ -287,34 +142,10 @@ def train_one_epoch(
             value = getattr(splice_regularizer, "last_diagnostics", {}).get(name)
             if value is not None:
                 meter.update(float(value), bsz)
-        if (
-            getattr(args, "gradient_diagnostics", False)
-            and epoch in diagnostic_epochs
-            and idx < diagnostic_batches
-        ):
-            gradient_records.append(_gradient_diagnostic(model, parts, splice_regularizer, scaler, epoch, idx))
-
-        if args.optimizer == "SAM":
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.first_step()
-            loss, _, _ = simclr_forward_loss(
-                model,
-                criterion,
-                image,
-                splice_regularizer=splice_regularizer,
-                sample_indices=sample_indices,
-                simclr_weight=getattr(args, "simclr_weight", 1.0),
-            )
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.second_step()
-            optimizer.step()
-        else:
-            optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+        optimizer.zero_grad(set_to_none=True)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         batch_time.update(time.time() - end)
         end = time.time()
@@ -350,8 +181,6 @@ def train_one_epoch(
             if meter.count
         }
     )
-    if gradient_records:
-        metrics["gradient_diagnostics"] = gradient_records
     return metrics
 
 
@@ -383,7 +212,8 @@ def log_rank_metrics(
     args,
     wandb_run,
     compute_rank: bool = True,
-) -> None:
+    run_recorder=None,
+) -> dict[str, float]:
     rank_metrics = {}
     if compute_rank:
         if rank_loader is None:
@@ -400,8 +230,7 @@ def log_rank_metrics(
             "Effective rank": effective_rank,
             "Energy-based rank": energy_based_rank,
         }
-    if wandb_run is not None:
-        payload = {
+    payload = {
                 **rank_metrics,
                 "SSL train loss": train_metrics["loss"],
                 "SSL SimCLR loss": train_metrics["simclr_loss"],
@@ -424,10 +253,9 @@ def log_rank_metrics(
                 "SSL relational confidence-weighted KL": train_metrics.get(
                     "relational_confidence_weighted_kl", 0.0
                 ),
-        }
-        for diagnostic in train_metrics.get("gradient_diagnostics", []):
-            for key, value in diagnostic.items():
-                if isinstance(value, (int, float)) and value is not None:
-                    payload[f"gradient/{key}/batch{diagnostic.get('batch', 0)}"] = value
-            # W&B step is epoch-level; preserve all four batches in the summary JSON.
+    }
+    if run_recorder is not None:
+        run_recorder.log_metrics("ssl", epoch, payload)
+    if wandb_run is not None:
         wandb_run.log(payload, step=epoch)
+    return payload

@@ -36,13 +36,13 @@ from splice.crp_training import (
     load_teacher_graph,
     save_crp_concept_report,
 )
-from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.graph_io import graph_fingerprint
+from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
+from splice.run_recording import RunRecorder, portable_json
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
 RELATIONAL_GRAPH_MODES = {"crp_relational"}
-CONCEPT_TRANSFER_MODES = {"frozen_concept_distill"}
 
 
 def str_to_bool(value) -> bool:
@@ -80,16 +80,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr_decay_rate", type=float, default=0.1)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "SAM", "AdamW"])
-    parser.add_argument("--sam_base_optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
-    parser.add_argument("--rho", type=float, default=0.05)
-    parser.add_argument("--sam_no_grad_norm", action="store_true")
-    parser.add_argument("--only_sam_step_size", action="store_true")
+    parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
 
     parser.add_argument("--dataset", type=str, default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", type=str, default="./datasets")
     parser.add_argument("--model", type=str, default="resnet18_large", choices=SSL_RESNET_MODEL_NAMES)
-    parser.add_argument("--method", type=str, default="SimCLR", choices=["SimCLR"])
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
     parser.add_argument("--temp", type=float, default=0.5)
@@ -103,7 +98,6 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--cosine", action="store_true")
     parser.add_argument("--warm", action="store_true")
-    parser.add_argument("--trial", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=True)
@@ -118,6 +112,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
     parser.add_argument("--checkpoint_dir", type=str, default=None)
+    parser.add_argument("--artifact_dir", type=str, default="")
+    parser.add_argument("--study", type=str, default="adhoc")
+    parser.add_argument("--arm", type=str, default="training")
+    parser.add_argument("--attempt_id", type=str, default="standalone")
+    parser.add_argument("--run_record", type=str, default="")
+    parser.add_argument("--manifest_path", type=str, default="")
     parser.add_argument(
         "--keep_checkpoints",
         action="store_true",
@@ -148,8 +148,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--retain_probe_artifacts_every",
         type=int,
-        default=100,
-        help="Retain bulky downstream probe tensors only at these SSL epochs; 0 keeps all probe tensors.",
+        default=0,
+        help="Additionally retain bulky probe tensors every N SSL epochs; 0 retains only the final tensor.",
     )
     parser.add_argument("--resume", type=str, default="")
 
@@ -212,29 +212,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--entity", default="gsgrechkin-rptu")
     parser.add_argument("--wandb_group", default="")
     parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
-    parser.add_argument("--energy_threshold", type=float, default=0.9)
-    parser.add_argument("--rank_threshold", type=float, default=0.1)
-
     parser.add_argument(
         "--splice_mode",
         type=str,
         default="none",
-        choices=[
-            "none",
-            "crp_relational",
-            "frozen_concept_distill",
-        ],
+        choices=["none", "crp_relational"],
     )
-    parser.add_argument("--concept_transfer_targets", type=str, default="")
-    parser.add_argument(
-        "--concept_transfer_target_kind",
-        type=str,
-        default="reconstruction",
-        choices=["raw", "reconstruction", "shuffled_reconstruction"],
-    )
-    parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
-    parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
-    parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
         "--crp_teacher_graph",
@@ -272,34 +255,12 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
     )
-    parser.add_argument(
-        "--gradient_diagnostics",
-        action="store_true",
-        help="Opt-in first-four-batch encoder gradient diagnostics for CRP transfer debugging.",
-    )
-    parser.add_argument("--gradient_diagnostics_output", type=str, default="")
-    parser.add_argument("--gradient_diagnostics_batches", type=int, default=4)
-    parser.add_argument(
-        "--gradient_diagnostics_epochs",
-        type=str,
-        default="1,11,20,25,500",
-        help="Comma-separated SSL epochs at which the first diagnostic batches are recorded.",
-    )
-
     args = parser.parse_args()
     try:
         args.linear_eval_split = resolve_evaluation_split(args.linear_eval_split, args.final_test)
         args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
     except ValueError as exc:
         parser.error(str(exc))
-    try:
-        args.gradient_diagnostics_epochs = tuple(
-            sorted({int(value.strip()) for value in args.gradient_diagnostics_epochs.split(",") if value.strip()})
-        )
-    except ValueError as exc:
-        parser.error(f"--gradient_diagnostics_epochs must be comma-separated integers: {exc}")
-    if any(epoch <= 0 for epoch in args.gradient_diagnostics_epochs):
-        parser.error("--gradient_diagnostics_epochs values must be positive.")
     if args.epochs <= 0:
         parser.error("--epochs must be positive.")
     if args.linear_probe_epochs <= 0:
@@ -316,24 +277,6 @@ def parse_args() -> argparse.Namespace:
     except ValueError as exc:
         parser.error(str(exc))
     args.use_splice = args.splice_mode != "none"
-    if args.splice_mode in CONCEPT_TRANSFER_MODES:
-        if not args.concept_transfer_targets:
-            parser.error("--concept_transfer_targets is required for frozen_concept_distill.")
-        target_path = Path(args.concept_transfer_targets)
-        if not target_path.is_file():
-            parser.error(f"Concept-transfer target artifact does not exist: {target_path}")
-        try:
-            target_artifact = load_target_artifact(target_path)
-        except (OSError, ValueError, RuntimeError) as exc:
-            parser.error(f"Invalid concept-transfer target artifact: {exc}")
-        if int(target_artifact["target_dim"]) != 512:
-            parser.error("frozen_concept_distill requires 512-dimensional CLIP targets.")
-        args.concept_transfer_target_artifact = target_artifact["artifact"]
-        args.concept_transfer_cache_fingerprint = target_artifact.get("cache_fingerprint", "")
-        if args.concept_transfer_alpha_max < 0:
-            parser.error("--concept_transfer_alpha_max must be non-negative.")
-        if args.concept_transfer_start_epoch < 0 or args.concept_transfer_warmup_epochs < 0:
-            parser.error("Concept-transfer schedule values must be non-negative.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
@@ -365,8 +308,6 @@ def parse_args() -> argparse.Namespace:
         args.model.endswith("_large") or args.model == "resnet50_pretrained"
     ):
         parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
-    if args.amp and args.optimizer == "SAM":
-        parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
     if args.cudnn_benchmark and not args.cudnn_enabled:
         parser.error("--cudnn_benchmark true requires --cudnn_enabled true.")
     if args.cudnn_benchmark:
@@ -377,8 +318,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--linear_probe_freq must be non-negative.")
     if args.keep_checkpoints and args.save_freq <= 0:
         parser.error("--save_freq must be positive when --keep_checkpoints is enabled.")
-    if args.checkpoint_keep_count <= 0:
-        parser.error("--checkpoint_keep_count must be positive.")
+    if not 1 <= args.checkpoint_keep_count <= 2:
+        parser.error("--checkpoint_keep_count must be 1 or 2.")
     if args.retain_probe_artifacts_every < 0:
         parser.error("--retain_probe_artifacts_every must be non-negative.")
     if args.batch_size > 256:
@@ -408,9 +349,9 @@ def parse_args() -> argparse.Namespace:
     args.model_name = format_run_name(args)
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
     args.storage_name = format_storage_name(args)
-    args.save_folder = str(
-        Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.storage_name
-    )
+    artifact_base = Path(args.artifact_dir or args.checkpoint_dir or f"./outputs/seeds/adhoc/seed_{args.seed:02d}/training")
+    args.save_folder = str(artifact_base / args.storage_name)
+    args.run_record = args.run_record or str(artifact_base.parent / "run.json")
     os.makedirs(args.save_folder, exist_ok=True)
     write_run_config(args)
     return args
@@ -444,8 +385,6 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
     suffix = f"_e{args.epochs}"
     if args.splice_mode == "crp_relational":
         return f"{prefix}_CRP_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
-    if args.splice_mode == "frozen_concept_distill":
-        return f"{prefix}_ConceptTransfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}{suffix}"
     return f"{prefix}_SimCLR{suffix}"
 
 
@@ -453,18 +392,22 @@ def format_storage_name(args: argparse.Namespace) -> str:
     """Return a short, deterministic checkpoint directory name safe for Windows paths."""
     if args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
-    elif args.splice_mode == "frozen_concept_distill":
-        experiment = f"concept-transfer-{args.concept_transfer_target_kind}"
     else:
         experiment = "base"
 
     excluded_from_fingerprint = {
         "checkpoint_dir",
+        "artifact_dir",
+        "attempt_id",
+        "arm",
         "data_folder",
+        "manifest_path",
         "resume",
+        "run_record",
         "runtime_versions",
         "save_folder",
         "storage_name",
+        "study",
         "use_wandb",
         "wandb_group",
         "wandb_name",
@@ -492,18 +435,13 @@ def format_storage_name(args: argparse.Namespace) -> str:
 
 
 def format_run_name(args: argparse.Namespace) -> str:
-    optimizer_name = args.optimizer
-    if optimizer_name.lower() == "sam":
-        optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
     if args.splice_mode == "crp_relational":
         splice_name = (f"crp_relational_w{args.splice_weight:g}_t{args.crp_temperature:g}_"
                        f"start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}")
-    elif args.splice_mode == "frozen_concept_distill":
-        splice_name = f"concept_transfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}"
     else:
         splice_name = "nosplice"
     run_name = (
-        f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
+        f"SimCLR_{args.dataset}_{args.optimizer}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"
         f"amp{int(args.amp)}_cl{int(args.channels_last)}_cudnn{int(args.cudnn_enabled)}_"
         f"bench{int(args.cudnn_benchmark)}"
@@ -513,16 +451,16 @@ def format_run_name(args: argparse.Namespace) -> str:
 
 def write_run_config(args: argparse.Namespace) -> None:
     config_path = Path(args.save_folder) / "args.json"
-    payload = vars(args).copy()
-    with config_path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, indent=2, sort_keys=True)
-        file.write("\n")
+    payload = {key: value for key, value in vars(args).items() if key != "run_recorder_instance"}
+    atomic_write_json(config_path, portable_json(payload))
 
 
 def runtime_versions() -> dict[str, str]:
     versions = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
+        "cuda": str(torch.version.cuda or "not-available"),
+        "cudnn": str(torch.backends.cudnn.version() or "not-available"),
     }
     for distribution in [
         "torch",
@@ -595,8 +533,6 @@ def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    if args.splice_mode in CONCEPT_TRANSFER_MODES:
-        loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
@@ -729,17 +665,7 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "eval_split": args.linear_eval_split,
         "model": args.model,
         "ckpt": ckpt_path,
-        "method": args.method,
         "head": args.head,
-        "kappa": 1.0,
-        "trial": args.trial,
-        "augmented_features": False,
-        "plot_path": "",
-        "energy_threshold": args.energy_threshold,
-        "rank_threshold": args.rank_threshold,
-        "spur_str": 0.0,
-        "num_zero_high": 0,
-        "num_zero_low": 0,
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "epochs": args.linear_probe_epochs,
@@ -759,6 +685,13 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "wandb_name": args.wandb_name,
         "entity": args.entity,
         "spurious_probe": args.linear_spurious_probe,
+        "artifact_dir": args.save_folder,
+        "run_recorder": getattr(args, "run_recorder_instance", None),
+        "study": args.study,
+        "arm": args.arm,
+        "attempt_id": args.attempt_id,
+        "retain_probe_artifacts_every": args.retain_probe_artifacts_every,
+        "ssl_total_epochs": args.epochs,
     }
     return argparse.Namespace(**probe_settings)
 
@@ -769,12 +702,10 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
-    clip_distillation_dim = 512 if args.splice_mode in CONCEPT_TRANSFER_MODES else None
     model = SimCLRModel(
         name=args.model,
         head=args.head,
         feat_dim=args.feat_dim,
-        clip_distillation_dim=clip_distillation_dim,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
@@ -798,17 +729,6 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
             )
-    elif args.splice_mode in CONCEPT_TRANSFER_MODES:
-        targets = getattr(train_loader.dataset, "targets", None)
-        if targets is None:
-            raise ValueError("Frozen concept transfer loader did not expose its target bank.")
-        splice_regularizer = ConceptDistillationRegularizer(
-            targets,
-            target_kind=args.concept_transfer_target_kind,
-            weight=args.concept_transfer_alpha_max,
-            start_epoch=args.concept_transfer_start_epoch,
-            warmup_epochs=args.concept_transfer_warmup_epochs,
-        )
     else:
         splice_regularizer = None
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
@@ -818,6 +738,24 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
     """Persist values that are resolved only while constructing the dataset."""
 
     write_run_config(args)
+    recorder = getattr(args, "run_recorder_instance", None)
+    if recorder is not None:
+        recorder.update_config({
+            **{key: value for key, value in vars(args).items() if key != "run_recorder_instance"},
+            "dataset_identity": {
+                "name": args.dataset,
+                "ssl_training_examples": len(train_loader.dataset),
+                "linear_train_split": args.train_set_linear_layer,
+                "linear_eval_split": args.linear_eval_split,
+            },
+        })
+        if args.splice_mode in RELATIONAL_GRAPH_MODES:
+            recorder.register_artifact(
+                Path(args.crp_teacher_graph),
+                kind="teacher_graph",
+                stage="input",
+                retention_state="retained",
+            )
     if wandb_run is not None:
         resolved = {}
         if args.splice_mode in RELATIONAL_GRAPH_MODES:
@@ -878,19 +816,21 @@ def prune_epoch_checkpoints(args: argparse.Namespace) -> None:
 
     if not args.keep_checkpoints:
         return
-    checkpoint_dir = Path(args.save_folder)
     epoch_checkpoints: list[tuple[int, Path]] = []
-    for checkpoint_path in checkpoint_dir.glob("epoch_*.pth"):
-        match = re.fullmatch(r"epoch_(\d+)\.pth", checkpoint_path.name)
-        if match:
-            epoch_checkpoints.append((int(match.group(1)), checkpoint_path))
+    for checkpoint_dir in checkpoint_directories(args):
+        for checkpoint_path in checkpoint_dir.glob("epoch_*.pth"):
+            match = re.fullmatch(r"epoch_(\d+)\.pth", checkpoint_path.name)
+            if match:
+                epoch_checkpoints.append((int(match.group(1)), checkpoint_path))
     epoch_checkpoints.sort(key=lambda item: item[0], reverse=True)
     for _, checkpoint_path in epoch_checkpoints[args.checkpoint_keep_count :]:
         checkpoint_path.unlink()
 
 
 def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
-    temporary_paths = [Path(args.save_folder) / "probe_tmp.pth", Path(args.save_folder) / "probe_tmp.pth.tmp"]
+    temporary_paths = []
+    for directory in checkpoint_directories(args):
+        temporary_paths.extend((directory / "probe_tmp.pth", directory / "probe_tmp.pth.tmp"))
     for temporary_path in temporary_paths:
         if temporary_path.exists():
             temporary_path.unlink()
@@ -899,18 +839,18 @@ def cleanup_default_checkpoints(args: argparse.Namespace) -> None:
 def cleanup_all_checkpoints(args: argparse.Namespace) -> dict[str, object]:
     """Delete epoch checkpoint artifacts while preserving the final last.pth."""
 
-    checkpoint_dir = Path(args.save_folder)
     removed_count = 0
-    for checkpoint_path in checkpoint_dir.iterdir():
-        if not checkpoint_path.is_file():
+    for checkpoint_dir in checkpoint_directories(args):
+        if not checkpoint_dir.exists():
             continue
-        if checkpoint_path.name == "last.pth":
-            continue
-        if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
-            continue
-        checkpoint_path.unlink()
-        removed_count += 1
-    print(f"[INFO] Removed {removed_count} checkpoint files from {checkpoint_dir}")
+        for checkpoint_path in checkpoint_dir.iterdir():
+            if not checkpoint_path.is_file() or checkpoint_path.name == "last.pth":
+                continue
+            if not (checkpoint_path.name.endswith(".pth") or checkpoint_path.name.endswith(".pth.tmp")):
+                continue
+            checkpoint_path.unlink()
+            removed_count += 1
+    print(f"[INFO] Removed {removed_count} recovery checkpoint files")
     return {"requested": True, "removed_count": removed_count, "completed": True}
 
 
@@ -918,18 +858,17 @@ def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
     """Keep small probe JSONs and only selected bulky feature tensors."""
 
     interval = args.retain_probe_artifacts_every
-    if interval == 0:
-        return {"requested": True, "removed_count": 0, "retained_epochs": "all", "completed": True}
-
     removed_count = 0
     retained_epochs: set[int] = set()
-    checkpoint_dir = Path(args.save_folder)
-    for feature_path in checkpoint_dir.glob("probe_features_epoch_*.pt"):
+    feature_paths = []
+    for feature_dir in feature_directories(args):
+        feature_paths.extend(feature_dir.glob("probe_features_epoch_*.pt"))
+    for feature_path in feature_paths:
         match = re.fullmatch(r"probe_features_epoch_(\d+)(?:_.+)?\.pt", feature_path.name)
         if match is None:
             continue
         epoch = int(match.group(1))
-        if epoch > 0 and epoch % interval == 0:
+        if epoch == args.epochs or (interval > 0 and epoch > 0 and epoch % interval == 0):
             retained_epochs.add(epoch)
             continue
         feature_path.unlink()
@@ -940,6 +879,18 @@ def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
         "retained_epochs": sorted(retained_epochs),
         "completed": True,
     }
+
+
+def artifact_identity(args: argparse.Namespace) -> dict[str, object]:
+    return {name: getattr(args, name) for name in ("study", "seed", "arm", "attempt_id")}
+
+
+def checkpoint_directories(args: argparse.Namespace) -> list[Path]:
+    return [Path(args.save_folder), scratch_binary_directory("checkpoints", artifact_identity(args))]
+
+
+def feature_directories(args: argparse.Namespace) -> list[Path]:
+    return [Path(args.save_folder), scratch_binary_directory("features", artifact_identity(args))]
 
 
 def _wandb_identity(wandb_run) -> dict[str, object] | None:
@@ -974,12 +925,25 @@ def main() -> None:
     device = torch.device(args.device)
     args.device = str(device)
 
+    manifest_payload = {}
+    if args.manifest_path and Path(args.manifest_path).is_file():
+        manifest_payload = json.loads(Path(args.manifest_path).read_text(encoding="utf-8"))
+    recorder = RunRecorder(
+        args.run_record,
+        identity=artifact_identity(args),
+        config=vars(args),
+        runtime=args.runtime_versions,
+        manifest=manifest_payload,
+    )
+    args.run_recorder_instance = recorder
+
     wandb_run = None
     wandb_finished = False
     cleanup_status: dict[str, object] = {}
+    final_probe_metrics: dict[str, object] = {}
     status: dict[str, object] = {
         "status": "running",
-        "run_identity": {"storage_name": args.storage_name, "save_folder": args.save_folder},
+        "run_identity": {"storage_name": args.storage_name, "save_folder": artifact_uri(args.save_folder)},
         "wandb": {"enabled": bool(args.use_wandb), "finish_called": False, "finish_succeeded": False},
     }
     try:
@@ -987,7 +951,9 @@ def main() -> None:
             with preserve_rng_state():
                 import wandb
 
-                wandb_config = vars(args).copy()
+                wandb_config = {
+                    key: value for key, value in vars(args).items() if key != "run_recorder_instance"
+                }
                 wandb_tags = [tag.strip() for tag in args.wandb_tags.split(",") if tag.strip()]
                 wandb_run = wandb.init(
                     project=args.wandb_name,
@@ -998,6 +964,7 @@ def main() -> None:
                     tags=wandb_tags or None,
                 )
             status["run_identity"]["wandb"] = _wandb_identity(wandb_run)
+            recorder.set_wandb(_wandb_identity(wandb_run))
 
         train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(
             args, device
@@ -1019,7 +986,6 @@ def main() -> None:
         )
         last_probe_epoch = 0
         probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
-        gradient_diagnostics_records: list[dict] = []
         prune_epoch_checkpoints(args)
 
         for epoch in range(start_epoch, args.epochs + 1):
@@ -1028,11 +994,10 @@ def main() -> None:
             train_metrics = train_one_epoch(
                 train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
             )
-            gradient_diagnostics_records.extend(train_metrics.get("gradient_diagnostics", []))
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
-            log_metrics = wandb_run is not None or epoch % args.print_freq == 0
+            log_metrics = True
             log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
             if log_metrics or log_rank:
                 with preserve_rng_state():
@@ -1045,6 +1010,7 @@ def main() -> None:
                         args,
                         wandb_run,
                         compute_rank=log_rank,
+                        run_recorder=recorder,
                     )
 
             should_probe = (
@@ -1053,7 +1019,7 @@ def main() -> None:
                 and epoch % args.linear_probe_freq == 0
             )
             if should_probe:
-                save_checkpoint(
+                actual_probe_file = save_checkpoint(
                     model,
                     optimizer,
                     args,
@@ -1062,13 +1028,13 @@ def main() -> None:
                     scaler=scaler,
                     loader_generator=train_loader.generator,
                 )
-                run_linear_probe(args, probe_file, epoch)
+                final_probe_metrics = run_linear_probe(args, str(actual_probe_file), epoch)
                 last_probe_epoch = epoch
-                if os.path.exists(probe_file):
-                    os.remove(probe_file)
+                if actual_probe_file.exists():
+                    actual_probe_file.unlink()
 
             if args.keep_checkpoints and epoch % args.save_freq == 0:
-                save_checkpoint(
+                recovery_checkpoint = save_checkpoint(
                     model,
                     optimizer,
                     args,
@@ -1077,10 +1043,17 @@ def main() -> None:
                     scaler=scaler,
                     loader_generator=train_loader.generator,
                 )
+                recorder.register_artifact(
+                    recovery_checkpoint,
+                    kind="ssl_checkpoint",
+                    stage="ssl",
+                    epoch=epoch,
+                    retention_state="recovery",
+                )
                 prune_epoch_checkpoints(args)
 
         if args.linear_probe_mode != "none" and last_probe_epoch != args.epochs:
-            save_checkpoint(
+            actual_probe_file = save_checkpoint(
                 model,
                 optimizer,
                 args,
@@ -1089,12 +1062,12 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
-            run_linear_probe(args, probe_file, args.epochs)
-            if os.path.exists(probe_file):
-                os.remove(probe_file)
+            final_probe_metrics = run_linear_probe(args, str(actual_probe_file), args.epochs)
+            if actual_probe_file.exists():
+                actual_probe_file.unlink()
 
         if args.keep_checkpoints:
-            save_checkpoint(
+            final_checkpoint = save_checkpoint(
                 model,
                 optimizer,
                 args,
@@ -1103,19 +1076,13 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
-
-        if args.gradient_diagnostics_output:
-            diagnostic_path = Path(args.gradient_diagnostics_output)
-            diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
-            diagnostic_payload = {
-                "artifact": "crp_transfer_gradient_diagnostics_v1",
-                "seed": args.seed,
-                "epochs": args.epochs,
-                "gradient_diagnostics": gradient_diagnostics_records,
-            }
-            temporary = diagnostic_path.with_suffix(diagnostic_path.suffix + ".tmp")
-            temporary.write_text(json.dumps(diagnostic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            temporary.replace(diagnostic_path)
+            recorder.register_artifact(
+                final_checkpoint,
+                kind="ssl_checkpoint",
+                stage="ssl",
+                epoch=args.epochs,
+                retention_state="final",
+            )
 
         if wandb_run is not None:
             wandb_run.finish()
@@ -1146,6 +1113,7 @@ def main() -> None:
             }
         status.update({"status": "complete", "cleanup": cleanup_status})
         write_run_status(args, status)
+        recorder.finish(final_metrics=final_probe_metrics, cleanup=cleanup_status)
     except Exception as exc:
         if wandb_run is not None and not wandb_finished:
             try:
@@ -1160,6 +1128,7 @@ def main() -> None:
             "cleanup": cleanup_status,
         })
         write_run_status(args, status)
+        recorder.fail(exc, cleanup_status)
         raise
 
 

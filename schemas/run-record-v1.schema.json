@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-record-v1.schema.json",
+  "title": "Spur SpLiCE run record v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "identity",
+    "status",
+    "timestamps",
+    "source",
+    "config",
+    "manifest",
+    "runtime",
+    "metrics",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {"const": "run-record-v1"},
+    "identity": {
+      "type": "object",
+      "required": ["study", "seed", "arm", "attempt_id"],
+      "properties": {
+        "study": {"type": "string"},
+        "seed": {"type": "integer", "minimum": 0},
+        "arm": {"type": "string"},
+        "attempt_id": {"type": "string"}
+      }
+    },
+    "status": {"enum": ["running", "complete", "failed", "incomplete"]},
+    "timestamps": {"type": "object"},
+    "source": {"type": "object"},
+    "config": {"type": "object"},
+    "manifest": {
+      "type": "object",
+      "required": ["definition", "sha256"]
+    },
+    "runtime": {"type": "object"},
+    "slurm": {"type": "object"},
+    "wandb": {"type": "object"},
+    "metrics": {"type": "array"},
+    "final_metrics": {"type": "object"},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "stage", "uri", "availability", "bytes", "sha256", "retention_state"],
+        "properties": {
+          "availability": {"enum": ["cluster-only", "repository-copy", "intentionally-removed"]},
+          "bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "retention_state": {"enum": ["retained", "final", "promoted", "recovery", "ephemeral", "deleted-after-results"]}
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+
+from splice.artifacts import reference
 from datetime import datetime, timezone
 
 import wandb
@@ -7,7 +9,7 @@ import wandb
 
 ENTITY = "gsgrechkin-rptu"
 PROJECT = "Spur_SpLiCE"
-OUTPUT_PATH = Path("spur_splice_wandb_runs_current.json")
+OUTPUT_PATH = reference("wandb_exports", "spur_splice_wandb_runs_current.json")
 
 # Current research generation starts here.
 MIN_CREATED_AT = datetime(2026, 9, 5, tzinfo=timezone.utc)
@@ -262,6 +264,7 @@ def export_runs():
         "runs": exported_runs,
     }
 
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with OUTPUT_PATH.open("w", encoding="utf-8") as file:
         json.dump(
             payload,

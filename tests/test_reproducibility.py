@@ -1,8 +1,10 @@
 import argparse
+import os
 import random
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -36,6 +38,21 @@ class FakeScaler:
 
 
 class ReproducibilityTests(unittest.TestCase):
+    def test_large_checkpoint_is_written_directly_to_scratch(self):
+        model = torch.nn.Linear(3_000_000, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        args = argparse.Namespace(
+            study="study", seed=1, arm="arm", attempt_id="attempt"
+        )
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": directory}
+        ):
+            local_path = Path(directory).parent / f"{Path(directory).name}-large-checkpoint.pth"
+            saved_path = save_checkpoint(model, optimizer, args, 1, str(local_path))
+            self.assertTrue(saved_path.is_file())
+            self.assertTrue(str(saved_path).startswith(directory))
+            self.assertFalse(local_path.exists())
+
     def test_crp_resume_rejects_a_different_teacher_graph(self):
         model = torch.nn.Linear(2, 1)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
