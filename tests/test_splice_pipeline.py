@@ -39,6 +39,7 @@ from splice.splice import (
 import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.cache_crp_features import IndexedImages
+from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
 
 
 class SplicePipelineTests(unittest.TestCase):
@@ -200,6 +201,30 @@ class SplicePipelineTests(unittest.TestCase):
         graph["provenance"] = {"labels": [0, 1, 0, 1]}
         with self.assertRaisesRegex(ValueError, "forbidden annotation"):
             validate_teacher_graph(graph)
+
+    def test_raw_clip_builder_produces_a_canonical_matched_teacher_graph(self):
+        reference = self._tiny_teacher_graph()
+        reference["degree_stats"] = {"indegree_cap": 3}
+        cache = {
+            "sample_ids": reference["sample_ids"],
+            "centered_clip": torch.nn.functional.normalize(
+                torch.tensor([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]]), dim=1
+            ),
+            "provenance": {"fixture": "matched-raw"},
+        }
+        graph = build_matched_raw_clip_graph(cache, reference)
+        self.assertEqual(graph["artifact"], "splice_raw_clip_matched_teacher_graph")
+        self.assertIn("confidence", graph)
+        torch.testing.assert_close(
+            (graph["neighbor_indices"] >= 0).sum(1),
+            (reference["neighbor_indices"] >= 0).sum(1),
+        )
+
+    def test_semantic_ablation_graph_uses_the_teacher_graph_contract(self):
+        graph = self._tiny_teacher_graph()
+        graph.update(artifact="splice_semantic_splice_matched_teacher_graph", graph_version=1)
+        validated = validate_teacher_graph(graph)
+        self.assertEqual(validated["artifact"], "splice_semantic_splice_matched_teacher_graph")
 
     def test_crp_batch_sampler_visits_every_anchor_and_adds_graph_donors(self):
         graph = validate_teacher_graph(self._tiny_teacher_graph())

@@ -1,901 +1,1828 @@
 {
-  "date": "2026-09-07",
-  "split": "validation",
-  "ssl_epoch": 500,
-  "main_weight": 2.0,
-  "main": [
-    {
-      "seed": 1,
-      "arm": "simclr",
-      "avg": 50.291907787323,
-      "wga": 44.539615511894226,
-      "group_accuracy": [
-        44.539615631103516,
-        50.0,
-        54.8872184753418,
-        66.91729736328125
+  "development_followups": {
+    "direct_transfer": {
+      "paired_deltas_vs_matched_simclr": {
+        "1": {
+          "matched_simclr": {
+            "avg_delta_pp": 0.0,
+            "wga_delta_pp": 0.0
+          },
+          "raw_distillation": {
+            "avg_delta_pp": 2.668893337249756,
+            "wga_delta_pp": 1.3250470161437988
+          },
+          "shuffled_reconstruction": {
+            "avg_delta_pp": 1.6680598258972168,
+            "wga_delta_pp": 2.141326665878296
+          },
+          "splice_reconstruction": {
+            "avg_delta_pp": 4.420351982116699,
+            "wga_delta_pp": 6.209847331047058
+          }
+        },
+        "3": {
+          "matched_simclr": {
+            "avg_delta_pp": 0.0,
+            "wga_delta_pp": 0.0
+          },
+          "raw_distillation": {
+            "avg_delta_pp": 0.25020837783813477,
+            "wga_delta_pp": 2.3007214069366455
+          },
+          "shuffled_reconstruction": {
+            "avg_delta_pp": -1.0842382907867432,
+            "wga_delta_pp": -0.8565306663513184
+          },
+          "splice_reconstruction": {
+            "avg_delta_pp": 0.9174346923828125,
+            "wga_delta_pp": 2.7837276458740234
+          }
+        }
+      },
+      "passed": true,
+      "rows": [
+        {
+          "arm": "matched_simclr",
+          "avg_acc_last10": 50.291907787323,
+          "group_accuracy": [
+            44.539615631103516,
+            50.0,
+            54.8872184753418,
+            66.91729736328125
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed1/matched_simclr/training/waterbirds_s1_concept-transfer-raw_e500_728a9884c8/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "wga_last10": 44.539615511894226
+        },
+        {
+          "arm": "raw_distillation",
+          "avg_acc_last10": 52.960801124572754,
+          "group_accuracy": [
+            54.38972091674805,
+            50.643775939941406,
+            45.864662170410156,
+            63.15789031982422
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed1/raw_distillation/training/waterbirds_s1_concept-transfer-raw_e500_af2abc649d/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "wga_last10": 45.864662528038025
+        },
+        {
+          "arm": "splice_reconstruction",
+          "avg_acc_last10": 54.7122597694397,
+          "group_accuracy": [
+            50.74946212768555,
+            55.15021514892578,
+            56.39097595214844,
+            65.41353607177734
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed1/splice_reconstruction/training/waterbirds_s1_concept-transfer-reconstruction_e500_87e12f1832/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "wga_last10": 50.749462842941284
+        },
+        {
+          "arm": "shuffled_reconstruction",
+          "avg_acc_last10": 51.959967613220215,
+          "group_accuracy": [
+            46.68094253540039,
+            53.43347930908203,
+            49.624061584472656,
+            67.66917419433594
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed1/shuffled_reconstruction/training/waterbirds_s1_concept-transfer-shuffled-reconstruction_e500_4e72ab5355/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "wga_last10": 46.68094217777252
+        },
+        {
+          "arm": "matched_simclr",
+          "avg_acc_last10": 52.627187967300415,
+          "group_accuracy": [
+            47.323341369628906,
+            56.22317886352539,
+            51.87969970703125,
+            59.398494720458984
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed3/matched_simclr/training/waterbirds_s3_concept-transfer-raw_e500_dfe05a1c41/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "wga_last10": 47.32334017753601
+        },
+        {
+          "arm": "raw_distillation",
+          "avg_acc_last10": 52.87739634513855,
+          "group_accuracy": [
+            51.39186477661133,
+            53.8626594543457,
+            49.624061584472656,
+            57.894737243652344
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed3/raw_distillation/training/waterbirds_s3_concept-transfer-raw_e500_4d9c3d6e42/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "wga_last10": 49.624061584472656
+        },
+        {
+          "arm": "splice_reconstruction",
+          "avg_acc_last10": 53.54462265968323,
+          "group_accuracy": [
+            50.1070671081543,
+            55.79398727416992,
+            51.12782287597656,
+            60.15037155151367
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed3/splice_reconstruction/training/waterbirds_s3_concept-transfer-reconstruction_e500_40945e1910/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "wga_last10": 50.107067823410034
+        },
+        {
+          "arm": "shuffled_reconstruction",
+          "avg_acc_last10": 51.54294967651367,
+          "group_accuracy": [
+            46.4668083190918,
+            54.72102737426758,
+            47.36842346191406,
+            62.40601348876953
+          ],
+          "group_count": [
+            467,
+            466,
+            133,
+            133
+          ],
+          "result": "outputs/next_actions_after_transfer_2026-09-07/direct_transfer/seed3/shuffled_reconstruction/training/waterbirds_s3_concept-transfer-shuffled-reconstruction_e500_05991cbeca/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "wga_last10": 46.46680951118469
+        }
       ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.222924161799632e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03152888716577397,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
+      "winner_selection": "disabled; report all predeclared arms and seeds"
     },
-    {
-      "seed": 1,
-      "arm": "crp_sampler_only",
-      "avg": 49.87489581108093,
-      "wga": 43.25481653213501,
-      "group_accuracy": [
-        43.254817962646484,
-        50.0,
-        57.894737243652344,
-        64.66165161132812
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.381205895329849e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.030845792900874854,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
+    "semantic_graph_ablation": {
+      "comparison": "CRP versus semantic SpLiCE graph; report both seeds; no automatic selection",
+      "paired_deltas_crp_minus_semantic": {
+        "1": {
+          "avg_acc_last10": 1.7514586448669434,
+          "best_group_last10": 3.007519245147705,
+          "wga_last10": 7.24509060382843
+        },
+        "3": {
+          "avg_acc_last10": -0.5838215351104736,
+          "best_group_last10": -3.007519245147705,
+          "wga_last10": 1.5963435173034668
+        }
+      },
+      "passed": true,
+      "rows": [
+        {
+          "arm": "crp",
+          "avg_acc_last10": 55.79649806022644,
+          "best_group_last10": 66.16541147232056,
+          "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/crp/gradient_diagnostics.json",
+          "graph": "outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json",
+          "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/crp/training/waterbirds_s1_crp-v2-relational_e500_03e011704e/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "status": "complete",
+          "wga_last10": 51.6059935092926
+        },
+        {
+          "arm": "semantic_splice",
+          "avg_acc_last10": 54.0450394153595,
+          "best_group_last10": 63.15789222717285,
+          "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/gradient_diagnostics.json",
+          "graph": "/home/xar68reb/Spur_SpLiCE/outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+          "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/training/waterbirds_s1_crp-v2-relational_e500_084ea2f3a5/probe_features_epoch_500_ds_train_val.json",
+          "seed": 1,
+          "status": "complete",
+          "wga_last10": 44.36090290546417
+        },
+        {
+          "arm": "crp",
+          "avg_acc_last10": 49.207672476768494,
+          "best_group_last10": 62.406015396118164,
+          "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/crp/gradient_diagnostics.json",
+          "graph": "outputs/crp_controls_logistic_v1_cluster_seeds12/graphs/crp_graph.json",
+          "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/crp/training/waterbirds_s3_crp-v2-relational_e500_976f887f83/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "status": "complete",
+          "wga_last10": 45.493561029434204
+        },
+        {
+          "arm": "semantic_splice",
+          "avg_acc_last10": 49.79149401187897,
+          "best_group_last10": 65.41353464126587,
+          "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/gradient_diagnostics.json",
+          "graph": "/home/xar68reb/Spur_SpLiCE/outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+          "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/training/waterbirds_s3_crp-v2-relational_e500_b1d2a200ff/probe_features_epoch_500_ds_train_val.json",
+          "seed": 3,
+          "status": "complete",
+          "wga_last10": 43.89721751213074
+        }
+      ]
     },
-    {
-      "seed": 1,
-      "arm": "raw_clip_kl",
-      "avg": 53.127604722976685,
-      "wga": 45.396146178245544,
-      "group_accuracy": [
-        45.39614486694336,
-        59.22746658325195,
-        57.142860412597656,
-        54.8872184753418
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.787733297232773e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03657802981312303,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
+    "split": "validation"
+  },
+  "done_definition": "DONE means a predeclared split/protocol, unique execution identity, linked endpoint metrics, completed/converged status, and explicit limitations. It does not require a new report for every implementation detail or repeated training without a claim-changing reason.",
+  "evidence_boundaries": [
+    "The lock has no internal timestamp; no absolute lock date is asserted.",
+    "No standalone AMP-vs-FP32/RNG/BN/update equivalence report was found; none is asserted.",
+    "Historical paths are provenance strings and need not resolve after packaging."
+  ],
+  "final_test": {
+    "arms": [
+      "simclr",
+      "crp_sampler_only",
+      "raw_clip_sampler_only",
+      "raw_clip_kl",
+      "splice_crp_kl"
+    ],
+    "dataset": "waterbirds",
+    "frozen_artifact_sha256": {
+      "cache": "d41dee973cbb601171a7338cab194e67adfd8503eda708243ad9071d3e6b6a07",
+      "crp": "ad5e1293f9ae184f99d8e0ca4c1da5132d65d0edb6d43d863ff39e36794a964e",
+      "raw_clip": "4495f526fbb40a5efbd47eb2136dfd3e6f57e1e2a4d82bff57f41a01b7492a94"
     },
-    {
-      "seed": 1,
-      "arm": "splice_crp_kl",
-      "avg": 51.37614607810974,
-      "wga": 46.89507484436035,
-      "group_accuracy": [
-        46.89507293701172,
-        48.068668365478516,
-        57.894737243652344,
-        72.18045043945312
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.729352130904718e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03020640905045282,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
+    "paired_deltas": [
+      {
+        "avg": 4.506385922431946,
+        "comparator": "simclr",
+        "seed": 1,
+        "wga": 9.223946928977966
+      },
+      {
+        "avg": 3.7987565994262695,
+        "comparator": "crp_sampler_only",
+        "seed": 1,
+        "wga": 5.454543232917786
+      },
+      {
+        "avg": 1.0200178623199463,
+        "comparator": "raw_clip_sampler_only",
+        "seed": 1,
+        "wga": 1.9068717956542969
+      },
+      {
+        "avg": 3.470829725265503,
+        "comparator": "raw_clip_kl",
+        "seed": 1,
+        "wga": 4.34589684009552
+      },
+      {
+        "avg": 0.3279268741607666,
+        "comparator": "simclr",
+        "seed": 2,
+        "wga": 3.5920172929763794
+      },
+      {
+        "avg": 2.416294813156128,
+        "comparator": "crp_sampler_only",
+        "seed": 2,
+        "wga": 2.9711753129959106
+      },
+      {
+        "avg": 2.3990362882614136,
+        "comparator": "raw_clip_sampler_only",
+        "seed": 2,
+        "wga": 3.63636314868927
+      },
+      {
+        "avg": -0.3106653690338135,
+        "comparator": "raw_clip_kl",
+        "seed": 2,
+        "wga": 1.9512206315994263
+      },
+      {
+        "avg": -1.190882921218872,
+        "comparator": "simclr",
+        "seed": 3,
+        "wga": -1.0199546813964844
+      },
+      {
+        "avg": 0.466001033782959,
+        "comparator": "crp_sampler_only",
+        "seed": 3,
+        "wga": 2.4833709001541138
+      },
+      {
+        "avg": 4.142218828201294,
+        "comparator": "raw_clip_sampler_only",
+        "seed": 3,
+        "wga": 11.308205127716064
+      },
+      {
+        "avg": 0.03452301025390625,
+        "comparator": "raw_clip_kl",
+        "seed": 3,
+        "wga": 2.8381377458572388
+      },
+      {
+        "avg": 2.0020663738250732,
+        "comparator": "simclr",
+        "seed": 4,
+        "wga": 3.5033226013183594
+      },
+      {
+        "avg": -0.9492576122283936,
+        "comparator": "crp_sampler_only",
+        "seed": 4,
+        "wga": 4.32814359664917
+      },
+      {
+        "avg": 2.502584457397461,
+        "comparator": "raw_clip_sampler_only",
+        "seed": 4,
+        "wga": 2.2172927856445312
+      },
+      {
+        "avg": -0.22436976432800293,
+        "comparator": "raw_clip_kl",
+        "seed": 4,
+        "wga": -0.4878103733062744
       }
+    ],
+    "probe_protocol": {
+      "batch_size": 128,
+      "l2": 0.001,
+      "max_epochs": 200,
+      "split": "test",
+      "ssl_epoch": 500,
+      "tolerance": 1e-06,
+      "train": "ds_train",
+      "workers": 4
     },
-    {
-      "seed": 2,
-      "arm": "simclr",
-      "avg": 51.959967613220215,
-      "wga": 43.68308484554291,
-      "group_accuracy": [
-        43.68308639526367,
-        58.36909866333008,
-        52.6315803527832,
-        57.894737243652344
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.09561236544379e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03127383405199897,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
+    "reporting_rule": "Report all 20 endpoints, group metrics, mean/SD and paired deltas; no test-driven tuning.",
+    "rows": [
+      {
+        "args_sha256": "91a781c2ee6c376d9d6e2842f3a066e0628b17facdbd69007768614375eaea7b",
+        "arm": "simclr",
+        "avg": 49.344149231910706,
+        "checkpoint_sha256": "a0645b6465bc123dc3fc6f4782802424a17651710763881c6cf460c5965bb6cd",
+        "execution_id": "wandb:smou3q62",
+        "groups": {
+          "accuracy": [
+            42.17294692993164,
+            47.450111389160156,
+            65.57632446289062,
+            64.9532699584961
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 42.17294752597809,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 47.45011031627655,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 65.57632684707642,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.95327353477478,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.222924161799632e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03152888716577397,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 1,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "smou3q62",
+          "name": "paper_completion_core_reproduction_2026-09-08_simclr_seed1",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/smou3q62"
+        },
+        "wga": 42.17294752597809
+      },
+      {
+        "args_sha256": "a78b3999955de5fa52f4e2e9e8e16c7a2a0b74eb96f2f1192b91fd989c35440c",
+        "arm": "crp_sampler_only",
+        "avg": 50.05177855491638,
+        "checkpoint_sha256": "bb96c05fc6b0b81347da995aea66619693f380307c11e7ea5d245311ac624a5f",
+        "execution_id": "wandb:zc1rthkl",
+        "groups": {
+          "accuracy": [
+            45.942352294921875,
+            47.00665283203125,
+            59.96884536743164,
+            65.26480102539062
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 45.94235122203827,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 47.006651759147644,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 59.968847036361694,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.26479721069336,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.381205895329849e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.030845792900874854,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 1,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "zc1rthkl",
+          "name": "paper_completion_core_reproduction_2026-09-08_crp_sampler_only_seed1",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/zc1rthkl"
+        },
+        "wga": 45.94235122203827
+      },
+      {
+        "args_sha256": "68378cee563d3fed275bf9da3e48254dcbea7ce77f85bd46800836ec93d46ece",
+        "arm": "raw_clip_sampler_only",
+        "avg": 52.830517292022705,
+        "checkpoint_sha256": "4740d0374d16ef70d8d080f69475a15c9f23620940f6ad119645a051a4ab9858",
+        "execution_id": "wandb:njqiaha7",
+        "groups": {
+          "accuracy": [
+            49.490020751953125,
+            54.72283935546875,
+            55.45171356201172,
+            55.29595184326172
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 49.49002265930176,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 54.72283959388733,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 55.45171499252319,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 55.295950174331665,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.845962559092191e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03350683775425252,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 1,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "njqiaha7",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_sampler_only_seed1",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/njqiaha7"
+        },
+        "wga": 49.49002265930176
+      },
+      {
+        "args_sha256": "199eaff8135cbf4066cf397bd84826a3bab0611a7388fb10483776b0ca00cc9a",
+        "arm": "raw_clip_kl",
+        "avg": 50.37970542907715,
+        "checkpoint_sha256": "aa3f4f69b60d837a58c64934d1ce44bfffa5a624cf7d0e40cecb20c0c5d13c65",
+        "execution_id": "wandb:d12gzh28",
+        "groups": {
+          "accuracy": [
+            47.05099868774414,
+            50.77605438232422,
+            54.36137390136719,
+            56.69782257080078
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 47.050997614860535,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 50.776052474975586,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 54.36137318611145,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 56.697821617126465,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.309606455409859e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03596493149323518,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 1,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "d12gzh28",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_kl_seed1",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/d12gzh28"
+        },
+        "wga": 47.050997614860535
+      },
+      {
+        "args_sha256": "b5d6a59ed105eb4e3b73dde9668f6e595feb9a33410793f9011599603e9b5c2d",
+        "arm": "splice_crp_kl",
+        "avg": 53.85053515434265,
+        "checkpoint_sha256": "5cca2882af29b0818baf6bb7434c18ebb7fdbaa561d00db99b906125c0b25425",
+        "execution_id": "wandb:p8ckqfmy",
+        "groups": {
+          "accuracy": [
+            51.39689636230469,
+            53.569847106933594,
+            55.45171356201172,
+            61.83800506591797
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 51.396894454956055,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 53.56984734535217,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 55.45171499252319,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 61.8380069732666,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 13,
+          "gradient_max": 6.303281287902039e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.030982504808680696,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 1,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "p8ckqfmy",
+          "name": "paper_completion_core_reproduction_2026-09-08_splice_crp_kl_seed1",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/p8ckqfmy"
+        },
+        "wga": 51.396894454956055
+      },
+      {
+        "args_sha256": "40dfd70f2ea4cfddedc65968a4a3c5c4e5b12ee30ad3b579b315e31858fbfe6d",
+        "arm": "simclr",
+        "avg": 51.50155425071716,
+        "checkpoint_sha256": "80af93e68b7bf291af7a524cf5d882455de85c306464cee74e1bd82b18b2e8d1",
+        "execution_id": "wandb:huz9c1z7",
+        "groups": {
+          "accuracy": [
+            45.63193130493164,
+            56.89578628540039,
+            52.18068313598633,
+            52.49221420288086
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 45.631930232048035,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 56.89578652381897,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 52.180683612823486,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 52.49221324920654,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 8.09561236544379e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03127383405199897,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 2,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "huz9c1z7",
+          "name": "paper_completion_core_reproduction_2026-09-08_simclr_seed2",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/huz9c1z7"
+        },
+        "wga": 45.631930232048035
+      },
+      {
+        "args_sha256": "f99a721efb444d9d7d97d8ca8a48fb70bc944bdbbf851be6b388bbb24b63c233",
+        "arm": "crp_sampler_only",
+        "avg": 49.4131863117218,
+        "checkpoint_sha256": "40caa97c4849e37437fabb2d263753aa0181f8ab6185baa70d04d5db4f5f25be",
+        "execution_id": "wandb:c75jmjjo",
+        "groups": {
+          "accuracy": [
+            47.84922409057617,
+            46.25277328491211,
+            54.20560836791992,
+            61.2149543762207
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 47.849223017692566,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 46.2527722120285,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 54.20560836791992,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 61.214953660964966,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 8.965356847615394e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03014154519473909,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 2,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "c75jmjjo",
+          "name": "paper_completion_core_reproduction_2026-09-08_crp_sampler_only_seed2",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/c75jmjjo"
+        },
+        "wga": 46.2527722120285
+      },
+      {
+        "args_sha256": "71d08e22f3343189933e86576172868b80894d990161e1c0f8260b14292b2c69",
+        "arm": "raw_clip_sampler_only",
+        "avg": 49.430444836616516,
+        "checkpoint_sha256": "5fb3917c41f087a676ff75819fd1061015cc6971eb7114a71d6b3061c5eb97ec",
+        "execution_id": "wandb:q9s99vei",
+        "groups": {
+          "accuracy": [
+            46.7849235534668,
+            45.58758544921875,
+            56.69782257080078,
+            64.9532699584961
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 46.78492248058319,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 45.587584376335144,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 56.697821617126465,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 64.95327353477478,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 13,
+          "gradient_max": 9.473679974224681e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.028981449654292127,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 2,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "q9s99vei",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_sampler_only_seed2",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/q9s99vei"
+        },
+        "wga": 45.587584376335144
+      },
+      {
+        "args_sha256": "f743dbbcc8b3a94c3b92e5fba1021f2b3fd38aa196939a00ca867a60340d9016",
+        "arm": "raw_clip_kl",
+        "avg": 52.14014649391174,
+        "checkpoint_sha256": "b89ce8cd30378c18824408973708d7f95c73ac99c6955e739059a86950a82ba2",
+        "execution_id": "wandb:hwjqg69b",
+        "groups": {
+          "accuracy": [
+            51.75166320800781,
+            47.272727966308594,
+            57.63240051269531,
+            65.1090316772461
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 51.75166130065918,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 47.27272689342499,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 57.63239860534668,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.10903239250183,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.269529478965076e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.029925016516823437,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 2,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "hwjqg69b",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_kl_seed2",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/hwjqg69b"
+        },
+        "wga": 47.27272689342499
+      },
+      {
+        "args_sha256": "4f283940380c70111b7f357ba6fbf62858b999ebc855a343ac72f318eaadb5f1",
+        "arm": "splice_crp_kl",
+        "avg": 51.82948112487793,
+        "checkpoint_sha256": "c4903c15f43cdeb3ec0cfe474032baa897fbca8f431c61519d2f6d2e19280fe6",
+        "execution_id": "wandb:nxk2vfzz",
+        "groups": {
+          "accuracy": [
+            51.840354919433594,
+            49.22394561767578,
+            51.40187072753906,
+            61.37071990966797
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 51.84035301208496,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.223947525024414,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 51.4018714427948,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 61.370718479156494,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.145193439715534e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.030959466018528094,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 2,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "nxk2vfzz",
+          "name": "paper_completion_core_reproduction_2026-09-08_splice_crp_kl_seed2",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/nxk2vfzz"
+        },
+        "wga": 49.223947525024414
+      },
+      {
+        "args_sha256": "6c2332c3a0627b4cf333f65dc0ff44de927baa304762aee56fce57b471a77966",
+        "arm": "simclr",
+        "avg": 53.244733810424805,
+        "checkpoint_sha256": "af6ef322f5a134faffd3275a7c7d49659684628bd5a5e1c0f9b1f4006a19a3bf",
+        "execution_id": "wandb:pbgrwzd0",
+        "groups": {
+          "accuracy": [
+            49.889137268066406,
+            54.456764221191406,
+            56.69782257080078,
+            57.32087326049805
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 49.88913536071777,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 54.456764459609985,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 56.697821617126465,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 57.3208749294281,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.878455084591812e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03393009800855008,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 3,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "pbgrwzd0",
+          "name": "paper_completion_core_reproduction_2026-09-08_simclr_seed3",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/pbgrwzd0"
+        },
+        "wga": 49.88913536071777
+      },
+      {
+        "args_sha256": "ef3cddb6551b459c4ef072830062643b08584f7adf4608dd76c8ca98594710a1",
+        "arm": "crp_sampler_only",
+        "avg": 51.587849855422974,
+        "checkpoint_sha256": "b894ae10dccb44ff2077dcb171a2bc53a32cb0b9f6aa648a24df826118fbb726",
+        "execution_id": "wandb:ejy6gyld",
+        "groups": {
+          "accuracy": [
+            46.38581085205078,
+            49.66740417480469,
+            62.928348541259766,
+            65.26480102539062
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 46.385809779167175,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.66740608215332,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 62.928348779678345,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.26479721069336,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.038487022521545e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03365109363348129,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 3,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "ejy6gyld",
+          "name": "paper_completion_core_reproduction_2026-09-08_crp_sampler_only_seed3",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/ejy6gyld"
+        },
+        "wga": 46.385809779167175
+      },
+      {
+        "args_sha256": "f5fdee5a179eb4a82bbd4a4eac9351254a17cb32cd3c8e57187acb10f78d93bd",
+        "arm": "raw_clip_sampler_only",
+        "avg": 47.91163206100464,
+        "checkpoint_sha256": "ff16619650b9628d2627efd383c200c7d5d1e5173443d4102f00b25bcfeab146",
+        "execution_id": "wandb:xp1ooz0n",
+        "groups": {
+          "accuracy": [
+            37.56097412109375,
+            49.04656219482422,
+            66.82242584228516,
+            61.37071990966797
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 37.560975551605225,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.04656410217285,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 66.82242751121521,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 61.370718479156494,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.140784878284582e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03351957312019331,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 3,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "xp1ooz0n",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_sampler_only_seed3",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/xp1ooz0n"
+        },
+        "wga": 37.560975551605225
+      },
+      {
+        "args_sha256": "0c291fc3cb375a8a81cd05ecaa14ebb696d3598ee71ca2b2df2e86452041b433",
+        "arm": "raw_clip_kl",
+        "avg": 52.019327878952026,
+        "checkpoint_sha256": "eb60ca34aab746c7f1d97d9e21b5d3805b82e06796b805e833199ff4c725d01e",
+        "execution_id": "wandb:0l97q0co",
+        "groups": {
+          "accuracy": [
+            46.031044006347656,
+            49.66740417480469,
+            68.06853485107422,
+            65.26480102539062
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 46.03104293346405,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.66740608215332,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 68.06853413581848,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.26479721069336,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 8.608487413189646e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03680787168375301,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 3,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "0l97q0co",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_kl_seed3",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/0l97q0co"
+        },
+        "wga": 46.03104293346405
+      },
+      {
+        "args_sha256": "c6e610447c3eb8dd83004baafc96176562c171168179e9dc71f3c014b9ac5d18",
+        "arm": "splice_crp_kl",
+        "avg": 52.05385088920593,
+        "checkpoint_sha256": "2e64fb7b428591dbc4b5a85c5dad3282b0a0a94ec7f8f5db900b313f9884ad1e",
+        "execution_id": "wandb:nov3v21u",
+        "groups": {
+          "accuracy": [
+            48.869178771972656,
+            50.288246154785156,
+            60.59189987182617,
+            60.90342330932617
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 48.86918067932129,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 50.28824806213379,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 60.59190034866333,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 60.90342402458191,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.791335771420421e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.032310784924188755,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 3,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "nov3v21u",
+          "name": "paper_completion_core_reproduction_2026-09-08_splice_crp_kl_seed3",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/nov3v21u"
+        },
+        "wga": 48.86918067932129
+      },
+      {
+        "args_sha256": "1babd13ada68b90601206c1778471cbe58ee949a339fe19b00c9e3220b137a34",
+        "arm": "simclr",
+        "avg": 53.7797749042511,
+        "checkpoint_sha256": "bebdf1790bc02a36d891a14532e5efd89d2921eb99b1da645599584fdf036781",
+        "execution_id": "wandb:s50yngh4",
+        "groups": {
+          "accuracy": [
+            53.88026809692383,
+            49.578712463378906,
+            56.38629150390625,
+            65.57632446289062
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 53.88026833534241,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 49.57871437072754,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 56.38629198074341,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 65.57632684707642,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.185664025205685e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03150823080255597,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 4,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "s50yngh4",
+          "name": "paper_completion_core_reproduction_2026-09-08_simclr_seed4",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/s50yngh4"
+        },
+        "wga": 49.57871437072754
+      },
+      {
+        "args_sha256": "86a8700daa0bc871b536060d42e96190b01a64e0a78a2e457d1a949abfd97e0a",
+        "arm": "crp_sampler_only",
+        "avg": 56.731098890304565,
+        "checkpoint_sha256": "507dfafe8860201cd30d89e253249eb0e2ed1539911bb85d0b64cde5649d3a53",
+        "execution_id": "wandb:2oid8t1l",
+        "groups": {
+          "accuracy": [
+            58.98004150390625,
+            56.31929016113281,
+            48.7538948059082,
+            58.25545120239258
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 58.98004174232483,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 56.31929039955139,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 48.75389337539673,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 58.255451917648315,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 8.353602109722439e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.032783345962276556,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 4,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "2oid8t1l",
+          "name": "paper_completion_core_reproduction_2026-09-08_crp_sampler_only_seed4",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/2oid8t1l"
+        },
+        "wga": 48.75389337539673
+      },
+      {
+        "args_sha256": "df8a15873a51e5e9858731ccd3010d61051a3248eee389bd62bade1a1747a5ab",
+        "arm": "raw_clip_sampler_only",
+        "avg": 53.27925682067871,
+        "checkpoint_sha256": "ad10d8dc3eaee611b3cedc8995ceaaabe324d265b85f2104a6fe56a9827a92e1",
+        "execution_id": "wandb:3m6sakqs",
+        "groups": {
+          "accuracy": [
+            51.618621826171875,
+            50.86474609375,
+            57.47663497924805,
+            63.39563751220703
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 51.61862373352051,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 50.86474418640137,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 57.47663378715515,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 63.39563727378845,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 13,
+          "gradient_max": 8.534282088781733e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.028584433521965352,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 4,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "3m6sakqs",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_sampler_only_seed4",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/3m6sakqs"
+        },
+        "wga": 50.86474418640137
+      },
+      {
+        "args_sha256": "cdf460db73e2139e38817663c9f8631837627998624c4900f2b8115629a354c2",
+        "arm": "raw_clip_kl",
+        "avg": 56.006211042404175,
+        "checkpoint_sha256": "1ee0137860b88f248ea9edc4f1df9476f2ace98c95e00c7988722a72d229ed46",
+        "execution_id": "wandb:x8vhzjqn",
+        "groups": {
+          "accuracy": [
+            53.569847106933594,
+            57.56097412109375,
+            55.919002532958984,
+            59.19002914428711
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 53.56984734535217,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 57.56097435951233,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 55.9190034866333,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 59.19002890586853,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 9.975185599025927e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.03270646587042778,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 4,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "x8vhzjqn",
+          "name": "paper_completion_core_reproduction_2026-09-08_raw_clip_kl_seed4",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/x8vhzjqn"
+        },
+        "wga": 53.56984734535217
+      },
+      {
+        "args_sha256": "91239ab0ad929e4ce241dc4bf2b81cfe24d0ea3350d2b0e9fd1237b73ce39fa2",
+        "arm": "splice_crp_kl",
+        "avg": 55.78184127807617,
+        "checkpoint_sha256": "9ecf537b1e45ac2a95018ab97d73b4435f169f4349f1dd34634651d89430f120",
+        "execution_id": "wandb:r0dfbng7",
+        "groups": {
+          "accuracy": [
+            53.08203887939453,
+            58.625274658203125,
+            54.049842834472656,
+            57.00934600830078
+          ],
+          "count": [
+            2255,
+            2255,
+            642,
+            642
+          ],
+          "named": {
+            "(target,context)=(0,0)": {
+              "accuracy": 53.0820369720459,
+              "count": 2255
+            },
+            "(target,context)=(0,1)": {
+              "accuracy": 58.625274896621704,
+              "count": 2255
+            },
+            "(target,context)=(1,0)": {
+              "accuracy": 54.049843549728394,
+              "count": 642
+            },
+            "(target,context)=(1,1)": {
+              "accuracy": 57.009345293045044,
+              "count": 642
+            }
+          }
+        },
+        "phase": "final_test",
+        "probe_convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 14,
+          "gradient_max": 8.369391127807645e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.033943550353236,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "seed": 4,
+        "ssl_epoch": 500,
+        "wandb": {
+          "entity": "gsgrechkin-rptu",
+          "id": "r0dfbng7",
+          "name": "paper_completion_core_reproduction_2026-09-08_splice_crp_kl_seed4",
+          "project": "Spur_SpLiCE",
+          "url": "https://wandb.ai/gsgrechkin-rptu/Spur_SpLiCE/runs/r0dfbng7"
+        },
+        "wga": 53.0820369720459
       }
-    },
-    {
-      "seed": 2,
-      "arm": "crp_sampler_only",
-      "avg": 52.21017599105835,
-      "wga": 48.28326106071472,
-      "group_accuracy": [
-        50.321197509765625,
-        48.283260345458984,
-        57.142860412597656,
-        67.66917419433594
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.965356847615394e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03014154519473909,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 2,
-      "arm": "raw_clip_kl",
-      "avg": 51.79315805435181,
-      "wga": 48.17987084388733,
-      "group_accuracy": [
-        48.17987060546875,
-        49.356224060058594,
-        55.63909912109375,
-        69.17292785644531
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.557707973559216e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.030624360248966708,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 2,
-      "arm": "splice_crp_kl",
-      "avg": 51.959967613220215,
-      "wga": 49.25053417682648,
-      "group_accuracy": [
-        49.25053405761719,
-        50.858367919921875,
-        58.6466178894043,
-        58.6466178894043
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.018940226101309e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03179719660111528,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 1,
-      "arm": "raw_clip_sampler_only",
-      "avg": 54.0450394153595,
-      "wga": 46.25267684459686,
-      "group_accuracy": [
-        46.25267791748047,
-        59.44206237792969,
-        57.142860412597656,
-        59.398494720458984
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.845962559092191e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03350683775425252,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 2,
-      "arm": "raw_clip_sampler_only",
-      "avg": 48.45704734325409,
-      "wga": 44.420599937438965,
-      "group_accuracy": [
-        45.82441329956055,
-        44.42060089111328,
-        56.39097595214844,
-        63.90977478027344
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 13,
-        "gradient_max": 9.473679974224681e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.028981449654292127,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 3,
-      "arm": "simclr",
-      "avg": 52.627187967300415,
-      "wga": 47.32334017753601,
-      "group_accuracy": [
-        47.323341369628906,
-        56.22317886352539,
-        51.87969970703125,
-        59.398494720458984
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.878455084591812e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03393009800855008,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 3,
-      "arm": "crp_sampler_only",
-      "avg": 50.12510418891907,
-      "wga": 45.396146178245544,
-      "group_accuracy": [
-        45.39614486694336,
-        48.49785232543945,
-        57.894737243652344,
-        64.66165161132812
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.038487022521545e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03365109363348129,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 3,
-      "arm": "raw_clip_kl",
-      "avg": 50.04169940948486,
-      "wga": 38.75803053379059,
-      "group_accuracy": [
-        38.75802993774414,
-        56.22317886352539,
-        62.40601348876953,
-        55.63909912109375
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.899178788757817e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03779184582569584,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 3,
-      "arm": "raw_clip_sampler_only",
-      "avg": 50.04169940948486,
-      "wga": 40.042826533317566,
-      "group_accuracy": [
-        40.04282760620117,
-        52.575103759765625,
-        60.90225601196289,
-        65.41353607177734
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.140784878284582e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03351957312019331,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 3,
-      "arm": "splice_crp_kl",
-      "avg": 47.62302041053772,
-      "wga": 40.899357199668884,
-      "group_accuracy": [
-        40.899356842041016,
-        46.3519287109375,
-        59.398494720458984,
-        63.90977478027344
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.547326740219324e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03491645730382245,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 4,
-      "arm": "simclr",
-      "avg": 53.54462265968323,
-      "wga": 46.61654233932495,
-      "group_accuracy": [
-        53.7473258972168,
-        50.42918395996094,
-        46.61654281616211,
-        70.67668914794922
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.185664025205685e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03150823080255597,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 4,
-      "arm": "crp_sampler_only",
-      "avg": 57.63136148452759,
-      "wga": 52.63158082962036,
-      "group_accuracy": [
-        59.31477355957031,
-        54.72102737426758,
-        52.6315803527832,
-        66.91729736328125
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.353602109722439e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.032783345962276556,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 4,
-      "arm": "raw_clip_kl",
-      "avg": 51.459550857543945,
-      "wga": 48.06866943836212,
-      "group_accuracy": [
-        50.53533172607422,
-        48.068668365478516,
-        53.38345718383789,
-        64.66165161132812
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 9.386316146092711e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.031952158538757006,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 4,
-      "arm": "raw_clip_sampler_only",
-      "avg": 51.29274129867554,
-      "wga": 46.35193049907684,
-      "group_accuracy": [
-        51.39186477661133,
-        46.3519287109375,
-        56.39097595214844,
-        63.15789031982422
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 13,
-        "gradient_max": 8.534282088781733e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.028584433521965352,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
-      }
-    },
-    {
-      "seed": 4,
-      "arm": "splice_crp_kl",
-      "avg": 53.87822985649109,
-      "wga": 46.61654233932495,
-      "group_accuracy": [
-        52.89078903198242,
-        53.648067474365234,
-        46.61654281616211,
-        65.41353607177734
-      ],
-      "group_count": [
-        467,
-        466,
-        133,
-        133
-      ],
-      "convergence": {
-        "averaging_window": 10,
-        "converged": true,
-        "epochs": 14,
-        "gradient_max": 8.185614208737436e-08,
-        "l2": 0.001,
-        "normalization": "train_feature_standardization",
-        "objective": 0.03558648915415649,
-        "solver": "full_batch_lbfgs",
-        "stable_epochs": 10,
-        "tolerance": 1e-06
+    ],
+    "seeds": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "source_git_revision": "1e54e85849505f2197fd4b552b193f749bb29fa3",
+    "split": "test",
+    "ssl_epoch": 500,
+    "summary": {
+      "crp_sampler_only": {
+        "avg": {
+          "mean": 51.94597840309143,
+          "sd": 3.3180648464997837
+        },
+        "wga": {
+          "mean": 46.83370664715767,
+          "sd": 1.2935388136773924
+        }
+      },
+      "raw_clip_kl": {
+        "avg": {
+          "mean": 52.63634771108627,
+          "sd": 2.385745333006354
+        },
+        "wga": {
+          "mean": 48.481153696775436,
+          "sd": 3.435282014587909
+        }
+      },
+      "raw_clip_sampler_only": {
+        "avg": {
+          "mean": 50.86296275258064,
+          "sd": 2.6122919897924683
+        },
+        "wga": {
+          "mean": 45.87583169341087,
+          "sd": 5.976943013931909
+        }
+      },
+      "simclr": {
+        "avg": {
+          "mean": 51.96755304932594,
+          "sd": 2.0012280577621255
+        },
+        "wga": {
+          "mean": 46.81818187236786,
+          "sd": 3.6531579986430516
+        }
+      },
+      "splice_crp_kl": {
+        "avg": {
+          "mean": 53.37892711162567,
+          "sd": 1.8396576219824792
+        },
+        "wga": {
+          "mean": 50.643014907836914,
+          "sd": 1.972933780649075
+        }
       }
     }
-  ],
-  "weight_screen": [
-    {
-      "seed": 1,
-      "arm": "splice_crp_kl",
-      "weight": 0.2,
-      "avg": 51.20934247970581,
-      "wga": 45.396146178245544
+  },
+  "mechanism": {
+    "chance_reference": {
+      "caveat": "This is a descriptive nominal reference, not FDR control: thresholds are fitted per group and the audited real groups are neither independent nor null draws.",
+      "nominal_expected_exceedances_across_504_if_real_groups_were_exchangeable_nulls": 25.200000000000024,
+      "observed_real_groups_passing": 441,
+      "per_trial_upper_tail_rate": 0.050000000000000044
     },
-    {
-      "seed": 1,
-      "arm": "raw_clip_kl",
-      "weight": 0.2,
-      "avg": 53.71142625808716,
-      "wga": 49.46466684341431
+    "concepts_per_group_counts": {
+      "1": 503,
+      "2": 1
     },
-    {
-      "seed": 2,
-      "arm": "splice_crp_kl",
-      "weight": 0.2,
-      "avg": 49.37447905540466,
-      "wga": 43.89721751213074
+    "group_count": 504,
+    "null_score_distributions": {
+      "random_subspace": {
+        "count": 16128,
+        "max": 1.4666425638952821e-05,
+        "mean": 8.093614880186575e-07,
+        "median": 0.0,
+        "min": 0.0,
+        "q25": 0.0,
+        "q75": 1.229090153678787e-06,
+        "q95": 3.6272822716525645e-06
+      },
+      "shuffled_codes": {
+        "count": 16128,
+        "max": 1.896871913142116e-05,
+        "mean": 6.984928702931653e-07,
+        "median": 0.0,
+        "min": 0.0,
+        "q25": 0.0,
+        "q75": 8.942468332917512e-07,
+        "q95": 3.4459145662013177e-06
+      }
     },
-    {
-      "seed": 2,
-      "arm": "raw_clip_kl",
-      "weight": 0.2,
-      "avg": 49.9582976102829,
-      "wga": 47.36842215061188
+    "passing_per_group_null_gate": 441,
+    "real_group_distributions": {
+      "coverage": {
+        "count": 504,
+        "max": 0.9005213975906372,
+        "mean": 0.5001828962038937,
+        "median": 0.5419186651706696,
+        "min": 0.011887382715940475,
+        "q25": 0.34655892103910446,
+        "q75": 0.685922846198082,
+        "q95": 0.8219186693429947
+      },
+      "null_excess_score": {
+        "count": 504,
+        "max": 0.00012907892790212772,
+        "mean": 1.119980819737292e-05,
+        "median": 8.760313202907226e-06,
+        "min": 0.0,
+        "q25": 2.7816877665388e-06,
+        "q75": 1.5787240055133926e-05,
+        "q95": 3.024321526615261e-05
+      },
+      "null_threshold": {
+        "count": 504,
+        "max": 7.934312634461094e-06,
+        "mean": 3.123059385478835e-06,
+        "median": 3.2009810411182116e-06,
+        "min": 2.5062649910978507e-07,
+        "q25": 2.179746843467001e-06,
+        "q75": 3.981986196777143e-06,
+        "q95": 5.163360265214578e-06
+      },
+      "robust_positive_gain": {
+        "count": 504,
+        "max": 0.0022605061531066895,
+        "mean": 0.0009042160023772527,
+        "median": 0.0008549392223358154,
+        "min": 0.00040024518966674805,
+        "q25": 0.0007077604532241821,
+        "q75": 0.0010993629693984985,
+        "q95": 0.0013362735509872437
+      },
+      "score": {
+        "count": 504,
+        "max": 0.0001300412137691177,
+        "mean": 1.4184986641030205e-05,
+        "median": 1.2294260410216934e-05,
+        "min": 0.0,
+        "q25": 5.088256668607569e-06,
+        "q75": 1.965225533386937e-05,
+        "q95": 3.391174472413167e-05
+      },
+      "semantic_agreement": {
+        "count": 504,
+        "max": 0.524044394493103,
+        "mean": 0.4504940939091501,
+        "median": 0.4533117562532425,
+        "min": 0.3707025349140167,
+        "q25": 0.440829299390316,
+        "q75": 0.4613439589738846,
+        "q95": 0.47377594709396365
+      }
     },
-    {
-      "seed": 1,
-      "arm": "splice_crp_kl",
-      "weight": 0.5,
-      "avg": 55.79649806022644,
-      "wga": 51.6059935092926
-    },
-    {
-      "seed": 1,
-      "arm": "raw_clip_kl",
-      "weight": 0.5,
-      "avg": 50.3753125667572,
-      "wga": 44.3254828453064
-    },
-    {
-      "seed": 2,
-      "arm": "splice_crp_kl",
-      "weight": 0.5,
-      "avg": 53.29441428184509,
-      "wga": 50.0
-    },
-    {
-      "seed": 2,
-      "arm": "raw_clip_kl",
-      "weight": 0.5,
-      "avg": 49.45788085460663,
-      "wga": 46.56652212142944
-    },
-    {
-      "seed": 1,
-      "arm": "simclr",
-      "weight": 0.0,
-      "avg": 50.291907787323,
-      "wga": 44.539615511894226
-    },
-    {
-      "seed": 1,
-      "arm": "crp_sampler_only",
-      "weight": 0.0,
-      "avg": 49.87489581108093,
-      "wga": 43.25481653213501
-    },
-    {
-      "seed": 1,
-      "arm": "raw_clip_kl",
-      "weight": 2.0,
-      "avg": 53.127604722976685,
-      "wga": 45.396146178245544
-    },
-    {
-      "seed": 1,
-      "arm": "splice_crp_kl",
-      "weight": 2.0,
-      "avg": 51.37614607810974,
-      "wga": 46.89507484436035
-    },
-    {
-      "seed": 2,
-      "arm": "simclr",
-      "weight": 0.0,
-      "avg": 51.959967613220215,
-      "wga": 43.68308484554291
-    },
-    {
-      "seed": 2,
-      "arm": "crp_sampler_only",
-      "weight": 0.0,
-      "avg": 52.21017599105835,
-      "wga": 48.28326106071472
-    },
-    {
-      "seed": 2,
-      "arm": "raw_clip_kl",
-      "weight": 2.0,
-      "avg": 51.79315805435181,
-      "wga": 48.17987084388733
-    },
-    {
-      "seed": 2,
-      "arm": "splice_crp_kl",
-      "weight": 2.0,
-      "avg": 51.959967613220215,
-      "wga": 49.25053417682648
-    },
-    {
-      "seed": 1,
-      "arm": "raw_clip_sampler_only",
-      "weight": 0.0,
-      "avg": 54.0450394153595,
-      "wga": 46.25267684459686
-    },
-    {
-      "seed": 2,
-      "arm": "raw_clip_sampler_only",
-      "weight": 0.0,
-      "avg": 48.45704734325409,
-      "wga": 44.420599937438965
-    }
-  ],
-  "frozen_signal": [
-    {
-      "representation": "clip",
-      "design": "original_ds_train",
-      "subset_seed": "0",
-      "l2": "0.001",
-      "train_count": "224",
-      "feature_dim": "512",
-      "avg": "79.81651425361633",
-      "wga": "75.37473440170288",
-      "train_avg": "100.0",
-      "converged": "True",
-      "gradient_max": "9.872259906042471e-08",
-      "group_0_accuracy": "75.3747329711914",
-      "group_0_count": "467",
-      "group_1_accuracy": "81.5450668334961",
-      "group_1_count": "466",
-      "group_2_accuracy": "87.21804809570312",
-      "group_2_count": "133",
-      "group_3_accuracy": "81.95488739013672",
-      "group_3_count": "133",
-      "seed": "",
-      "arm": ""
-    },
-    {
-      "representation": "splice_codes",
-      "design": "original_ds_train",
-      "subset_seed": "0",
-      "l2": "0.001",
-      "train_count": "224",
-      "feature_dim": "20931",
-      "avg": "68.30692291259766",
-      "wga": "64.16308879852295",
-      "train_avg": "100.0",
-      "converged": "True",
-      "gradient_max": "9.570868193046933e-08",
-      "group_0_accuracy": "67.45182037353516",
-      "group_0_count": "467",
-      "group_1_accuracy": "64.1630859375",
-      "group_1_count": "466",
-      "group_2_accuracy": "75.18797302246094",
-      "group_2_count": "133",
-      "group_3_accuracy": "78.94737243652344",
-      "group_3_count": "133",
-      "seed": "",
-      "arm": ""
-    },
-    {
-      "representation": "splice_reconstruction",
-      "design": "original_ds_train",
-      "subset_seed": "0",
-      "l2": "0.001",
-      "train_count": "224",
-      "feature_dim": "512",
-      "avg": "77.98165082931519",
-      "wga": "72.74678349494934",
-      "train_avg": "100.0",
-      "converged": "True",
-      "gradient_max": "8.129198274775507e-08",
-      "group_0_accuracy": "80.72805786132812",
-      "group_0_count": "467",
-      "group_1_accuracy": "72.74678039550781",
-      "group_1_count": "466",
-      "group_2_accuracy": "78.19548797607422",
-      "group_2_count": "133",
-      "group_3_accuracy": "86.4661636352539",
-      "group_3_count": "133",
-      "seed": "",
-      "arm": ""
-    },
-    {
-      "representation": "random_resnet18_large",
-      "design": "original_ds_train",
-      "subset_seed": "0",
-      "l2": "0.001",
-      "train_count": "224",
-      "feature_dim": "512",
-      "avg": "45.87155878543854",
-      "wga": "40.042826533317566",
-      "train_avg": "100.0",
-      "converged": "True",
-      "gradient_max": "9.786800025973113e-08",
-      "group_0_accuracy": "40.04282760620117",
-      "group_0_count": "467",
-      "group_1_accuracy": "43.991416931152344",
-      "group_1_count": "466",
-      "group_2_accuracy": "60.15037155151367",
-      "group_2_count": "133",
-      "group_3_accuracy": "58.6466178894043",
-      "group_3_count": "133",
-      "seed": "",
-      "arm": ""
-    },
-    {
-      "representation": "imagenet_resnet18_large",
-      "design": "original_ds_train",
-      "subset_seed": "0",
-      "l2": "0.001",
-      "train_count": "224",
-      "feature_dim": "512",
-      "avg": "78.98248434066772",
-      "wga": "76.2312650680542",
-      "train_avg": "100.0",
-      "converged": "True",
-      "gradient_max": "9.508496979119077e-08",
-      "group_0_accuracy": "76.23126220703125",
-      "group_0_count": "467",
-      "group_1_accuracy": "81.97425079345703",
-      "group_1_count": "466",
-      "group_2_accuracy": "78.19548797607422",
-      "group_2_count": "133",
-      "group_3_accuracy": "78.94737243652344",
-      "group_3_count": "133",
-      "seed": "",
-      "arm": ""
-    }
-  ],
-  "provenance": [
-    {
-      "path": "tmp/crp_signal_checks_v1/probes/integrity.json",
-      "sha256": "4f2816335b59f8cb746d7c7a5dfefbfef8a79c4f5baba7712a2254f3e5a470e5"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/probes/config.json",
-      "sha256": "eb4506b9093eed9e53022096a22432274fc59efb8e62e88a434babef0d817e72"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/probes/results.csv",
-      "sha256": "d45c3a42a4aa6756d58e94a6ee9bc5dd5b13ad911e9a97a060e6ca0cb7f16c69"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/transfer_summary/results.csv",
-      "sha256": "5054d95c7c523728efaf7480fb124dc9666023a3099700e60eca970e813a5f26"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/signal/results.csv",
-      "sha256": "894fdcd1f8a4fba6850cc69fa1f9d604791a24c217a3a305702b4fc39c18ba98"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/signal/report.json",
-      "sha256": "8e1e5f371c9d95df8e97fdf66807a5bfd2959ec0ad12e3f9d6edc6452a7b3aba"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/graph/posthoc_graphs.json",
-      "sha256": "97d316910ec52a5b77bd330e145e2511fc528378ee8dddb45abde8af3bffd6db"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/graph/reconstruction.csv",
-      "sha256": "5028ec4718c1a05f949910e1c62c3077e495ef65a159136e26dc698928eccba3"
-    },
-    {
-      "path": "tmp/crp_signal_checks_v1/graph/report.json",
-      "sha256": "9affac06cc4b8493958d84c37fb8e23b11e15305e4cc33384519dae2bf2c02d8"
-    }
-  ],
-  "limits": [
-    "Legacy IDs inferred from seeded loader; no explicit IDs in old tensors",
-    "14/28-per-group subsets test smaller sample budgets, not >224 student examples",
-    "Deleted checkpoints cannot be checked or used for new feature extraction"
-  ],
-  "graph_fingerprints": {
-    "cache": "46b1c1fc552769dfbb9c6543347e1a2b",
-    "crp": "c50667264bc17a5ef0152a350f0f990c",
-    "raw_clip": "c81c93e6f316f69249176929c9d3c4a4"
+    "selected_after_cap": 12,
+    "selected_group_ids": [
+      26,
+      27,
+      28,
+      33,
+      189,
+      201,
+      213,
+      240,
+      282,
+      422,
+      441,
+      453
+    ],
+    "use_boundary": "Post-lock mechanism analysis; it must not change the frozen graph or final-test selection."
+  },
+  "qualitative_panels": {
+    "format_limit": "The packaged panels show selected pair comparisons, not a complete anchor-to-raw-nearest-to-projected-nearest triplet for every example.",
+    "group_count": 5,
+    "interpretation_caveat": "visualization explains the mechanism but does not prove WGA growth or causal background removal",
+    "pair_count": 20,
+    "selection_is_label_free": true,
+    "selection_rule": "top five groups by retained-edge count, group_id tie-break; gain deciles; seed 0"
+  },
+  "schema_version": 2,
+  "scope": "Waterbirds scientific-article evidence registry",
+  "sources": {
+    "artifact_root": "outputs/output_cluster",
+    "direct_transfer": "reports/followups_corrected/direct_transfer/summary.json",
+    "final_test": "reports/paper/{final_test_lock,test_results,test_summary}.json",
+    "graph_ablation": "reports/followups_corrected/graph_ablation/summary.json",
+    "mechanism": "shared/waterbirds/graphs/crp_graph.json",
+    "panels": "reports/followups_corrected/visual/concept_panels.json"
   }
 }

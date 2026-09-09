@@ -20,7 +20,7 @@ student inference.
 - `tests/` — tests for the current method only.
 
 See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow and
-[outputs/README.md](outputs/README.md) for artifact navigation.
+the README inside the selected artifact root for artifact navigation.
 
 ## Run the canonical experiment
 
@@ -38,11 +38,18 @@ python -m experiments.runner experiments/manifests/waterbirds_crp.json --list
 python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 --dry-run
 ```
 
+Existing execution directories are protected by default. Choose
+`--existing reuse`, `resume`, or `new-attempt` explicitly; reuse/resume require
+the recorded command to match. Use `--artifact-root outputs/output_cluster` or
+set `SPUR_SPLICE_ARTIFACT_ROOT` to operate on the packaged artifact layout.
+
 Build shared inputs directly:
 
 ```bash
 python -m scripts.tools.cache_crp_features --help
 python -m splice.crp --help
+python -m scripts.tools.build_crp_baseline_graphs --help
+python -m scripts.tools.build_paper_results --artifact-root outputs/output_cluster
 ```
 
 ## Verification
@@ -53,7 +60,11 @@ pip install -e .
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The final four-seed paper aggregate is
-`outputs/reports/paper/test_summary.json`. Raw run folders are grouped under
-`outputs/seeds/seed_XX/`; shared Waterbirds cache and graphs are under
-`outputs/shared/waterbirds/`.
+The checked root `paper_results.json` is regenerated from the selected artifact
+tree. In the packaged copy, its source aggregate is
+`outputs/output_cluster/reports/paper/test_summary.json`.
+
+For this study, DONE means: a predeclared split/protocol, unique run identity,
+linked endpoint metrics, completed and converged status, and explicit limits.
+It does not mean producing a new standalone report for every implementation
+detail or rerunning training when no scientific claim would change.

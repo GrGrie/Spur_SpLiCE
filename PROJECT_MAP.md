@@ -24,7 +24,8 @@ training images
 | SSL training | `spur_splice.py`, `experiments/spurious_eval/training/ssl_loop.py` |
 | Dataset adapters | `experiments/spurious_eval/datasets/` |
 | Linear evaluation | `experiments/spurious_eval/linear_probe.py` |
-| Experiment matrix | `experiments/runner.py`, `experiments/manifests/` |
+| Experiment matrix and execution identity | `experiments/runner.py`, `experiments/manifests/` |
+| Checked paper registry | `scripts/tools/build_paper_results.py`, `paper_results.json` |
 | HTML reports | `splice/reporting.py`, `scripts/tools/render_report.py` |
 
 The main CRP interface is `build_teacher_graph(cache, config)`. Its
@@ -41,3 +42,5 @@ graph assembly. Training consumes only validated graphs through
 
 Historical source paths embedded in result JSON files are retained as
 provenance. New code must obtain destinations through `splice.artifacts`.
+The default root is `outputs/`; `SPUR_SPLICE_ARTIFACT_ROOT` or the runner's
+`--artifact-root` selects a packaged tree without rewriting manifests.
