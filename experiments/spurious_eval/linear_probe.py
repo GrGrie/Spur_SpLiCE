@@ -75,17 +75,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Directory for downstream probe artifacts; defaults to the checkpoint directory.",
     )
-    parser.add_argument("--method", default="SimCLR", help="Accepted for SpurSSL command compatibility")
     parser.add_argument("--head", default="mlp", choices=["mlp", "linear", "fixed", "identity"], help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--kappa", type=float, default=1.0, help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--trial", default="0", help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--augmented_features", action="store_true", help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--plot_path", default="", help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--energy_threshold", type=float, default=0.9, help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--rank_threshold", type=float, default=0.1, help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--spur_str", type=float, default=0.0, help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--num_zero_high", type=int, default=0, help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--num_zero_low", type=int, default=0, help="Accepted for SpurSSL command compatibility")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=100)
@@ -137,9 +127,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "model": "resnet18_large",
         "ckpt": "",
         "artifact_dir": "",
-        "method": "SimCLR",
         "head": "mlp",
-        "kappa": 1.0,
         "batch_size": 256,
         "num_workers": 32,
         "epochs": 100,
@@ -298,8 +286,6 @@ def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[
 def consume_spurssl_head_rng(feature_dim: int, args: argparse.Namespace) -> None:
     """Instantiate the unused SpurSSL projection head to preserve classifier RNG state."""
 
-    if args.method != "SimCLR":
-        return
     if args.head == "linear":
         torch.nn.Linear(feature_dim, 128)
     elif args.head == "mlp":
@@ -571,7 +557,7 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
     val_entropy, val_effective_rank, val_energy_based_rank = entropy_effective_rank(val_feature_tensor)
 
     print(f"Train - Entropy: {entropy:.4f}, Effective Rank: {effective_rank:.2f}, Energy-Based Rank: {energy_based_rank:.2f}")
-    print(f"Val   - Entropy: {val_entropy:.4f}, Effective Rankuse_wandb: {val_effective_rank:.2f}, Energy-Based Rank: {val_energy_based_rank:.2f}")
+    print(f"Val   - Entropy: {val_entropy:.4f}, Effective Rank: {val_effective_rank:.2f}, Energy-Based Rank: {val_energy_based_rank:.2f}")
 
     final_metrics = {
         "Probe converged": convergence.get("converged", False),

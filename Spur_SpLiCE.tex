@@ -64,10 +64,6 @@ encoder and downstream classifier are required.
 The contributions are a label-free concept-projection graph construction, its
 integration with SimCLR through confidence-weighted relational supervision and
 a controlled evaluation that separates graph transfer from batch composition.
-We also implement an optional spatial extension and a direct reconstruction
-transfer control. The completed experiments characterize the ordinary CRP
-pipeline; the latter extensions have no completed student results in the
-available evidence.
 
 \section{Related Work}
 SimCLR learns representations by bringing two augmented views of an image
@@ -79,10 +75,9 @@ Our method uses those coordinates to define and audit relations between images.
 
 Group-robust learning evaluates performance across combinations of target and
 context \citep{sagawa2020groupdro}. CoBalT uses unsupervised concept discovery to
-support spurious-correlation mitigation \citep{arefin2024cobalt}. Our spatial
-extension draws on concept balancing while expressing its image-specific
-evidence in the fixed SpLiCE vocabulary. The main CRP experiment uses no CoBalT
-memberships. These methods motivate the architecture and evaluation design;
+support spurious-correlation mitigation \citep{arefin2024cobalt}. SpLiCE-CRP
+instead constructs relations directly from the fixed SpLiCE vocabulary and
+does not use CoBalT memberships. These methods motivate the evaluation design;
 their published accuracies use different training regimes and are not directly
 comparable to our small-data linear-probe results.
 
@@ -243,24 +238,6 @@ positive pair in this contrastive objective remains the two views of one image.
 In the main controls, KL starts after epoch 10 and warms up over ten epochs
 to weight 2. The weight then remains constant through epoch 500. The weight
 screen repeats this schedule with maximum weights 0.2 and 0.5.
-
-\subsection{Optional spatial extension}
-\label{sec:spatial}
-CRPv4 supports a separate spatial evidence artifact aligned with the exact cached
-sample IDs and SpLiCE vocabulary. Frozen patch evidence supports four variants:
-vanilla patchwise, vanilla with slots, SCLIP patchwise and SCLIP with slots.
-SCLIP adapts the final attention layer for dense visual evidence \citep{wang2024sclip}.
-Image-specific evidence rescales existing SpLiCE activations before grouping and
-relation construction. The original frozen cache is preserved. A configurable
-floor controls attenuation and optional frequency scaling changes relative
-concept support. Artifact confidence interpolates between the original and spatially weighted
-codes. Row rescaling preserves each image's original total code mass whenever
-the weighted row remains nonzero; a positive floor ensures this for every
-originally nonzero row.
-Zero input coordinates remain zero under this multiplicative
-operation. The spatial variants are available for subsequent controlled studies.
-All completed student comparisons in this paper use ordinary SpLiCE codes.
-
 
 \section{Experimental Protocol}
 \paragraph{Data and representations.}
@@ -425,32 +402,6 @@ thresholds are not guarantees of robust graph transfer. The retained sampler
 exposure report is a 20-epoch simulation for seeds 1--4, not a recording of
 historical training batches.
 
-\section{Current Extensions and Open Experiments}
-The spatial extension in Section~\ref{sec:spatial} is implemented with separate artifacts for
-patchwise and slot-based evidence. Its empirical contribution remains open.
-A further implemented control tests whether the sparse reconstruction can be
-transferred directly to the student. A separate projection head $g_\psi$ predicts
-a frozen unit-normalized target $t_i$ using
-\begin{equation}
- \mathcal{L}_{\mathrm{transfer}}=
- \frac{1}{2|B_V|}\sum_{i\in B_V}\sum_{v=1}^{2}
- \left[1-\cos\!\left(g_\psi(f_\theta(x_i^{(v)})),t_i\right)\right].
-\end{equation}
-Targets are centered raw CLIP embeddings, normalized SpLiCE reconstructions or
-a fixed derangement of valid reconstructions. Here $B_V$ contains the valid
-target rows in the batch; an empty $B_V$ contributes zero loss. The objective is
-$\mathcal{L}_{\mathrm{SimCLR}}+\alpha(t)\mathcal{L}_{\mathrm{transfer}}$.
-The matched SimCLR arm retains the same head with transfer weight zero.
-This control asks whether correspondence with the sparse reconstruction matters
-when the graph and graph-aware sampler are absent.
-
-The configured follow-up uses seeds 1 and 3, 500 SSL epochs and maximum transfer
-weight 0.1 after the same ten-epoch delay and warm-up. Its SimCLR temperature
-is 0.5, so its primary comparison is its own matched baseline. Saved-probe
-integrity and gradient diagnostics precede the full runs. No completed results
-from this direct-transfer protocol or the spatial variants are included in the
-available artifacts.
-
 \section{Limitations}
 The evidence covers one dataset and one frozen graph seed. Validation was used
 repeatedly for development. Four student seeds characterize some optimization
@@ -472,8 +423,6 @@ removed from the encoder.
 Frozen-model and vocabulary coverage impose additional limits. The teacher was
 pretrained using external image--text data and can encode its own correlations.
 Sparse reconstruction error and group compression error must be distinguished.
-The current direct-transfer and spatial controls address parts of this problem
-but have no completed student evaluation in this report.
 
 \section{Conclusion}
 SpLiCE-CRP provides an inspectable path from sparse semantic concepts to
@@ -511,10 +460,6 @@ M.~R.~Arefin, Y.~Zhang, A.~Baratin, F.~Locatello, I.~Rish, D.~Liu and K.~Kawaguc
 Unsupervised Concept Discovery Mitigates Spurious Correlations.
 \emph{ICML}, pp.~1672--1688, 2024.
 \url{https://proceedings.mlr.press/v235/arefin24a.html}.
-\bibitem[Wang et~al.(2024)]{wang2024sclip}
-F.~Wang, J.~Mei and A.~Yuille.
-SCLIP: Rethinking Self-Attention for Dense Vision-Language Inference.
-\emph{ECCV}, 2024. \url{https://arxiv.org/abs/2312.01597}.
 \end{thebibliography}
 
 \clearpage
@@ -536,7 +481,6 @@ Null calibration & 32 trials per family; pooled quantile 0.95 \\
 Group cap & 12 after the full audit \\
 Teacher graph & Up to 3 outgoing edges; maximum indegree 10 \\
 Graph seed & 0 shared across student seeds \\
-Spatial and CoBalT evidence & Disabled \\
 \bottomrule
 \end{tabularx}
 \end{table}

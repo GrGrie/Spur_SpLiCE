@@ -11,17 +11,23 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from splice.crp import CRP_GRAPH_VERSION, CRP_V4_GRAPH_VERSION, CrpAuditConfig, GRAPH_VERSION
+from splice.crp import CRP_GRAPH_VERSION, CrpAuditConfig, GRAPH_VERSION
 from splice.graph_io import graph_fingerprint, load_graph_json
 
 
 TEACHER_GRAPH_ARTIFACTS = {
     "splice_raw_clip_matched_teacher_graph",
-    "splice_semantic_splice_matched_teacher_graph",
     "splice_crp_v2_teacher_graph",
     "splice_crp_v3_teacher_graph",
-    "splice_crp_v4_teacher_graph",
-    "splice_safe_crp_teacher_graph",
+}
+
+LEGACY_DISABLED_CONFIG = {
+    "cobalt": False,
+    "use_cobalt_confidence": True,
+    "spatial_balance": False,
+    "spatial_balance_variant": "",
+    "spatial_balance_floor": 0.25,
+    "spatial_frequency_power": 0.0,
 }
 REQUIRED_GRAPH_KEYS = {
     "artifact",
@@ -67,26 +73,25 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         raise ValueError(f"CRP teacher graph is missing required keys: {sorted(missing)}")
     config = graph.get("config", {})
     if isinstance(config, dict):
-        unsupported = set(config).difference(CrpAuditConfig.__dataclass_fields__)
+        enabled_legacy = {
+            key: config[key]
+            for key, disabled_value in LEGACY_DISABLED_CONFIG.items()
+            if key in config and config[key] != disabled_value
+        }
+        if enabled_legacy:
+            raise ValueError(f"CRP teacher graph uses removed CoBalT/spatial settings: {enabled_legacy}")
+        unsupported = set(config).difference(CrpAuditConfig.__dataclass_fields__).difference(LEGACY_DISABLED_CONFIG)
         if unsupported:
             raise ValueError(f"CRP teacher graph contains unsupported settings: {sorted(unsupported)}")
     if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
         raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
     expected_versions = {
         "splice_raw_clip_matched_teacher_graph": 1,
-        "splice_semantic_splice_matched_teacher_graph": 1,
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
         "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
-        "splice_crp_v4_teacher_graph": CRP_V4_GRAPH_VERSION,
-        # Safe graph v1 remains readable; v2 adds explicit training-mass
-        # budgeting and per-group treatment accounting.
-        "splice_safe_crp_teacher_graph": {1, 2},
     }
     expected_version = expected_versions[graph["artifact"]]
-    if graph["artifact"] == "splice_safe_crp_teacher_graph":
-        version_ok = graph["graph_version"] in expected_version
-    else:
-        version_ok = graph["graph_version"] == expected_version
+    version_ok = graph["graph_version"] == expected_version
     if not version_ok:
         raise ValueError(
             f"Unsupported relational graph version {graph['graph_version']!r}; expected {expected_version}."
@@ -138,37 +143,6 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
     if torch.any((anchor_confidence > 0) != supported):
         raise ValueError("CRP anchor confidence support must match graph edge support.")
 
-    if graph["artifact"] == "splice_safe_crp_teacher_graph":
-        from splice.crp_safe_graph import SafeCrpGraphConfig
-        SafeCrpGraphConfig.from_mapping(graph.get("safe_config"))
-        for fingerprint_key in ("source_crp_fingerprint", "source_raw_fingerprint"):
-            if not isinstance(graph.get(fingerprint_key), str) or not graph[fingerprint_key]:
-                raise ValueError(f"Safe CRP graph requires {fingerprint_key}.")
-        safe_shape = indices.shape
-        edge_source = torch.as_tensor(graph.get("edge_source"), dtype=torch.long).detach().cpu()
-        safe_groups = torch.as_tensor(graph.get("group_ids"), dtype=torch.long).detach().cpu()
-        safe_gains = torch.as_tensor(graph.get("intervention_gains"), dtype=torch.float32).detach().cpu()
-        safe_confidences = torch.as_tensor(graph.get("edge_confidences"), dtype=torch.float32).detach().cpu()
-        if any(value.shape != safe_shape for value in (edge_source, safe_groups, safe_gains, safe_confidences)):
-            raise ValueError("Safe CRP provenance tensors must align with neighbor_indices.")
-        if torch.any(edge_source < 0) or torch.any(edge_source > 2):
-            raise ValueError("Safe CRP edge_source contains an unknown value.")
-        if torch.any(edge_source[~valid] != 0) or torch.any(edge_source[valid] == 0):
-            raise ValueError("Safe CRP edge_source must mark padding and supported edges.")
-        if torch.any((edge_source == 1) & ((safe_groups != -1) | (safe_gains != 0) | (safe_confidences != 0))):
-            raise ValueError("Raw safe edges must have zero CRP provenance.")
-        if torch.any((edge_source == 2) & ((safe_groups < 0) | (safe_gains <= 0) | (safe_confidences <= 0))):
-            raise ValueError("Safe replacement edges must have positive CRP provenance.")
-        stats = graph.get("degree_stats", {})
-        replacement_count = int((edge_source == 2).sum())
-        treated_count = int((edge_source == 2).any(dim=1).sum())
-        if int(stats.get("safe_replaced_edges", -1)) != replacement_count:
-            raise ValueError("Safe replacement count does not match edge provenance.")
-        if int(stats.get("safe_treated_anchors", -1)) != treated_count:
-            raise ValueError("Safe treated-anchor count does not match edge provenance.")
-        if torch.any((edge_source == 2).sum(dim=1) > 1):
-            raise ValueError("Safe CRP graph permits at most one replacement per row.")
-
     return {
         **graph,
         "sample_ids": sample_ids,
@@ -201,7 +175,6 @@ def build_crp_concept_report(graph: dict) -> dict:
     if graph.get("artifact") not in {
         "splice_crp_v2_teacher_graph",
         "splice_crp_v3_teacher_graph",
-        "splice_crp_v4_teacher_graph",
     }:
         raise ValueError("CRP concept reports require a CRP teacher graph.")
     weights = torch.as_tensor(graph["weights"], dtype=torch.float32)

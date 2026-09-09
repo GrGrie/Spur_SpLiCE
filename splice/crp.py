@@ -26,7 +26,6 @@ CACHE_VERSION = 1
 # version because its fixed-density and validation fields are method changes.
 GRAPH_VERSION = 2
 CRP_GRAPH_VERSION = 3
-CRP_V4_GRAPH_VERSION = 4
 REQUIRED_CACHE_KEYS = {
     "cache_version",
     "sample_ids",
@@ -75,22 +74,13 @@ class CrpAuditConfig:
     seed: int = 0
     similarity_chunk_size: int = 512
     orthogonal_tolerance: float = 1e-6
-    cobalt: bool = False
     use_residual_splice_gate: bool = True
     residual_splice_similarity_threshold: float = 0.25
-    use_cobalt_confidence: bool = True
-    spatial_balance: bool = False
-    spatial_balance_variant: str = ""
-    spatial_balance_floor: float = 0.25
-    spatial_frequency_power: float = 0.0
 
 
 def _validate_config(config: CrpAuditConfig) -> None:
     boolean_fields = {
-        "cobalt": config.cobalt,
         "use_residual_splice_gate": config.use_residual_splice_gate,
-        "use_cobalt_confidence": config.use_cobalt_confidence,
-        "spatial_balance": config.spatial_balance,
     }
     if any(not isinstance(value, bool) for value in boolean_fields.values()):
         raise ValueError("CRP boolean settings must be booleans.")
@@ -101,19 +91,12 @@ def _validate_config(config: CrpAuditConfig) -> None:
         "min_coverage": config.min_coverage,
         "null_quantile": config.null_quantile,
         "residual_splice_similarity_threshold": config.residual_splice_similarity_threshold,
-        "spatial_balance_floor": config.spatial_balance_floor,
     }
     for name, value in probabilities.items():
         if not 0 <= value <= 1:
             raise ValueError(f"{name} must be in [0, 1], got {value}.")
     if config.min_concept_frequency > config.max_concept_frequency:
         raise ValueError("min_concept_frequency cannot exceed max_concept_frequency.")
-    if config.spatial_frequency_power < 0:
-        raise ValueError("spatial_frequency_power must be non-negative.")
-    if config.cobalt and config.spatial_balance:
-        raise ValueError("Legacy CoBalT balancing and CRPv4 spatial balancing are separate ablations.")
-    if config.spatial_balance and not config.spatial_balance_variant:
-        raise ValueError("spatial_balance_variant is required when spatial_balance is enabled.")
     integer_fields = {
         "min_group_size": config.min_group_size,
         "projected_neighbors": config.projected_neighbors,
@@ -237,7 +220,7 @@ class _DisjointSet:
             self.parent[max(left_root, right_root)] = min(left_root, right_root)
 
 
-def group_concepts(
+def _group_concepts(
     codes: torch.Tensor,
     dictionary: torch.Tensor,
     vocabulary: Sequence[str],
@@ -641,69 +624,25 @@ def _build_teacher_graph(
     }
 
 
-def run_frozen_audit(
+def build_teacher_graph(
     cache: dict,
     config: CrpAuditConfig,
-    cobalt_concepts: torch.Tensor | None = None,
-    cobalt_confidence: torch.Tensor | None = None,
-    spatial_balance_artifact: dict | None = None,
-    candidate_groups: Sequence[Sequence[int]] | None = None,
 ) -> dict:
-    """Run the label-free audit and return a versioned sparse teacher graph."""
+    """Build a validated, label-free SpLiCE-CRP teacher graph.
+
+    This is the module's main interface. Grouping, intervention geometry, null
+    controls and sparse graph assembly remain implementation details.
+    """
 
     _validate_config(config)
     cache = validate_feature_cache(cache)
-    cobalt_check = None
-    spatial_balance_summary = None
-    sample_weights = None
-    if config.cobalt:
-        if cobalt_concepts is None:
-            raise ValueError("cobalt=true requires aligned CoBalT train concepts.")
-        from splice.cobalt_check import concept_balanced_sample_weights
-
-        sample_weights, cobalt_check = concept_balanced_sample_weights(
-            cobalt_concepts,
-            confidence=cobalt_confidence if config.use_cobalt_confidence else None,
-        )
     audit_codes = cache["splice_codes"]
-    if config.spatial_balance:
-        if spatial_balance_artifact is None:
-            raise ValueError("spatial_balance=true requires an aligned spatial balance artifact.")
-        from splice.spatial_balance import spatially_balanced_codes
-
-        artifact_variant = str(spatial_balance_artifact.get("variant", ""))
-        if artifact_variant != config.spatial_balance_variant:
-            raise ValueError(
-                "Spatial balance variant does not match the CRP audit configuration: "
-                f"{artifact_variant!r} != {config.spatial_balance_variant!r}."
-            )
-
-        audit_codes, spatial_balance_summary = spatially_balanced_codes(
-            cache["splice_codes"],
-            spatial_balance_artifact,
-            floor=config.spatial_balance_floor,
-            frequency_power=config.spatial_frequency_power,
-        )
-    groups = group_concepts(
+    groups = _group_concepts(
         audit_codes,
         cache["dictionary"],
         cache["vocabulary"],
         config,
-        sample_weights=sample_weights,
     )
-    if candidate_groups is not None:
-        # Explicit research candidates use exactly the same relation/null audit.
-        # The default historical grouping path is unchanged.
-        groups = [list(indices) for indices in candidate_groups]
-        if not groups or any(
-            not indices or len(indices) != len(set(indices))
-            or any(not isinstance(i, int) or isinstance(i, bool)
-                   or i < 0 or i >= len(cache["vocabulary"]) for i in indices)
-            for indices in groups
-        ):
-            raise ValueError("candidate_groups must contain nonempty unique valid concept indices.")
-        if len({tuple(sorted(indices)) for indices in groups}) != len(groups):
-            raise ValueError("candidate_groups contains duplicate groups.")
     raw_neighbours, _ = topk_neighbors(
         cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
     )
@@ -826,21 +765,14 @@ def run_frozen_audit(
     graph = _build_teacher_graph(n_samples, selected_evidence, config)
     config_payload = asdict(config)
     return {
-        "artifact": (
-            "splice_crp_v4_teacher_graph"
-            if config.spatial_balance
-            else "splice_crp_v3_teacher_graph"
-        ),
-        "graph_version": CRP_V4_GRAPH_VERSION if config.spatial_balance else CRP_GRAPH_VERSION,
+        "artifact": "splice_crp_v3_teacher_graph",
+        "graph_version": CRP_GRAPH_VERSION,
         "cache_version": int(cache.get("cache_version", CACHE_VERSION)),
         "sample_ids": cache["sample_ids"],
         "config": config_payload,
         "provenance": dict(cache.get("provenance", {})),
-        "cobalt_check": cobalt_check,
-        "spatial_balance": spatial_balance_summary,
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
-        **({"candidate_groups_override": groups} if candidate_groups is not None else {}),
         **graph,
     }
 
@@ -871,32 +803,17 @@ def _parse_bool(value: str | bool) -> bool:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the label-free SpLiCE-CRP v3/v4 frozen audit.")
+    parser = argparse.ArgumentParser(description="Build a label-free SpLiCE-CRP teacher graph.")
     parser.add_argument("--cache", required=True, help="Frozen feature cache (.pt).")
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
-    parser.add_argument("--cobalt", type=_parse_bool, nargs="?", const=True)
     parser.add_argument(
         "--use-residual-splice-gate",
         type=_parse_bool,
         nargs="?",
         const=True,
         help="Enable the residual SpLiCE semantic gate.",
-    )
-    parser.add_argument(
-        "--use-cobalt-confidence",
-        type=_parse_bool,
-        nargs="?",
-        const=True,
-        help="Use CoBalT slot-separation confidence in concept balancing.",
-    )
-    parser.add_argument("--cobalt-concepts", default="", help="Fixed CoBalT Stage-1 concept artifact.")
-    parser.add_argument("--spatial-balance", type=_parse_bool, nargs="?", const=True)
-    parser.add_argument(
-        "--spatial-balance-artifact",
-        default="",
-        help="Aligned image-specific SpLiCE spatial evidence for CRPv4.",
     )
     return parser.parse_args(argv)
 
@@ -909,54 +826,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CRP audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
-    if args.cobalt is not None:
-        config_values["cobalt"] = args.cobalt
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
-    if args.use_cobalt_confidence is not None:
-        config_values["use_cobalt_confidence"] = args.use_cobalt_confidence
-    if args.spatial_balance is not None:
-        config_values["spatial_balance"] = args.spatial_balance
     config = CrpAuditConfig(**config_values)
     cache_path, output_path = Path(args.cache), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
-    cobalt_concepts = None
-    cobalt_confidence = None
-    cobalt_provenance = None
-    if config.cobalt:
-        if not args.cobalt_concepts:
-            raise ValueError("--cobalt-concepts is required when --cobalt true.")
-        from splice.cobalt_check import load_cobalt_train_concepts
-
-        cobalt_concepts, cobalt_provenance = load_cobalt_train_concepts(
-            args.cobalt_concepts,
-            str(cache.get("provenance", {}).get("dataset", "")),
-            cache["sample_ids"],
-            include_confidence=True,
-        )
-        cobalt_confidence = cobalt_provenance.pop("confidence", None)
-    spatial_artifact = None
-    if config.spatial_balance:
-        if not args.spatial_balance_artifact:
-            raise ValueError("--spatial-balance-artifact is required when --spatial-balance true.")
-        from splice.spatial_balance import load_spatial_balance_artifact
-
-        spatial_artifact = load_spatial_balance_artifact(
-            args.spatial_balance_artifact,
-            str(cache.get("provenance", {}).get("dataset", "")),
-            cache["sample_ids"],
-            cache["vocabulary"],
-            dict(cache.get("provenance", {})),
-        )
-    artifact = run_frozen_audit(
-        cache,
-        config,
-        cobalt_concepts=cobalt_concepts,
-        cobalt_confidence=cobalt_confidence,
-        spatial_balance_artifact=spatial_artifact,
-    )
-    if cobalt_provenance is not None:
-        artifact["cobalt_check"].update(cobalt_provenance)
+    artifact = build_teacher_graph(cache, config)
     save_graph_json(artifact, output_path)
     print(f"[INFO] Wrote {artifact['artifact']} to {output_path}")
     print(f"[INFO] Selected {len(artifact['selected_group_ids'])}/{len(artifact['groups'])} groups")

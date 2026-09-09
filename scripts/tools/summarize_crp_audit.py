@@ -64,16 +64,6 @@ def summarize(path: Path) -> int:
         f"indegree_gini={float(degree.get('indegree_gini', 0.0)):.4f} "
         f"effective_donor_count={float(degree.get('effective_donor_count', 0.0)):.1f}"
     )
-    spatial = report.get("spatial_balance")
-    if isinstance(spatial, dict):
-        print(
-            "spatial_balance="
-            f"variant={spatial.get('variant')} "
-            f"changed_samples={int(spatial.get('changed_sample_count', 0))}/"
-            f"{int(spatial.get('sample_count', 0))} "
-            f"confidence_mean={float(spatial.get('confidence_mean', 0.0)):.4f} "
-            f"mass_preserved={bool(spatial.get('original_mass_preserved', False))}"
-        )
     if selected:
         print(
             "nulls="

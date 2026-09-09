@@ -36,13 +36,11 @@ from splice.crp_training import (
     load_teacher_graph,
     save_crp_concept_report,
 )
-from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.graph_io import graph_fingerprint
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
 RELATIONAL_GRAPH_MODES = {"crp_relational"}
-CONCEPT_TRANSFER_MODES = {"frozen_concept_distill"}
 
 
 def str_to_bool(value) -> bool:
@@ -80,16 +78,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr_decay_rate", type=float, default=0.1)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "SAM", "AdamW"])
-    parser.add_argument("--sam_base_optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
-    parser.add_argument("--rho", type=float, default=0.05)
-    parser.add_argument("--sam_no_grad_norm", action="store_true")
-    parser.add_argument("--only_sam_step_size", action="store_true")
+    parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
 
     parser.add_argument("--dataset", type=str, default="waterbirds", choices=sorted(DATASET_REGISTRY))
     parser.add_argument("--data_folder", type=str, default="./datasets")
     parser.add_argument("--model", type=str, default="resnet18_large", choices=SSL_RESNET_MODEL_NAMES)
-    parser.add_argument("--method", type=str, default="SimCLR", choices=["SimCLR"])
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
     parser.add_argument("--temp", type=float, default=0.5)
@@ -103,7 +96,6 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--cosine", action="store_true")
     parser.add_argument("--warm", action="store_true")
-    parser.add_argument("--trial", type=str, default="0")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=True)
@@ -212,29 +204,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--entity", default="gsgrechkin-rptu")
     parser.add_argument("--wandb_group", default="")
     parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
-    parser.add_argument("--energy_threshold", type=float, default=0.9)
-    parser.add_argument("--rank_threshold", type=float, default=0.1)
-
     parser.add_argument(
         "--splice_mode",
         type=str,
         default="none",
-        choices=[
-            "none",
-            "crp_relational",
-            "frozen_concept_distill",
-        ],
+        choices=["none", "crp_relational"],
     )
-    parser.add_argument("--concept_transfer_targets", type=str, default="")
-    parser.add_argument(
-        "--concept_transfer_target_kind",
-        type=str,
-        default="reconstruction",
-        choices=["raw", "reconstruction", "shuffled_reconstruction"],
-    )
-    parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
-    parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
-    parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
         "--crp_teacher_graph",
@@ -272,34 +247,12 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
     )
-    parser.add_argument(
-        "--gradient_diagnostics",
-        action="store_true",
-        help="Opt-in first-four-batch encoder gradient diagnostics for CRP transfer debugging.",
-    )
-    parser.add_argument("--gradient_diagnostics_output", type=str, default="")
-    parser.add_argument("--gradient_diagnostics_batches", type=int, default=4)
-    parser.add_argument(
-        "--gradient_diagnostics_epochs",
-        type=str,
-        default="1,11,20,25,500",
-        help="Comma-separated SSL epochs at which the first diagnostic batches are recorded.",
-    )
-
     args = parser.parse_args()
     try:
         args.linear_eval_split = resolve_evaluation_split(args.linear_eval_split, args.final_test)
         args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
     except ValueError as exc:
         parser.error(str(exc))
-    try:
-        args.gradient_diagnostics_epochs = tuple(
-            sorted({int(value.strip()) for value in args.gradient_diagnostics_epochs.split(",") if value.strip()})
-        )
-    except ValueError as exc:
-        parser.error(f"--gradient_diagnostics_epochs must be comma-separated integers: {exc}")
-    if any(epoch <= 0 for epoch in args.gradient_diagnostics_epochs):
-        parser.error("--gradient_diagnostics_epochs values must be positive.")
     if args.epochs <= 0:
         parser.error("--epochs must be positive.")
     if args.linear_probe_epochs <= 0:
@@ -316,24 +269,6 @@ def parse_args() -> argparse.Namespace:
     except ValueError as exc:
         parser.error(str(exc))
     args.use_splice = args.splice_mode != "none"
-    if args.splice_mode in CONCEPT_TRANSFER_MODES:
-        if not args.concept_transfer_targets:
-            parser.error("--concept_transfer_targets is required for frozen_concept_distill.")
-        target_path = Path(args.concept_transfer_targets)
-        if not target_path.is_file():
-            parser.error(f"Concept-transfer target artifact does not exist: {target_path}")
-        try:
-            target_artifact = load_target_artifact(target_path)
-        except (OSError, ValueError, RuntimeError) as exc:
-            parser.error(f"Invalid concept-transfer target artifact: {exc}")
-        if int(target_artifact["target_dim"]) != 512:
-            parser.error("frozen_concept_distill requires 512-dimensional CLIP targets.")
-        args.concept_transfer_target_artifact = target_artifact["artifact"]
-        args.concept_transfer_cache_fingerprint = target_artifact.get("cache_fingerprint", "")
-        if args.concept_transfer_alpha_max < 0:
-            parser.error("--concept_transfer_alpha_max must be non-negative.")
-        if args.concept_transfer_start_epoch < 0 or args.concept_transfer_warmup_epochs < 0:
-            parser.error("Concept-transfer schedule values must be non-negative.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
@@ -365,8 +300,6 @@ def parse_args() -> argparse.Namespace:
         args.model.endswith("_large") or args.model == "resnet50_pretrained"
     ):
         parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
-    if args.amp and args.optimizer == "SAM":
-        parser.error("--amp is currently supported with SGD and AdamW, but not SAM.")
     if args.cudnn_benchmark and not args.cudnn_enabled:
         parser.error("--cudnn_benchmark true requires --cudnn_enabled true.")
     if args.cudnn_benchmark:
@@ -409,7 +342,7 @@ def parse_args() -> argparse.Namespace:
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
     args.storage_name = format_storage_name(args)
     args.save_folder = str(
-        Path(args.checkpoint_dir or f"./save/{args.method}/{args.dataset}_models") / args.storage_name
+        Path(args.checkpoint_dir or f"./save/SimCLR/{args.dataset}_models") / args.storage_name
     )
     os.makedirs(args.save_folder, exist_ok=True)
     write_run_config(args)
@@ -444,8 +377,6 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
     suffix = f"_e{args.epochs}"
     if args.splice_mode == "crp_relational":
         return f"{prefix}_CRP_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
-    if args.splice_mode == "frozen_concept_distill":
-        return f"{prefix}_ConceptTransfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}{suffix}"
     return f"{prefix}_SimCLR{suffix}"
 
 
@@ -453,8 +384,6 @@ def format_storage_name(args: argparse.Namespace) -> str:
     """Return a short, deterministic checkpoint directory name safe for Windows paths."""
     if args.splice_mode == "crp_relational":
         experiment = "crp-v2-relational"
-    elif args.splice_mode == "frozen_concept_distill":
-        experiment = f"concept-transfer-{args.concept_transfer_target_kind}"
     else:
         experiment = "base"
 
@@ -492,18 +421,13 @@ def format_storage_name(args: argparse.Namespace) -> str:
 
 
 def format_run_name(args: argparse.Namespace) -> str:
-    optimizer_name = args.optimizer
-    if optimizer_name.lower() == "sam":
-        optimizer_name = f"SAM{args.rho:g}-{args.sam_base_optimizer}"
     if args.splice_mode == "crp_relational":
         splice_name = (f"crp_relational_w{args.splice_weight:g}_t{args.crp_temperature:g}_"
                        f"start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}")
-    elif args.splice_mode == "frozen_concept_distill":
-        splice_name = f"concept_transfer_{args.concept_transfer_target_kind}_a{args.concept_transfer_alpha_max:g}"
     else:
         splice_name = "nosplice"
     run_name = (
-        f"{args.method}_{args.dataset}_{optimizer_name}_{args.model}_{args.head}_{splice_name}_"
+        f"SimCLR_{args.dataset}_{args.optimizer}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"
         f"amp{int(args.amp)}_cl{int(args.channels_last)}_cudnn{int(args.cudnn_enabled)}_"
         f"bench{int(args.cudnn_benchmark)}"
@@ -595,8 +519,6 @@ def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    if args.splice_mode in CONCEPT_TRANSFER_MODES:
-        loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
@@ -729,17 +651,7 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "eval_split": args.linear_eval_split,
         "model": args.model,
         "ckpt": ckpt_path,
-        "method": args.method,
         "head": args.head,
-        "kappa": 1.0,
-        "trial": args.trial,
-        "augmented_features": False,
-        "plot_path": "",
-        "energy_threshold": args.energy_threshold,
-        "rank_threshold": args.rank_threshold,
-        "spur_str": 0.0,
-        "num_zero_high": 0,
-        "num_zero_low": 0,
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "epochs": args.linear_probe_epochs,
@@ -769,12 +681,10 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
     configure_training_backend(args)
-    clip_distillation_dim = 512 if args.splice_mode in CONCEPT_TRANSFER_MODES else None
     model = SimCLRModel(
         name=args.model,
         head=args.head,
         feat_dim=args.feat_dim,
-        clip_distillation_dim=clip_distillation_dim,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
@@ -798,17 +708,6 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
             )
-    elif args.splice_mode in CONCEPT_TRANSFER_MODES:
-        targets = getattr(train_loader.dataset, "targets", None)
-        if targets is None:
-            raise ValueError("Frozen concept transfer loader did not expose its target bank.")
-        splice_regularizer = ConceptDistillationRegularizer(
-            targets,
-            target_kind=args.concept_transfer_target_kind,
-            weight=args.concept_transfer_alpha_max,
-            start_epoch=args.concept_transfer_start_epoch,
-            warmup_epochs=args.concept_transfer_warmup_epochs,
-        )
     else:
         splice_regularizer = None
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
@@ -1019,7 +918,6 @@ def main() -> None:
         )
         last_probe_epoch = 0
         probe_file = os.path.join(args.save_folder, "probe_tmp.pth")
-        gradient_diagnostics_records: list[dict] = []
         prune_epoch_checkpoints(args)
 
         for epoch in range(start_epoch, args.epochs + 1):
@@ -1028,7 +926,6 @@ def main() -> None:
             train_metrics = train_one_epoch(
                 train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
             )
-            gradient_diagnostics_records.extend(train_metrics.get("gradient_diagnostics", []))
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
@@ -1103,19 +1000,6 @@ def main() -> None:
                 scaler=scaler,
                 loader_generator=train_loader.generator,
             )
-
-        if args.gradient_diagnostics_output:
-            diagnostic_path = Path(args.gradient_diagnostics_output)
-            diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
-            diagnostic_payload = {
-                "artifact": "crp_transfer_gradient_diagnostics_v1",
-                "seed": args.seed,
-                "epochs": args.epochs,
-                "gradient_diagnostics": gradient_diagnostics_records,
-            }
-            temporary = diagnostic_path.with_suffix(diagnostic_path.suffix + ".tmp")
-            temporary.write_text(json.dumps(diagnostic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            temporary.replace(diagnostic_path)
 
         if wandb_run is not None:
             wandb_run.finish()
