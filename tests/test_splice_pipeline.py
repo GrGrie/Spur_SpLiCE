@@ -11,6 +11,7 @@ from unittest.mock import patch
 import numpy as np
 import scipy.sparse as sparse
 import torch
+from PIL import Image
 
 from experiments.spurious_eval.datasets.celeba import CelebADataset
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
@@ -49,12 +50,36 @@ from scripts.tools.cache_splice_dataset import resolve_cache_path
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
 from scripts.tools.build_crp_teacher_graphs import main as build_crp_teacher_graphs_main
 from scripts.tools.generate_crp_concept_groups import (
+    _dataset_image_resolver,
     main as generate_crp_concept_groups_main,
     parse_args as parse_crp_concept_groups_args,
 )
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_concept_group_report_thumbnail_resolver_embeds_and_caches_images(self):
+        class TinyDataset:
+            calls = 0
+
+            def __init__(self, data_folder):
+                self.data_folder = data_folder
+
+            def get_input(self, index):
+                self.calls += 1
+                return Image.new("RGB", (200, 120), (40 + index, 90, 120))
+
+        cache = {"provenance": {"dataset": "tiny"}}
+        with patch(
+            "scripts.tools.generate_crp_concept_groups.get_dataset_spec",
+            return_value={"dataset": TinyDataset},
+        ):
+            resolver = _dataset_image_resolver(cache, Path("dataset"))
+        self.assertIsNotNone(resolver)
+        first = resolver("tiny:3")
+        second = resolver("tiny:3")
+        self.assertTrue(first.startswith("data:image/jpeg;base64,"))
+        self.assertEqual(first, second)
+
     def test_crp_group_sweep_accepts_bracketed_threshold_lists(self):
         args = parse_crp_concept_groups_args(
             [
@@ -191,16 +216,82 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(diagnostics["groups_of_size_4"], 0)
         self.assertEqual(diagnostics["groups_of_size_5_plus"], 0)
         self.assertEqual(diagnostics["maximum_group_size"], 2)
+        report_diagnostics = artifact["report_diagnostics"]
+        self.assertEqual(
+            report_diagnostics["filtering_funnel"],
+            {
+                "raw_vocabulary_count": 2,
+                "dataset_active_count": 2,
+                "frequency_filtered_count": 2,
+                "final_group_count": 1,
+                "below_minimum_count": 0,
+                "above_maximum_count": 0,
+                "inactive_count": 0,
+            },
+        )
+        composite = report_diagnostics["composite_groups"][0]
+        self.assertEqual(composite["verdict"], "suspicious")
+        self.assertEqual(len(composite["relations"]), 1)
+        self.assertFalse(composite["relations"][0]["text_threshold_passed"])
+        self.assertFalse(composite["relations"][0]["coactivation_threshold_passed"])
+        self.assertEqual(len(composite["representative_samples"]), 5)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             json_path = save_concept_groups_json(artifact, directory / "concept_groups.json")
-            html_path = render_concept_groups_report(artifact, directory / "concept_groups.html")
+            html_path = render_concept_groups_report(
+                artifact,
+                directory / "concept_groups.html",
+                image_resolver=lambda sample_id: "data:image/jpeg;base64,dGVzdA==",
+            )
             self.assertEqual(load_concept_groups_json(json_path), artifact)
             html = html_path.read_text(encoding="utf-8")
             self.assertIn("All composite groups", html)
             self.assertIn("concepts", html)
+            self.assertIn("Filtering funnel", html)
+            self.assertIn("Singleton vs composite ratio", html)
+            self.assertIn("Why grouped", html)
+            self.assertIn("Text threshold", html)
+            self.assertIn("Coact. threshold", html)
+            self.assertIn("badge-suspicious", html)
+            self.assertIn("data:image/jpeg;base64,dGVzdA==", html)
             self.assertNotIn("intervention gain", html.lower())
+
+    def test_concept_group_report_funnel_exposes_frequency_removals(self):
+        cache = self._tiny_splice_dataset_cache()
+        cache["splice_codes"] = torch.tensor(
+            [
+                [0.0, 1.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
+        cache["dictionary"] = torch.eye(4)
+        cache["vocabulary"] = ["inactive", "rare", "kept", "ubiquitous"]
+        artifact = build_concept_groups(
+            cache,
+            CrpAuditConfig(min_concept_frequency=0.25, max_concept_frequency=0.75),
+        )
+        report = artifact["report_diagnostics"]
+        self.assertEqual(
+            report["filtering_funnel"],
+            {
+                "raw_vocabulary_count": 4,
+                "dataset_active_count": 3,
+                "frequency_filtered_count": 1,
+                "final_group_count": 1,
+                "below_minimum_count": 2,
+                "above_maximum_count": 1,
+                "inactive_count": 1,
+            },
+        )
+        self.assertEqual([item["concept"] for item in report["active_below_minimum"]], ["rare"])
+        self.assertEqual([item["concept"] for item in report["above_maximum"]], ["ubiquitous"])
 
     def test_group_sweep_and_directory_graph_entry_points_colocate_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -85,7 +85,8 @@ bash scripts/cache_splice_dataset.sh /scratch/path/features/Spur_SpLiCE
 
 # Default 5 x 6 grouping grid. --output-root is optional.
 bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
-  --output-root outputs/shared/waterbirds/graphs/concept_groups
+  --output-root outputs/shared/waterbirds/graphs/concept_groups \
+  --data-folder /path/to/datasets
 
 # Reproduce the canonical grouping parameters only.
 bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
@@ -107,6 +108,8 @@ Each grouping configuration is stored as
 that directory as `teacher_graphs/<audit-config>/teacher_graph.{json,html}`.
 Grouping artifacts are the sole source of grouping thresholds for graph
 construction; teacher-audit options cannot override them.
+The grouping HTML embeds compact representative thumbnails when `--data-folder`
+is supplied (or `DATA_FOLDER` is set); grouping itself remains cache-only.
 
 Git-facing artifact paths default to `outputs/`. Set `SPUR_SPLICE_OUTPUT_ROOT`
 or pass `experiments.runner --output-root PATH` when inspecting a packaged tree

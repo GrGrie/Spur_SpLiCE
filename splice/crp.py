@@ -353,6 +353,134 @@ def _concept_group_diagnostics(groups: Sequence[dict], active_count: int) -> dic
     }
 
 
+def _concept_group_report_diagnostics(
+    cache: dict,
+    groups: Sequence[dict],
+    config: CrpAuditConfig,
+    representative_count: int = 5,
+) -> dict:
+    """Collect grouping evidence for the human-facing report without changing grouping."""
+
+    codes = cache["splice_codes"]
+    occurrences = (codes > 0).float()
+    frequencies = occurrences.mean(dim=0)
+    text_directions = F.normalize(cache["dictionary"], dim=1)
+    activation_directions = F.normalize(codes.T, dim=1)
+
+    below_minimum = frequencies < config.min_concept_frequency
+    above_maximum = frequencies > config.max_concept_frequency
+    active_below_minimum = torch.where((frequencies > 0) & below_minimum)[0].tolist()
+    above_maximum_indices = torch.where(above_maximum)[0].tolist()
+
+    def filtered_concepts(indices: Sequence[int]) -> list[dict]:
+        return [
+            {
+                "concept": cache["vocabulary"][index],
+                "concept_index": int(index),
+                "frequency": float(frequencies[index]),
+            }
+            for index in sorted(
+                (int(value) for value in indices),
+                key=lambda index: (-float(frequencies[index]), index),
+            )
+        ]
+
+    composite_groups = []
+    for group in groups:
+        if int(group["size"]) <= 1:
+            continue
+        indices = [int(value) for value in group["concept_indices"]]
+        group_activation = codes[:, indices].sum(dim=1)
+        representative_positions = sorted(
+            range(len(cache["sample_ids"])),
+            key=lambda position: (-float(group_activation[position]), position),
+        )[:representative_count]
+
+        relations = []
+        for left_offset, left_index in enumerate(indices):
+            for right_index in indices[left_offset + 1:]:
+                text_similarity = float(text_directions[left_index] @ text_directions[right_index])
+                coactivation = float(
+                    activation_directions[left_index] @ activation_directions[right_index]
+                )
+                text_passed = text_similarity >= config.text_similarity_threshold
+                coactivation_passed = coactivation >= config.coactivation_threshold
+                lexical_passed = _lexical_key(cache["vocabulary"][left_index]) == _lexical_key(
+                    cache["vocabulary"][right_index]
+                )
+                if not lexical_passed and not (text_passed and coactivation_passed):
+                    continue
+                relations.append(
+                    {
+                        "concept_a": cache["vocabulary"][left_index],
+                        "concept_b": cache["vocabulary"][right_index],
+                        "text_similarity": text_similarity,
+                        "coactivation": coactivation,
+                        "text_threshold_passed": text_passed,
+                        "coactivation_threshold_passed": coactivation_passed,
+                        "lexical_family_passed": lexical_passed,
+                    }
+                )
+
+        failed_text = sum(not relation["text_threshold_passed"] for relation in relations)
+        failed_coactivation = sum(
+            not relation["coactivation_threshold_passed"] for relation in relations
+        )
+        failed_both = sum(
+            not relation["text_threshold_passed"]
+            and not relation["coactivation_threshold_passed"]
+            for relation in relations
+        )
+        if failed_both:
+            verdict = "suspicious"
+            reason = "lexical grouping relation has weak semantic similarity and low coactivation"
+        elif failed_text or failed_coactivation:
+            verdict = "borderline"
+            weak = []
+            if failed_text:
+                weak.append("weak semantic similarity")
+            if failed_coactivation:
+                weak.append("low coactivation")
+            reason = "one or more lexical grouping relations have " + " and ".join(weak)
+        else:
+            verdict = "good"
+            reason = ""
+
+        composite_groups.append(
+            {
+                "group_id": int(group["group_id"]),
+                "verdict": verdict,
+                "verdict_reason": reason,
+                "relations": relations,
+                "representative_samples": [
+                    {
+                        "sample_id": str(cache["sample_ids"][position]),
+                        "activation": float(group_activation[position]),
+                    }
+                    for position in representative_positions
+                ],
+            }
+        )
+
+    return {
+        "filtering_funnel": {
+            "raw_vocabulary_count": len(cache["vocabulary"]),
+            "dataset_active_count": int((frequencies > 0).sum().item()),
+            "frequency_filtered_count": int(
+                ((frequencies >= config.min_concept_frequency)
+                 & (frequencies <= config.max_concept_frequency)).sum().item()
+            ),
+            "final_group_count": len(groups),
+            "below_minimum_count": int(below_minimum.sum().item()),
+            "above_maximum_count": int(above_maximum.sum().item()),
+            "inactive_count": int((frequencies == 0).sum().item()),
+        },
+        "active_below_minimum": filtered_concepts(active_below_minimum),
+        "above_maximum": filtered_concepts(above_maximum_indices),
+        "composite_groups": composite_groups,
+    }
+
+
 def build_concept_groups(splice_dataset_cache: dict, config: CrpAuditConfig) -> dict:
     """Generate reusable concept groups from a frozen SpLiCE dataset cache."""
 
@@ -372,6 +500,7 @@ def build_concept_groups(splice_dataset_cache: dict, config: CrpAuditConfig) -> 
         for group_id, indices in enumerate(concept_indices)
     ]
     diagnostics = _concept_group_diagnostics(groups, len(active_indices))
+    report_diagnostics = _concept_group_report_diagnostics(cache, groups, config)
     return {
         "artifact": "splice_crp_concept_groups",
         "concept_groups_version": CONCEPT_GROUPS_VERSION,
@@ -385,6 +514,7 @@ def build_concept_groups(splice_dataset_cache: dict, config: CrpAuditConfig) -> 
         "groups": groups,
         "group_sizes": [group["size"] for group in groups],
         "diagnostics": diagnostics,
+        "report_diagnostics": report_diagnostics,
     }
 
 
