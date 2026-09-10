@@ -55,9 +55,14 @@ and reproducible caches, and retains ambiguous tensors.
 
 Recovered pre-unification executions follow the same attempt layout. Their
 `run.json` files embed periodic probe metrics so another machine can inspect
-the training history without the scratch-only tensors. See
-`docs/history/LEGACY_RECOVERY-2026-09-09.md` for the recovery boundary and the
-optional full archive-manifest command.
+the training history without the scratch-only tensors. The recovery contains
+73 completed runs, 1,400 periodic probe events, 12 study aggregates, and four
+standalone downstream-evaluator results retained under `legacy_analyses/`.
+The original tensor payload and tarball remain cluster-only under
+`/scratch/xar68reb/CoSpRo/legacy_archives/Spur_SpLiCE/`. If a complete archive
+manifest is ever required, rebuild it with
+`python -m scripts.tools.promote_legacy_results <archive-root>
+--rebuild-archive-manifest` on the cluster.
 
 Run the collector manually when needed:
 
