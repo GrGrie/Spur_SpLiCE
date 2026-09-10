@@ -86,6 +86,12 @@ bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups_canonical \
   --text-similarity-threshold 0.82 --coactivation-threshold 0.35
 
+# The cache path is optional when using the configured default cache. Bracketed
+# threshold lists are also accepted.
+bash scripts/generate_crp_concept_groups.sh \
+  --text-similarity-thresholds [0.70, 0.75, 0.82, 0.85, 0.90] \
+  --coactivation-thresholds [0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
+
 # The second argument may be one JSON file or the whole sweep directory.
 bash scripts/build_crp_teacher_graphs.sh /scratch/path/crp_features.pt \
   outputs/shared/waterbirds/graphs/concept_groups

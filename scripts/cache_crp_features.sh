@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=crp-cache
+#SBATCH --job-name=Cache-Dataset
 #SBATCH --partition=informatik-mind
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00
-#SBATCH --output=outputs/SLURM/crp-cache-%j.out
-#SBATCH --error=outputs/SLURM/crp-cache-%j.err
+#SBATCH --output=outputs/SLURM/Cache-Dataset-%j.out
+#SBATCH --error=outputs/SLURM/Cache-Dataset-%j.err
 
 set -euo pipefail
 if [[ $# -gt 1 ]]; then
@@ -14,10 +14,21 @@ if [[ $# -gt 1 ]]; then
   exit 2
 fi
 
-PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Slurm executes a submitted script from a temporary spool copy, so
+# BASH_SOURCE[0] is not the path inside the checkout.  SLURM_SUBMIT_DIR is
+# the directory from which sbatch was invoked and remains the repository
+# root for the documented invocation.  Keep the BASH_SOURCE fallback for
+# direct local execution outside Slurm.
+if [[ -z "${PROJECT_DIR:-}" ]]; then
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    PROJECT_DIR="${SLURM_SUBMIT_DIR}"
+  else
+    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  fi
+fi
 cd "${PROJECT_DIR}"
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-  source scripts/load_splice_cluster_env.sh
+  source "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
 else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi

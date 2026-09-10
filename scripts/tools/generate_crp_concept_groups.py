@@ -26,6 +26,11 @@ def _threshold_name(value: float) -> str:
     return f"{value:.4g}".replace("-", "neg").replace(".", "p")
 
 
+def _threshold_value(raw: str) -> float:
+    """Accept both plain floats and shell-friendly bracketed list tokens."""
+    return float(raw.strip().strip("[],"))
+
+
 def _default_output_root(cache: dict) -> Path:
     repository = Path(__file__).resolve().parents[2]
     output_root = Path(os.environ.get("SPUR_SPLICE_OUTPUT_ROOT", repository / "outputs"))
@@ -46,7 +51,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--text-similarity-thresholds",
         dest="text_thresholds",
         nargs="+",
-        type=float,
+        type=_threshold_value,
         help="One or more text thresholds; defaults to the predefined sweep grid.",
     )
     parser.add_argument(
@@ -54,7 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--coactivation-thresholds",
         dest="coactivation_thresholds",
         nargs="+",
-        type=float,
+        type=_threshold_value,
         help="One or more coactivation thresholds; defaults to the predefined sweep grid.",
     )
     parser.add_argument(

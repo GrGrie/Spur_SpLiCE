@@ -47,10 +47,24 @@ from spur_splice import resolve_epoch_schedule
 from scripts.tools.cache_crp_features import IndexedImages
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
 from scripts.tools.build_crp_teacher_graphs import main as build_crp_teacher_graphs_main
-from scripts.tools.generate_crp_concept_groups import main as generate_crp_concept_groups_main
+from scripts.tools.generate_crp_concept_groups import (
+    main as generate_crp_concept_groups_main,
+    parse_args as parse_crp_concept_groups_args,
+)
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_crp_group_sweep_accepts_bracketed_threshold_lists(self):
+        args = parse_crp_concept_groups_args(
+            [
+                "--cache", "cache.pt",
+                "--text-similarity-thresholds", "[0.70,", "0.75,", "0.82,", "0.85,", "0.90]",
+                "--coactivation-thresholds", "[0.15,", "0.20,", "0.25,", "0.30,", "0.35,", "0.40]",
+            ]
+        )
+        self.assertEqual(args.text_thresholds, [0.70, 0.75, 0.82, 0.85, 0.90])
+        self.assertEqual(args.coactivation_thresholds, [0.15, 0.20, 0.25, 0.30, 0.35, 0.40])
+
     def test_openimages_v7_is_the_default_vocabulary(self):
         self.assertEqual(DEFAULT_VOCABULARY, "openimages_v7")
         self.assertEqual(DEFAULT_VOCABULARY_SIZE, -1)
