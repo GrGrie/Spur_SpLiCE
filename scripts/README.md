@@ -73,6 +73,10 @@ Use `python -m <module> --help` for their interfaces.
 The shell entry points use the same interfaces directly or through `sbatch`:
 
 ```bash
+# Build the canonical frozen Waterbirds cache. The output path is optional;
+# under Slurm it defaults to the configured scratch feature directory.
+bash scripts/cache_crp_features.sh /scratch/path/crp_features.pt
+
 # Default 5 x 6 grouping grid. --output-root is optional.
 bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups
