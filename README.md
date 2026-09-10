@@ -58,11 +58,12 @@ the recorded command to match. Use `--output-root PATH` or set
 `SPUR_SPLICE_OUTPUT_ROOT` to inspect a packaged artifact layout. This is
 independent of `SPUR_SPLICE_SCRATCH_ROOT`, which stores large binaries.
 
-Build shared inputs directly:
+Build the three teacher-input stages directly:
 
 ```bash
-python -m scripts.tools.cache_crp_features --help
-python -m splice.crp --help
+python -m scripts.tools.cache_splice_dataset --help
+python -m scripts.tools.generate_crp_concept_groups --help
+python -m scripts.tools.build_crp_teacher_graphs --help
 python -m scripts.tools.build_crp_baseline_graphs --help
 python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
 ```

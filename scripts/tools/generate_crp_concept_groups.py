@@ -40,7 +40,12 @@ def _default_output_root(cache: dict) -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache", required=True, type=Path, help="Frozen CRP feature cache (.pt).")
+    parser.add_argument(
+        "--splice-dataset-cache",
+        required=True,
+        type=Path,
+        help="Frozen SpLiCE dataset cache (.pt).",
+    )
     parser.add_argument(
         "--output-root",
         type=Path,
@@ -86,7 +91,7 @@ def main(argv: list[str] | None = None) -> None:
         else list(DEFAULT_COACTIVATION_THRESHOLDS)
     )
 
-    cache = torch.load(args.cache, map_location="cpu", weights_only=True)
+    cache = torch.load(args.splice_dataset_cache, map_location="cpu", weights_only=True)
     output_root = args.output_root or _default_output_root(cache)
     produced = 0
     for text_threshold in dict.fromkeys(text_thresholds):

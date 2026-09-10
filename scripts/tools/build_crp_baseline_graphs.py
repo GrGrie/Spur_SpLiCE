@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 
-from splice.crp import validate_feature_cache
+from splice.crp import validate_splice_dataset_cache
 from splice.graph_io import load_graph_json, save_graph_json
 
 
@@ -55,9 +55,9 @@ def build_matched_raw_clip_graph(cache: dict, reference: dict) -> dict:
     return validate_teacher_graph(graph, cache["sample_ids"])
 
 
-def build_graph(cache_path: Path, reference_path: Path, output_path: Path) -> Path:
-    cache = torch.load(cache_path, map_location="cpu", weights_only=True)
-    cache = validate_feature_cache(cache)
+def build_graph(splice_dataset_cache_path: Path, reference_path: Path, output_path: Path) -> Path:
+    cache = torch.load(splice_dataset_cache_path, map_location="cpu", weights_only=True)
+    cache = validate_splice_dataset_cache(cache)
     reference = load_graph_json(reference_path)
     graph = build_matched_raw_clip_graph(cache, reference)
     save_graph_json(graph, output_path)
@@ -67,11 +67,11 @@ def build_graph(cache_path: Path, reference_path: Path, output_path: Path) -> Pa
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache", required=True, type=Path)
+    parser.add_argument("--splice-dataset-cache", required=True, type=Path)
     parser.add_argument("--reference", required=True, type=Path, help="Canonical CRP teacher graph to match.")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    build_graph(args.cache, args.reference, args.output)
+    build_graph(args.splice_dataset_cache, args.reference, args.output)
 
 
 if __name__ == "__main__":

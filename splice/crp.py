@@ -1,6 +1,6 @@
 """Label-free concept grouping and frozen audit for SpLiCE-CRP v3 and v4.
 
-Concept grouping consumes a frozen feature cache and produces a reusable JSON
+Concept grouping consumes a frozen SpLiCE dataset cache and produces a reusable JSON
 artifact. The audit resumes from that artifact and the same cache. Neither
 stage loads target, spurious, or group annotations; those belong in a separate
 post-hoc diagnostic step.
@@ -24,7 +24,7 @@ import torch.nn.functional as F
 from splice.graph_io import save_graph_json
 
 
-CACHE_VERSION = 1
+SPLICE_DATASET_CACHE_VERSION = 1
 CONCEPT_GROUPS_VERSION = 1
 # GRAPH_VERSION remains the legacy SpLiCE-CRP v2 format. CRP v3 has its own
 # version because its fixed-density and validation fields are method changes.
@@ -136,11 +136,11 @@ def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
     return F.normalize(values, dim=1)
 
 
-def validate_feature_cache(cache: dict) -> dict:
-    """Validate and normalize the frozen cache without accepting hidden labels."""
+def validate_splice_dataset_cache(cache: dict) -> dict:
+    """Validate and normalize the frozen SpLiCE dataset cache."""
 
     if not isinstance(cache, dict):
-        raise ValueError("CRP cache must be a dictionary.")
+        raise ValueError("SpLiCE dataset cache must be a dictionary.")
     def collect_keys(value) -> set[str]:
         if not isinstance(value, dict):
             return set()
@@ -151,15 +151,20 @@ def validate_feature_cache(cache: dict) -> dict:
 
     forbidden = FORBIDDEN_CACHE_KEYS.intersection(collect_keys(cache))
     if forbidden:
-        raise ValueError(f"CRP discovery cache contains forbidden annotation keys: {sorted(forbidden)}")
+        raise ValueError(
+            f"SpLiCE dataset cache contains forbidden annotation keys: {sorted(forbidden)}"
+        )
     unexpected = set(cache).difference(REQUIRED_CACHE_KEYS, {"provenance", "centered_clip"})
     if unexpected:
-        raise ValueError(f"CRP cache contains unsupported keys: {sorted(unexpected)}")
+        raise ValueError(f"SpLiCE dataset cache contains unsupported keys: {sorted(unexpected)}")
     missing = REQUIRED_CACHE_KEYS.difference(cache)
     if missing:
-        raise ValueError(f"CRP cache is missing required keys: {sorted(missing)}")
-    if cache["cache_version"] != CACHE_VERSION:
-        raise ValueError(f"Unsupported CRP cache version {cache['cache_version']!r}; expected {CACHE_VERSION}.")
+        raise ValueError(f"SpLiCE dataset cache is missing required keys: {sorted(missing)}")
+    if cache["cache_version"] != SPLICE_DATASET_CACHE_VERSION:
+        raise ValueError(
+            f"Unsupported SpLiCE dataset cache version {cache['cache_version']!r}; "
+            f"expected {SPLICE_DATASET_CACHE_VERSION}."
+        )
     if "provenance" in cache and not isinstance(cache["provenance"], dict):
         raise ValueError("Optional provenance must be a dictionary.")
 
@@ -348,11 +353,11 @@ def _concept_group_diagnostics(groups: Sequence[dict], active_count: int) -> dic
     }
 
 
-def build_concept_groups(cache: dict, config: CrpAuditConfig) -> dict:
-    """Generate reusable concept groups from a frozen CRP feature cache."""
+def build_concept_groups(splice_dataset_cache: dict, config: CrpAuditConfig) -> dict:
+    """Generate reusable concept groups from a frozen SpLiCE dataset cache."""
 
     _validate_config(config)
-    cache = validate_feature_cache(cache)
+    cache = validate_splice_dataset_cache(splice_dataset_cache)
     active_indices = _active_concept_indices(cache["splice_codes"], config)
     concept_indices = _group_concepts(
         cache["splice_codes"], cache["dictionary"], cache["vocabulary"], config
@@ -370,7 +375,7 @@ def build_concept_groups(cache: dict, config: CrpAuditConfig) -> dict:
     return {
         "artifact": "splice_crp_concept_groups",
         "concept_groups_version": CONCEPT_GROUPS_VERSION,
-        "cache_version": int(cache.get("cache_version", CACHE_VERSION)),
+        "cache_version": int(cache.get("cache_version", SPLICE_DATASET_CACHE_VERSION)),
         "sample_ids": cache["sample_ids"],
         "provenance": dict(cache.get("provenance", {})),
         "config": _grouping_config(config),
@@ -437,13 +442,13 @@ def validate_concept_groups(artifact: dict, cache: dict | None = None) -> dict:
         raise ValueError("Concept-group diagnostics do not match the serialized groups.")
 
     if cache is not None:
-        cache = validate_feature_cache(cache)
+        cache = validate_splice_dataset_cache(cache)
         if [str(value) for value in artifact["sample_ids"]] != [str(value) for value in cache["sample_ids"]]:
-            raise ValueError("Concept groups and frozen cache sample IDs do not exactly match.")
+            raise ValueError("Concept groups and SpLiCE dataset cache sample IDs do not exactly match.")
         if vocabulary != cache["vocabulary"]:
-            raise ValueError("Concept groups and frozen cache vocabularies do not exactly match.")
+            raise ValueError("Concept groups and SpLiCE dataset cache vocabularies do not exactly match.")
         if int(artifact.get("cache_version", -1)) != int(cache["cache_version"]):
-            raise ValueError("Concept groups and frozen cache versions do not match.")
+            raise ValueError("Concept groups and SpLiCE dataset cache versions do not match.")
     return artifact
 
 
@@ -803,7 +808,7 @@ def _build_teacher_graph(
 
 
 def build_teacher_graph(
-    cache: dict,
+    splice_dataset_cache: dict,
     concept_groups: dict,
     config: CrpAuditConfig,
     concept_groups_source: dict | None = None,
@@ -815,16 +820,16 @@ def build_teacher_graph(
     """
 
     _validate_config(config)
-    cache = validate_feature_cache(cache)
+    cache = validate_splice_dataset_cache(splice_dataset_cache)
     concept_groups = validate_concept_groups(concept_groups)
     if [str(value) for value in concept_groups["sample_ids"]] != [
         str(value) for value in cache["sample_ids"]
     ]:
-        raise ValueError("Concept groups and frozen cache sample IDs do not exactly match.")
+        raise ValueError("Concept groups and SpLiCE dataset cache sample IDs do not exactly match.")
     if [str(value) for value in concept_groups["vocabulary"]] != cache["vocabulary"]:
-        raise ValueError("Concept groups and frozen cache vocabularies do not exactly match.")
+        raise ValueError("Concept groups and SpLiCE dataset cache vocabularies do not exactly match.")
     if int(concept_groups.get("cache_version", -1)) != int(cache["cache_version"]):
-        raise ValueError("Concept groups and frozen cache versions do not match.")
+        raise ValueError("Concept groups and SpLiCE dataset cache versions do not match.")
 
     config_values = asdict(config)
     config_values.update(concept_groups["config"])
@@ -956,7 +961,7 @@ def build_teacher_graph(
     return {
         "artifact": "splice_crp_v3_teacher_graph",
         "graph_version": CRP_GRAPH_VERSION,
-        "cache_version": int(cache.get("cache_version", CACHE_VERSION)),
+        "cache_version": int(cache.get("cache_version", SPLICE_DATASET_CACHE_VERSION)),
         "sample_ids": cache["sample_ids"],
         "config": config_payload,
         "grouping_config": dict(concept_groups["config"]),
@@ -980,11 +985,11 @@ def _atomic_torch_save(payload: dict, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def save_feature_cache(cache: dict, path: str | Path) -> None:
-    """Validate and atomically save a CRP cache produced by frozen encoders."""
+def save_splice_dataset_cache(splice_dataset_cache: dict, path: str | Path) -> None:
+    """Validate and atomically save a frozen SpLiCE dataset cache."""
 
-    validate_feature_cache(cache)
-    _atomic_torch_save(cache, Path(path))
+    validate_splice_dataset_cache(splice_dataset_cache)
+    _atomic_torch_save(splice_dataset_cache, Path(path))
 
 
 def _parse_bool(value: str | bool) -> bool:
@@ -1000,7 +1005,9 @@ def _parse_bool(value: str | bool) -> bool:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a SpLiCE-CRP teacher graph from saved groups.")
-    parser.add_argument("--cache", required=True, help="Frozen feature cache (.pt).")
+    parser.add_argument(
+        "--splice-dataset-cache", required=True, help="Frozen SpLiCE dataset cache (.pt)."
+    )
     parser.add_argument("--concept-groups", required=True, help="Reusable concept_groups.json artifact.")
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--html", help="HTML mechanism report (default: output with .html suffix).")
@@ -1027,7 +1034,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
     config = CrpAuditConfig(**config_values)
-    cache_path, groups_path, output_path = Path(args.cache), Path(args.concept_groups), Path(args.output)
+    cache_path = Path(args.splice_dataset_cache)
+    groups_path, output_path = Path(args.concept_groups), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
     concept_groups = load_concept_groups_json(groups_path)
     source = {

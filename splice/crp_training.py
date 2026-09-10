@@ -105,7 +105,7 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
     if expected_sample_ids is not None and sample_ids != [str(value) for value in expected_sample_ids]:
         raise ValueError(
             "CRP graph sample_ids do not exactly match the SSL train split. "
-            "Rebuild the frozen cache and graph for this dataset configuration."
+            "Rebuild the SpLiCE dataset cache and graph for this dataset configuration."
         )
 
     n_samples = len(sample_ids)

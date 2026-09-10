@@ -25,8 +25,8 @@ from splice.crp import (
     orthonormal_basis,
     project_out,
     save_concept_groups_json,
-    save_feature_cache,
-    validate_feature_cache,
+    save_splice_dataset_cache,
+    validate_splice_dataset_cache,
 )
 from splice.crp_reporting import render_concept_groups_report, render_teacher_graph_report
 from splice.crp_training import (
@@ -44,7 +44,8 @@ from splice.splice import (
 )
 import spur_splice
 from spur_splice import resolve_epoch_schedule
-from scripts.tools.cache_crp_features import IndexedImages
+from scripts.tools.cache_splice_dataset import IndexedImages, parse_args as parse_splice_cache_args
+from scripts.tools.cache_splice_dataset import resolve_cache_path
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
 from scripts.tools.build_crp_teacher_graphs import main as build_crp_teacher_graphs_main
 from scripts.tools.generate_crp_concept_groups import (
@@ -57,7 +58,7 @@ class SplicePipelineTests(unittest.TestCase):
     def test_crp_group_sweep_accepts_bracketed_threshold_lists(self):
         args = parse_crp_concept_groups_args(
             [
-                "--cache", "cache.pt",
+                "--splice-dataset-cache", "cache.pt",
                 "--text-similarity-thresholds", "[0.70,", "0.75,", "0.82,", "0.85,", "0.90]",
                 "--coactivation-thresholds", "[0.15,", "0.20,", "0.25,", "0.30,", "0.35,", "0.40]",
             ]
@@ -68,11 +69,34 @@ class SplicePipelineTests(unittest.TestCase):
     def test_openimages_v7_is_the_default_vocabulary(self):
         self.assertEqual(DEFAULT_VOCABULARY, "openimages_v7")
         self.assertEqual(DEFAULT_VOCABULARY_SIZE, -1)
-        from scripts.tools.cache_crp_features import parse_args
-        with patch("sys.argv", ["cache_crp_features.py", "--dataset", "waterbirds", "--data-folder", ".", "--output", "cache.pt"]):
-            args = parse_args()
+        args = parse_splice_cache_args(
+            ["--dataset", "waterbirds", "--data-folder", ".", "--output-root", "features"]
+        )
         self.assertEqual(args.splice_vocab, DEFAULT_VOCABULARY)
         self.assertEqual(args.splice_vocab_size, DEFAULT_VOCABULARY_SIZE)
+        self.assertEqual(
+            resolve_cache_path(args),
+            Path("features/waterbirds/splice_dataset_cache/")
+            / "cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25"
+            / "splice_dataset_cache.pt",
+        )
+
+    def test_splice_dataset_cache_path_changes_with_cache_hyperparameters(self):
+        common = [
+            "--dataset", "waterbirds", "--data-folder", ".", "--output-root", "features"
+        ]
+        baseline = resolve_cache_path(parse_splice_cache_args(common))
+        variations = (
+            ("--splice-model", "clip:ViT-B/32"),
+            ("--splice-pretrained", "alternate"),
+            ("--splice-vocab", "laion"),
+            ("--splice-vocab-size", "1000"),
+            ("--splice-l1-penalty", "0.5"),
+        )
+        for option, value in variations:
+            with self.subTest(option=option):
+                varied = resolve_cache_path(parse_splice_cache_args(common + [option, value]))
+                self.assertNotEqual(varied, baseline)
 
     def test_openimages_class_names_are_cleaned_and_deduplicated(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -105,11 +129,11 @@ class SplicePipelineTests(unittest.TestCase):
         }
 
     @staticmethod
-    def _tiny_crp_cache():
+    def _tiny_splice_dataset_cache():
         generator = torch.Generator().manual_seed(4)
         return {
             "cache_version": 1,
-            "provenance": {"fixture": "tiny-crp-cache"},
+            "provenance": {"fixture": "tiny-splice-dataset-cache"},
             "sample_ids": [f"image-{index}" for index in range(8)],
             "clip_embeddings": torch.nn.functional.normalize(torch.randn(8, 4, generator=generator), dim=1),
             "image_mean": torch.zeros(4),
@@ -129,28 +153,28 @@ class SplicePipelineTests(unittest.TestCase):
         projected = project_out(embeddings, basis)
         torch.testing.assert_close(projected @ basis, torch.zeros(2, 1), atol=1e-6, rtol=0)
 
-    def test_crp_cache_rejects_training_annotations(self):
-        cache = self._tiny_crp_cache()
+    def test_splice_dataset_cache_rejects_training_annotations(self):
+        cache = self._tiny_splice_dataset_cache()
         cache["labels"] = torch.zeros(8)
         with self.assertRaisesRegex(ValueError, "forbidden annotation"):
-            validate_feature_cache(cache)
+            validate_splice_dataset_cache(cache)
 
-    def test_crp_cache_does_not_require_manual_hashes(self):
-        cache = self._tiny_crp_cache()
+    def test_splice_dataset_cache_does_not_require_manual_hashes(self):
+        cache = self._tiny_splice_dataset_cache()
         cache.pop("provenance")
-        validated = validate_feature_cache(cache)
+        validated = validate_splice_dataset_cache(cache)
         self.assertEqual(validated["sample_ids"], cache["sample_ids"])
 
-    def test_crp_feature_cache_is_saved_atomically(self):
+    def test_splice_dataset_cache_is_saved_atomically(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "cache.pt"
-            save_feature_cache(self._tiny_crp_cache(), path)
+            save_splice_dataset_cache(self._tiny_splice_dataset_cache(), path)
             loaded = torch.load(path, map_location="cpu", weights_only=True)
             self.assertEqual(loaded["cache_version"], 1)
             self.assertFalse(list(path.parent.glob("*.tmp")))
 
     def test_concept_groups_are_reusable_and_include_the_complete_census(self):
-        cache = self._tiny_crp_cache()
+        cache = self._tiny_splice_dataset_cache()
         cache["vocabulary"] = ["concept", "concepts"]
         config = CrpAuditConfig(min_concept_frequency=0.1, max_concept_frequency=0.9)
         artifact = build_concept_groups(cache, config)
@@ -183,11 +207,11 @@ class SplicePipelineTests(unittest.TestCase):
             root = Path(temporary_directory)
             cache_path = root / "cache.pt"
             sweep_path = root / "groups"
-            save_feature_cache(self._tiny_crp_cache(), cache_path)
+            save_splice_dataset_cache(self._tiny_splice_dataset_cache(), cache_path)
             with contextlib.redirect_stdout(io.StringIO()):
                 generate_crp_concept_groups_main(
                     [
-                        "--cache", str(cache_path),
+                        "--splice-dataset-cache", str(cache_path),
                         "--output-root", str(sweep_path),
                         "--text-similarity-threshold", "0.82", "0.85",
                         "--coactivation-threshold", "0.30", "0.35",
@@ -210,7 +234,7 @@ class SplicePipelineTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 build_crp_teacher_graphs_main(
                     [
-                        "--cache", str(cache_path),
+                        "--splice-dataset-cache", str(cache_path),
                         "--concept-groups", str(sweep_path),
                         "--config", audit_config,
                     ]
@@ -226,7 +250,7 @@ class SplicePipelineTests(unittest.TestCase):
                 self.assertEqual(graph["grouping_config"], source["config"])
                 self.assertTrue(graph["concept_groups_source"]["sha256"])
 
-    def test_crp_cache_builder_reads_images_without_labels(self):
+    def test_splice_dataset_cache_builder_reads_images_without_labels(self):
         class ImagesOnlyDataset:
             def get_subset(self, split, transform=None):
                 self.asserted_split = split
@@ -236,7 +260,7 @@ class SplicePipelineTests(unittest.TestCase):
                 return f"image-{index}"
 
             def __getitem__(self, index):
-                raise AssertionError("The CRP cache builder must not read labels or metadata.")
+                raise AssertionError("The SpLiCE dataset cache builder must not read labels or metadata.")
 
         dataset = ImagesOnlyDataset()
         images = IndexedImages(dataset)
@@ -254,7 +278,7 @@ class SplicePipelineTests(unittest.TestCase):
             min_coverage=0.0,
             seed=7,
         )
-        cache = self._tiny_crp_cache()
+        cache = self._tiny_splice_dataset_cache()
         concept_groups = build_concept_groups(cache, config)
         with patch("splice.crp._group_concepts", side_effect=AssertionError("must not regroup")):
             first = build_teacher_graph(cache, concept_groups, config)
@@ -295,7 +319,7 @@ class SplicePipelineTests(unittest.TestCase):
             max_selected_groups=1,
             seed=7,
         )
-        cache = self._tiny_crp_cache()
+        cache = self._tiny_splice_dataset_cache()
         graph = build_teacher_graph(cache, build_concept_groups(cache, config), config)
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)

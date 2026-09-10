@@ -7,8 +7,9 @@ Storage and synchronization rules are defined in
 
 ```text
 training images
-  -> frozen OpenCLIP + SpLiCE cache
-  -> CRP concept grouping and intervention audit
+  -> frozen SpLiCE dataset cache
+  -> concept groups
+  -> CRP intervention audit and graph construction
   -> validated sparse teacher graph
   -> graph-aware SimCLR training
   -> frozen encoder linear probe
@@ -22,8 +23,9 @@ training images
 | Sparse decomposition | `splice/model.py`, `splice/splice.py`, `splice/admm.py` |
 | Artifact locations and threshold routing | `splice/artifacts.py` |
 | Run lifecycle records | `splice/run_recording.py` |
-| Frozen feature cache | `scripts/tools/cache_crp_features.py` |
-| CRP teacher graph | `splice/crp.py`, `splice/graph_io.py` |
+| Frozen SpLiCE dataset cache | `scripts/tools/cache_splice_dataset.py` |
+| Concept grouping | `splice/crp.py`, `scripts/tools/generate_crp_concept_groups.py` |
+| CRP audit and teacher graph | `splice/crp.py`, `splice/graph_io.py` |
 | Graph sampler and relational KL | `splice/crp_training.py` |
 | SSL training | `spur_splice.py`, `experiments/spurious_eval/training/ssl_loop.py` |
 | Dataset adapters | `experiments/spurious_eval/datasets/` |
@@ -32,10 +34,12 @@ training images
 | Checked paper registry | `scripts/tools/build_paper_results.py`, `paper_results.json` |
 | HTML reports | `splice/reporting.py`, `scripts/tools/render_report.py` |
 
-The main CRP interface is `build_teacher_graph(cache, config)`. Its
-implementation owns grouping, projection geometry, null controls and sparse
-graph assembly. Training consumes only validated graphs through
-`splice.crp_training`.
+The teacher-input flow has three explicit module interfaces: the SpLiCE dataset
+cache serializes frozen train-split representations, concept grouping consumes
+that cache and serializes groups, and `build_teacher_graph(splice_dataset_cache,
+concept_groups, config)` consumes both artifacts for projection geometry, null
+controls and sparse graph assembly. Training consumes only validated graphs
+through `splice.crp_training`.
 
 ## Results
 

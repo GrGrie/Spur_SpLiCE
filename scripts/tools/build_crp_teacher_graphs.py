@@ -48,7 +48,12 @@ def _audit_name(config: CrpAuditConfig) -> str:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache", required=True, type=Path, help="Frozen CRP feature cache (.pt).")
+    parser.add_argument(
+        "--splice-dataset-cache",
+        required=True,
+        type=Path,
+        help="Frozen SpLiCE dataset cache (.pt).",
+    )
     parser.add_argument(
         "--concept-groups",
         required=True,
@@ -75,7 +80,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.seed is not None:
         config_values["seed"] = args.seed
     config = CrpAuditConfig(**config_values)
-    cache = torch.load(args.cache, map_location="cpu", weights_only=True)
+    cache = torch.load(args.splice_dataset_cache, map_location="cpu", weights_only=True)
     artifacts = _artifact_paths(args.concept_groups)
     for artifact_path in artifacts:
         concept_groups = load_concept_groups_json(artifact_path)

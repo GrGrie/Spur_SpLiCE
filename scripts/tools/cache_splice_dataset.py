@@ -1,6 +1,9 @@
+"""Cache frozen CLIP embeddings and SpLiCE decompositions in dataset order."""
+
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import torch
@@ -9,7 +12,7 @@ from torch.utils.data import DataLoader, Dataset
 
 import splice
 from experiments.spurious_eval.datasets.registry import get_dataset_spec
-from splice.crp import CACHE_VERSION, save_feature_cache
+from splice.crp import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
 
 
 class IndexedImages(Dataset):
@@ -31,11 +34,50 @@ def identity_collate(batch):
     return batch
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Cache frozen CLIP/SpLiCE features.")
+def _path_token(value: object) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("_")
+    return token or "none"
+
+
+def _float_token(value: float) -> str:
+    return f"{value:.12g}".replace("-", "neg").replace(".", "p")
+
+
+def cache_config_name(args: argparse.Namespace) -> str:
+    """Return the deterministic directory name for cache-affecting settings."""
+
+    vocabulary_size = "all" if args.splice_vocab_size <= 0 else str(args.splice_vocab_size)
+    return "__".join(
+        (
+            f"cache_v{SPLICE_DATASET_CACHE_VERSION}",
+            f"model_{_path_token(args.splice_model)}",
+            f"pretrained_{_path_token(args.splice_pretrained)}",
+            f"vocab_{_path_token(args.splice_vocab)}_{vocabulary_size}",
+            f"l1_{_float_token(args.splice_l1_penalty)}",
+        )
+    )
+
+
+def resolve_cache_path(args: argparse.Namespace) -> Path:
+    return (
+        args.output_root
+        / args.dataset
+        / "splice_dataset_cache"
+        / cache_config_name(args)
+        / "splice_dataset_cache.pt"
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("waterbirds", "celeba", "spur_cifar10"), required=True)
     parser.add_argument("--data-folder", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--output-root",
+        required=True,
+        type=Path,
+        help="Base feature directory; a cache-configuration directory is created below it.",
+    )
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -44,11 +86,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splice-vocab", default=splice.DEFAULT_VOCABULARY)
     parser.add_argument("--splice-vocab-size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
     parser.add_argument("--splice-l1-penalty", type=float, default=0.25)
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     if args.batch_size <= 0 or args.num_workers < 0:
         raise ValueError("batch-size must be positive and num-workers must be non-negative.")
 
@@ -89,7 +131,7 @@ def main() -> None:
         print(f"[INFO] Cached batch {batch_number}/{len(loader)}", flush=True)
 
     cache = {
-        "cache_version": CACHE_VERSION,
+        "cache_version": SPLICE_DATASET_CACHE_VERSION,
         "sample_ids": sample_ids,
         "clip_embeddings": torch.cat(clip_embeddings),
         "image_mean": splice_model.image_mean.detach().cpu(),
@@ -106,8 +148,9 @@ def main() -> None:
             "splice_l1_penalty": args.splice_l1_penalty,
         },
     }
-    save_feature_cache(cache, Path(args.output))
-    print(f"[INFO] Wrote {len(sample_ids)} aligned frozen samples to {args.output}")
+    output_path = resolve_cache_path(args)
+    save_splice_dataset_cache(cache, output_path)
+    print(f"[INFO] Wrote {len(sample_ids)} aligned frozen samples to {output_path}")
 
 
 if __name__ == "__main__":

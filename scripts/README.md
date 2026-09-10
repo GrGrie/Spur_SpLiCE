@@ -52,7 +52,8 @@ it is never overwritten. Job output is written to `outputs/SLURM/`.
 
 Small Python tools remain for operations that are not training matrices:
 
-- `cache_crp_features.py` — build the frozen CRP cache;
+- `cache_splice_dataset.py` — build the frozen train-split SpLiCE dataset cache
+  in a directory named from all cache-affecting hyperparameters;
 - `generate_crp_concept_groups.py` — generate reusable grouping JSON + HTML
   artifacts from the cache, including a threshold sweep with no audit or SSL;
 - `build_crp_teacher_graphs.py` — audit one saved grouping artifact or every
@@ -73,29 +74,33 @@ Use `python -m <module> --help` for their interfaces.
 The shell entry points use the same interfaces directly or through `sbatch`:
 
 ```bash
-# Build the canonical frozen Waterbirds cache. The output path is optional;
-# under Slurm it defaults to the configured scratch feature directory.
-bash scripts/cache_crp_features.sh /scratch/path/crp_features.pt
+# Build the canonical frozen Waterbirds SpLiCE dataset cache. The output root
+# is optional; under Slurm it defaults to the configured scratch feature root.
+bash scripts/cache_splice_dataset.sh /scratch/path/features/Spur_SpLiCE
+
+# The command above writes the following cache; pass this path to stage 2.
+# /scratch/path/features/Spur_SpLiCE/waterbirds/splice_dataset_cache/
+#   cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/
+#     splice_dataset_cache.pt
 
 # Default 5 x 6 grouping grid. --output-root is optional.
-bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
+bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups
 
 # Reproduce the canonical grouping parameters only.
-bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
+bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups_canonical \
   --text-similarity-threshold 0.82 --coactivation-threshold 0.35
 
-# The cache path is optional when using the configured default cache. Bracketed
-# threshold lists are also accepted.
-bash scripts/generate_crp_concept_groups.sh \
-  --text-similarity-thresholds [0.70, 0.75, 0.82, 0.85, 0.90] \
-  --coactivation-thresholds [0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
-
 # The second argument may be one JSON file or the whole sweep directory.
-bash scripts/build_crp_teacher_graphs.sh /scratch/path/crp_features.pt \
+bash scripts/build_crp_teacher_graphs.sh /scratch/path/splice_dataset_cache.pt \
   outputs/shared/waterbirds/graphs/concept_groups
 ```
+
+Execution-only cache settings such as batch size, worker count, and device are
+not part of its directory name. Cache-affecting settings are: model, pretrained
+weights, vocabulary, vocabulary size, decomposition penalty, and cache schema
+version.
 
 Each grouping configuration is stored as
 `<grouping-config>/concept_groups.{json,html}`. Teacher audits are placed below

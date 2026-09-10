@@ -8,6 +8,10 @@
 #SBATCH --error=outputs/SLURM/%x-%j.err
 
 set -euo pipefail
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 SPLICE_DATASET_CACHE.pt [grouping options]" >&2
+  exit 2
+fi
 # Slurm executes a submitted script from a temporary spool copy, so
 # BASH_SOURCE[0] is not the path inside the checkout.  SLURM_SUBMIT_DIR is
 # the directory from which sbatch was invoked and remains the repository
@@ -28,10 +32,8 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 
-CACHE_PATH="${SPUR_SPLICE_SCRATCH_ROOT:-/scratch/xar68reb/CoSpRo}/features/Spur_SpLiCE/waterbirds_crp/crp_features.pt"
-if [[ $# -gt 0 && "${1}" != -* ]]; then
-  CACHE_PATH="$1"
-  shift
-fi
+SPLICE_DATASET_CACHE_PATH="$1"
+shift
 
-"${PYTHON_BIN}" -u -m scripts.tools.generate_crp_concept_groups --cache "${CACHE_PATH}" "$@"
+"${PYTHON_BIN}" -u -m scripts.tools.generate_crp_concept_groups \
+  --splice-dataset-cache "${SPLICE_DATASET_CACHE_PATH}" "$@"

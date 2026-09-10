@@ -9,7 +9,7 @@
 
 set -euo pipefail
 if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 CACHE.pt CONCEPT_GROUPS.json|SWEEP_DIR [audit options]" >&2
+  echo "Usage: $0 SPLICE_DATASET_CACHE.pt CONCEPT_GROUPS.json|SWEEP_DIR [audit options]" >&2
   exit 2
 fi
 
@@ -33,8 +33,9 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 
-CACHE_PATH="${SPUR_SPLICE_SCRATCH_ROOT:-/scratch/xar68reb/CoSpRo}/features/Spur_SpLiCE/waterbirds_crp/crp_features.pt"
+SPLICE_DATASET_CACHE_PATH="$1"
 CONCEPT_GROUPS_PATH="$2"
 shift 2
 "${PYTHON_BIN}" -u -m scripts.tools.build_crp_teacher_graphs \
-  --cache "${CACHE_PATH}" --concept-groups "${CONCEPT_GROUPS_PATH}" "$@"
+  --splice-dataset-cache "${SPLICE_DATASET_CACHE_PATH}" \
+  --concept-groups "${CONCEPT_GROUPS_PATH}" "$@"
