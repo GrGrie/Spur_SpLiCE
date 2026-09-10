@@ -179,7 +179,7 @@ def make_waterbirds_ssl_loader(
         ssl_crop_min=config.ssl_crop_min,
     )
     full_dataset = WaterbirdsDataset(config.root_dir)
-    if splice_mode not in {"none", "crp_relational"}:
+    if splice_mode not in {"none", "cospro_relational", "crp_relational"}:
         raise ValueError(f"Unsupported SSL mode for Waterbirds: {splice_mode}")
     train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
     return get_ssl_train_loader(

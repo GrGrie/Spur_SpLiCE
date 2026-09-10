@@ -82,10 +82,8 @@ class ResultLifecycleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "results.json"
-            with patch("scripts.tools.collect_results.OUTPUT_ROOT", root / "outputs"), patch(
-                "scripts.tools.collect_results.PROJECT_ROOT", root
-            ):
-                payload = collect(manifest_path, output)
+            with patch("scripts.tools.collect_results.PROJECT_ROOT", root):
+                payload = collect(manifest_path, output, output_root=root / "outputs")
             self.assertEqual(payload["status"], "partial")
             self.assertEqual(payload["matrix"]["missing"], [{"seed": 2, "arm": "arm"}])
             self.assertTrue(output.is_file())

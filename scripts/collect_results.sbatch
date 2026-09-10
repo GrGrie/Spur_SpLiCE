@@ -9,7 +9,7 @@
 
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be exported by submit_experiment.sh}"
-MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_crp.json}"
+MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_cospro.json}"
 cd "${PROJECT_DIR}"
 source scripts/load_splice_cluster_env.sh
 "${PYTHON_BIN}" -u -m scripts.tools.collect_results "${MANIFEST}"

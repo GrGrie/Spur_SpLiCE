@@ -1,4 +1,4 @@
-"""Portable JSON storage for CRP teacher graphs."""
+"""Portable JSON storage for CoSpRo teacher graphs."""
 
 from __future__ import annotations
 

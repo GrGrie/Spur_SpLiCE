@@ -10,7 +10,7 @@
 
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be exported by submit_experiment.sh}"
-MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_crp.json}"
+MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_cospro.json}"
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 EXISTING_POLICY="${EXISTING_POLICY:-error}"
 export DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"

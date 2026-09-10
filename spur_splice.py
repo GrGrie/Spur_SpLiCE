@@ -22,7 +22,11 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from experiments.spurious_eval import linear_probe
-from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.datasets.registry import (
+    CANONICAL_DATASET_REGISTRY,
+    DATASET_REGISTRY,
+    canonical_dataset_name,
+)
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
@@ -30,19 +34,20 @@ from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
-from splice.crp_training import (
+from splice.cospro_training import (
     CrpRelationalRegularizer,
     build_crp_training_loader,
     load_teacher_graph,
     save_crp_concept_report,
 )
 from splice.graph_io import graph_fingerprint
+from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
 from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
 from splice.run_recording import RunRecorder, portable_json
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
-RELATIONAL_GRAPH_MODES = {"crp_relational"}
+RELATIONAL_GRAPH_MODES = {"cospro_relational", "crp_relational"}
 
 
 def str_to_bool(value) -> bool:
@@ -82,7 +87,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
 
-    parser.add_argument("--dataset", type=str, default="waterbirds", choices=sorted(DATASET_REGISTRY))
+    parser.add_argument(
+        "--dataset",
+        type=canonical_dataset_name,
+        default="waterbirds",
+        choices=sorted(CANONICAL_DATASET_REGISTRY),
+    )
     parser.add_argument("--data_folder", type=str, default="./datasets")
     parser.add_argument("--model", type=str, default="resnet18_large", choices=SSL_RESNET_MODEL_NAMES)
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
@@ -216,41 +226,47 @@ def parse_args() -> argparse.Namespace:
         "--splice_mode",
         type=str,
         default="none",
-        choices=["none", "crp_relational"],
+        choices=["none", "cospro_relational", "crp_relational"],
     )
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
-        "--crp_teacher_graph",
+        "--cospro_teacher_graph", "--crp_teacher_graph",
+        dest="crp_teacher_graph",
         type=str,
         default="",
-        help="Label-free CRP teacher graph used by the relational graph mode.",
+        help="Label-free CoSpRo teacher graph used by the relational graph mode.",
     )
     parser.add_argument(
-        "--crp_temperature",
+        "--cospro_temperature", "--crp_temperature",
+        dest="crp_temperature",
         type=float,
         default=0.1,
         help="Temperature of the student relation distribution.",
     )
     parser.add_argument(
-        "--crp_start_epoch",
+        "--cospro_start_epoch", "--crp_start_epoch",
+        dest="crp_start_epoch",
         type=int,
         default=10,
         help="Number of pure-SimCLR epochs before relational distillation starts.",
     )
     parser.add_argument(
-        "--crp_warmup_epochs",
+        "--cospro_warmup_epochs", "--crp_warmup_epochs",
+        dest="crp_warmup_epochs",
         type=int,
         default=10,
-        help="Linear warm-up duration for the CRP relational loss weight; 0 disables warm-up.",
+        help="Linear warm-up duration for the CoSpRo relational loss weight; 0 disables warm-up.",
     )
     parser.add_argument(
-        "--crp_decay_start_epoch",
+        "--cospro_decay_start_epoch", "--crp_decay_start_epoch",
+        dest="crp_decay_start_epoch",
         type=int,
         default=0,
         help="Epoch at which relational-loss decay begins; 0 with end=0 disables decay.",
     )
     parser.add_argument(
-        "--crp_decay_end_epoch",
+        "--cospro_decay_end_epoch", "--crp_decay_end_epoch",
+        dest="crp_decay_end_epoch",
         type=int,
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
@@ -280,28 +296,28 @@ def parse_args() -> argparse.Namespace:
     if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
         parser.error("--splice_weight must be non-negative for relational graph modes.")
     if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
-        parser.error("--simclr_weight 0 is supported only for CRP relational training.")
+        parser.error("--simclr_weight 0 is supported only for CoSpRo relational training.")
     if args.simclr_weight == 0 and args.splice_weight <= 0:
         parser.error("KL-only relational training requires --splice_weight to be positive.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.crp_teacher_graph.strip():
-        parser.error("--crp_teacher_graph is required for relational graph modes.")
+        parser.error("--cospro_teacher_graph is required for CoSpRo relational training.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         graph_path = Path(args.crp_teacher_graph)
         if not graph_path.is_file():
-            parser.error(f"--crp_teacher_graph does not exist: {graph_path}")
+            parser.error(f"--cospro_teacher_graph does not exist: {graph_path}")
         args.crp_graph_fingerprint = graph_fingerprint(graph_path)
     else:
         args.crp_graph_fingerprint = None
     if args.crp_temperature <= 0:
-        parser.error("--crp_temperature must be positive.")
+        parser.error("--cospro_temperature must be positive.")
     if args.crp_start_epoch < 0 or args.crp_warmup_epochs < 0:
-        parser.error("--crp_start_epoch and --crp_warmup_epochs must be non-negative.")
+        parser.error("--cospro_start_epoch and --cospro_warmup_epochs must be non-negative.")
     if args.crp_decay_start_epoch < 0 or args.crp_decay_end_epoch < 0:
-        parser.error("--crp_decay_start_epoch and --crp_decay_end_epoch must be non-negative.")
+        parser.error("--cospro_decay_start_epoch and --cospro_decay_end_epoch must be non-negative.")
     if bool(args.crp_decay_start_epoch) != bool(args.crp_decay_end_epoch):
-        parser.error("CRP decay start/end must both be zero or both be set.")
+        parser.error("CoSpRo decay start/end must both be zero or both be set.")
     if args.crp_decay_end_epoch and args.crp_decay_end_epoch <= args.crp_decay_start_epoch:
-        parser.error("--crp_decay_end_epoch must be greater than --crp_decay_start_epoch.")
+        parser.error("--cospro_decay_end_epoch must be greater than --cospro_decay_start_epoch.")
     if not 0 < args.ssl_crop_min <= 1:
         parser.error("--ssl-crop-min must be in the interval (0, 1].")
     if args.dataset == "spur_cifar10" and (
@@ -383,15 +399,15 @@ def resolve_epoch_schedule(value: str, total_epochs: int, fractions: tuple[float
 def format_wandb_run_name(args: argparse.Namespace) -> str:
     prefix = f"{args.dataset}_s{args.seed:g}"
     suffix = f"_e{args.epochs}"
-    if args.splice_mode == "crp_relational":
-        return f"{prefix}_CRP_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
+    if args.splice_mode in RELATIONAL_GRAPH_MODES:
+        return f"{prefix}_CoSpRo_w{args.splice_weight:g}_t{args.crp_temperature:g}{suffix}"
     return f"{prefix}_SimCLR{suffix}"
 
 
 def format_storage_name(args: argparse.Namespace) -> str:
     """Return a short, deterministic checkpoint directory name safe for Windows paths."""
-    if args.splice_mode == "crp_relational":
-        experiment = "crp-v2-relational"
+    if args.splice_mode in RELATIONAL_GRAPH_MODES:
+        experiment = "cospro-relational" if args.splice_mode == "cospro_relational" else "crp-v2-relational"
     else:
         experiment = "base"
 
@@ -435,8 +451,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
 
 
 def format_run_name(args: argparse.Namespace) -> str:
-    if args.splice_mode == "crp_relational":
-        splice_name = (f"crp_relational_w{args.splice_weight:g}_t{args.crp_temperature:g}_"
+    if args.splice_mode in RELATIONAL_GRAPH_MODES:
+        splice_name = (f"cospro_relational_w{args.splice_weight:g}_t{args.crp_temperature:g}_"
                        f"start{args.crp_start_epoch}_warm{args.crp_warmup_epochs}")
     else:
         splice_name = "nosplice"
@@ -545,7 +561,7 @@ def build_ssl_loader(args: argparse.Namespace):
     args.relational_graph_empty = False
     source_indices = getattr(loader.dataset, "indices", None)
     if source_indices is None:
-        raise ValueError("CRP training requires an SSL dataset with stable source indices.")
+        raise ValueError("CoSpRo training requires an SSL dataset with stable source indices.")
     graph, loaded_graph_fingerprint = load_teacher_graph(
         args.crp_teacher_graph,
         args.dataset,
@@ -568,6 +584,7 @@ def build_ssl_loader(args: argparse.Namespace):
         }
     )
     if graph["artifact"] in {
+        COSPRO_TEACHER_GRAPH_ARTIFACT,
         "splice_crp_v2_teacher_graph",
         "splice_crp_v3_teacher_graph",
         "splice_crp_v4_teacher_graph",
@@ -580,7 +597,7 @@ def build_ssl_loader(args: argparse.Namespace):
             if item["training_edge_count"] > 0
         ][:10]
         print(
-            f"[INFO] CRP concept report: path={report_path}, "
+            f"[INFO] CoSpRo concept report: path={report_path}, "
             f"teacher_projected={concept_report['teacher_projected_concepts']}, "
             f"top_training_concepts={top_concepts}",
             flush=True,

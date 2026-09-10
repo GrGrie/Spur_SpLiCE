@@ -116,8 +116,8 @@ rather than leaving a broken `retained` attestation.
 
 ## Naming rules
 
-- Use lowercase `snake_case` for studies and arms: `waterbirds_crp`,
-  `splice_crp_kl`.
+- Use lowercase `snake_case` for studies and arms: `waterbirds_cospro`,
+  `cospro_relational`.
 - Use `seed_<NN>` with at least two digits: `seed_01`.
 - Use an immutable attempt identifier: `primary`, a Slurm-derived ID, or an
   ISO-like UTC timestamp. Never overwrite a different attempt.

@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
-from splice.crp_training import CrpGraphBatchSampler, validate_teacher_graph
+from splice.cospro_training import CrpGraphBatchSampler, validate_teacher_graph
 
 
 def data():

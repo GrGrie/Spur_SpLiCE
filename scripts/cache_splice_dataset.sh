@@ -10,7 +10,7 @@
 
 set -euo pipefail
 if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [OUTPUT_ROOT] (set DATA_FOLDER for the dataset root)" >&2
+  echo "Usage: $0 [OUTPUT_ROOT] (set DATASET and DATA_FOLDER as needed)" >&2
   exit 2
 fi
 
@@ -29,12 +29,13 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 
+DATASET="${DATASET:-waterbirds}"
 DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 DEFAULT_OUTPUT_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${SPUR_SPLICE_ARTIFACT_ROOT:-${PROJECT_DIR}/tmp}}/features/Spur_SpLiCE"
 OUTPUT_ROOT="${1:-${DEFAULT_OUTPUT_ROOT}}"
 
 "${PYTHON_BIN}" -u -m scripts.tools.cache_splice_dataset \
-  --dataset waterbirds \
+  --dataset "${DATASET}" \
   --data-folder "${DATA_FOLDER}" \
   --output-root "${OUTPUT_ROOT}" \
   --splice-model open_clip:ViT-B-32 \

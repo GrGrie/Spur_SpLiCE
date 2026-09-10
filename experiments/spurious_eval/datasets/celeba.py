@@ -91,6 +91,8 @@ class CelebADataset(WILDSDataset):
         missing = required_columns.difference(attrs.columns)
         if missing:
             raise ValueError(f"CelebA attributes are missing columns: {sorted(missing)}")
+        if attrs["image_id"].astype(str).duplicated().any():
+            raise ValueError("CelebA attributes contain duplicate image_id values.")
 
         self.attrs = attrs.reset_index(drop=True)
         self._input_array = self.attrs["image_id"].astype(str).values
@@ -119,23 +121,33 @@ class CelebADataset(WILDSDataset):
 
     def _load_split_array(self) -> np.ndarray:
         split_path = self._data_dir / "list_eval_partition.csv"
-        if split_path.exists():
-            splits = pd.read_csv(split_path)
-            if "partition" not in splits.columns:
-                splits = splits.rename(columns={splits.columns[-1]: "partition"})
-            if "image_id" not in splits.columns:
-                splits = splits.rename(columns={splits.columns[0]: "image_id"})
-            split_lookup = dict(zip(splits["image_id"].astype(str), splits["partition"].astype(int)))
-            return np.asarray([split_lookup[str(image_id)] for image_id in self._input_array], dtype=np.int64)
-
-        rng = np.random.RandomState(0)
-        permutation = rng.permutation(len(self._input_array))
-        split_array = np.zeros(len(self._input_array), dtype=np.int64)
-        val_start = int(round(0.8 * len(permutation)))
-        test_start = int(round(0.9 * len(permutation)))
-        split_array[permutation[val_start:test_start]] = 1
-        split_array[permutation[test_start:]] = 2
-        return split_array
+        if not split_path.exists():
+            raise FileNotFoundError(
+                f"CelebA official split metadata not found at {split_path}. "
+                "Refusing to substitute a random split."
+            )
+        splits = pd.read_csv(split_path)
+        if "partition" not in splits.columns:
+            splits = splits.rename(columns={splits.columns[-1]: "partition"})
+        if "image_id" not in splits.columns:
+            splits = splits.rename(columns={splits.columns[0]: "image_id"})
+        split_ids = splits["image_id"].astype(str)
+        if split_ids.duplicated().any():
+            raise ValueError("CelebA split metadata contains duplicate image_id values.")
+        partitions = splits["partition"].astype(int)
+        unexpected = sorted(set(partitions).difference({0, 1, 2}))
+        if unexpected:
+            raise ValueError(f"CelebA split metadata contains invalid partitions: {unexpected}")
+        split_lookup = dict(zip(split_ids, partitions))
+        missing = sorted(set(map(str, self._input_array)).difference(split_lookup))
+        if missing:
+            preview = ", ".join(missing[:3])
+            raise ValueError(
+                f"CelebA split metadata is missing {len(missing)} attribute image(s), including {preview}."
+            )
+        return np.asarray(
+            [split_lookup[str(image_id)] for image_id in self._input_array], dtype=np.int64
+        )
 
     def get_input(self, idx: int):
         image_path = self._data_dir / "img_align_celeba" / self._input_array[idx]
@@ -182,7 +194,7 @@ def make_celeba_ssl_loader(
     splice_mode: str = "none",
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
-    if splice_mode not in {"none", "crp_relational"}:
+    if splice_mode not in {"none", "cospro_relational", "crp_relational"}:
         raise ValueError(f"Unsupported SSL mode for this dataset: {splice_mode}")
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}

@@ -79,7 +79,7 @@ def load_checkpoint(
         )
         if saved_fingerprint != expected_crp_graph_fingerprint:
             raise ValueError(
-                "Cannot resume CRP training with a different teacher graph: "
+                "Cannot resume CoSpRo training with a different teacher graph: "
                 f"checkpoint={saved_fingerprint!r}, current={expected_crp_graph_fingerprint!r}."
             )
     model.load_state_dict(checkpoint["model"], strict=True)

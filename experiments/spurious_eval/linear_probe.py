@@ -13,7 +13,11 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import TensorDataset
 
-from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.datasets.registry import (
+    CANONICAL_DATASET_REGISTRY,
+    DATASET_REGISTRY,
+    canonical_dataset_name,
+)
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
 from experiments.spurious_eval.models.resnet import (
@@ -55,7 +59,12 @@ def resolve_lr_decay_epochs(value: str | list[int], total_epochs: int) -> list[i
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser("Linear probing on spurious-correlation datasets")
-    parser.add_argument("--dataset", default="waterbirds", choices=sorted(DATASET_REGISTRY))
+    parser.add_argument(
+        "--dataset",
+        type=canonical_dataset_name,
+        default="waterbirds",
+        choices=sorted(CANONICAL_DATASET_REGISTRY),
+    )
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument("--train_set_linear_layer", default="ds_train", choices=["train", "val", "ds_train", "us_train", "balanced_train"])
     parser.add_argument(

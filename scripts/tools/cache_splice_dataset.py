@@ -11,8 +11,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 import splice
-from experiments.spurious_eval.datasets.registry import get_dataset_spec
-from splice.crp import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
+from experiments.spurious_eval.datasets.registry import (
+    CANONICAL_DATASET_REGISTRY,
+    canonical_dataset_name,
+    get_dataset_spec,
+)
+from splice.cospro import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
 
 
 class IndexedImages(Dataset):
@@ -59,9 +63,10 @@ def cache_config_name(args: argparse.Namespace) -> str:
 
 
 def resolve_cache_path(args: argparse.Namespace) -> Path:
+    dataset = canonical_dataset_name(args.dataset)
     return (
         args.output_root
-        / args.dataset
+        / dataset
         / "splice_dataset_cache"
         / cache_config_name(args)
         / "splice_dataset_cache.pt"
@@ -70,7 +75,12 @@ def resolve_cache_path(args: argparse.Namespace) -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", choices=("waterbirds", "celeba", "spur_cifar10"), required=True)
+    parser.add_argument(
+        "--dataset",
+        type=canonical_dataset_name,
+        choices=sorted(CANONICAL_DATASET_REGISTRY),
+        required=True,
+    )
     parser.add_argument("--data-folder", required=True)
     parser.add_argument(
         "--output-root",
@@ -91,6 +101,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    args.dataset = canonical_dataset_name(args.dataset)
     if args.batch_size <= 0 or args.num_workers < 0:
         raise ValueError("batch-size must be positive and num-workers must be non-negative.")
 

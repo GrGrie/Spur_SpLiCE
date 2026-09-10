@@ -1,8 +1,9 @@
 # Spur SpLiCE
 
-Spur SpLiCE tests whether sparse semantic concepts can improve visual
-representations under spurious object-context correlations. The current method
-is **SpLiCE-CRP**: frozen OpenCLIP/SpLiCE features produce a sparse teacher
+CoSpRo (Concept-Guided Relational Pretraining for Spurious-Correlation
+Robustness) tests whether sparse semantic concepts can improve visual
+representations under spurious object-context correlations. The method uses
+frozen OpenCLIP/SpLiCE features to produce a sparse teacher
 graph, then a SimCLR ResNet trains with graph-aware batches and relational KL.
 
 The graph and SSL stages use no target or group annotations. Labels and group
@@ -11,7 +12,7 @@ student inference.
 
 ## Project shape
 
-- `splice/` — sparse decomposition, CRP graph construction and graph training.
+- `splice/` — sparse decomposition, CoSpRo graph construction and graph training.
 - `experiments/spurious_eval/` — datasets, models, training and linear probes.
 - `experiments/runner.py` — the single seed/arm experiment runner.
 - `experiments/manifests/` — reproducible experiment definitions.
@@ -29,14 +30,14 @@ On the cluster, set `DATA_FOLDER` if it differs from the default. The submission
 helper launches the matrix and a dependent result collector:
 
 ```bash
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json
 ```
 
 Inspect the matrix without training:
 
 ```bash
-python -m experiments.runner experiments/manifests/waterbirds_crp.json --list
-python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 --dry-run
+python -m experiments.runner experiments/manifests/waterbirds_cospro.json --list
+python -m experiments.runner experiments/manifests/waterbirds_cospro.json --task 0 --dry-run
 ```
 
 The held-out test protocol is declared in the manifest and must be requested
@@ -44,8 +45,8 @@ explicitly. It runs one final probe on `test` instead of periodic validation
 probes:
 
 ```bash
-python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 --locked-test
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json --locked-test
+python -m experiments.runner experiments/manifests/waterbirds_cospro.json --task 0 --locked-test
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json --locked-test
 ```
 
 Locked-test runs default to the separate `locked-test` attempt ID; ordinary
@@ -62,11 +63,54 @@ Build the three teacher-input stages directly:
 
 ```bash
 python -m scripts.tools.cache_splice_dataset --help
-python -m scripts.tools.generate_crp_concept_groups --help
-python -m scripts.tools.build_crp_teacher_graphs --help
-python -m scripts.tools.build_crp_baseline_graphs --help
+python -m scripts.tools.generate_cospro_concept_groups --help
+python -m scripts.tools.build_cospro_teacher_graphs --help
+python -m scripts.tools.build_cospro_baseline_graphs --help
 python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
 ```
+
+## Run the complete CelebA pipeline
+
+`scripts/run_cospro_pipeline.sh` defaults to CelebA and runs all five stages in
+order: frozen cache, one concept-group configuration, its teacher graph,
+student training, and final result collection. On Slurm, launch it once from
+the repository root:
+
+```bash
+sbatch scripts/run_cospro_pipeline.sh
+```
+
+`DATA_FOLDER` must resolve to either the CelebA directory itself or its parent;
+the adapter expects `list_attr_celeba.csv`, `list_eval_partition.csv`, and the
+`img_align_celeba/` image directory.
+
+For a local command or a cheap configuration check:
+
+```bash
+bash scripts/run_cospro_pipeline.sh --dry-run
+EPOCHS=10 USE_WANDB=0 bash scripts/run_cospro_pipeline.sh
+```
+
+The editable configuration block at the top of the script exposes the dataset,
+storage, cache, grouping, audit, student, probe, and W&B settings. The same
+names may be supplied as environment variables. Set `DATASET=waterbirds` (or
+`spur_cifar10`) to use the same pipeline for another registered dataset.
+Completed preprocessing artifacts are validated and reused; set
+`REBUILD_PREPROCESSING=1` to rebuild them. Student output is protected by
+`STUDENT_EXISTING=error` by default; use `resume` only after an interrupted run
+that has a retained checkpoint.
+
+Concept reports embed thumbnails directly in the HTML and now fail if dataset
+access is unavailable instead of silently emitting placeholders. Repair an
+already generated report without recomputing groups with:
+
+```bash
+python -m scripts.tools.generate_cospro_concept_groups \
+  --render-existing outputs/shared/<dataset>/graphs/concept_groups/<config>/concept_groups.json \
+  --data-folder /path/to/datasets
+```
+
+Use `--no-embed-images` only when a placeholder-only report is intentional.
 
 ## Verification
 

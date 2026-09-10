@@ -3,7 +3,7 @@
 Submit an experiment matrix and its dependent result collector with:
 
 ```bash
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json
 ```
 
 Append `--locked-test` to apply the manifest's predeclared final-only held-out
@@ -54,26 +54,32 @@ Small Python tools remain for operations that are not training matrices:
 
 - `cache_splice_dataset.py` — build the frozen train-split SpLiCE dataset cache
   in a directory named from all cache-affecting hyperparameters;
-- `generate_crp_concept_groups.py` — generate reusable grouping JSON + HTML
+- `generate_cospro_concept_groups.py` — generate reusable CoSpRo grouping JSON + HTML
   artifacts from the cache, including a threshold sweep with no audit or SSL;
-- `build_crp_teacher_graphs.py` — audit one saved grouping artifact or every
+- `build_cospro_teacher_graphs.py` — audit one saved CoSpRo grouping artifact or every
   `concept_groups.json` below a sweep directory, writing colocated graph JSON + HTML;
-- `build_crp_baseline_graphs.py` — build a raw-CLIP graph with anchor support,
+- `build_cospro_baseline_graphs.py` — build a raw-CLIP graph with anchor support,
   row degrees, weight profiles, confidence, and indegree cap matched to a
-  canonical CRP reference graph;
+  canonical CoSpRo reference graph;
 - `download_waterbirds_hf.py` — dataset helper;
-- `summarize_crp_audit.py` — concise graph summary;
+- `summarize_cospro_audit.py` — concise CoSpRo graph summary;
 - `render_report.py` — the single HTML report adapter.
 - `collect_results.py` — validate a manifest matrix and build one results JSON;
 - `promote_checkpoint.py` — explicitly retain a checkpoint with rationale;
 - `migrate_outputs.py` — discover and safely migrate direct or nested legacy trees.
 - `archive_legacy.py` — inventory and verify a recoverable archive of quarantined legacy files.
+- `run_cospro_pipeline.py` — sequential, validated CoSpRo cache-to-results orchestration.
 
 Use `python -m <module> --help` for their interfaces.
 
 The shell entry points use the same interfaces directly or through `sbatch`:
 
 ```bash
+# Complete CelebA cache -> groups -> graph -> student -> results pipeline.
+# Its configuration block can be edited or overridden with environment variables.
+sbatch scripts/run_cospro_pipeline.sh
+bash scripts/run_cospro_pipeline.sh --dry-run
+
 # Build the canonical frozen Waterbirds SpLiCE dataset cache. The output root
 # is optional; under Slurm it defaults to the configured scratch feature root.
 bash scripts/cache_splice_dataset.sh /scratch/path/features/Spur_SpLiCE
@@ -84,17 +90,17 @@ bash scripts/cache_splice_dataset.sh /scratch/path/features/Spur_SpLiCE
 #     splice_dataset_cache.pt
 
 # Default 5 x 6 grouping grid. --output-root is optional.
-bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
+bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups \
   --data-folder /path/to/datasets
 
 # Reproduce the canonical grouping parameters only.
-bash scripts/generate_crp_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
+bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
   --output-root outputs/shared/waterbirds/graphs/concept_groups_canonical \
   --text-similarity-threshold 0.82 --coactivation-threshold 0.35
 
 # The second argument may be one JSON file or the whole sweep directory.
-bash scripts/build_crp_teacher_graphs.sh /scratch/path/splice_dataset_cache.pt \
+bash scripts/build_cospro_teacher_graphs.sh /scratch/path/splice_dataset_cache.pt \
   outputs/shared/waterbirds/graphs/concept_groups
 ```
 
@@ -110,6 +116,9 @@ Grouping artifacts are the sole source of grouping thresholds for graph
 construction; teacher-audit options cannot override them.
 The grouping HTML embeds compact representative thumbnails when `--data-folder`
 is supplied (or `DATA_FOLDER` is set); grouping itself remains cache-only.
+Missing dataset access is an error unless `--no-embed-images` is explicitly
+selected. An existing report can be repaired without regrouping via
+`--render-existing /path/to/concept_groups.json --data-folder /path/to/datasets`.
 
 Git-facing artifact paths default to `outputs/`. Set `SPUR_SPLICE_OUTPUT_ROOT`
 or pass `experiments.runner --output-root PATH` when inspecting a packaged tree

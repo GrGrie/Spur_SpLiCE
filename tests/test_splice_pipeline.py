@@ -14,11 +14,12 @@ import torch
 from PIL import Image
 
 from experiments.spurious_eval.datasets.celeba import CelebADataset
+from experiments.spurious_eval.datasets.registry import canonical_dataset_name
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
-from splice.crp import (
+from splice.cospro import (
     CrpAuditConfig,
     build_concept_groups,
     build_teacher_graph,
@@ -29,8 +30,8 @@ from splice.crp import (
     save_splice_dataset_cache,
     validate_splice_dataset_cache,
 )
-from splice.crp_reporting import render_concept_groups_report, render_teacher_graph_report
-from splice.crp_training import (
+from splice.cospro_reporting import render_concept_groups_report, render_teacher_graph_report
+from splice.cospro_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
     IndexedCrpDataset,
@@ -47,16 +48,55 @@ import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.cache_splice_dataset import IndexedImages, parse_args as parse_splice_cache_args
 from scripts.tools.cache_splice_dataset import resolve_cache_path
-from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
-from scripts.tools.build_crp_teacher_graphs import main as build_crp_teacher_graphs_main
-from scripts.tools.generate_crp_concept_groups import (
+from scripts.tools.build_cospro_baseline_graphs import build_matched_raw_clip_graph
+from scripts.tools.build_cospro_teacher_graphs import main as build_cospro_teacher_graphs_main
+from scripts.tools.generate_cospro_concept_groups import (
     _dataset_image_resolver,
-    main as generate_crp_concept_groups_main,
-    parse_args as parse_crp_concept_groups_args,
+    concept_group_directory,
+    main as generate_cospro_concept_groups_main,
+    parse_args as parse_cospro_concept_groups_args,
 )
+from scripts.tools.run_cospro_pipeline import main as run_cospro_pipeline_main
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_celeba_dataset_aliases_are_canonicalized_at_artifact_boundaries(self):
+        self.assertEqual(canonical_dataset_name("CelebA"), "celeba")
+        self.assertEqual(canonical_dataset_name("celebA"), "celeba")
+        args = parse_splice_cache_args(
+            ["--dataset", "CelebA", "--data-folder", ".", "--output-root", "features"]
+        )
+        self.assertEqual(args.dataset, "celeba")
+        self.assertEqual(resolve_cache_path(args).parts[1], "celeba")
+
+    def test_nondefault_grouping_settings_get_a_distinct_artifact_directory(self):
+        root = Path("groups")
+        default = concept_group_directory(root, CrpAuditConfig())
+        changed = concept_group_directory(root, CrpAuditConfig(min_concept_frequency=0.02))
+        self.assertNotEqual(default, changed)
+        self.assertTrue(changed.name.startswith(default.name + "_config_"))
+
+    def test_full_pipeline_dry_run_plans_every_stage_without_writing(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                run_cospro_pipeline_main(
+                    [
+                        "--dataset", "CelebA",
+                        "--data-folder", str(root / "data"),
+                        "--feature-root", str(root / "features"),
+                        "--output-root", str(root / "outputs"),
+                        "--dry-run",
+                    ]
+                )
+            planned = output.getvalue()
+            self.assertIn("scripts.tools.cache_splice_dataset", planned)
+            self.assertIn("scripts.tools.generate_cospro_concept_groups", planned)
+            self.assertIn("scripts.tools.build_cospro_teacher_graphs", planned)
+            self.assertIn("experiments.runner", planned)
+            self.assertFalse((root / "outputs").exists())
+
     def test_concept_group_report_thumbnail_resolver_embeds_and_caches_images(self):
         class TinyDataset:
             calls = 0
@@ -70,7 +110,7 @@ class SplicePipelineTests(unittest.TestCase):
 
         cache = {"provenance": {"dataset": "tiny"}}
         with patch(
-            "scripts.tools.generate_crp_concept_groups.get_dataset_spec",
+            "scripts.tools.generate_cospro_concept_groups.get_dataset_spec",
             return_value={"dataset": TinyDataset},
         ):
             resolver = _dataset_image_resolver(cache, Path("dataset"))
@@ -80,8 +120,63 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(first.startswith("data:image/jpeg;base64,"))
         self.assertEqual(first, second)
 
+    def test_concept_group_report_does_not_hide_missing_images(self):
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            text_similarity_threshold=0.0,
+            coactivation_threshold=0.0,
+        )
+        artifact = build_concept_groups(self._tiny_splice_dataset_cache(), config)
+
+        def missing_image(_sample_id):
+            raise FileNotFoundError("representative image is missing")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaisesRegex(FileNotFoundError, "representative image is missing"):
+                render_concept_groups_report(
+                    artifact,
+                    Path(temporary_directory) / "report.html",
+                    image_resolver=missing_image,
+                )
+
+    def test_existing_concept_group_report_can_be_repaired_with_images(self):
+        class TinyDataset:
+            def __init__(self, _data_folder):
+                pass
+
+            def get_input(self, index):
+                return Image.new("RGB", (40, 30), (index, 80, 120))
+
+        cache = self._tiny_splice_dataset_cache()
+        cache["provenance"] = {"dataset": "tiny"}
+        cache["sample_ids"] = [f"tiny:{index}" for index in range(8)]
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            text_similarity_threshold=0.0,
+            coactivation_threshold=0.0,
+        )
+        artifact = build_concept_groups(cache, config)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            json_path = Path(temporary_directory) / "concept_groups.json"
+            save_concept_groups_json(artifact, json_path)
+            with patch(
+                "scripts.tools.generate_cospro_concept_groups.get_dataset_spec",
+                return_value={"dataset": TinyDataset},
+            ):
+                generate_cospro_concept_groups_main(
+                    [
+                        "--render-existing", str(json_path),
+                        "--data-folder", str(Path(temporary_directory) / "dataset"),
+                    ]
+                )
+            report = json_path.with_suffix(".html").read_text(encoding="utf-8")
+            self.assertIn("<img ", report)
+            self.assertNotIn("image<br>unavailable", report)
+
     def test_crp_group_sweep_accepts_bracketed_threshold_lists(self):
-        args = parse_crp_concept_groups_args(
+        args = parse_cospro_concept_groups_args(
             [
                 "--splice-dataset-cache", "cache.pt",
                 "--text-similarity-thresholds", "[0.70,", "0.75,", "0.82,", "0.85,", "0.90]",
@@ -300,10 +395,11 @@ class SplicePipelineTests(unittest.TestCase):
             sweep_path = root / "groups"
             save_splice_dataset_cache(self._tiny_splice_dataset_cache(), cache_path)
             with contextlib.redirect_stdout(io.StringIO()):
-                generate_crp_concept_groups_main(
+                generate_cospro_concept_groups_main(
                     [
                         "--splice-dataset-cache", str(cache_path),
                         "--output-root", str(sweep_path),
+                        "--no-embed-images",
                         "--text-similarity-threshold", "0.82", "0.85",
                         "--coactivation-threshold", "0.30", "0.35",
                         "--config", '{"min_concept_frequency": 0.1, "max_concept_frequency": 0.9}',
@@ -323,7 +419,7 @@ class SplicePipelineTests(unittest.TestCase):
                 }
             )
             with contextlib.redirect_stdout(io.StringIO()):
-                build_crp_teacher_graphs_main(
+                build_cospro_teacher_graphs_main(
                     [
                         "--splice-dataset-cache", str(cache_path),
                         "--concept-groups", str(sweep_path),
@@ -371,7 +467,7 @@ class SplicePipelineTests(unittest.TestCase):
         )
         cache = self._tiny_splice_dataset_cache()
         concept_groups = build_concept_groups(cache, config)
-        with patch("splice.crp._group_concepts", side_effect=AssertionError("must not regroup")):
+        with patch("splice.cospro._group_concepts", side_effect=AssertionError("must not regroup")):
             first = build_teacher_graph(cache, concept_groups, config)
             second = build_teacher_graph(cache, concept_groups, config)
         torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
@@ -382,7 +478,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(torch.all(first["neighbor_indices"][first["weights"] == 0] == -1))
         self.assertTrue(torch.all((first["anchor_confidence"] >= 0) & (first["anchor_confidence"] <= 1)))
         self.assertTrue(all("activation_gain_alignment" in group for group in first["groups"]))
-        self.assertEqual(first["artifact"], "splice_crp_v3_teacher_graph")
+        self.assertEqual(first["artifact"], "cospro_teacher_graph_v3")
         self.assertEqual(first["degree_stats"]["indegree_cap"], 10)
         self.assertEqual(first["degree_stats"]["indegree_rule"], "absolute")
         self.assertNotIn("cross_fold_summary", first)
@@ -770,6 +866,17 @@ class SplicePipelineTests(unittest.TestCase):
             torch.testing.assert_close(dataset.y_array, torch.tensor([0, 1, 1, 0]))
             torch.testing.assert_close(dataset.metadata_array[:, 0], torch.tensor([1, 0, 1, 0]))
             self.assertEqual(dataset.metadata_fields, ["gender", "y"])
+
+    def test_celeba_refuses_to_replace_a_missing_official_split(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "celeba"
+            root.mkdir()
+            (root / "list_attr_celeba.csv").write_text(
+                "image_id,Male,Blond_Hair\n1.jpg,1,-1\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(FileNotFoundError, "Refusing to substitute a random split"):
+                CelebADataset(root)
 
 
 

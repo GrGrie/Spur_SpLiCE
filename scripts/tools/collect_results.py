@@ -19,6 +19,9 @@ def _artifact_path(uri: str) -> Path | None:
         return scratch_root() / uri.removeprefix("artifact://")
     if uri.startswith("project://"):
         return PROJECT_ROOT / uri.removeprefix("project://")
+    absolute = Path(uri)
+    if absolute.is_absolute():
+        return absolute
     return None
 
 
@@ -38,8 +41,11 @@ def verify_attestations(record: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _latest_records(study: str) -> dict[tuple[int, str], dict[str, Any]]:
-    root = OUTPUT_ROOT / "seeds" / study
+def _latest_records(
+    study: str, output_root: str | Path | None = None,
+) -> dict[tuple[int, str], dict[str, Any]]:
+    root = Path(output_root) if output_root is not None else OUTPUT_ROOT
+    root = root / "seeds" / study
     records: dict[tuple[int, str], dict[str, Any]] = {}
     if not root.exists():
         return records
@@ -53,7 +59,10 @@ def _latest_records(study: str) -> dict[tuple[int, str], dict[str, Any]]:
         previous = records.get(key)
         updated = str(record.get("timestamps", {}).get("updated_at", ""))
         if previous is None or updated >= str(previous.get("timestamps", {}).get("updated_at", "")):
-            record["record_uri"] = "project://" + path.relative_to(PROJECT_ROOT).as_posix()
+            try:
+                record["record_uri"] = "project://" + path.relative_to(PROJECT_ROOT).as_posix()
+            except ValueError:
+                record["record_uri"] = path.resolve().as_posix()
             records[key] = record
     return records
 
@@ -91,11 +100,15 @@ def _summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
-def collect(manifest_path: str | Path, output_path: str | Path | None = None) -> dict[str, Any]:
+def collect(
+    manifest_path: str | Path,
+    output_path: str | Path | None = None,
+    output_root: str | Path | None = None,
+) -> dict[str, Any]:
     manifest_path = Path(manifest_path)
     manifest = load_manifest(manifest_path)
     study = str(manifest["name"])
-    found = _latest_records(study)
+    found = _latest_records(study, output_root)
     successful = []
     failed = []
     incomplete = []
@@ -127,7 +140,12 @@ def collect(manifest_path: str | Path, output_path: str | Path | None = None) ->
         "summary": _summaries([record for record in selected if record.get("status") == "complete"]),
         "runs": selected,
     }
-    atomic_write_json(output_path or report(study, "results.json"), payload)
+    default_output = (
+        Path(output_root) / "reports" / study / "results.json"
+        if output_root is not None
+        else report(study, "results.json")
+    )
+    atomic_write_json(output_path or default_output, payload)
     return payload
 
 
@@ -135,8 +153,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest")
     parser.add_argument("--output")
+    parser.add_argument("--output-root", type=Path)
     args = parser.parse_args()
-    payload = collect(args.manifest, args.output)
+    payload = collect(args.manifest, args.output, args.output_root)
     print(f"study={payload['study']} status={payload['status']} successful={len(payload['matrix']['successful'])}")
 
 

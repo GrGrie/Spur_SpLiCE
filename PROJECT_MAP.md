@@ -9,7 +9,7 @@ Storage and synchronization rules are defined in
 training images
   -> frozen SpLiCE dataset cache
   -> concept groups
-  -> CRP intervention audit and graph construction
+  -> CoSpRo intervention audit and graph construction
   -> validated sparse teacher graph
   -> graph-aware SimCLR training
   -> frozen encoder linear probe
@@ -24,9 +24,10 @@ training images
 | Artifact locations and threshold routing | `splice/artifacts.py` |
 | Run lifecycle records | `splice/run_recording.py` |
 | Frozen SpLiCE dataset cache | `scripts/tools/cache_splice_dataset.py` |
-| Concept grouping | `splice/crp.py`, `scripts/tools/generate_crp_concept_groups.py` |
-| CRP audit and teacher graph | `splice/crp.py`, `splice/graph_io.py` |
-| Graph sampler and relational KL | `splice/crp_training.py` |
+| Concept grouping | `splice/cospro.py`, `scripts/tools/generate_cospro_concept_groups.py` |
+| CoSpRo audit and teacher graph | `splice/cospro.py`, `splice/graph_io.py` |
+| Complete cache-to-results pipeline | `scripts/run_cospro_pipeline.sh`, `scripts/tools/run_cospro_pipeline.py` |
+| Graph sampler and relational KL | `splice/cospro_training.py` |
 | SSL training | `spur_splice.py`, `experiments/spurious_eval/training/ssl_loop.py` |
 | Dataset adapters | `experiments/spurious_eval/datasets/` |
 | Linear evaluation | `experiments/spurious_eval/linear_probe.py` |
@@ -39,7 +40,11 @@ cache serializes frozen train-split representations, concept grouping consumes
 that cache and serializes groups, and `build_teacher_graph(splice_dataset_cache,
 concept_groups, config)` consumes both artifacts for projection geometry, null
 controls and sparse graph assembly. Training consumes only validated graphs
-through `splice.crp_training`.
+through `splice.cospro_training`.
+
+The `splice.crp*` compatibility modules, legacy command wrappers, and serialized
+`crp_*` fields remain readable for existing artifacts and runs. New code,
+commands, reports, studies, and documentation use CoSpRo consistently.
 
 ## Results
 

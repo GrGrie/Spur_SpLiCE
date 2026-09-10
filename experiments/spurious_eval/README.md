@@ -3,7 +3,10 @@
 The supported SSL modes are:
 
 - `none` — ordinary SimCLR;
-- `crp_relational` — graph-aware batches with optional relational KL weight.
+- `cospro_relational` — CoSpRo graph-aware batches with optional relational KL weight.
+
+`crp_relational` remains accepted as a compatibility alias for historical
+manifests and checkpoints.
 
 Run `python -m experiments.spurious_eval.linear_probe --help` for standalone
 evaluation. The canonical experiment manifest uses group-balanced `ds_train`

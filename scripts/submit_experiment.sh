@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
-MANIFEST="${1:-experiments/manifests/waterbirds_crp.json}"
+MANIFEST="${1:-experiments/manifests/waterbirds_cospro.json}"
 LOCKED_TEST=0
 if [[ "${2:-}" == "--locked-test" ]]; then
     LOCKED_TEST=1

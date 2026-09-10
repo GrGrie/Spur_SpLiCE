@@ -60,7 +60,7 @@ def simclr_forward_loss(
     if splice_regularizer is not None:
         if getattr(splice_regularizer, "requires_crp_indices", False):
             if sample_indices is None:
-                raise ValueError("CRP relational regularization requires graph-row sample indices.")
+                raise ValueError("CoSpRo relational regularization requires graph-row sample indices.")
             splice_loss = splice_regularizer(embeddings, sample_indices)
             loss = loss + splice_loss
             parts = {
