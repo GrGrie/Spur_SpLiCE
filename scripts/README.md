@@ -53,6 +53,10 @@ it is never overwritten. Job output is written to `outputs/SLURM/`.
 Small Python tools remain for operations that are not training matrices:
 
 - `cache_crp_features.py` — build the frozen CRP cache;
+- `generate_crp_concept_groups.py` — generate reusable grouping JSON + HTML
+  artifacts from the cache, including a threshold sweep with no audit or SSL;
+- `build_crp_teacher_graphs.py` — audit one saved grouping artifact or every
+  `concept_groups.json` below a sweep directory, writing colocated graph JSON + HTML;
 - `build_crp_baseline_graphs.py` — build a raw-CLIP graph with anchor support,
   row degrees, weight profiles, confidence, and indegree cap matched to a
   canonical CRP reference graph;
@@ -65,6 +69,29 @@ Small Python tools remain for operations that are not training matrices:
 - `archive_legacy.py` — inventory and verify a recoverable archive of quarantined legacy files.
 
 Use `python -m <module> --help` for their interfaces.
+
+The shell entry points use the same interfaces directly or through `sbatch`:
+
+```bash
+# Default 5 x 6 grouping grid. --output-root is optional.
+bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
+  --output-root outputs/shared/waterbirds/graphs/concept_groups
+
+# Reproduce the canonical grouping parameters only.
+bash scripts/generate_crp_concept_groups.sh /scratch/path/crp_features.pt \
+  --output-root outputs/shared/waterbirds/graphs/concept_groups_canonical \
+  --text-similarity-threshold 0.82 --coactivation-threshold 0.35
+
+# The second argument may be one JSON file or the whole sweep directory.
+bash scripts/build_crp_teacher_graphs.sh /scratch/path/crp_features.pt \
+  outputs/shared/waterbirds/graphs/concept_groups
+```
+
+Each grouping configuration is stored as
+`<grouping-config>/concept_groups.{json,html}`. Teacher audits are placed below
+that directory as `teacher_graphs/<audit-config>/teacher_graph.{json,html}`.
+Grouping artifacts are the sole source of grouping thresholds for graph
+construction; teacher-audit options cannot override them.
 
 Git-facing artifact paths default to `outputs/`. Set `SPUR_SPLICE_OUTPUT_ROOT`
 or pass `experiments.runner --output-root PATH` when inspecting a packaged tree

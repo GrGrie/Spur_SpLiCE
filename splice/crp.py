@@ -1,16 +1,19 @@
-"""Label-free frozen audit for SpLiCE-CRP v3 and v4.
+"""Label-free concept grouping and frozen audit for SpLiCE-CRP v3 and v4.
 
-The audit consumes representations that were cached in dataset order.  It does
-not load target, spurious, or group annotations; those belong in a separate
+Concept grouping consumes a frozen feature cache and produces a reusable JSON
+artifact. The audit resumes from that artifact and the same cache. Neither
+stage loads target, spurious, or group annotations; those belong in a separate
 post-hoc diagnostic step.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
+import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
@@ -22,10 +25,19 @@ from splice.graph_io import save_graph_json
 
 
 CACHE_VERSION = 1
+CONCEPT_GROUPS_VERSION = 1
 # GRAPH_VERSION remains the legacy SpLiCE-CRP v2 format. CRP v3 has its own
 # version because its fixed-density and validation fields are method changes.
 GRAPH_VERSION = 2
 CRP_GRAPH_VERSION = 3
+GROUPING_CONFIG_FIELDS = (
+    "min_concept_frequency",
+    "max_concept_frequency",
+    "text_similarity_threshold",
+    "coactivation_threshold",
+    "min_group_size",
+    "similarity_chunk_size",
+)
 REQUIRED_CACHE_KEYS = {
     "cache_version",
     "sample_ids",
@@ -220,6 +232,23 @@ class _DisjointSet:
             self.parent[max(left_root, right_root)] = min(left_root, right_root)
 
 
+def _active_concept_indices(
+    codes: torch.Tensor,
+    config: CrpAuditConfig,
+    sample_weights: torch.Tensor | None = None,
+) -> list[int]:
+    occurrences = (codes > 0).float()
+    frequency = (
+        occurrences.mean(dim=0)
+        if sample_weights is None
+        else (occurrences * sample_weights.unsqueeze(1)).mean(dim=0)
+    )
+    active = torch.where(
+        (frequency >= config.min_concept_frequency) & (frequency <= config.max_concept_frequency)
+    )[0]
+    return [int(index) for index in active.tolist()]
+
+
 def _group_concepts(
     codes: torch.Tensor,
     dictionary: torch.Tensor,
@@ -240,19 +269,11 @@ def _group_concepts(
             raise ValueError("sample_weights must have positive total mass.")
         sample_weights_tensor = sample_weights_tensor / sample_weights_tensor.mean()
 
-    occurrences = (codes > 0).float()
-    frequency = (
-        occurrences.mean(dim=0)
-        if sample_weights_tensor is None
-        else (occurrences * sample_weights_tensor.unsqueeze(1)).mean(dim=0)
-    )
-    active = torch.where(
-        (frequency >= config.min_concept_frequency) & (frequency <= config.max_concept_frequency)
-    )[0]
-    active_indices = [int(index) for index in active.tolist()]
+    active_indices = _active_concept_indices(codes, config, sample_weights_tensor)
     if not active_indices:
         return []
 
+    active = torch.as_tensor(active_indices, dtype=torch.long)
     active_codes = codes[:, active].T
     if sample_weights_tensor is not None:
         active_codes = active_codes * sample_weights_tensor.sqrt().unsqueeze(0)
@@ -288,6 +309,163 @@ def _group_concepts(
         (sorted(indices) for indices in result.values() if len(indices) >= config.min_group_size),
         key=lambda indices: (indices[0], len(indices)),
     )
+
+
+def _grouping_config(config: CrpAuditConfig) -> dict:
+    values = asdict(config)
+    return {name: values[name] for name in GROUPING_CONFIG_FIELDS}
+
+
+def _concept_group_diagnostics(groups: Sequence[dict], active_count: int) -> dict:
+    sizes = [int(group["size"]) for group in groups]
+    composite = [group for group in groups if int(group["size"]) > 1]
+    composite_concepts = sum(int(group["size"]) for group in composite)
+    largest = sorted(composite, key=lambda group: (-int(group["size"]), int(group["group_id"])))[:20]
+    return {
+        "total_active_concepts": active_count,
+        "total_groups": len(groups),
+        "singleton_count": sum(size == 1 for size in sizes),
+        "singleton_fraction": sum(size == 1 for size in sizes) / len(groups) if groups else 0.0,
+        "composite_group_count": len(composite),
+        "concepts_in_composite_groups": composite_concepts,
+        "concepts_in_composite_groups_fraction": composite_concepts / active_count if active_count else 0.0,
+        "groups_of_size_2": sum(size == 2 for size in sizes),
+        "groups_of_size_3": sum(size == 3 for size in sizes),
+        "groups_of_size_4": sum(size == 4 for size in sizes),
+        "groups_of_size_5_plus": sum(size >= 5 for size in sizes),
+        "mean_group_size": statistics.mean(sizes) if sizes else 0.0,
+        "median_group_size": statistics.median(sizes) if sizes else 0.0,
+        "maximum_group_size": max(sizes, default=0),
+        "largest_composite_groups": [
+            {
+                "group_id": int(group["group_id"]),
+                "size": int(group["size"]),
+                "concepts": list(group["concepts"]),
+                "listing": ", ".join(group["concepts"]),
+            }
+            for group in largest
+        ],
+    }
+
+
+def build_concept_groups(cache: dict, config: CrpAuditConfig) -> dict:
+    """Generate reusable concept groups from a frozen CRP feature cache."""
+
+    _validate_config(config)
+    cache = validate_feature_cache(cache)
+    active_indices = _active_concept_indices(cache["splice_codes"], config)
+    concept_indices = _group_concepts(
+        cache["splice_codes"], cache["dictionary"], cache["vocabulary"], config
+    )
+    groups = [
+        {
+            "group_id": group_id,
+            "concept_indices": indices,
+            "concepts": [cache["vocabulary"][index] for index in indices],
+            "size": len(indices),
+        }
+        for group_id, indices in enumerate(concept_indices)
+    ]
+    diagnostics = _concept_group_diagnostics(groups, len(active_indices))
+    return {
+        "artifact": "splice_crp_concept_groups",
+        "concept_groups_version": CONCEPT_GROUPS_VERSION,
+        "cache_version": int(cache.get("cache_version", CACHE_VERSION)),
+        "sample_ids": cache["sample_ids"],
+        "provenance": dict(cache.get("provenance", {})),
+        "config": _grouping_config(config),
+        "vocabulary": cache["vocabulary"],
+        "active_concept_count": len(active_indices),
+        "active_concept_indices": active_indices,
+        "groups": groups,
+        "group_sizes": [group["size"] for group in groups],
+        "diagnostics": diagnostics,
+    }
+
+
+def validate_concept_groups(artifact: dict, cache: dict | None = None) -> dict:
+    """Validate a reusable concept-group artifact and optionally bind it to a cache."""
+
+    if not isinstance(artifact, dict):
+        raise ValueError("CRP concept groups must be a dictionary.")
+    if artifact.get("artifact") != "splice_crp_concept_groups":
+        raise ValueError(f"Unexpected concept-group artifact type: {artifact.get('artifact')!r}.")
+    if artifact.get("concept_groups_version") != CONCEPT_GROUPS_VERSION:
+        raise ValueError(
+            f"Unsupported concept-group version {artifact.get('concept_groups_version')!r}; "
+            f"expected {CONCEPT_GROUPS_VERSION}."
+        )
+    required = {
+        "sample_ids", "config", "vocabulary", "active_concept_count",
+        "active_concept_indices", "groups", "group_sizes", "diagnostics",
+    }
+    missing = required.difference(artifact)
+    if missing:
+        raise ValueError(f"Concept-group artifact is missing required keys: {sorted(missing)}")
+    config = artifact["config"]
+    if not isinstance(config, dict) or set(config) != set(GROUPING_CONFIG_FIELDS):
+        raise ValueError("Concept-group config must contain exactly the CRP grouping settings.")
+    vocabulary = [str(value) for value in artifact["vocabulary"]]
+    active_indices = [int(value) for value in artifact["active_concept_indices"]]
+    if len(active_indices) != len(set(active_indices)) or any(
+        index < 0 or index >= len(vocabulary) for index in active_indices
+    ):
+        raise ValueError("Active concept indices must be unique vocabulary indices.")
+    if int(artifact["active_concept_count"]) != len(active_indices):
+        raise ValueError("active_concept_count does not match active_concept_indices.")
+
+    groups = list(artifact["groups"])
+    seen_indices: set[int] = set()
+    for expected_id, group in enumerate(groups):
+        indices = [int(value) for value in group.get("concept_indices", [])]
+        concepts = [str(value) for value in group.get("concepts", [])]
+        if int(group.get("group_id", -1)) != expected_id:
+            raise ValueError("Concept group IDs must be contiguous and ordered.")
+        if not indices or len(indices) != int(group.get("size", -1)):
+            raise ValueError(f"Concept group {expected_id} has an invalid size.")
+        if indices != sorted(indices) or seen_indices.intersection(indices):
+            raise ValueError("Concept groups must contain sorted, disjoint concept indices.")
+        if any(index not in active_indices for index in indices):
+            raise ValueError("Concept groups may contain only active concept indices.")
+        if concepts != [vocabulary[index] for index in indices]:
+            raise ValueError(f"Concept labels do not match indices in group {expected_id}.")
+        seen_indices.update(indices)
+    if [int(value) for value in artifact["group_sizes"]] != [int(group["size"]) for group in groups]:
+        raise ValueError("group_sizes does not match the serialized groups.")
+    expected_diagnostics = _concept_group_diagnostics(groups, len(active_indices))
+    if artifact["diagnostics"] != expected_diagnostics:
+        raise ValueError("Concept-group diagnostics do not match the serialized groups.")
+
+    if cache is not None:
+        cache = validate_feature_cache(cache)
+        if [str(value) for value in artifact["sample_ids"]] != [str(value) for value in cache["sample_ids"]]:
+            raise ValueError("Concept groups and frozen cache sample IDs do not exactly match.")
+        if vocabulary != cache["vocabulary"]:
+            raise ValueError("Concept groups and frozen cache vocabularies do not exactly match.")
+        if int(artifact.get("cache_version", -1)) != int(cache["cache_version"]):
+            raise ValueError("Concept groups and frozen cache versions do not match.")
+    return artifact
+
+
+def save_concept_groups_json(artifact: dict, path: str | Path) -> Path:
+    """Atomically save a validated concept-group artifact."""
+
+    validate_concept_groups(artifact)
+    output_path = Path(path)
+    if output_path.suffix.lower() != ".json":
+        raise ValueError("Concept-group artifacts must use a .json file extension.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+    temporary.write_text(json.dumps(artifact, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(output_path)
+    return output_path
+
+
+def load_concept_groups_json(path: str | Path) -> dict:
+    """Load and validate a concept-group JSON artifact."""
+
+    artifact = json.loads(Path(path).read_text(encoding="utf-8"))
+    return validate_concept_groups(artifact)
 
 
 def orthonormal_basis(directions: torch.Tensor, tolerance: float = 1e-6) -> torch.Tensor:
@@ -626,23 +804,34 @@ def _build_teacher_graph(
 
 def build_teacher_graph(
     cache: dict,
+    concept_groups: dict,
     config: CrpAuditConfig,
+    concept_groups_source: dict | None = None,
 ) -> dict:
     """Build a validated, label-free SpLiCE-CRP teacher graph.
 
-    This is the module's main interface. Grouping, intervention geometry, null
-    controls and sparse graph assembly remain implementation details.
+    Grouping is an explicit input. Intervention geometry, null controls and
+    sparse graph assembly remain implementation details.
     """
 
     _validate_config(config)
     cache = validate_feature_cache(cache)
+    concept_groups = validate_concept_groups(concept_groups)
+    if [str(value) for value in concept_groups["sample_ids"]] != [
+        str(value) for value in cache["sample_ids"]
+    ]:
+        raise ValueError("Concept groups and frozen cache sample IDs do not exactly match.")
+    if [str(value) for value in concept_groups["vocabulary"]] != cache["vocabulary"]:
+        raise ValueError("Concept groups and frozen cache vocabularies do not exactly match.")
+    if int(concept_groups.get("cache_version", -1)) != int(cache["cache_version"]):
+        raise ValueError("Concept groups and frozen cache versions do not match.")
+
+    config_values = asdict(config)
+    config_values.update(concept_groups["config"])
+    config = CrpAuditConfig(**config_values)
+    _validate_config(config)
     audit_codes = cache["splice_codes"]
-    groups = _group_concepts(
-        audit_codes,
-        cache["dictionary"],
-        cache["vocabulary"],
-        config,
-    )
+    groups = [list(group["concept_indices"]) for group in concept_groups["groups"]]
     raw_neighbours, _ = topk_neighbors(
         cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
     )
@@ -770,6 +959,13 @@ def build_teacher_graph(
         "cache_version": int(cache.get("cache_version", CACHE_VERSION)),
         "sample_ids": cache["sample_ids"],
         "config": config_payload,
+        "grouping_config": dict(concept_groups["config"]),
+        "concept_groups_source": concept_groups_source or {
+            "path": "<in-memory>",
+            "sha256": None,
+            "artifact": concept_groups["artifact"],
+            "concept_groups_version": concept_groups["concept_groups_version"],
+        },
         "provenance": dict(cache.get("provenance", {})),
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
@@ -803,9 +999,11 @@ def _parse_bool(value: str | bool) -> bool:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a label-free SpLiCE-CRP teacher graph.")
+    parser = argparse.ArgumentParser(description="Build a SpLiCE-CRP teacher graph from saved groups.")
     parser.add_argument("--cache", required=True, help="Frozen feature cache (.pt).")
+    parser.add_argument("--concept-groups", required=True, help="Reusable concept_groups.json artifact.")
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
+    parser.add_argument("--html", help="HTML mechanism report (default: output with .html suffix).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
     parser.add_argument(
@@ -829,10 +1027,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
     config = CrpAuditConfig(**config_values)
-    cache_path, output_path = Path(args.cache), Path(args.output)
+    cache_path, groups_path, output_path = Path(args.cache), Path(args.concept_groups), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)
-    artifact = build_teacher_graph(cache, config)
+    concept_groups = load_concept_groups_json(groups_path)
+    source = {
+        "path": str(groups_path.resolve()),
+        "sha256": hashlib.sha256(groups_path.read_bytes()).hexdigest(),
+        "artifact": concept_groups["artifact"],
+        "concept_groups_version": concept_groups["concept_groups_version"],
+    }
+    artifact = build_teacher_graph(cache, concept_groups, config, source)
     save_graph_json(artifact, output_path)
+    from splice.crp_reporting import render_teacher_graph_report
+    render_teacher_graph_report(artifact, Path(args.html) if args.html else output_path.with_suffix(".html"))
     print(f"[INFO] Wrote {artifact['artifact']} to {output_path}")
     print(f"[INFO] Selected {len(artifact['selected_group_ids'])}/{len(artifact['groups'])} groups")
 

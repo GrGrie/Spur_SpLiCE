@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -17,12 +19,16 @@ from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
 from splice.crp import (
     CrpAuditConfig,
+    build_concept_groups,
     build_teacher_graph,
+    load_concept_groups_json,
     orthonormal_basis,
     project_out,
+    save_concept_groups_json,
     save_feature_cache,
     validate_feature_cache,
 )
+from splice.crp_reporting import render_concept_groups_report, render_teacher_graph_report
 from splice.crp_training import (
     CrpGraphBatchSampler,
     CrpRelationalRegularizer,
@@ -40,6 +46,8 @@ import spur_splice
 from spur_splice import resolve_epoch_schedule
 from scripts.tools.cache_crp_features import IndexedImages
 from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
+from scripts.tools.build_crp_teacher_graphs import main as build_crp_teacher_graphs_main
+from scripts.tools.generate_crp_concept_groups import main as generate_crp_concept_groups_main
 
 
 class SplicePipelineTests(unittest.TestCase):
@@ -127,6 +135,83 @@ class SplicePipelineTests(unittest.TestCase):
             self.assertEqual(loaded["cache_version"], 1)
             self.assertFalse(list(path.parent.glob("*.tmp")))
 
+    def test_concept_groups_are_reusable_and_include_the_complete_census(self):
+        cache = self._tiny_crp_cache()
+        cache["vocabulary"] = ["concept", "concepts"]
+        config = CrpAuditConfig(min_concept_frequency=0.1, max_concept_frequency=0.9)
+        artifact = build_concept_groups(cache, config)
+        diagnostics = artifact["diagnostics"]
+
+        self.assertEqual(artifact["active_concept_count"], 2)
+        self.assertEqual(artifact["group_sizes"], [2])
+        self.assertEqual(diagnostics["total_groups"], 1)
+        self.assertEqual(diagnostics["singleton_count"], 0)
+        self.assertEqual(diagnostics["composite_group_count"], 1)
+        self.assertEqual(diagnostics["concepts_in_composite_groups"], 2)
+        self.assertEqual(diagnostics["groups_of_size_2"], 1)
+        self.assertEqual(diagnostics["groups_of_size_3"], 0)
+        self.assertEqual(diagnostics["groups_of_size_4"], 0)
+        self.assertEqual(diagnostics["groups_of_size_5_plus"], 0)
+        self.assertEqual(diagnostics["maximum_group_size"], 2)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            json_path = save_concept_groups_json(artifact, directory / "concept_groups.json")
+            html_path = render_concept_groups_report(artifact, directory / "concept_groups.html")
+            self.assertEqual(load_concept_groups_json(json_path), artifact)
+            html = html_path.read_text(encoding="utf-8")
+            self.assertIn("All composite groups", html)
+            self.assertIn("concepts", html)
+            self.assertNotIn("intervention gain", html.lower())
+
+    def test_group_sweep_and_directory_graph_entry_points_colocate_artifacts(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            cache_path = root / "cache.pt"
+            sweep_path = root / "groups"
+            save_feature_cache(self._tiny_crp_cache(), cache_path)
+            with contextlib.redirect_stdout(io.StringIO()):
+                generate_crp_concept_groups_main(
+                    [
+                        "--cache", str(cache_path),
+                        "--output-root", str(sweep_path),
+                        "--text-similarity-threshold", "0.82", "0.85",
+                        "--coactivation-threshold", "0.30", "0.35",
+                        "--config", '{"min_concept_frequency": 0.1, "max_concept_frequency": 0.9}',
+                    ]
+                )
+            group_paths = sorted(sweep_path.rglob("concept_groups.json"))
+            self.assertEqual(len(group_paths), 4)
+            self.assertEqual(len(list(sweep_path.rglob("concept_groups.html"))), 4)
+
+            audit_config = json.dumps(
+                {
+                    "projected_neighbors": 3,
+                    "graph_top_k": 2,
+                    "null_trials": 1,
+                    "null_quantile": 0.0,
+                    "min_coverage": 0.0,
+                }
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                build_crp_teacher_graphs_main(
+                    [
+                        "--cache", str(cache_path),
+                        "--concept-groups", str(sweep_path),
+                        "--config", audit_config,
+                    ]
+                )
+            graph_paths = sorted(sweep_path.rglob("teacher_graph.json"))
+            self.assertEqual(len(graph_paths), 4)
+            self.assertEqual(len(list(sweep_path.rglob("teacher_graph.html"))), 4)
+            for graph_path in graph_paths:
+                graph = json.loads(graph_path.read_text(encoding="utf-8"))
+                source_path = Path(graph["concept_groups_source"]["path"])
+                self.assertEqual(source_path.name, "concept_groups.json")
+                source = json.loads(source_path.read_text(encoding="utf-8"))
+                self.assertEqual(graph["grouping_config"], source["config"])
+                self.assertTrue(graph["concept_groups_source"]["sha256"])
+
     def test_crp_cache_builder_reads_images_without_labels(self):
         class ImagesOnlyDataset:
             def get_subset(self, split, transform=None):
@@ -155,8 +240,11 @@ class SplicePipelineTests(unittest.TestCase):
             min_coverage=0.0,
             seed=7,
         )
-        first = build_teacher_graph(self._tiny_crp_cache(), config)
-        second = build_teacher_graph(self._tiny_crp_cache(), config)
+        cache = self._tiny_crp_cache()
+        concept_groups = build_concept_groups(cache, config)
+        with patch("splice.crp._group_concepts", side_effect=AssertionError("must not regroup")):
+            first = build_teacher_graph(cache, concept_groups, config)
+            second = build_teacher_graph(cache, concept_groups, config)
         torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
         torch.testing.assert_close(first["weights"], second["weights"])
         row_sums = first["weights"].sum(dim=1)
@@ -170,6 +258,16 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(first["degree_stats"]["indegree_rule"], "absolute")
         self.assertNotIn("cross_fold_summary", first)
         self.assertTrue(all("cross_fold" not in group for group in first["groups"]))
+        self.assertEqual(first["grouping_config"], concept_groups["config"])
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            report_path = render_teacher_graph_report(
+                first, Path(temporary_directory) / "teacher_graph.html"
+            )
+            html = report_path.read_text(encoding="utf-8")
+            self.assertIn("All group decisions", html)
+            self.assertIn("Confidence and intervention evidence", html)
+            self.assertIn("Final graph statistics", html)
 
     def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
         config = CrpAuditConfig(
@@ -183,7 +281,8 @@ class SplicePipelineTests(unittest.TestCase):
             max_selected_groups=1,
             seed=7,
         )
-        graph = build_teacher_graph(self._tiny_crp_cache(), config)
+        cache = self._tiny_crp_cache()
+        graph = build_teacher_graph(cache, build_concept_groups(cache, config), config)
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)
 
