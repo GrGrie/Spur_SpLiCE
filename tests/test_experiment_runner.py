@@ -20,6 +20,38 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertIn("--checkpoint_dir", command)
         self.assertIn("--run_record", command)
 
+    def test_locked_test_applies_only_a_predeclared_final_test_protocol(self):
+        manifest = self._manifest()
+        manifest["locked_test"] = {
+            "flags": ["final_test"],
+            "args": {
+                "linear_eval_split": "test",
+                "linear_probe_mode": "final",
+                "linear_probe_freq": 0,
+            },
+        }
+        command, _ = command_for(manifest, 1, "arm", locked_test=True)
+        self.assertIn("--final_test", command)
+        self.assertEqual(command[command.index("--linear_eval_split") + 1], "test")
+        self.assertEqual(command[command.index("--linear_probe_mode") + 1], "final")
+
+    def test_locked_test_rejects_an_unlocked_manifest(self):
+        with self.assertRaisesRegex(ValueError, "predeclared"):
+            command_for(self._manifest(), 1, "arm", locked_test=True)
+
+    def test_locked_test_uses_a_separate_default_attempt(self):
+        manifest = self._manifest()
+        manifest["locked_test"] = {
+            "flags": ["final_test"],
+            "args": {"linear_eval_split": "test", "linear_probe_mode": "final"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = run(
+                manifest, 1, "arm", dry_run=True, artifact_root=directory,
+                locked_test=True,
+            )
+        self.assertEqual(output.name, "locked-test")
+
     def test_missing_manifest_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "manifest.json"

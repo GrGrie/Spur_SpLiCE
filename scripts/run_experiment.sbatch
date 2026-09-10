@@ -18,6 +18,9 @@ cd "${PROJECT_DIR}"
 mkdir -p outputs/SLURM
 source scripts/load_splice_cluster_env.sh
 runner_args=("${MANIFEST}" --task "${TASK_ID}" --existing "${EXISTING_POLICY}")
+if [[ "${LOCKED_TEST:-0}" == "1" ]]; then
+  runner_args+=(--locked-test)
+fi
 if [[ -n "${SPUR_SPLICE_OUTPUT_ROOT:-}" ]]; then
   runner_args+=(--output-root "${SPUR_SPLICE_OUTPUT_ROOT}")
 fi

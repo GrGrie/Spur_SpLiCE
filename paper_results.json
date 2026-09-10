@@ -228,7 +228,7 @@
           "avg_acc_last10": 54.0450394153595,
           "best_group_last10": 63.15789222717285,
           "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/gradient_diagnostics.json",
-          "graph": "/home/xar68reb/Spur_SpLiCE/outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+          "graph": "project://outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
           "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed1/semantic_splice/training/waterbirds_s1_crp-v2-relational_e500_084ea2f3a5/probe_features_epoch_500_ds_train_val.json",
           "seed": 1,
           "status": "complete",
@@ -250,7 +250,7 @@
           "avg_acc_last10": 49.79149401187897,
           "best_group_last10": 65.41353464126587,
           "gradient_diagnostics": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/gradient_diagnostics.json",
-          "graph": "/home/xar68reb/Spur_SpLiCE/outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
+          "graph": "project://outputs/next_actions_after_transfer_2026-09-07/graph_ablation/graphs/semantic_splice_graph.json",
           "result": "outputs/next_actions_after_transfer_2026-09-07/graph_ablation/seed3/semantic_splice/training/waterbirds_s3_crp-v2-relational_e500_b1d2a200ff/probe_features_epoch_500_ds_train_val.json",
           "seed": 3,
           "status": "complete",
@@ -1818,11 +1818,12 @@
   "schema_version": 2,
   "scope": "Waterbirds scientific-article evidence registry",
   "sources": {
-    "artifact_root": "outputs/output_cluster",
-    "direct_transfer": "reports/followups_corrected/direct_transfer/summary.json",
-    "final_test": "reports/paper/{final_test_lock,test_results,test_summary}.json",
-    "graph_ablation": "reports/followups_corrected/graph_ablation/summary.json",
+    "artifact_root": "outputs",
+    "direct_transfer": "reports/legacy_analyses/next_actions_after_transfer_2026_09_07/direct_transfer/summary.json",
+    "final_test": "reports/legacy_analyses/paper_completion_2026_09_08/{final_test_lock,test_results,test_summary}.json",
+    "final_test_probes": "reports/paper_evidence/final_test/probes/seed_XX/<arm>.json",
+    "graph_ablation": "reports/legacy_analyses/next_actions_after_transfer_2026_09_07/graph_ablation/summary.json",
     "mechanism": "shared/waterbirds/graphs/crp_graph.json",
-    "panels": "reports/followups_corrected/visual/concept_panels.json"
+    "panels": "reports/paper_evidence/visual/concept_panels.json"
   }
 }

@@ -34,6 +34,15 @@
     "wandb_group": "waterbirds_crp",
     "wandb_tags": "canonical,waterbirds,crp"
   },
+  "locked_test": {
+    "description": "Predeclared held-out evaluation: one group-balanced logistic probe at SSL epoch 500.",
+    "flags": ["final_test"],
+    "args": {
+      "linear_eval_split": "test",
+      "linear_probe_mode": "final",
+      "linear_probe_freq": 0
+    }
+  },
   "arms": {
     "simclr": {"args": {"splice_mode": "none", "splice_weight": 0}},
     "crp_sampler_only": {"args": {"splice_mode": "crp_relational", "splice_weight": 0, "crp_teacher_graph": "{artifacts}/shared/waterbirds/graphs/crp_graph.json"}},

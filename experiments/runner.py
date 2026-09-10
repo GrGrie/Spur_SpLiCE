@@ -16,6 +16,7 @@ from splice.run_recording import portable_json
 
 EXECUTION_SCHEMA_VERSION = 1
 PRIMARY_ATTEMPT_ID = "primary"
+LOCKED_TEST_ATTEMPT_ID = "locked-test"
 
 
 def load_manifest(path: str | Path) -> dict:
@@ -48,6 +49,7 @@ def command_for(
     output_root: str | Path | None = None,
     artifact_root: str | Path | None = None,
     output: Path | None = None,
+    locked_test: bool = False,
 ) -> tuple[list[str], Path]:
     """Build a command; ``artifact_root`` remains an alias for old local callers."""
 
@@ -56,10 +58,29 @@ def command_for(
     if output_root is not None and artifact_root is not None:
         raise ValueError("Pass only one of output_root and artifact_root")
     root = resolve_output_root(output_root if output_root is not None else artifact_root)
-    attempt_id = attempt_id or PRIMARY_ATTEMPT_ID
+    attempt_id = attempt_id or (LOCKED_TEST_ATTEMPT_ID if locked_test else PRIMARY_ATTEMPT_ID)
     output = output or run_directory(seed, str(manifest["name"]), arm, attempt_id, root=root)
     attempt_id = output.name
     values = {**manifest["common"], **manifest["arms"][arm].get("args", {})}
+    flags = [*manifest.get("flags", []), *manifest["arms"][arm].get("flags", [])]
+    if locked_test:
+        protocol = manifest.get("locked_test")
+        if not isinstance(protocol, dict):
+            raise ValueError("--locked-test requires a predeclared 'locked_test' manifest section.")
+        protocol_args = protocol.get("args", {})
+        protocol_flags = protocol.get("flags", [])
+        if not isinstance(protocol_args, dict) or not isinstance(protocol_flags, list):
+            raise ValueError("locked_test args must be an object and flags must be a list.")
+        if (
+            protocol_args.get("linear_eval_split") != "test"
+            or protocol_args.get("linear_probe_mode") != "final"
+            or "final_test" not in protocol_flags
+        ):
+            raise ValueError(
+                "locked_test must select the test split, final-only probing, and the final_test guard."
+            )
+        values.update(protocol_args)
+        flags.extend(protocol_flags)
     values.update(seed=seed, checkpoint_dir=str(output / "training"))
     substitutions = {
         "project": str(PROJECT_ROOT), "artifacts": str(root), "seed": seed,
@@ -71,7 +92,7 @@ def command_for(
         "--run_record", str(output / "run.json"), "--artifact_dir", str(output / "training"),
         "--manifest_path", str(manifest.get("_manifest_path", "")),
     ))
-    for flag in [*manifest.get("flags", []), *manifest["arms"][arm].get("flags", [])]:
+    for flag in flags:
         command.append(f"--{flag}")
     for key, value in values.items():
         if isinstance(value, str):
@@ -149,12 +170,14 @@ def run(
     output_root: str | Path | None = None,
     artifact_root: str | Path | None = None,
     attempt_id: str | None = None,
+    locked_test: bool = False,
 ) -> Path:
     if existing == "new-attempt" and attempt_id is None:
         attempt_id = make_attempt_id()
-    attempt_id = attempt_id or PRIMARY_ATTEMPT_ID
+    attempt_id = attempt_id or (LOCKED_TEST_ATTEMPT_ID if locked_test else PRIMARY_ATTEMPT_ID)
     command, output = command_for(
         manifest, seed, arm, attempt_id, output_root=output_root, artifact_root=artifact_root,
+        locked_test=locked_test,
     )
     populated = output.exists() and any(output.iterdir())
     if populated:
@@ -184,6 +207,7 @@ def run(
         "schema_version": EXECUTION_SCHEMA_VERSION,
         "manifest_sha256": manifest_fingerprint(manifest), "study": str(manifest["name"]),
         "seed": seed, "arm": arm, "attempt_id": attempt_id, "existing_policy": existing,
+        "locked_test": locked_test,
         "command": command,
     }))
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
@@ -201,6 +225,11 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--existing", choices=("error", "reuse", "resume", "new-attempt"), default="error")
     parser.add_argument("--attempt-id", help="Stable run attempt to reuse or resume; defaults to 'primary'.")
+    parser.add_argument(
+        "--locked-test",
+        action="store_true",
+        help="Apply the manifest's predeclared final-only held-out test protocol.",
+    )
     parser.add_argument(
         "--output-root", "--artifact-root", dest="output_root", type=Path,
         help="Git-facing results tree; overrides SPUR_SPLICE_OUTPUT_ROOT and outputs/.",
@@ -225,7 +254,7 @@ def main() -> None:
         parser.error("choose --task or both --seed and --arm")
     run(
         manifest, seed, arm, args.dry_run, existing=args.existing,
-        output_root=args.output_root, attempt_id=args.attempt_id,
+        output_root=args.output_root, attempt_id=args.attempt_id, locked_test=args.locked_test,
     )
 
 

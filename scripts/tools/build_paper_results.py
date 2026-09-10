@@ -51,7 +51,7 @@ def _distribution(values: list[float]) -> dict[str, float | int]:
 
 
 def _core_registry(root: Path) -> tuple[list[dict], dict, dict]:
-    reports = root / "reports" / "paper"
+    reports = root / "reports" / "legacy_analyses" / "paper_completion_2026_09_08"
     results = _load(reports / "test_results.json")
     summary = _load(reports / "test_summary.json")
     lock_record = _load(reports / "final_test_lock.json")
@@ -70,22 +70,20 @@ def _core_registry(root: Path) -> tuple[list[dict], dict, dict]:
         for arm in ARMS:
             result = result_by_key[(seed, arm)]
             locked = lock_by_key[(seed, arm)]
-            status_paths = list(
-                (root / "seeds" / f"seed_{seed:02d}" / "paper" / "core" / arm).glob(
-                    "training/*/run_status.json"
-                )
+            run_paths = list(
+                (root / "seeds" / "paper_completion_2026_09_08_core"
+                 / f"seed_{seed:02d}" / arm).glob("*/run.json")
             )
-            complete = [path for path in status_paths if _load(path).get("status") == "complete"]
+            complete = [path for path in run_paths if _load(path).get("status") == "complete"]
             if len(complete) != 1:
                 raise ValueError(f"Expected one complete core execution for seed={seed}, arm={arm}.")
             status = _load(complete[0])
-            wandb = status.get("run_identity", {}).get("wandb", {})
-            probe_paths = list(
-                (root / "seeds" / f"seed_{seed:02d}" / "paper" / "test" / arm).glob("*.json")
+            wandb = status.get("wandb", {})
+            probe_path = (
+                root / "reports" / "paper_evidence" / "final_test" / "probes"
+                / f"seed_{seed:02d}" / f"{arm}.json"
             )
-            if len(probe_paths) != 1:
-                raise ValueError(f"Expected one final-test probe JSON for seed={seed}, arm={arm}.")
-            probe = _load(probe_paths[0])
+            probe = _load(probe_path)
             convergence = probe.get("convergence")
             if not isinstance(convergence, dict) or convergence.get("converged") is not True:
                 raise ValueError(f"Final-test probe did not converge for seed={seed}, arm={arm}.")
@@ -184,9 +182,10 @@ def _mechanism(root: Path) -> dict:
 
 def build(root: Path) -> dict:
     rows, final_summary, lock_metadata = _core_registry(root)
-    direct = _load(root / "reports" / "followups_corrected" / "direct_transfer" / "summary.json")
-    graph_ablation = _load(root / "reports" / "followups_corrected" / "graph_ablation" / "summary.json")
-    panels = _load(root / "reports" / "followups_corrected" / "visual" / "concept_panels.json")
+    legacy_followups = root / "reports" / "legacy_analyses" / "next_actions_after_transfer_2026_09_07"
+    direct = _load(legacy_followups / "direct_transfer" / "summary.json")
+    graph_ablation = _load(legacy_followups / "graph_ablation" / "summary.json")
+    panels = _load(root / "reports" / "paper_evidence" / "visual" / "concept_panels.json")
     try:
         displayed_root = root.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     except ValueError:
@@ -206,11 +205,12 @@ def build(root: Path) -> dict:
         ],
         "sources": {
             "artifact_root": displayed_root,
-            "final_test": "reports/paper/{final_test_lock,test_results,test_summary}.json",
+            "final_test": "reports/legacy_analyses/paper_completion_2026_09_08/{final_test_lock,test_results,test_summary}.json",
+            "final_test_probes": "reports/paper_evidence/final_test/probes/seed_XX/<arm>.json",
             "mechanism": "shared/waterbirds/graphs/crp_graph.json",
-            "direct_transfer": "reports/followups_corrected/direct_transfer/summary.json",
-            "graph_ablation": "reports/followups_corrected/graph_ablation/summary.json",
-            "panels": "reports/followups_corrected/visual/concept_panels.json",
+            "direct_transfer": "reports/legacy_analyses/next_actions_after_transfer_2026_09_07/direct_transfer/summary.json",
+            "graph_ablation": "reports/legacy_analyses/next_actions_after_transfer_2026_09_07/graph_ablation/summary.json",
+            "panels": "reports/paper_evidence/visual/concept_panels.json",
         },
         "final_test": {
             "dataset": "waterbirds",

@@ -39,6 +39,19 @@ python -m experiments.runner experiments/manifests/waterbirds_crp.json --list
 python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 --dry-run
 ```
 
+The held-out test protocol is declared in the manifest and must be requested
+explicitly. It runs one final probe on `test` instead of periodic validation
+probes:
+
+```bash
+python -m experiments.runner experiments/manifests/waterbirds_crp.json --task 0 --locked-test
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json --locked-test
+```
+
+Locked-test runs default to the separate `locked-test` attempt ID; ordinary
+runs use `primary`. Command identity checks prevent accidental reuse of one as
+the other.
+
 Existing execution directories are protected by default. Choose
 `--existing reuse`, `resume`, or `new-attempt` explicitly; reuse/resume require
 the recorded command to match. Use `--output-root PATH` or set

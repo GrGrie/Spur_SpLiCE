@@ -20,6 +20,13 @@ size and SHA-256 verification.
 
 The versioned contract is [`schemas/run-record-v1.schema.json`](../schemas/run-record-v1.schema.json).
 
+`reports/paper_evidence/` contains compact inputs needed to rebuild the checked
+root `paper_results.json`, including the 20 held-out probe records and the
+frozen qualitative-panel selection. Claim-relevant reusable controls belong in
+`shared/waterbirds/`: the intervention, raw-CLIP, and semantic-control graphs,
+plus compact target metadata. Large feature and direct-transfer target tensors
+remain in scratch and are identified by their retained metadata and hashes.
+
 Canonical checkpoints are written under
 `/scratch/xar68reb/CoSpRo/checkpoints/Spur_SpLiCE/` regardless of size. Feature
 payloads larger than 10 MiB go under the sibling `features/` tree. Small local

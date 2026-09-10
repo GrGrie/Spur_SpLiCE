@@ -6,6 +6,9 @@ Submit an experiment matrix and its dependent result collector with:
 bash scripts/submit_experiment.sh experiments/manifests/waterbirds_crp.json
 ```
 
+Append `--locked-test` to apply the manifest's predeclared final-only held-out
+test protocol. Locked-test executions use a separate `locked-test` attempt ID.
+
 `run_experiment.sbatch` activates the cluster environment and calls
 `experiments.runner`; `collect_results.sbatch` runs with an `afterany`
 dependency. Slurm output is kept in `outputs/SLURM/`, and cluster setup verifies

@@ -74,8 +74,14 @@ def _summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary = {}
     for arm, arm_records in sorted(by_arm.items()):
         values = {
-            "average_accuracy": [value for record in arm_records if (value := _metric(record, ("Average over last 10 linear val acc", "Linear val acc"))) is not None],
-            "worst_group_accuracy": [value for record in arm_records if (value := _metric(record, ("Average over last 10 linear val worst-group acc", "Linear val worst-group acc"))) is not None],
+            "average_accuracy": [value for record in arm_records if (value := _metric(record, (
+                "Average over last 10 linear test acc", "Linear test acc",
+                "Average over last 10 linear val acc", "Linear val acc",
+            ))) is not None],
+            "worst_group_accuracy": [value for record in arm_records if (value := _metric(record, (
+                "Average over last 10 linear test worst-group acc", "Linear test worst-group acc",
+                "Average over last 10 linear val worst-group acc", "Linear val worst-group acc",
+            ))) is not None],
         }
         summary[arm] = {
             name: {"count": len(items), "mean": mean(items), "sd": stdev(items) if len(items) > 1 else 0.0}
