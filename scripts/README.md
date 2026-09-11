@@ -80,14 +80,19 @@ The shell entry points use the same interfaces directly or through `sbatch`:
 sbatch scripts/run_cospro_pipeline.sh
 bash scripts/run_cospro_pipeline.sh --dry-run
 
-# Build the canonical frozen Waterbirds SpLiCE dataset cache. The output root
-# is optional; under Slurm it defaults to the configured scratch feature root.
-bash scripts/cache_splice_dataset.sh /scratch/path/features/Spur_SpLiCE
+# Build a frozen SpLiCE dataset cache. The dataset argument is required;
+# the output root is optional and uses the configured scratch feature root under Slurm.
+bash scripts/cache_splice_dataset.sh waterbirds /scratch/path/features/Spur_SpLiCE
 
 # The command above writes the following cache; pass this path to stage 2.
 # /scratch/path/features/Spur_SpLiCE/waterbirds/splice_dataset_cache/
 #   cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/
 #     splice_dataset_cache.pt
+
+# Other datasets use separate celeba/ and spur_cifar10/ subdirectories
+# beneath the same output root. CelebA spellings are normalized to celeba.
+bash scripts/cache_splice_dataset.sh celebA /scratch/path/features/Spur_SpLiCE
+sbatch scripts/cache_splice_dataset.sh spur_cifar10 /scratch/path/features/Spur_SpLiCE
 
 # Default 5 x 6 grouping grid. --output-root is optional.
 bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cache.pt \

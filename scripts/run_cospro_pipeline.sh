@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=40G
-#SBATCH --time=7-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=outputs/SLURM/celeba-cospro-%j.out
 #SBATCH --error=outputs/SLURM/celeba-cospro-%j.err
 

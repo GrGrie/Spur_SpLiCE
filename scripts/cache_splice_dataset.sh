@@ -2,17 +2,25 @@
 #SBATCH --job-name=SpLiCE-Dataset-Cache
 #SBATCH --partition=informatik-mind
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=outputs/SLURM/%x-%j.out
 #SBATCH --error=outputs/SLURM/%x-%j.err
 
 set -euo pipefail
-if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [OUTPUT_ROOT] (set DATASET and DATA_FOLDER as needed)" >&2
+if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
+  echo "Usage: $0 DATASET [OUTPUT_ROOT]"
+  echo "Datasets: waterbirds, celebA (celeba), spur_cifar10"
+  echo "Set DATA_FOLDER to override the dataset location."
+  echo "Caches are stored under OUTPUT_ROOT/<dataset>/splice_dataset_cache/<configuration>/."
+  exit 0
+fi
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 DATASET [OUTPUT_ROOT] (set DATA_FOLDER as needed)" >&2
   exit 2
 fi
+DATASET="$1"
 
 if [[ -z "${PROJECT_DIR:-}" ]]; then
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
@@ -29,10 +37,10 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 
-DATASET="${DATASET:-waterbirds}"
 DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 DEFAULT_OUTPUT_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${SPUR_SPLICE_ARTIFACT_ROOT:-${PROJECT_DIR}/tmp}}/features/Spur_SpLiCE"
-OUTPUT_ROOT="${1:-${DEFAULT_OUTPUT_ROOT}}"
+# The Python cache builder adds the canonical dataset name and configuration.
+OUTPUT_ROOT="${2:-${DEFAULT_OUTPUT_ROOT}}"
 
 "${PYTHON_BIN}" -u -m scripts.tools.cache_splice_dataset \
   --dataset "${DATASET}" \
