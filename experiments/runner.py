@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory
+from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory, scratch_root
 from splice.run_recording import portable_json
 
 
@@ -85,6 +85,8 @@ def command_for(
     substitutions = {
         "project": str(PROJECT_ROOT), "artifacts": str(root), "seed": seed,
         "arm": arm, "output": str(output),
+        "attempt": attempt_id,
+        "scratch": str(scratch_root()),
     }
     command = [sys.executable, "-u", str(PROJECT_ROOT / "spur_splice.py")]
     command.extend((

@@ -71,7 +71,15 @@ def simclr_forward_loss(
                 "_embeddings": embeddings,
             }
             return loss, parts, bsz
-        raise ValueError("Unsupported SSL regularizer.")
+        if getattr(splice_regularizer, "requires_concept_transfer", False):
+            if sample_indices is None or model.clip_distillation_head is None:
+                raise ValueError("Frozen transfer requires target-bank indices and its prediction head.")
+            target_rows, valid_rows = splice_regularizer.targets_for_indices(sample_indices, embeddings.device)
+            predictions = model.clip_distillation_head(embeddings)
+            splice_loss = splice_regularizer(predictions, torch.cat([target_rows, target_rows]), valid_rows)
+            loss = loss + splice_loss
+        else:
+            raise ValueError("Unsupported SSL regularizer.")
     parts = {
         "simclr": simclr_loss,
         "decor": decor_loss,
@@ -103,6 +111,8 @@ def train_one_epoch(
         "row_mass_before_renorm": AverageMeter(),
         "effective_donor_count": AverageMeter(),
         "row_mass_after_renorm": AverageMeter(),
+        "valid_fraction": AverageMeter(),
+        "cosine_loss": AverageMeter(),
     }
     if hasattr(splice_regularizer, "set_epoch"):
         splice_regularizer.set_epoch(epoch)
@@ -117,7 +127,8 @@ def train_one_epoch(
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
         crp_training = getattr(splice_regularizer, "requires_crp_indices", False)
-        sample_indices = data[1] if crp_training else None
+        concept_transfer = getattr(splice_regularizer, "requires_concept_transfer", False)
+        sample_indices = data[1] if (crp_training or concept_transfer) else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(
@@ -254,6 +265,8 @@ def log_rank_metrics(
                     "relational_confidence_weighted_kl", 0.0
                 ),
     }
+    payload.update({f"SSL {key}": value for key, value in train_metrics.items()
+                    if key.startswith("la_ssl_") or key in {"relational_valid_fraction", "relational_cosine_loss"}})
     if run_recorder is not None:
         run_recorder.log_metrics("ssl", epoch, payload)
     if wandb_run is not None:

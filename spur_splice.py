@@ -44,6 +44,7 @@ from splice.graph_io import graph_fingerprint
 from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
 from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
 from splice.run_recording import RunRecorder, portable_json
+from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
@@ -226,7 +227,7 @@ def parse_args() -> argparse.Namespace:
         "--splice_mode",
         type=str,
         default="none",
-        choices=["none", "cospro_relational", "crp_relational"],
+        choices=["none", "cospro_relational", "crp_relational", "frozen_concept_distill"],
     )
     parser.add_argument("--splice_weight", type=float, default=0.0)
     parser.add_argument(
@@ -271,7 +272,37 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Epoch at which relational-loss weight reaches zero.",
     )
+    parser.add_argument("--concept_transfer_targets", default="")
+    parser.add_argument("--concept_transfer_target_kind", choices=["raw", "reconstruction", "shuffled_reconstruction"], default="reconstruction")
+    parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
+    parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
+    parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
+    parser.add_argument("--la_ssl", action="store_true")
+    parser.add_argument("--la_ssl_eta", type=float, default=0.1)
+    parser.add_argument("--la_ssl_gamma", type=float, default=10.0)
+    parser.add_argument("--la_ssl_quantile", type=float, default=0.1)
+    parser.add_argument("--la_ssl_warmup_epochs", type=int, default=10)
+    parser.add_argument("--la_ssl_update_freq", type=int, default=2)
     args = parser.parse_args()
+    if args.la_ssl:
+        if args.splice_mode != "none" or args.simclr_weight != 1:
+            parser.error("LA-SSL uses the unchanged SimCLR objective without a teacher.")
+        if not 0 < args.la_ssl_eta <= 1 or not 0 < args.la_ssl_quantile < 1:
+            parser.error("LA-SSL requires eta in (0,1] and quantile in (0,1).")
+        if args.la_ssl_gamma <= 0 or args.la_ssl_update_freq <= 0 or args.la_ssl_warmup_epochs < 0:
+            parser.error("Invalid LA-SSL scaling or schedule.")
+    if args.splice_mode == "frozen_concept_distill":
+        if args.dataset != "waterbirds":
+            parser.error("The restored direct-transfer protocol supports Waterbirds only.")
+        if not Path(args.concept_transfer_targets).is_file():
+            parser.error("--concept_transfer_targets must point to the retained target bank.")
+        target_artifact = load_target_artifact(args.concept_transfer_targets)
+        if int(target_artifact["target_dim"]) != 512:
+            parser.error("Frozen transfer requires 512-dimensional targets.")
+        args.concept_transfer_target_artifact = target_artifact["artifact"]
+        args.concept_transfer_cache_fingerprint = target_artifact.get("cache_fingerprint", "")
+        if min(args.concept_transfer_alpha_max, args.concept_transfer_start_epoch, args.concept_transfer_warmup_epochs) < 0:
+            parser.error("Concept-transfer schedule values must be non-negative.")
     try:
         args.linear_eval_split = resolve_evaluation_split(args.linear_eval_split, args.final_test)
         args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
@@ -409,7 +440,7 @@ def format_storage_name(args: argparse.Namespace) -> str:
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         experiment = "cospro-relational" if args.splice_mode == "cospro_relational" else "crp-v2-relational"
     else:
-        experiment = "base"
+        experiment = "la-ssl" if getattr(args, "la_ssl", False) else ("concept-transfer" if args.splice_mode == "frozen_concept_distill" else "base")
 
     excluded_from_fingerprint = {
         "checkpoint_dir",
@@ -549,6 +580,8 @@ def build_ssl_loader(args: argparse.Namespace):
     dataset_spec = DATASET_REGISTRY[args.dataset]
     config = build_dataset_config(args)
     loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
+    if args.splice_mode == "frozen_concept_distill":
+        loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
         config,
         args.batch_size,
@@ -723,6 +756,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
         name=args.model,
         head=args.head,
         feat_dim=args.feat_dim,
+        clip_distillation_dim=512 if args.splice_mode == "frozen_concept_distill" else None,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
@@ -746,8 +780,17 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
                 decay_start_epoch=args.crp_decay_start_epoch,
                 decay_end_epoch=args.crp_decay_end_epoch,
             )
+    elif args.splice_mode == "frozen_concept_distill":
+        splice_regularizer = ConceptDistillationRegularizer(
+            train_loader.dataset.targets, args.concept_transfer_target_kind,
+            args.concept_transfer_alpha_max, args.concept_transfer_start_epoch,
+            args.concept_transfer_warmup_epochs,
+        )
     else:
         splice_regularizer = None
+    if getattr(args, "la_ssl", False):
+        from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader
+        train_loader = build_la_ssl_loader(train_loader, args, seed_worker)
     return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
 
 
@@ -772,6 +815,11 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 kind="teacher_graph",
                 stage="input",
                 retention_state="retained",
+            )
+        elif args.splice_mode == "frozen_concept_distill":
+            recorder.register_artifact(
+                Path(args.concept_transfer_targets), kind="frozen_transfer_targets",
+                stage="input", retention_state="retained",
             )
     if wandb_run is not None:
         resolved = {}
@@ -995,6 +1043,7 @@ def main() -> None:
                 device,
                 scaler=scaler,
                 loader_generator=train_loader.generator,
+                training_state=getattr(train_loader, "la_ssl", None),
                 expected_crp_graph_fingerprint=getattr(args, "crp_graph_fingerprint", None),
             )
             + 1
@@ -1008,9 +1057,18 @@ def main() -> None:
         for epoch in range(start_epoch, args.epochs + 1):
             adjust_learning_rate(args, optimizer, epoch)
             time1 = time.time()
+            sampling_metrics = {}
+            if hasattr(train_loader, "la_ssl"):
+                with preserve_rng_state():
+                    # A separate seeded pass leaves training/probe RNG streams intact.
+                    torch.manual_seed(args.seed + 2_000_000 + epoch)
+                    np.random.seed(args.seed + 2_000_000 + epoch)
+                    random.seed(args.seed + 2_000_000 + epoch)
+                    sampling_metrics = train_loader.la_ssl.refresh(model, device, args.temp, epoch)
             train_metrics = train_one_epoch(
                 train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
             )
+            train_metrics.update(sampling_metrics)
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
@@ -1044,6 +1102,7 @@ def main() -> None:
                     probe_file,
                     scaler=scaler,
                     loader_generator=train_loader.generator,
+                    training_state=getattr(train_loader, "la_ssl", None),
                 )
                 final_probe_metrics = run_linear_probe(args, str(actual_probe_file), epoch)
                 last_probe_epoch = epoch
@@ -1059,6 +1118,7 @@ def main() -> None:
                     os.path.join(args.save_folder, f"epoch_{epoch}.pth"),
                     scaler=scaler,
                     loader_generator=train_loader.generator,
+                    training_state=getattr(train_loader, "la_ssl", None),
                 )
                 recorder.register_artifact(
                     recovery_checkpoint,
@@ -1078,6 +1138,7 @@ def main() -> None:
                 probe_file,
                 scaler=scaler,
                 loader_generator=train_loader.generator,
+                training_state=getattr(train_loader, "la_ssl", None),
             )
             final_probe_metrics = run_linear_probe(args, str(actual_probe_file), args.epochs)
             if actual_probe_file.exists():
@@ -1092,6 +1153,7 @@ def main() -> None:
                 os.path.join(args.save_folder, "last.pth"),
                 scaler=scaler,
                 loader_generator=train_loader.generator,
+                training_state=getattr(train_loader, "la_ssl", None),
             )
             recorder.register_artifact(
                 final_checkpoint,

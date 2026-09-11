@@ -1,0 +1,71 @@
+{
+  "name": "next_actions_after_transfer_2026_09_07_direct_transfer",
+  "description": "Complete the existing seeds 1/3 validation protocol; no test-driven selection.",
+  "seeds": [
+    2,
+    4
+  ],
+  "flags": [
+    "use_wandb",
+    "keep_checkpoints"
+  ],
+  "common": {
+    "amp": true,
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_keep_count": 2,
+    "cudnn_benchmark": false,
+    "cudnn_enabled": true,
+    "epochs": 500,
+    "feat_dim": 128,
+    "head": "mlp",
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "linear_learning_rate": 1.0,
+    "linear_lr_decay_rate": 0.2,
+    "linear_weight_decay": 0.0,
+    "lr_decay_rate": 0.1,
+    "model": "resnet18_large",
+    "momentum": 0.9,
+    "num_workers": 4,
+    "optimizer": "SGD",
+    "rank_eval_freq": 0,
+    "retain_probe_artifacts_every": 25,
+    "save_freq": 50,
+    "simclr_weight": 1.0,
+    "ssl_crop_min": 0.2,
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "weight_decay": 0.0001,
+    "delete_checkpoints_after_training": false,
+    "delete_epoch_checkpoints_after_training": true,
+    "dataset": "waterbirds",
+    "data_folder": "${DATA_FOLDER}",
+    "wandb_name": "Spur_SpLiCE",
+    "wandb_group": "next_actions_corrected_direct_v1",
+    "wandb_run_name": "next_actions_corrected_direct_v1_{arm}_seed{seed}_{attempt}",
+    "lr_decay_epochs": "350,400,450",
+    "linear_lr_decay_epochs": "60,75,90"
+  },
+  "arms": {
+    "splice_reconstruction": {
+      "args": {
+        "splice_mode": "frozen_concept_distill",
+        "splice_weight": 0,
+        "concept_transfer_targets": "{scratch}/legacy_archives/Spur_SpLiCE/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt",
+        "concept_transfer_target_kind": "reconstruction",
+        "concept_transfer_alpha_max": 0.1,
+        "concept_transfer_start_epoch": 10,
+        "concept_transfer_warmup_epochs": 10
+      }
+    }
+  }
+}

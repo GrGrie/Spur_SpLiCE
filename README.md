@@ -24,6 +24,9 @@ See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow,
 [`docs/REPO_STRUCTURE.md`](docs/REPO_STRUCTURE.md) for the canonical storage
 policy, and `outputs/README.md` for result navigation.
 
+For the seed-2/4 semantic/direct-transfer completion launcher and the matched
+LA-SSL baseline, see [docs/SUBMISSION_RUNS.md](docs/SUBMISSION_RUNS.md).
+
 ## Run the canonical experiment
 
 On the cluster, set `DATA_FOLDER` if it differs from the default. The submission

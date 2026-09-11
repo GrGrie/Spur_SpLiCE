@@ -1,0 +1,71 @@
+{
+  "name": "waterbirds_la_ssl",
+  "description": "LA-SSL Algorithm 1 under the matched Waterbirds protocol; see docs/SUBMISSION_RUNS.md.",
+  "seeds": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "flags": [
+    "use_wandb",
+    "keep_checkpoints"
+  ],
+  "common": {
+    "dataset": "waterbirds",
+    "data_folder": "${DATA_FOLDER}",
+    "model": "resnet18_large",
+    "epochs": 500,
+    "batch_size": 128,
+    "num_workers": 4,
+    "learning_rate": 0.01,
+    "optimizer": "SGD",
+    "temp": 0.05,
+    "weight_decay": 0.0001,
+    "momentum": 0.9,
+    "ssl_crop_min": 0.2,
+    "linear_probe_solver": "logistic",
+    "linear_probe_l2": 0.001,
+    "linear_probe_tolerance": 1e-06,
+    "linear_probe_max_epochs": 200,
+    "train_set_linear_layer": "ds_train",
+    "linear_eval_split": "val",
+    "linear_probe_mode": "periodic",
+    "linear_probe_freq": 25,
+    "linear_spurious_probe": true,
+    "delete_checkpoints_after_training": true,
+    "retain_probe_artifacts_every": 0,
+    "wandb_name": "Spur_SpLiCE",
+    "wandb_group": "waterbirds_la_ssl",
+    "wandb_tags": "baseline,waterbirds,la_ssl",
+    "wandb_run_name": "waterbirds_la_ssl_seed{seed}_{attempt}",
+    "rank_eval_freq": 0
+  },
+  "locked_test": {
+    "description": "Predeclared held-out evaluation: one group-balanced logistic probe at SSL epoch 500.",
+    "flags": [
+      "final_test"
+    ],
+    "args": {
+      "linear_eval_split": "test",
+      "linear_probe_mode": "final",
+      "linear_probe_freq": 0
+    }
+  },
+  "arms": {
+    "la_ssl": {
+      "flags": [
+        "la_ssl"
+      ],
+      "args": {
+        "splice_mode": "none",
+        "splice_weight": 0,
+        "la_ssl_eta": 0.1,
+        "la_ssl_gamma": 10.0,
+        "la_ssl_quantile": 0.1,
+        "la_ssl_warmup_epochs": 10,
+        "la_ssl_update_freq": 2
+      }
+    }
+  }
+}

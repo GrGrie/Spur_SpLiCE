@@ -25,6 +25,7 @@ def save_checkpoint(
     path: str,
     scaler=None,
     loader_generator: torch.Generator | None = None,
+    training_state=None,
 ) -> Path:
     options = {
         key: value
@@ -42,6 +43,7 @@ def save_checkpoint(
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "loader_generator_state": loader_generator.get_state() if loader_generator is not None else None,
+            "training_state": training_state.state_dict() if training_state is not None else None,
         }
     destination = binary_destination(
         path,
@@ -65,6 +67,7 @@ def load_checkpoint(
     scaler=None,
     loader_generator: torch.Generator | None = None,
     expected_crp_graph_fingerprint: str | None = None,
+    training_state=None,
 ) -> int:
     try:
         checkpoint = torch.load(path, map_location=device, weights_only=False)
@@ -82,6 +85,12 @@ def load_checkpoint(
                 "Cannot resume CoSpRo training with a different teacher graph: "
                 f"checkpoint={saved_fingerprint!r}, current={expected_crp_graph_fingerprint!r}."
             )
+    if training_state is not None:
+        if checkpoint.get("training_state") is None:
+            raise ValueError("Checkpoint is missing the required adaptive-sampling state.")
+        training_state.load_state_dict(checkpoint["training_state"])
+    elif checkpoint.get("training_state") is not None:
+        raise ValueError("Cannot resume adaptive-sampling training without its state.")
     model.load_state_dict(checkpoint["model"], strict=True)
     optimizer.load_state_dict(checkpoint["optimizer"])
     reproducibility_keys = {
