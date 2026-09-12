@@ -1,5 +1,9 @@
 # Submission runs
 
+For checkpoint-only held-out evaluation of the completed controls and the
+graph-evidence figure, follow [SUBMISSION_FINISHING.md](SUBMISSION_FINISHING.md).
+Those workflows do not launch SSL training.
+
 Run from the repository root with the existing `grgrie-train` environment.
 The scripts add experiments only; they do not submit jobs automatically or
 modify completed results. The random-crop probe protocol is unchanged.
