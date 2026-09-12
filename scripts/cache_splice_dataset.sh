@@ -2,9 +2,9 @@
 #SBATCH --job-name=SpLiCE-Dataset-Cache
 #SBATCH --partition=informatik-mind
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --time=06:00:00
+#SBATCH --cpus-per-task=5
+#SBATCH --mem=40G
+#SBATCH --time=10:00:00
 #SBATCH --output=outputs/SLURM/%x-%j.out
 #SBATCH --error=outputs/SLURM/%x-%j.err
 

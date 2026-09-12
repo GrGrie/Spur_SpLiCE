@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=CoSpRo-Concept-Groups
 #SBATCH --partition=informatik-mind
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=outputs/SLURM/%x-%j.out
 #SBATCH --error=outputs/SLURM/%x-%j.err
 

@@ -1,0 +1,154 @@
+{
+  "convergence": {
+    "averaging_window": 10,
+    "converged": true,
+    "epochs": 14,
+    "gradient_max": 9.334293369214801e-08,
+    "l2": 0.001,
+    "normalization": "train_feature_standardization",
+    "objective": 0.03513193454152678,
+    "solver": "full_batch_lbfgs",
+    "stable_epochs": 10,
+    "tolerance": 1e-06
+  },
+  "eval_split": "val",
+  "feature_artifact": {
+    "payload_bytes": 2948456,
+    "retention_state": "retained",
+    "uri": "project://outputs/seeds/next_actions_after_transfer_2026_09_07_graph_ablation/seed_04/semantic_splice/primary/training/waterbirds_s4_cospro-relational_e500_4b369d3bf8/probe_features_epoch_275_ds_train_val.pt"
+  },
+  "group_metrics": {
+    "train": {
+      "accuracy": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "count": [
+        56,
+        56,
+        56,
+        56
+      ],
+      "named": {
+        "(target,context)=(0,0)": {
+          "accuracy": 100.0,
+          "count": 56
+        },
+        "(target,context)=(0,1)": {
+          "accuracy": 100.0,
+          "count": 56
+        },
+        "(target,context)=(1,0)": {
+          "accuracy": 100.0,
+          "count": 56
+        },
+        "(target,context)=(1,1)": {
+          "accuracy": 100.0,
+          "count": 56
+        }
+      }
+    },
+    "val": {
+      "accuracy": [
+        54.60385513305664,
+        50.0,
+        51.12782287597656,
+        69.92481231689453
+      ],
+      "count": [
+        467,
+        466,
+        133,
+        133
+      ],
+      "named": {
+        "(target,context)=(0,0)": {
+          "accuracy": 54.603856801986694,
+          "count": 467
+        },
+        "(target,context)=(0,1)": {
+          "accuracy": 50.0,
+          "count": 466
+        },
+        "(target,context)=(1,0)": {
+          "accuracy": 51.12782120704651,
+          "count": 133
+        },
+        "(target,context)=(1,1)": {
+          "accuracy": 69.92481350898743,
+          "count": 133
+        }
+      }
+    }
+  },
+  "metric_semantics": {
+    "accuracy_unit": "percent",
+    "average_accuracy": "sample-weighted accuracy on eval_split",
+    "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
+    "history_window": 10,
+    "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups"
+  },
+  "metrics": {
+    "Average over 10 last linear val acc": 54.128438234329224,
+    "Average over last 10 linear val acc": 54.128438234329224,
+    "Average over last 10 linear val best-group acc": 69.92481350898743,
+    "Average over last 10 linear val worst-group acc": 50.0,
+    "Last linear val acc": 54.128438234329224,
+    "Last linear val best-group acc": 69.92481350898743,
+    "Last linear val worst-group acc": 50.0,
+    "Last linear val worst-group count": 466,
+    "Last linear val worst-group id": 1,
+    "Linear train acc": 100.0,
+    "Linear train best-group acc": 100.0,
+    "Linear train group accuracies": [
+      100.0,
+      100.0,
+      100.0,
+      100.0
+    ],
+    "Linear train group counts": [
+      56,
+      56,
+      56,
+      56
+    ],
+    "Linear train worst-group acc": 100.0,
+    "Linear val acc": 54.128438234329224,
+    "Linear val best-group acc": 69.92481350898743,
+    "Linear val group accuracies": [
+      54.60385513305664,
+      50.0,
+      51.12782287597656,
+      69.92481231689453
+    ],
+    "Linear val group counts": [
+      467,
+      466,
+      133,
+      133
+    ],
+    "Linear val worst-group acc": 50.0,
+    "Probe converged": true,
+    "Probe epochs": 14,
+    "Probe gradient max": 9.334293369214801e-08,
+    "Spurious probe average over last 10 val acc": 91.49290919303894,
+    "Spurious probe average over last 10 val worst-group acc": 89.47368264198303,
+    "Spurious probe converged": true,
+    "Spurious probe gradient max": 6.136192636438692e-08,
+    "Spurious probe last val acc": 91.49290919303894,
+    "Spurious probe last val worst-group acc": 89.47368264198303,
+    "Train linear effective rank": 3.5929453372955322,
+    "Train linear energy-based rank": 1.5941280126571655,
+    "Train linear entropy": 1.2789722681045532,
+    "Val linear effective rank": 4.044985771179199,
+    "Val linear energy-based rank": 1.6806660890579224,
+    "Val linear entropy": 1.3974779844284058
+  },
+  "schema": "linear-probe-result-v3",
+  "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
+  "solver": "logistic",
+  "ssl_epoch": 275,
+  "train_split": "ds_train"
+}
