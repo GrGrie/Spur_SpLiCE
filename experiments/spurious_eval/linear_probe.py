@@ -726,11 +726,17 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
                                         }}
     atomic_write_json(result_path, result_payload)
     if args.run_recorder is not None:
+        result_retention = (
+            "final"
+            if is_final_feature
+            else ("temporary" if args.ssl_total_epochs else "retained")
+        )
         args.run_recorder.register_artifact(
             result_path,
             kind="probe_result",
             stage="linear_probe",
             epoch=supcon_epoch,
+            retention_state=result_retention,
         )
         args.run_recorder.log_metrics("linear_probe_final", supcon_epoch, result_payload)
 

@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const=True,
         default=False,
-        help="Delete only epoch checkpoint files after training; preserve Linear Probe artifacts.",
+        help="Delete only epoch checkpoint files after training; preserve probe tensors and the final probe result.",
     )
     parser.add_argument(
         "--retain_probe_artifacts_every",
@@ -919,15 +919,45 @@ def cleanup_all_checkpoints(args: argparse.Namespace) -> dict[str, object]:
     return {"requested": True, "removed_count": removed_count, "completed": True}
 
 
+def cleanup_probe_results(args: argparse.Namespace) -> dict[str, object]:
+    """Keep only the newest probe result JSON."""
+
+    removed_result_count = 0
+    result_paths: list[tuple[int, Path]] = []
+    for feature_dir in feature_directories(args):
+        for result_path in feature_dir.glob("probe_features_epoch_*.json"):
+            match = re.fullmatch(r"probe_features_epoch_(\d+)(?:_.+)?\.json", result_path.name)
+            if match is not None:
+                result_paths.append((int(match.group(1)), result_path))
+
+    if result_paths:
+        # There is one result JSON per probe epoch. Keep the newest one and
+        # remove older periodic snapshots.
+        result_paths.sort(key=lambda item: (item[0], item[1].name))
+        for _, result_path in result_paths[:-1]:
+            if result_path.exists():
+                result_path.unlink()
+                removed_result_count += 1
+
+    return {
+        "requested": True,
+        "removed_count": removed_result_count,
+        "removed_probe_result_count": removed_result_count,
+        "completed": True,
+    }
+
+
 def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
-    """Keep small probe JSONs and only selected bulky feature tensors."""
+    """Keep only the newest probe JSON and selected bulky feature tensors."""
 
     interval = args.retain_probe_artifacts_every
+    result_cleanup = cleanup_probe_results(args)
     removed_count = 0
     retained_epochs: set[int] = set()
     feature_paths = []
     for feature_dir in feature_directories(args):
         feature_paths.extend(feature_dir.glob("probe_features_epoch_*.pt"))
+
     for feature_path in feature_paths:
         match = re.fullmatch(r"probe_features_epoch_(\d+)(?:_.+)?\.pt", feature_path.name)
         if match is None:
@@ -940,7 +970,8 @@ def cleanup_probe_artifacts(args: argparse.Namespace) -> dict[str, object]:
         removed_count += 1
     return {
         "requested": True,
-        "removed_count": removed_count,
+        "removed_count": removed_count + result_cleanup["removed_probe_result_count"],
+        "removed_probe_result_count": result_cleanup["removed_probe_result_count"],
         "retained_epochs": sorted(retained_epochs),
         "completed": True,
     }
@@ -1173,11 +1204,7 @@ def main() -> None:
             if args.delete_checkpoints_after_training:
                 cleanup_status["probe_artifacts"] = cleanup_probe_artifacts(args)
             else:
-                cleanup_status["probe_artifacts"] = {
-                    "requested": False,
-                    "removed_count": 0,
-                    "completed": True,
-                }
+                cleanup_status["probe_artifacts"] = cleanup_probe_results(args)
         else:
             cleanup_default_checkpoints(args)
             cleanup_status["ssl_checkpoints"] = {
@@ -1185,11 +1212,10 @@ def main() -> None:
                 "removed_count": 0,
                 "completed": True,
             }
-            cleanup_status["probe_artifacts"] = {
-                "requested": False,
-                "removed_count": 0,
-                "completed": True,
-            }
+            # Probe result JSON retention is independent of checkpoint
+            # retention: keep the newest result even when all other artifacts
+            # are being preserved.
+            cleanup_status["probe_artifacts"] = cleanup_probe_results(args)
         status.update({"status": "complete", "cleanup": cleanup_status})
         write_run_status(args, status)
         recorder.finish(final_metrics=final_probe_metrics, cleanup=cleanup_status)
