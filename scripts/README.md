@@ -1,5 +1,57 @@
 # Scripts
 
+For one training run with parameters chosen at submission time, use the general
+launcher. All options after the script name are passed to `spur_splice.py`;
+its CLI uses underscores in option names. Run `python3 spur_splice.py --help`
+for the full list.
+
+```bash
+sbatch scripts/run_training.sbatch \
+  --dataset waterbirds --seed 7 --epochs 100 --batch_size 128 \
+  --learning_rate 0.003 --model resnet18_large \
+  --data_folder /scratch/my-datasets --checkpoint_dir /scratch/my-run \
+  --keep_checkpoints
+
+# Continue from a particular checkpoint file. Set --checkpoint_dir as well
+# when the continued run should write into a chosen directory.
+sbatch scripts/run_training.sbatch \
+  --dataset waterbirds --seed 7 --epochs 150 \
+  --checkpoint_dir /scratch/my-run \
+  --resume "$(find /scratch/my-run -name last.pth -print -quit)" \
+  --keep_checkpoints
+```
+
+The launcher chooses a unique scratch directory, run record and attempt ID from
+the Slurm job ID when none are supplied. The run record stays at
+`$SPUR_SPLICE_SCRATCH_ROOT/manual/<job-id>/run.json` even if a checkpoint root
+is supplied. `--checkpoint_dir` is the *root* of the training artifacts; the
+trainer adds a configuration-named subdirectory, so use the actual `last.pth`
+path saved there for `--resume`.
+`--keep_checkpoints` must be set to retain checkpoints. Standalone runs are
+recorded separately from manifest matrices and are not collected by the
+matrix result collector.
+
+For the predeclared seed/arm matrix below, keep the manifest as the source of
+truth. A single matrix cell can also be submitted directly:
+
+```bash
+sbatch scripts/run_experiment.sbatch experiments/manifests/waterbirds_cospro.json \
+  --seed 3 --arm cospro --existing error
+```
+
+Its hyperparameters and dataset still come from the manifest. To change them
+for a *matrix* experiment, create a new manifest and use
+`submit_experiment.sh` so training and collection read the same configuration.
+`run_la_ssl.sh` is the fixed Waterbirds LA-SSL protocol (seed 1 by default;
+pass `--seed N` to select another declared seed). `run_projection_controls.sh`
+only completes the two historical Waterbirds controls, with verified inputs.
+`run_cospro_pipeline.sh` runs preprocessing, graph construction, one CoSpRo
+student, and collection; it accepts `--dataset`, `--seed`, `--epochs`,
+`--batch-size`, `--output-root`, `--student-existing resume`, and the other
+options in `python3 -m scripts.tools.run_cospro_pipeline --help` directly after
+its script name. For `spur_cifar10`, both the standalone trainer and pipeline
+default to `resnet18`; larger-image datasets retain `resnet18_large`.
+
 Submit an experiment matrix and its dependent result collector with:
 
 ```bash
@@ -84,7 +136,11 @@ bash scripts/run_cospro_pipeline.sh --dry-run
 # the output root is optional and uses the configured scratch feature root under Slurm.
 bash scripts/cache_splice_dataset.sh waterbirds /scratch/path/features/Spur_SpLiCE
 
-# The command above writes the following cache; pass this path to stage 2.
+# The same options work under sbatch; later CLI values override defaults.
+sbatch scripts/cache_splice_dataset.sh waterbirds \
+  --data-folder /scratch/my-datasets --splice-l1-penalty 0.1 --batch-size 32
+
+# The first cache command writes the following cache; pass this path to stage 2.
 # /scratch/path/features/Spur_SpLiCE/waterbirds/splice_dataset_cache/
 #   cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/
 #     splice_dataset_cache.pt

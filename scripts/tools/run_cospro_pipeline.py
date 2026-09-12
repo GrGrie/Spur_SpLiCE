@@ -140,7 +140,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     student.add_argument("--student-existing", choices=("error", "reuse", "resume", "new-attempt"), default="error")
     student.add_argument("--attempt-id")
     student.add_argument("--student-device", default="cuda" if torch.cuda.is_available() else "cpu")
-    student.add_argument("--model", choices=SSL_RESNET_MODEL_NAMES, default="resnet18_large")
+    student.add_argument("--model", choices=SSL_RESNET_MODEL_NAMES, default=None)
     student.add_argument("--head", choices=("linear", "mlp", "identity"), default="mlp")
     student.add_argument("--feat-dim", type=int, default=128)
     student.add_argument("--epochs", type=int, default=500)
@@ -195,7 +195,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     tracking.add_argument("--wandb-tags", default="")
     tracking.add_argument("--entity", default="gsgrechkin-rptu")
     tracking.add_argument("--collect-results", action=argparse.BooleanOptionalAction, default=True)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.model is None:
+        args.model = "resnet18" if args.dataset == "spur_cifar10" else "resnet18_large"
+    if args.dataset == "spur_cifar10" and (
+        args.model.endswith("_large") or args.model == "resnet50_pretrained"
+    ):
+        parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
+    return args
 
 
 def _configs(args: argparse.Namespace) -> tuple[CrpAuditConfig, CrpAuditConfig]:

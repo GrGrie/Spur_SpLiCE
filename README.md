@@ -72,6 +72,19 @@ python -m scripts.tools.build_cospro_baseline_graphs --help
 python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
 ```
 
+## Run one custom training job
+
+For an individual training job with a custom dataset, seed, hyperparameters and
+checkpoint location, use:
+
+```bash
+sbatch scripts/run_training.sbatch --dataset waterbirds --seed 7 \
+  --epochs 100 --checkpoint_dir /scratch/my-run --keep_checkpoints
+```
+
+See [scripts/README.md](scripts/README.md) for resume commands and the
+differences between standalone runs and manifest matrices.
+
 ## Run the complete CelebA pipeline
 
 `scripts/run_cospro_pipeline.sh` defaults to CelebA and runs all five stages in

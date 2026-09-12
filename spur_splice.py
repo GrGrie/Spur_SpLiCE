@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(CANONICAL_DATASET_REGISTRY),
     )
     parser.add_argument("--data_folder", type=str, default="./datasets")
-    parser.add_argument("--model", type=str, default="resnet18_large", choices=SSL_RESNET_MODEL_NAMES)
+    parser.add_argument("--model", type=str, default=None, choices=SSL_RESNET_MODEL_NAMES)
     parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
     parser.add_argument("--feat_dim", type=int, default=128)
     parser.add_argument("--temp", type=float, default=0.5)
@@ -284,6 +284,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--la_ssl_warmup_epochs", type=int, default=10)
     parser.add_argument("--la_ssl_update_freq", type=int, default=2)
     args = parser.parse_args()
+    if args.model is None:
+        args.model = "resnet18" if args.dataset == "spur_cifar10" else "resnet18_large"
     if args.la_ssl:
         if args.splice_mode != "none" or args.simclr_weight != 1:
             parser.error("LA-SSL uses the unchanged SimCLR objective without a teacher.")

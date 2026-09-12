@@ -19,7 +19,7 @@ mkdir -p outputs/SLURM
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
   source "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
 else
-  PYTHON_BIN="${PYTHON_BIN:-python}"
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
   export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
 fi
 
@@ -70,7 +70,7 @@ SEED="${SEED:-1}"
 STUDENT_EXISTING="${STUDENT_EXISTING:-error}" # error, reuse, resume, or new-attempt
 ATTEMPT_ID="${ATTEMPT_ID:-}"
 STUDENT_DEVICE="${STUDENT_DEVICE:-cuda}"
-MODEL="${MODEL:-resnet18_large}"
+MODEL="${MODEL:-}" # Empty lets the Python CLI choose a dataset-compatible default.
 HEAD="${HEAD:-mlp}"
 FEAT_DIM="${FEAT_DIM:-128}"
 EPOCHS="${EPOCHS:-500}"
@@ -157,7 +157,6 @@ pipeline_args=(
   --seed "${SEED}"
   --student-existing "${STUDENT_EXISTING}"
   --student-device "${STUDENT_DEVICE}"
-  --model "${MODEL}"
   --head "${HEAD}"
   --feat-dim "${FEAT_DIM}"
   --epochs "${EPOCHS}"
@@ -209,5 +208,6 @@ pipeline_args=(
 [[ "${USE_WANDB}" == "1" ]] && pipeline_args+=(--use-wandb)
 [[ "${COLLECT_RESULTS}" == "1" ]] || pipeline_args+=(--no-collect-results)
 [[ -n "${ATTEMPT_ID}" ]] && pipeline_args+=(--attempt-id "${ATTEMPT_ID}")
+[[ -n "${MODEL}" ]] && pipeline_args+=(--model "${MODEL}")
 
 "${PYTHON_BIN}" -u -m scripts.tools.run_cospro_pipeline "${pipeline_args[@]}" "$@"

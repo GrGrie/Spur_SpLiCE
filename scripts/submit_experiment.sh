@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-/home/xar68reb/Spur_SpLiCE}"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 MANIFEST="${1:-experiments/manifests/waterbirds_cospro.json}"
 LOCKED_TEST=0
 if [[ "${2:-}" == "--locked-test" ]]; then

@@ -12,5 +12,10 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 export DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 cd "${PROJECT_DIR}"
-source scripts/load_splice_cluster_env.sh
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  source scripts/load_splice_cluster_env.sh
+else
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+  export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
+fi
 "${PYTHON_BIN}" -u -m experiments.complete_projection_controls "$@"
