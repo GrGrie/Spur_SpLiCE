@@ -10,8 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def launch(script, *args):
+def launch(script, *args, extra_env=None):
     env = {**os.environ, "PROJECT_DIR": str(ROOT), "PYTHON_BIN": "/bin/echo"}
+    env.update(extra_env or {})
     return subprocess.run(
         ["bash", str(ROOT / "scripts" / script), *args],
         cwd=ROOT, env=env, text=True, capture_output=True,
@@ -19,6 +20,26 @@ def launch(script, *args):
 
 
 class TrainingLauncherTests(unittest.TestCase):
+    def test_standalone_auto_selects_the_only_dataset_teacher_graph(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            graph = (
+                Path(temporary_directory) / "shared" / "celeba" / "graphs"
+                / "groups" / "teacher_graph.json"
+            )
+            graph.parent.mkdir(parents=True)
+            graph.write_text("{}", encoding="utf-8")
+            result = launch(
+                "run_training.sbatch", "--dataset", "celebA", "--seed", "1",
+                extra_env={"SPUR_SPLICE_OUTPUT_ROOT": temporary_directory},
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = shlex.split(result.stdout)
+        self.assertEqual(command[command.index("--splice_mode") + 1], "cospro_relational")
+        self.assertEqual(command[command.index("--cospro_teacher_graph") + 1], str(graph))
+        self.assertEqual(command[-4:], ["--dataset", "celebA", "--seed", "1"])
+
     def test_standalone_requires_explicit_dataset_and_seed(self):
         result = launch("run_training.sbatch", "--dataset", "celeba")
         self.assertEqual(result.returncode, 2)

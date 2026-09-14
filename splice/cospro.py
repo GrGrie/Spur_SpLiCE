@@ -16,7 +16,7 @@ import os
 import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -91,6 +91,13 @@ class CrpAuditConfig:
     orthogonal_tolerance: float = 1e-6
     use_residual_splice_gate: bool = True
     residual_splice_similarity_threshold: float = 0.25
+    # Exact all-pairs search is useful for small audits and regression tests.
+    # Large datasets use deterministic random-hyperplane LSH followed by exact
+    # cosine reranking inside the candidate buckets.
+    neighbor_backend: str = "auto"
+    ann_threshold: int = 20_000
+    ann_tables: int = 8
+    ann_bucket_size: int = 512
 
 
 def _validate_config(config: CrpAuditConfig) -> None:
@@ -119,12 +126,17 @@ def _validate_config(config: CrpAuditConfig) -> None:
         "max_indegree": config.max_indegree,
         "null_trials": config.null_trials,
         "similarity_chunk_size": config.similarity_chunk_size,
+        "ann_threshold": config.ann_threshold,
+        "ann_tables": config.ann_tables,
+        "ann_bucket_size": config.ann_bucket_size,
     }
     for name, value in integer_fields.items():
         if value <= 0:
             raise ValueError(f"{name} must be positive, got {value}.")
     if config.max_selected_groups < 0:
         raise ValueError("max_selected_groups must be non-negative; 0 disables the cap.")
+    if config.neighbor_backend not in {"auto", "exact", "lsh"}:
+        raise ValueError("neighbor_backend must be one of: auto, exact, lsh.")
 
 
 def validate_crp_config(config: CrpAuditConfig) -> CrpAuditConfig:
@@ -647,23 +659,118 @@ def project_out(centered_embeddings: torch.Tensor, basis: torch.Tensor) -> torch
     return F.normalize(residual, dim=1)
 
 
-def topk_neighbors(features: torch.Tensor, k: int, chunk_size: int = 512) -> tuple[torch.Tensor, torch.Tensor]:
-    """Exact cosine neighbours computed in chunks to bound peak memory."""
+def _exact_topk_neighbors(
+    features: torch.Tensor, k: int, chunk_size: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    indices, similarities = [], []
+    for start in range(0, len(features), chunk_size):
+        stop = min(start + chunk_size, len(features))
+        similarity = features[start:stop] @ features.T
+        local_rows = torch.arange(stop - start, device=features.device)
+        similarity[local_rows, torch.arange(start, stop, device=features.device)] = -torch.inf
+        values, neighbours = similarity.topk(k, dim=1)
+        indices.append(neighbours)
+        similarities.append(values)
+    return torch.cat(indices), torch.cat(similarities)
+
+
+def _lsh_topk_neighbors(
+    features: torch.Tensor,
+    k: int,
+    chunk_size: int,
+    *,
+    tables: int,
+    bucket_size: int,
+    seed: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Approximate cosine neighbours using deterministic SimHash buckets.
+
+    Each random-hyperplane table supplies ``k`` candidates per row. Candidates
+    are then reranked with their exact cosine similarities. Extending small
+    buckets in hash-sorted order guarantees enough non-self candidates even
+    for an unlucky hash partition.
+    """
+
+    n_samples, dimensions = features.shape
+    bits = max(1, min(30, int(round(math.log2(max(2, n_samples / bucket_size))))))
+    powers = (2 ** torch.arange(bits, dtype=torch.int64, device=features.device)).view(1, -1)
+    table_indices = []
+    for table in range(tables):
+        generator = torch.Generator(device=features.device)
+        generator.manual_seed(int(seed) + 1_000_003 * table)
+        planes = torch.randn(
+            dimensions, bits, generator=generator, device=features.device, dtype=features.dtype,
+        )
+        codes = (((features @ planes) >= 0).to(torch.int64) * powers).sum(dim=1)
+        order = torch.argsort(codes, stable=True)
+        sorted_codes = codes[order]
+        boundaries = torch.cat((
+            torch.zeros(1, dtype=torch.long, device=features.device),
+            torch.where(sorted_codes[1:] != sorted_codes[:-1])[0] + 1,
+            torch.tensor([n_samples], dtype=torch.long, device=features.device),
+        )).cpu().tolist()
+        candidates = torch.empty((n_samples, k), dtype=torch.long, device=features.device)
+        for boundary_index in range(len(boundaries) - 1):
+            start, stop = boundaries[boundary_index], boundaries[boundary_index + 1]
+            # Small buckets borrow adjacent entries in deterministic hash order.
+            needed = max(k + 1, bucket_size)
+            extra = max(0, needed - (stop - start))
+            pool_start = max(0, start - extra // 2)
+            pool_stop = min(n_samples, stop + extra - (start - pool_start))
+            pool_start = max(0, pool_start - max(0, needed - (pool_stop - pool_start)))
+            query_rows = order[start:stop]
+            pool_rows = order[pool_start:pool_stop]
+            for offset in range(0, len(query_rows), chunk_size):
+                rows = query_rows[offset:offset + chunk_size]
+                similarity = features[rows] @ features[pool_rows].T
+                similarity.masked_fill_(rows.view(-1, 1) == pool_rows.view(1, -1), -torch.inf)
+                candidates[rows] = pool_rows[similarity.topk(k, dim=1).indices]
+        table_indices.append(candidates)
+
+    candidates = torch.cat(table_indices, dim=1).sort(dim=1).values
+    final_indices, final_similarities = [], []
+    row_ids = torch.arange(n_samples, device=features.device)
+    for start in range(0, n_samples, chunk_size):
+        stop = min(start + chunk_size, n_samples)
+        rows = row_ids[start:stop]
+        candidate_rows = candidates[start:stop]
+        similarity = (features[rows].unsqueeze(1) * features[candidate_rows]).sum(dim=2)
+        similarity.masked_fill_(candidate_rows == rows.view(-1, 1), -torch.inf)
+        duplicate = torch.zeros_like(candidate_rows, dtype=torch.bool)
+        duplicate[:, 1:] = candidate_rows[:, 1:] == candidate_rows[:, :-1]
+        similarity.masked_fill_(duplicate, -torch.inf)
+        values, positions = similarity.topk(k, dim=1)
+        final_indices.append(candidate_rows.gather(1, positions))
+        final_similarities.append(values)
+    return torch.cat(final_indices), torch.cat(final_similarities)
+
+
+def topk_neighbors(
+    features: torch.Tensor,
+    k: int,
+    chunk_size: int = 512,
+    *,
+    backend: str = "exact",
+    ann_threshold: int = 20_000,
+    ann_tables: int = 8,
+    ann_bucket_size: int = 512,
+    seed: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Cosine neighbours via exact chunks or a scalable PyTorch LSH index."""
 
     n_samples = len(features)
     if n_samples < 2:
         raise ValueError("At least two samples are required to construct relations.")
     k = min(k, n_samples - 1)
-    indices, similarities = [], []
-    for start in range(0, n_samples, chunk_size):
-        stop = min(start + chunk_size, n_samples)
-        similarity = features[start:stop] @ features.T
-        local_rows = torch.arange(stop - start)
-        similarity[local_rows, torch.arange(start, stop)] = -torch.inf
-        values, neighbours = similarity.topk(k, dim=1)
-        indices.append(neighbours)
-        similarities.append(values)
-    return torch.cat(indices), torch.cat(similarities)
+    resolved = "lsh" if backend == "auto" and n_samples >= ann_threshold else backend
+    resolved = "exact" if resolved == "auto" else resolved
+    if resolved == "exact":
+        return _exact_topk_neighbors(features, k, chunk_size)
+    if resolved == "lsh":
+        return _lsh_topk_neighbors(
+            features, k, chunk_size, tables=ann_tables, bucket_size=ann_bucket_size, seed=seed,
+        )
+    raise ValueError(f"Unknown neighbour backend: {backend!r}")
 
 
 def _gini(values: torch.Tensor) -> float:
@@ -683,94 +790,142 @@ class _AuditGeometry:
     splice_codes: torch.Tensor
     code_dot: torch.Tensor | None = None
     code_norm_squared: torch.Tensor | None = None
+    sparse_codes: Any | None = None
 
     def __post_init__(self):
-        # Reuse sparse code products across interventions on small CPU datasets.
-        # Bound the dense pair cache to 10000² float32 entries; large/GPU audits
-        # use the chunked pair calculation below instead.
-        if self.splice_codes.device.type == "cpu" and len(self.splice_codes) <= 10000:
+        # SpLiCE activations are sparse even though the frozen artifact is a
+        # dense tensor. Keep one CSR view so pairwise residual gates touch only
+        # non-zero concepts rather than materializing [pairs, vocabulary].
+        if self.splice_codes.device.type == "cpu":
             from scipy.sparse import csr_matrix
             sparse = csr_matrix(self.splice_codes.numpy())
-            object.__setattr__(self, "code_dot", torch.from_numpy((sparse @ sparse.T).toarray()))
+            object.__setattr__(self, "sparse_codes", sparse)
             object.__setattr__(self, "code_norm_squared", self.splice_codes.square().sum(1))
+        # A dense product is faster for tiny test/research datasets only.
+        if self.sparse_codes is not None and len(self.splice_codes) <= 10000:
+            object.__setattr__(self, "code_dot", torch.from_numpy((sparse @ sparse.T).toarray()))
+
+
+def _candidate_code_dot(
+    audit: _AuditGeometry,
+    anchors: torch.Tensor,
+    neighbours: torch.Tensor,
+) -> torch.Tensor:
+    if audit.code_dot is not None:
+        return audit.code_dot[anchors, neighbours]
+    if audit.sparse_codes is None:
+        raise RuntimeError("Residual SpLiCE gating requires CPU-resident sparse codes.")
+    flat_anchors = anchors.reshape(-1).numpy()
+    flat_neighbours = neighbours.reshape(-1).numpy()
+    result = torch.empty(len(flat_anchors), dtype=torch.float32)
+    pair_chunk_size = 262_144
+    for start in range(0, len(flat_anchors), pair_chunk_size):
+        stop = min(start + pair_chunk_size, len(flat_anchors))
+        products = audit.sparse_codes[flat_anchors[start:stop]].multiply(
+            audit.sparse_codes[flat_neighbours[start:stop]]
+        )
+        result[start:stop] = torch.from_numpy(products.sum(axis=1).A1).float()
+    return result.view_as(neighbours)
 
 
 def _residual_splice_similarity(
-    codes: torch.Tensor,
-    anchors: torch.Tensor,
-    neighbours: torch.Tensor,
+    audit: _AuditGeometry,
+    geometry: dict,
     excluded_concept_indices: Sequence[int],
 ) -> torch.Tensor:
-    """Compare remaining SpLiCE codes for the candidate pairs only."""
+    """Compare remaining SpLiCE codes for cached candidate pairs."""
 
-    if anchors.shape[0] > 16:
-        return torch.cat([
-            _residual_splice_similarity(codes, anchors[start:start + 16],
-                                       neighbours[start:start + 16], excluded_concept_indices)
-            for start in range(0, anchors.shape[0], 16)
-        ])
-    left = codes[anchors]
-    right = codes[neighbours]
-    excluded = torch.as_tensor(
-        excluded_concept_indices, dtype=torch.long, device=codes.device
+    anchors, neighbours = geometry["anchors"], geometry["neighbours"]
+    excluded = torch.as_tensor(excluded_concept_indices, dtype=torch.long)
+    numerator = geometry["code_dot"].clone()
+    left_norm = audit.code_norm_squared[anchors].clone()
+    right_norm = audit.code_norm_squared[neighbours].clone()
+    flat_anchors, flat_neighbours = anchors.reshape(-1), neighbours.reshape(-1)
+    numerator_flat, left_norm_flat, right_norm_flat = (
+        numerator.reshape(-1), left_norm.reshape(-1), right_norm.reshape(-1)
     )
-    left_excluded = left.index_select(2, excluded)
-    right_excluded = right.index_select(2, excluded)
-    numerator = (left * right).sum(dim=2) - (left_excluded * right_excluded).sum(dim=2)
-    left_norm = left.square().sum(dim=2) - left_excluded.square().sum(dim=2)
-    right_norm = right.square().sum(dim=2) - right_excluded.square().sum(dim=2)
+    pair_chunk_size = 262_144
+    for start in range(0, len(flat_anchors), pair_chunk_size):
+        stop = min(start + pair_chunk_size, len(flat_anchors))
+        left = audit.splice_codes[
+            flat_anchors[start:stop].view(-1, 1), excluded.view(1, -1)
+        ]
+        right = audit.splice_codes[
+            flat_neighbours[start:stop].view(-1, 1), excluded.view(1, -1)
+        ]
+        numerator_flat[start:stop] -= (left * right).sum(dim=1)
+        left_norm_flat[start:stop] -= left.square().sum(dim=1)
+        right_norm_flat[start:stop] -= right.square().sum(dim=1)
     denominator = (left_norm.clamp_min(0) * right_norm.clamp_min(0)).sqrt()
     similarity = numerator / denominator.clamp_min(1e-12)
     return similarity.masked_fill(denominator <= 1e-12, 0.0).clamp(0.0, 1.0)
 
 
-def _relation_geometry(
+def _neighbor_geometry(
     audit: _AuditGeometry,
     basis: torch.Tensor,
     config: CrpAuditConfig,
-    excluded_concept_indices: Sequence[int],
+    *,
+    search_seed: int,
 ) -> dict:
     projected = project_out(audit.centered_clip, basis)
     neighbours, projected_similarity = topk_neighbors(
-        projected, config.projected_neighbors, config.similarity_chunk_size
+        projected,
+        config.projected_neighbors,
+        config.similarity_chunk_size,
+        backend=config.neighbor_backend,
+        ann_threshold=config.ann_threshold,
+        ann_tables=config.ann_tables,
+        ann_bucket_size=config.ann_bucket_size,
+        seed=search_seed,
     )
-    anchors = torch.arange(len(projected)).view(-1, 1).expand_as(neighbours)
+    anchors = torch.arange(len(projected), device=projected.device).view(-1, 1).expand_as(neighbours)
     raw_similarity = (audit.centered_clip[anchors] * audit.centered_clip[neighbours]).sum(dim=2)
     gain = projected_similarity - raw_similarity
-    residual_similarity = torch.ones_like(projected_similarity)
-    residual_support = torch.ones_like(projected_similarity, dtype=torch.bool)
-    if config.use_residual_splice_gate:
-        if audit.code_dot is not None:
-            excluded = audit.splice_codes[:, list(excluded_concept_indices)]
-            left, right = excluded[anchors], excluded[neighbours]
-            numerator = audit.code_dot[anchors, neighbours] - (left * right).sum(2)
-            left_norm = audit.code_norm_squared[anchors] - left.square().sum(2)
-            right_norm = audit.code_norm_squared[neighbours] - right.square().sum(2)
-            denominator = (left_norm.clamp_min(0) * right_norm.clamp_min(0)).sqrt()
-            residual_similarity = (numerator / denominator.clamp_min(1e-12)).masked_fill(denominator <= 1e-12, 0).clamp(0, 1)
-        else:
-            residual_similarity = _residual_splice_similarity(
-                audit.splice_codes, anchors, neighbours, excluded_concept_indices,
-            )
-        residual_support = residual_similarity >= config.residual_splice_similarity_threshold
     raw_overlap = (
         neighbours.unsqueeze(2) == audit.raw_neighbours.unsqueeze(1)
     ).any(dim=2).float().mean(dim=1)
-    return {
+    top1_neighbor_turnover = float(
+        (neighbours[:, 0] != audit.raw_neighbours[:, 0]).float().mean()
+    )
+    mean_neighbor_turnover = float(1.0 - raw_overlap.mean())
+    mean_jaccard_at_k = float((raw_overlap / (2.0 - raw_overlap)).mean())
+    anchors, neighbours = anchors.cpu(), neighbours.cpu()
+    geometry = {
         "anchors": anchors,
-        "raw_neighbours": audit.raw_neighbours,
+        "raw_neighbours": audit.raw_neighbours.cpu(),
         "neighbours": neighbours,
-        "projected_similarity": projected_similarity,
-        "gain": gain,
+        "projected_similarity": projected_similarity.cpu(),
+        "gain": gain.cpu(),
+        "top1_neighbor_turnover": top1_neighbor_turnover,
+        "mean_neighbor_turnover": mean_neighbor_turnover,
+        "mean_jaccard_at_k": mean_jaccard_at_k,
+    }
+    if config.use_residual_splice_gate:
+        geometry["code_dot"] = _candidate_code_dot(audit, anchors, neighbours)
+    return geometry
+
+
+def _relation_geometry(
+    audit: _AuditGeometry,
+    neighbour_geometry: dict,
+    config: CrpAuditConfig,
+    excluded_concept_indices: Sequence[int],
+) -> dict:
+    projected_similarity = neighbour_geometry["projected_similarity"]
+    residual_similarity = torch.ones_like(projected_similarity)
+    residual_support = torch.ones_like(projected_similarity, dtype=torch.bool)
+    if config.use_residual_splice_gate:
+        residual_similarity = _residual_splice_similarity(
+            audit, neighbour_geometry, excluded_concept_indices,
+        )
+        residual_support = residual_similarity >= config.residual_splice_similarity_threshold
+    return {
+        **{key: value for key, value in neighbour_geometry.items() if key != "code_dot"},
         "semantic_similarity": residual_similarity,
         "residual_splice_similarity": residual_similarity,
         "residual_splice_support": residual_support,
         "supported": residual_support,
-        "top1_neighbor_turnover": float(
-            (neighbours[:, 0] != audit.raw_neighbours[:, 0]).float().mean()
-        ),
-        "mean_neighbor_turnover": float(1.0 - raw_overlap.mean()),
-        "mean_jaccard_at_k": float((raw_overlap / (2.0 - raw_overlap)).mean()),
     }
 
 
@@ -963,6 +1118,10 @@ def build_teacher_graph(
     concept_groups: dict,
     config: CrpAuditConfig,
     concept_groups_source: dict | None = None,
+    *,
+    device: str | torch.device = "auto",
+    checkpoint_dir: str | Path | None = None,
+    resume: bool = True,
 ) -> dict:
     """Build a validated, label-free CoSpRo teacher graph.
 
@@ -986,49 +1145,171 @@ def build_teacher_graph(
     config_values.update(concept_groups["config"])
     config = CrpAuditConfig(**config_values)
     _validate_config(config)
+    if str(device) == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA neighbour search was requested, but torch.cuda.is_available() is false.")
+
     audit_codes = cache["splice_codes"]
     groups = [list(group["concept_indices"]) for group in concept_groups["groups"]]
-    raw_neighbours, _ = topk_neighbors(
-        cache["centered_clip"], config.projected_neighbors, config.similarity_chunk_size
+    search_features = cache["centered_clip"].to(device)
+    checkpoint_root = Path(checkpoint_dir) if checkpoint_dir is not None else None
+    checkpoint_identity = hashlib.sha256(json.dumps({
+        "schema": "cospro-group-checkpoint-v1",
+        "config": asdict(config),
+        "sample_ids": [str(value) for value in cache["sample_ids"]],
+        "groups": groups,
+        "concept_groups_source": concept_groups_source or {},
+        "search_device": str(device),
+        "cache_version": int(cache["cache_version"]),
+        "cache_provenance": cache.get("provenance", {}),
+        "representation_shapes": {
+            "clip_embeddings": list(cache["clip_embeddings"].shape),
+            "splice_codes": list(cache["splice_codes"].shape),
+            "dictionary": list(cache["dictionary"].shape),
+        },
+    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    if checkpoint_root is not None:
+        checkpoint_root.mkdir(parents=True, exist_ok=True)
+        manifest_path = checkpoint_root / "manifest.json"
+        manifest = {
+            "schema": "cospro-group-checkpoint-v1",
+            "identity": checkpoint_identity,
+            "group_count": len(groups),
+            "config": asdict(config),
+        }
+        if resume and manifest_path.is_file():
+            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if existing_manifest != manifest:
+                raise RuntimeError(
+                    f"Checkpoint identity does not match this graph audit: {checkpoint_root}"
+                )
+        else:
+            temporary_manifest = manifest_path.with_suffix(f".{os.getpid()}.tmp")
+            temporary_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            os.replace(temporary_manifest, manifest_path)
+
+    resolved_backend = (
+        "lsh"
+        if config.neighbor_backend == "auto" and len(search_features) >= config.ann_threshold
+        else "exact" if config.neighbor_backend == "auto" else config.neighbor_backend
     )
+    print(
+        f"[INFO] Neighbour search backend={resolved_backend} device={device} "
+        f"samples={len(search_features)}",
+        flush=True,
+    )
+    raw_checkpoint = checkpoint_root / "raw_neighbours.pt" if checkpoint_root is not None else None
+    if resume and raw_checkpoint is not None and raw_checkpoint.is_file():
+        saved_raw = torch.load(raw_checkpoint, map_location="cpu", weights_only=True)
+        if saved_raw.get("identity") != checkpoint_identity:
+            raise RuntimeError(f"Invalid raw-neighbour checkpoint: {raw_checkpoint}")
+        raw_neighbours = saved_raw["raw_neighbours"].to(device)
+        if raw_neighbours.shape != (len(search_features), min(config.projected_neighbors, len(search_features) - 1)):
+            raise RuntimeError(f"Raw-neighbour checkpoint has an invalid shape: {raw_checkpoint}")
+        print(f"[INFO] Restored raw neighbours from {raw_checkpoint}", flush=True)
+    else:
+        raw_neighbours, _ = topk_neighbors(
+            search_features,
+            config.projected_neighbors,
+            config.similarity_chunk_size,
+            backend=config.neighbor_backend,
+            ann_threshold=config.ann_threshold,
+            ann_tables=config.ann_tables,
+            ann_bucket_size=config.ann_bucket_size,
+            seed=config.seed,
+        )
+        if raw_checkpoint is not None:
+            _atomic_torch_save({
+                "schema": "cospro-raw-neighbours-v1",
+                "identity": checkpoint_identity,
+                "raw_neighbours": raw_neighbours.cpu(),
+            }, raw_checkpoint)
     n_samples = len(cache["sample_ids"])
-    generator = torch.Generator().manual_seed(config.seed)
     audit_geometry = _AuditGeometry(
-        centered_clip=cache["centered_clip"],
+        centered_clip=search_features,
         raw_neighbours=raw_neighbours,
         splice_codes=audit_codes,
     )
 
     audited_groups, candidate_evidence = [], []
+    random_neighbour_cache: dict[int, list[dict]] = {}
+
+    def random_neighbour_geometries(basis_rank: int) -> list[dict]:
+        if basis_rank in random_neighbour_cache:
+            return random_neighbour_cache[basis_rank]
+        random_generator = torch.Generator().manual_seed(
+            config.seed + 104_729 * basis_rank + 17
+        )
+        geometries = []
+        for trial in range(config.null_trials):
+            random_directions = torch.randn(
+                basis_rank, search_features.shape[1], generator=random_generator,
+            )
+            random_basis = orthonormal_basis(
+                random_directions, config.orthogonal_tolerance,
+            ).to(device)
+            geometries.append(_neighbor_geometry(
+                audit_geometry,
+                random_basis,
+                config,
+                search_seed=config.seed + 10_000_019 * basis_rank + trial + 1,
+            ))
+        random_neighbour_cache[basis_rank] = geometries
+        return geometries
+
     print(f"[INFO] Auditing {len(groups)} concept groups over {n_samples} samples", flush=True)
     report_every = max(1, len(groups) // 20)
+    restored_groups = 0
     for group_id, concept_indices in enumerate(groups):
-        basis = orthonormal_basis(cache["dictionary"][concept_indices], config.orthogonal_tolerance)
+        checkpoint_path = (
+            checkpoint_root / f"group_{group_id:06d}.pt" if checkpoint_root is not None else None
+        )
+        if resume and checkpoint_path is not None and checkpoint_path.is_file():
+            saved = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+            if (
+                saved.get("schema") != "cospro-group-checkpoint-v1"
+                or saved.get("identity") != checkpoint_identity
+                or int(saved.get("group_id", -1)) != group_id
+            ):
+                raise RuntimeError(f"Invalid or incompatible group checkpoint: {checkpoint_path}")
+            group_payload = saved["group"]
+            audited_groups.append(group_payload)
+            if saved.get("candidate_evidence") is not None:
+                candidate_evidence.append((group_id, saved["candidate_evidence"]))
+            restored_groups += 1
+            continue
+
+        basis = orthonormal_basis(
+            cache["dictionary"][concept_indices], config.orthogonal_tolerance,
+        ).to(device)
         activation = audit_codes[:, concept_indices].sum(dim=1)
-        group_geometry = _relation_geometry(audit_geometry, basis, config, concept_indices)
+        neighbour_geometry = _neighbor_geometry(
+            audit_geometry,
+            basis,
+            config,
+            search_seed=config.seed + 1_000_003 * (group_id + 1),
+        )
+        group_geometry = _relation_geometry(
+            audit_geometry, neighbour_geometry, config, concept_indices,
+        )
         evidence = _score_relations(group_geometry, activation, config)
         basis_rank = basis.shape[1]
-        if config.null_trials:
-            random_geometries = []
-            for _ in range(config.null_trials):
-                random_directions = torch.randn(
-                    basis_rank,
-                    cache["centered_clip"].shape[1],
-                    generator=generator,
-                )
-                random_basis = orthonormal_basis(
-                    random_directions,
-                    config.orthogonal_tolerance,
-                )
-                random_geometries.append(
-                    _relation_geometry(audit_geometry, random_basis, config, concept_indices)
-                )
+        random_geometries = [
+            _relation_geometry(audit_geometry, geometry, config, concept_indices)
+            for geometry in random_neighbour_geometries(basis_rank)
+        ]
+        group_generator = torch.Generator().manual_seed(
+            config.seed + 2_000_003 * (group_id + 1)
+        )
         random_scores, shuffled_scores = _null_scores(
             group_geometry,
             random_geometries,
             activation,
             config,
-            generator,
+            group_generator,
         )
         null_scores = torch.tensor(random_scores + shuffled_scores)
         threshold = float(torch.quantile(null_scores, config.null_quantile)) if null_scores.numel() else math.inf
@@ -1071,23 +1352,35 @@ def build_teacher_graph(
             "shuffled_code_scores": shuffled_scores,
         }
         audited_groups.append(group_payload)
+        saved_candidate = None
         if selected:
-            candidate_evidence.append(
-                (
-                    group_id,
-                    {
-                        **evidence,
-                        "confidence": evidence["confidence"]
-                        * null_excess_ratio,
-                    },
-                )
-            )
+            saved_candidate = {
+                key: evidence[key].cpu()
+                for key in ("rows", "columns", "gain")
+            }
+            saved_candidate["confidence"] = evidence["confidence"].cpu() * null_excess_ratio
+            candidate_evidence.append((group_id, saved_candidate))
+        if checkpoint_path is not None:
+            _atomic_torch_save({
+                "schema": "cospro-group-checkpoint-v1",
+                "identity": checkpoint_identity,
+                "group_id": group_id,
+                "group": group_payload,
+                "candidate_evidence": saved_candidate,
+            }, checkpoint_path)
         if (group_id + 1) % report_every == 0 or group_id + 1 == len(groups):
             print(
                 f"[INFO] Audited {group_id + 1}/{len(groups)} groups; "
                 f"passing_null={len(candidate_evidence)}",
                 flush=True,
             )
+
+    if restored_groups:
+        print(
+            f"[INFO] Restored {restored_groups}/{len(groups)} completed group audits from "
+            f"{checkpoint_root}",
+            flush=True,
+        )
 
     candidate_evidence.sort(
         key=lambda item: (
@@ -1123,6 +1416,15 @@ def build_teacher_graph(
             "concept_groups_version": concept_groups["concept_groups_version"],
         },
         "provenance": dict(cache.get("provenance", {})),
+        "neighbor_search": {
+            "requested_backend": config.neighbor_backend,
+            "resolved_backend": resolved_backend,
+            "approximate": resolved_backend == "lsh",
+            "device": str(device),
+            "ann_tables": config.ann_tables if resolved_backend == "lsh" else None,
+            "ann_bucket_size": config.ann_bucket_size if resolved_backend == "lsh" else None,
+            "shared_null_subspaces_by_rank": True,
+        },
         "groups": audited_groups,
         "selected_group_ids": [group["group_id"] for group in audited_groups if group["selected"]],
         **graph,
@@ -1164,6 +1466,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--html", help="HTML mechanism report (default: output with .html suffix).")
     parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
+    parser.add_argument("--device", default="auto", help="Neighbour-search device.")
+    parser.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"))
+    parser.add_argument("--ann-threshold", type=int)
+    parser.add_argument("--ann-tables", type=int)
+    parser.add_argument("--ann-bucket-size", type=int)
+    parser.add_argument("--checkpoint-dir", type=Path)
+    parser.add_argument("--no-resume", action="store_true")
     parser.add_argument(
         "--use-residual-splice-gate",
         type=_parse_bool,
@@ -1182,6 +1491,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError(f"Unknown CoSpRo audit settings: {sorted(unknown)}")
     if args.seed is not None:
         config_values["seed"] = args.seed
+    for name in ("neighbor_backend", "ann_threshold", "ann_tables", "ann_bucket_size"):
+        value = getattr(args, name)
+        if value is not None:
+            config_values[name] = value
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
     config = CrpAuditConfig(**config_values)
@@ -1195,7 +1508,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         "artifact": concept_groups["artifact"],
         "concept_groups_version": concept_groups["concept_groups_version"],
     }
-    artifact = build_teacher_graph(cache, concept_groups, config, source)
+    artifact = build_teacher_graph(
+        cache,
+        concept_groups,
+        config,
+        source,
+        device=args.device,
+        checkpoint_dir=args.checkpoint_dir or output_path.parent / "group_checkpoints",
+        resume=not args.no_resume,
+    )
     save_graph_json(artifact, output_path)
     from splice.cospro_reporting import render_teacher_graph_report
     render_teacher_graph_report(artifact, Path(args.html) if args.html else output_path.with_suffix(".html"))

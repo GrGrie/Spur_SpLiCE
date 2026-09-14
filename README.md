@@ -72,6 +72,14 @@ python -m scripts.tools.build_cospro_baseline_graphs --help
 python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
 ```
 
+Teacher-graph construction now selects deterministic cosine-LSH search for
+datasets with at least 20,000 samples and runs projection/search on CUDA when
+available. Small datasets retain the exact implementation. Each completed
+group and the raw-neighbour index are checkpointed atomically beside the graph,
+so resubmitting the same command resumes rather than restarting the audit. Use
+`--neighbor-backend exact`, `--device cpu`, or the ANN tuning options shown by
+`--help` when an explicit override is required.
+
 ## Run one custom training job
 
 For an individual training job with a custom dataset, seed, hyperparameters and
@@ -81,6 +89,12 @@ checkpoint location, use:
 sbatch scripts/run_training.sbatch --dataset waterbirds --seed 7 \
   --epochs 100 --checkpoint_dir /scratch/my-run --keep_checkpoints
 ```
+
+If exactly one completed teacher graph exists below
+`outputs/shared/<dataset>/graphs`, this launcher automatically selects
+`cospro_relational` training and passes that graph. If several graphs exist,
+select one explicitly with `--cospro_teacher_graph PATH`; if none exists, the
+launcher warns and runs standard SimCLR.
 
 See [scripts/README.md](scripts/README.md) for resume commands and the
 differences between standalone runs and manifest matrices.

@@ -73,6 +73,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--config", help="Optional JSON object overriding teacher-audit settings.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
+    parser.add_argument(
+        "--device", default="auto",
+        help="Neighbour-search device: auto, cpu, cuda, or a concrete CUDA device.",
+    )
+    parser.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"))
+    parser.add_argument("--ann-threshold", type=int)
+    parser.add_argument("--ann-tables", type=int)
+    parser.add_argument("--ann-bucket-size", type=int)
+    parser.add_argument(
+        "--checkpoint-dir", type=Path,
+        help="Checkpoint root. With a sweep, each audit gets an identity-named child directory.",
+    )
+    parser.add_argument(
+        "--no-resume", action="store_true",
+        help="Recompute and atomically replace existing per-group checkpoints.",
+    )
     return parser.parse_args(argv)
 
 
@@ -90,6 +106,10 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.seed is not None:
         config_values["seed"] = args.seed
+    for name in ("neighbor_backend", "ann_threshold", "ann_tables", "ann_bucket_size"):
+        value = getattr(args, name)
+        if value is not None:
+            config_values[name] = value
     config = CrpAuditConfig(**config_values)
     cache = torch.load(args.splice_dataset_cache, map_location="cpu", weights_only=True)
     artifacts = _artifact_paths(args.concept_groups)
@@ -101,12 +121,27 @@ def main(argv: list[str] | None = None) -> None:
             "artifact": concept_groups["artifact"],
             "concept_groups_version": concept_groups["concept_groups_version"],
         }
-        graph = build_teacher_graph(cache, concept_groups, config, source)
         output_directory = teacher_graph_path(artifact_path, config).parent
+        if args.checkpoint_dir is None:
+            checkpoint_directory = output_directory / "group_checkpoints"
+        elif len(artifacts) == 1:
+            checkpoint_directory = args.checkpoint_dir
+        else:
+            checkpoint_directory = args.checkpoint_dir / source["sha256"][:12] / output_directory.name
+        graph = build_teacher_graph(
+            cache,
+            concept_groups,
+            config,
+            source,
+            device=args.device,
+            checkpoint_dir=checkpoint_directory,
+            resume=not args.no_resume,
+        )
         json_path = save_graph_json(graph, output_directory / "teacher_graph.json")
         html_path = render_teacher_graph_report(graph, output_directory / "teacher_graph.html")
         print(f"[INFO] Wrote {json_path}", flush=True)
         print(f"[INFO] Wrote {html_path}", flush=True)
+        print(f"[INFO] Group checkpoints: {checkpoint_directory}", flush=True)
     print(f"[INFO] Generated {len(artifacts)} teacher graph(s) from explicit concept-group artifacts.")
 
 

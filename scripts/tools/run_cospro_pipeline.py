@@ -129,6 +129,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     audit.add_argument("--null-quantile", type=float, default=0.95)
     audit.add_argument("--audit-seed", type=int, default=0)
     audit.add_argument("--orthogonal-tolerance", type=float, default=1e-6)
+    audit.add_argument("--graph-device", default="auto")
+    audit.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"), default="auto")
+    audit.add_argument("--ann-threshold", type=int, default=20_000)
+    audit.add_argument("--ann-tables", type=int, default=8)
+    audit.add_argument("--ann-bucket-size", type=int, default=512)
     audit.add_argument(
         "--use-residual-splice-gate", action=argparse.BooleanOptionalAction, default=True,
     )
@@ -230,6 +235,10 @@ def _configs(args: argparse.Namespace) -> tuple[CrpAuditConfig, CrpAuditConfig]:
         "orthogonal_tolerance": args.orthogonal_tolerance,
         "use_residual_splice_gate": args.use_residual_splice_gate,
         "residual_splice_similarity_threshold": args.residual_splice_similarity_threshold,
+        "neighbor_backend": args.neighbor_backend,
+        "ann_threshold": args.ann_threshold,
+        "ann_tables": args.ann_tables,
+        "ann_bucket_size": args.ann_bucket_size,
     }
     return (
         validate_cospro_config(CrpAuditConfig(**grouping)),
@@ -463,6 +472,7 @@ def main(argv: list[str] | None = None) -> None:
         "--splice-dataset-cache", str(cache_path),
         "--concept-groups", str(groups_path),
         "--config", _json(audit_values),
+        "--device", args.graph_device,
     ]
     _stage(
         "teacher graph", graph_path, graph_command, validate_graph,
