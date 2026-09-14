@@ -2,6 +2,7 @@
 \usepackage{iclr2027_conference,times}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,booktabs,tabularx,microtype}
+\usepackage{float}
 \usepackage{hyperref}
 \usepackage{url}
 \hypersetup{hidelinks}
@@ -20,27 +21,29 @@ Self-supervised representations can inherit spurious object--context association
 \section{Introduction}
 An image can contain several predictive factors. In Waterbirds, bird category correlates with background in the training set. A representation that strongly encodes this association can fail on birds shown in an uncommon environment. Worst-group evaluation makes these failures visible even when aggregate accuracy appears acceptable \citep{sagawa2020groupdro}. Self-supervised pretraining inherits the correlations present in its unlabeled images. Standard view augmentation alone does not specify which context changes should preserve object identity.
 
-Our goal is to learn a visual encoder whose downstream predictions remain useful when object--context associations change, using no target labels or group annotations during graph construction and representation learning. A frozen vision-language model supplies semantic structure learned from external data. SpLiCE exposes this structure as sparse non-negative coordinates associated with text concepts \citep{bhalla2024splice}. We hypothesize that a concept subspace can explain why two images appear dissimilar. Removing that subspace may reveal a useful relation for student training. This hypothesis requires empirical checks: concepts can also encode object identity and projection can introduce incorrect neighbours.
+Our goal is to learn a visual encoder whose downstream predictions remain useful when object--context associations change, using no target labels or group annotations during graph construction and representation learning. A frozen vision-language model supplies semantic structure learned from external data. SpLiCE exposes this structure as sparse non-negative coordinates associated with text concepts \citep{bhalla2024splice}. We hypothesize that a concept subspace can explain why two images appear dissimilar. Removing that subspace may reveal a useful relation for student training. Those concepts can also encode object identity and projection can introduce incorrect downstream classifications.
 
-CoSpRo constructs a fixed teacher graph from these projected relations. Each candidate relation is evaluated using geometric gain, concept activation contrast and agreement in the remaining sparse coordinates. Synthetic nulls calibrate group selection. The graph determines batch composition and supplies soft relational targets on the student backbone. At deployment, only the trained encoder and downstream classifier are required.
+CoSpRo constructs a fixed teacher graph from projected relations. Each candidate relation is evaluated using geometric gain, concept activation contrast and agreement in the remaining sparse coordinates. Synthetic nulls calibrate group selection. The graph determines batch composition and supplies soft relational targets on the student backbone. During inference only the trained encoder and downstream classifier are required.
 
 Our contribution is a concept-projected relation-discovery method and a controlled study of its transfer to an independently trained encoder. The graph exposes which concept removal produced each retained relation. The experimental design separates this choice of neighbours from graph-aware sampling and generic CLIP supervision. The four-seed study tests student transfer alongside graph quality and direct prediction of frozen SpLiCE representations.
 
 \section{Related Work}
 \paragraph{Selecting examples and relations in contrastive learning.}
-SimCLR contrasts two views of an image against other images in the batch \citep{chen2020simclr}, making sample selection part of the learning signal. Hard-negative sampling emphasizes examples that are difficult to distinguish from an anchor without requiring labels \citep{robinson2021hard}. Debiased contrastive learning corrects contamination by same-class negatives \citep{chuang2020debiased}; false-negative cancellation instead identifies likely semantic matches for elimination or attraction \citep{huynh2022false}. NNCLR explicitly uses nearest neighbours as cross-image positives \citep{dwibedi2021nnclr}. CoSpRo also changes which images meet in a batch, but retains within-image SimCLR positives and all other images in its negative denominator. A separate backbone loss transfers the graph relations. Its sampler-only controls therefore distinguish gains from co-occurrence alone from gains that require relational supervision.
+SimCLR contrasts two views of an image against other images in the batch \citep{chen2020simclr}, making sample selection part of the learning signal. Hard-negative sampling emphasizes examples that are difficult to distinguish from an anchor without requiring labels \citep{robinson2021hard}. Debiased contrastive learning corrects contamination by same-class negatives \citep{chuang2020debiased}; false-negative cancellation instead identifies likely semantic matches for elimination or attraction \citep{huynh2022false}. NNCLR explicitly uses nearest neighbours as cross-image positives \citep{dwibedi2021nnclr}. CoSpRo also changes which images meet in a batch, but retains within-image SimCLR positives and all other images in its negative denominator. A separate backbone loss transfers the graph relations.
 
-\paragraph{Relational supervision.}
-Relational Knowledge Distillation transfers pairwise and higher-order structure without matching teacher and student feature coordinates \citep{park2019rkd}. ReSSL trains a student to match sharpened similarity distributions from a momentum teacher using weak augmentation \citep{zheng2021ressl}. Thus relational distribution matching itself is not our novelty. CoSpRo constructs a fixed external teacher by removing concept subspaces, auditing the resulting relations and retaining sparse evidence-weighted edges. The raw-CLIP and semantic-SpLiCE graphs test this relation-discovery choice under matched graph budgets. Direct reconstruction transfer tests an alternative use of the same frozen concept representation.
+\paragraph{Constructing informative batches.}
+Batch construction has been studied as a way to change the in-batch contrastive signal. GCBS globally arranges examples so that informative pairs fall within batches \citep{sachidananda2023gcbs}. BatchSampler samples batches by random walks on a proximity graph, balancing hard negatives against false-negative contamination \citep{yang2023batchsampler}. B3 builds a sparse graph from pretrained teacher rankings and samples graph communities to obtain strong in-batch negatives \citep{thirukovalluru2025b3}. Concept-Aware Batch Sampling instead selects image--text training examples to control concept diversity or frequency within a batch \citep{ghosh2026cabs}. Language-guided visual learning uses caption similarity to choose cross-image positive pairs \citep{elbanani2023language}. CoSpRo pretraining stage builds a fixed relation graph, which both influences sample batching and supplies soft targets through a separate backbone loss. Cross-image graph neighbours still remain negatives in the SimCLR, even though images with high similarity are more likely to appear in the same batch during student training. The sampler-only ablation is provided to test whether co-location alone helps in downstream task.
 
 \paragraph{Concept representations, discovery and editing.}
-TCAV measures prediction sensitivity along directions learned from concept examples \citep{kim2018tcav}; ACE discovers visual concepts by clustering image segments in feature space \citep{ghorbani2019ace}. Concept Bottleneck Models route predictions through annotated attributes that can be edited \citep{koh2020cbm}. Post-hoc Concept Bottleneck Models add an editable concept layer to pretrained representations \citep{yuksekgonul2023pcb}; Label-Free Concept Bottleneck Models use language-derived concepts without manual concept annotations \citep{oikarinen2023lfcbm}. These methods clarify different roles for concepts: explanation, prediction and intervention. CLIP supplies a shared image--text space \citep{radford2021clip}, and SpLiCE expresses its embeddings as sparse non-negative combinations of named text directions \citep{bhalla2024splice}. CoSpRo uses these coordinates to specify which information to suppress while discovering relations. Unlike a deployed concept bottleneck, the resulting student need not predict concepts or retain the teacher. A named direction is interpretable as an intervention coordinate, but is not necessarily a pure background factor.
+Relational Knowledge Distillation transfers pairwise and higher-order structure without matching teacher and student feature coordinates \citep{park2019rkd}. ReSSL trains a student to match sharpened similarity distributions from a momentum teacher using weak augmentation \citep{zheng2021ressl}.
+TCAV measures prediction sensitivity along directions learned from concept examples \citep{kim2018tcav}; ACE discovers visual concepts by clustering image segments in feature space \citep{ghorbani2019ace}. Concept Bottleneck Models route predictions through annotated attributes that can be edited \citep{koh2020cbm}. Post-hoc Concept Bottleneck Models add an editable concept layer to pretrained representations \citep{yuksekgonul2023pcb}; Label-Free Concept Bottleneck Models use language-derived concepts without manual concept annotations \citep{oikarinen2023lfcbm}. These methods clarify different roles for concepts: explanation, prediction and intervention. CLIP supplies a shared image--text space \citep{radford2021clip}, and SpLiCE expresses its embeddings as sparse non-negative combinations of named text directions \citep{bhalla2024splice}. CoSpRo uses these coordinates to specify which information to suppress during teacher constructing phase while discovering useful relations. 
+%CoSpRo constructs a fixed external teacher by removing concept subspaces and retaining sparse evidence-weighted edges.
 
 \paragraph{Spurious features and invariance in SSL.}
-Contrastive learning can suppress harder features in favor of shortcut solutions; implicit feature modification counteracts this through feature-space perturbations of the contrastive comparison \citep{robinson2021shortcut}. Content--style identifiability results explain how augmentation can isolate invariant content under explicit assumptions about the data-generating process and style changes \citep{vonkugelgen2021content}. CoSpRo instead searches for relations in a frozen semantic space; its projections do not satisfy those assumptions by construction. Learning-speed-aware SSL (LA-SSL) emphasizes slowly learned examples through adaptive sampling \citep{zhu2023lassl}. Our sampling is based on fixed concept-conditioned relations rather than online learning speed. We include a preliminary matched-budget LA-SSL adaptation in Appendix~\ref{app:lassl} and do not infer a multi-seed ranking from it.
+Contrastive learning can suppress harder features in favor of shortcut solutions. Implicit feature modification counteracts this through feature-space perturbations of the contrastive comparison \citep{robinson2021shortcut}. Content--style identifiability results explain how augmentation can isolate invariant content under explicit assumptions about the data-generating process and style changes \citep{vonkugelgen2021content}. Learning-speed-aware SSL (LA-SSL) emphasizes slowly learned examples through adaptive sampling \citep{zhu2023lassl}. Our sampling is based on fixed concept-conditioned relations, since CoSpRo instead searches for relations in a frozen semantic space.
 
 \paragraph{Robustness with other supervision regimes.}
-Group DRO uses annotated groups \citep{sagawa2020groupdro}, while Just Train Twice upweights errors of an initial supervised classifier \citep{liu2021jtt}. CoBalT discovers concepts without labels and uses them to balance supervised training \citep{arefin2024cobalt}. DIAL uses sparse-autoencoder analysis to remove spurious directions from VLM representations \citep{yalavarthi2026dial}. CoSpRo shares the idea of a representation-space intervention, but uses it to construct pretraining relations for a separate encoder. Supervised group-robust and zero-shot VLM accuracies therefore do not provide matched numerical comparisons to our SSL students and fixed linear probe.
+Group DRO uses annotated groups \citep{sagawa2020groupdro}, while Just Train Twice upweights errors of an initial supervised classifier \citep{liu2021jtt}. CoBalT discovers concepts without labels and uses them to balance supervised training \citep{arefin2024cobalt}. DIAL uses sparse-autoencoder analysis to remove spurious directions from VLM representations \citep{yalavarthi2026dial}. CoSpRo shares the idea of a representation-space intervention, but uses it to construct pretraining relations for a separate encoder. Supervised group-robust and zero-shot VLM accuracies of above mentioned papers therefore do not provide matched numerical comparisons to our training pipeline.
 
 \section{Problem Setting}
 Let $\mathcal{D}=\{x_i\}_{i=1}^{N}$ be unlabeled training images with stable sample identifiers. The learned representation is $f_\theta(x)$. A downstream classifier $w$ predicts target $y$ from frozen features. For evaluation groups $g=(y,a)$ defined by target and context $a$, we report empirical average accuracy and worst-group accuracy:
@@ -50,10 +53,10 @@ Let $\mathcal{D}=\{x_i\}_{i=1}^{N}$ be unlabeled training images with stable sam
  \mathrm{WGA}=\min_g\frac{1}{n_g}\sum_{i:g_i=g}\mathbf{1}\{w(f_\theta(x_i))=y_i\}.
 \end{equation}
 
-Graph discovery and SSL use images and frozen representations. Labels and group annotations enter downstream probe fitting, balanced probe-subset construction and post-hoc analysis. The discovery cache rejects annotation fields. ``Label-free'' refers to the graph and SSL stages. It does not describe CLIP's external image--text pretraining or the supervised evaluation stage.
+Graph discovery and SSL use images and frozen representations. Labels and group annotations enter downstream probe fitting, balanced probe-subset construction and post-hoc analysis. ``Label-free'' in our work refers to the graph and SSL stages, but can't be applied to CLIP's external image--text pretraining or the supervised evaluation stage.
 
 \section{Method}
-CoSpRo has four stages: encode images as sparse named concepts; group related concept directions; discover image relations by removing those directions; and transfer the resulting graph to a SimCLR student. The frozen branch runs once on training images. It supplies relations, not labels or deployed features (Figure~\ref{fig:architecture}).
+CoSpRo has four stages: encode images as sparse named concepts; group related concept directions; discover image relations by removing semantically close directions; and transfer the resulting graph to a SimCLR student. The frozen branch runs once on training images. It provides only relational information to the trained encoder, without using any target or spurious information (Figure~\ref{fig:architecture}).
 
 \begin{figure}[htbp]
 \centering
@@ -63,9 +66,9 @@ CoSpRo has four stages: encode images as sparse named concepts; group related co
 \node[box] (teacher) {1. CLIP/SpLiCE\\Sparse concept vectors};
 \node[box,right=of teacher] (groups) {2. Group related\\concept directions};
 \node[box,right=of groups] (graph) {3. Project, filter, audit\\Sparse teacher graph};
-\node[box,below=9mm of teacher] (views) {Training images\\Two augmented views};
+\node[box,below=9mm of teacher] (views) {Training images};
 \node[box,right=of views] (student) {4. SimCLR student\\Backbone + head};
-\node[box,right=of student] (loss) {SimCLR objective\\+ backbone graph KL};
+\node[box,right=of student] (loss) {SimCLR objective\\+ CoSpRo Loss};
 \draw[->] (teacher)--(groups); \draw[->] (groups)--(graph);
 \draw[->] (views)--(student); \draw[->] (student)--(loss);
 \draw[->] (graph)--node[right,font=\scriptsize]{soft targets}(loss);
@@ -76,92 +79,163 @@ CoSpRo has four stages: encode images as sparse named concepts; group related co
 \end{figure}
 
 \subsection{Stage 1: SpLiCE concept representation}
-Raw embedding similarity does not reveal which semantic factors make two images similar or different. SpLiCE provides a sparse vector whose non-negative coordinates measure contributions of named text directions to an image embedding. These coordinates let us test whether removing particular semantic information reveals a useful relation, without first annotating which concepts are spurious.
+ SpLiCE provides a sparse vector whose non-negative coordinates measure contributions of CLIP text directions to an image embedding. These coordinates let us test whether removing particular semantic information reveals a useful relation, without first annotating which concepts are spurious.
 
-Given an image $x_i$, frozen OpenCLIP produces a unit embedding $z_i$. We center and normalize it using the fixed SpLiCE mean $\mu$. With a row-normalized text dictionary $D\in\mathbb{R}^{K\times d}$, positive sparse regression gives
+Given an image $x_i$, frozen CLIP produces an embedding $z_i$. We center and normalize it using the fixed SpLiCE mean $\mu$. With a row-normalized text dictionary $D\in\mathbb{R}^{K\times d}$, positive sparse regression gives
 \begin{equation}
  u_i=\operatorname{norm}(z_i-\mu),\qquad
  c_i\in\arg\min_{c\geq0}\|u_i-D^\top c\|_2^2+\lambda_1\|c\|_1.
 \end{equation}
-All vectors are columns and $\operatorname{norm}(v)=v/\|v\|_2$. The output is an aligned cache of full embeddings $u_i$, sparse codes $c_i$ and dictionary directions. The next stage uses the codes and dictionary to define interventions; the full embeddings remain available for measuring image similarity.
+All vectors are columns and \(\operatorname{norm}(v)=v/\lVert v\rVert_2\). Obtained concept decomposition $c_i$ of image $x_i$ can be read directly as a set of active concept coordinates. For example, if the dictionary contains the concepts \emph{grass}, \emph{cow}, and \emph{alien}, one image might yield
+\[
+c_i =
+0.72\,e_{\text{grass}}
++ 0.41\,e_{\text{cow}}
++ 0.18\,e_{\text{alien}},
+\]
+with most remaining coordinates equal to zero, where $e_k$ denotes the
+coordinate associated with concept $k$. 
 
 \subsection{Stage 2: Concept grouping}
-Related words may describe overlapping semantic information. Removing only one direction can leave that information in another, so we allow related coordinates to form a joint subspace. We first exclude concepts that occur too rarely or almost everywhere. Lexical families are joined, and additional links require both high text-direction similarity and high coactivation across training images. Connected components form flat groups; isolated concepts remain singleton groups. This is a semantic grouping rule, not a classification into object and background concepts.
+Related words from dictionary D may describe overlapping semantic information (e.g. forest, jungle, trees). Removing only one direction can leave that information in another, so we allow related coordinates to form a joint subspace. We first exclude concepts that occur too rarely or almost everywhere in the training dataset, since they do not provide any useful semantic information, that would make other images closer to each other. Morphological variants of the same concept are joined directly (e.g., \emph{apple} and \emph{apples}).  For all other concept pairs $(k,l)$, we compute their text-direction similarity
 
-For each group $G$, an SVD of its dictionary directions gives an orthonormal basis $Q_G$ for their span. Its image-level activation is $A_i^G=\sum_{k\in G}c_{ik}$. The output consists of these bases and activation vectors, which specify what to remove and how strongly the corresponding concepts differ between images. Exact thresholds and numerical tolerances are in Appendix~\ref{app:provenance}.
+\begin{equation}
+    s^{\mathrm{text}}_{k\ell} = \cos(d_k,d_\ell)
+\end{equation}  
+
+and their activation similarity
+\begin{equation}
+  s^{\mathrm{act}}_{k\ell} = \cos(C_{:k},C_{:\ell}),  
+\end{equation}
+
+where $d_k$ is the dictionary direction of concept $k$ and $C_{:k}=(c_{1k},\ldots,c_{Nk})^\top$ collects its activations across all training images. Concepts are linked only when both similarities exceed their respective thresholds. Connected components of these links form concept groups, which can still consist of a single concept (singleton groups) if no other concept satisfy above mentioned requirements.
+
+For each constructed concept group $G$, an SVD of its dictionary directions gives an orthonormal basis $Q_G$ for their span. Its image-level activation is $A_i^G=\sum_{k\in G}c_{ik}$. Each group is now represented by a subspace $Q_G$, describing \emph{what} semantic information it contains and an activation $A_i^G$, describing \emph{how strongly} that information is present in image $x_i$. Exact thresholds and numerical tolerances are given in Appendix~\ref{app:provenance}.
 
 \subsection{Stage 3: Teacher-graph construction}
-A directed edge $i\!\to\!j$ means that image $j$ became a candidate neighbour of image $i$ after a concept group was removed, with increased similarity, contrasting group activation and agreement in the remaining concepts. Its weight measures this evidence. It does not certify that the pair has the same target or differs only in background.
+% A directed edge $i\!\to\!j$ means that image $j$ became a candidate neighbour of image $i$ after a concept group was removed, with increased similarity, contrasting group activation and agreement in the remaining concepts. Its weight measures this evidence. It does not certify that the pair has the same target or differs only in background.
 
 \paragraph{Reveal and filter candidate relations.}
-For each group, project the full centered embeddings outside its span and search for nearest neighbours in that space:
+For each group $G$, we project the full centered embeddings outside its span:
 \begin{equation}
- u_i^{-G}=\operatorname{norm}(u_i-Q_GQ_G^\top u_i),\qquad
- \Delta_{ij}^G=(u_i^{-G})^\top u_j^{-G}-u_i^\top u_j.
- \label{eq:projection}
+ u_i^{-G}=\operatorname{norm}(u_i-Q_GQ_G^\top u_i)
 \end{equation}
-An increased similarity suggests that this group contributed to the original separation. We retain candidates with gain above a positive minimum and $|A_i^G-A_j^G|$ above a quantile of positive-gain candidates. To reduce indiscriminate attraction, residual sparse codes $c_i^{-G}$, obtained by deleting the group's coordinates, must also agree:
+
+where $u_i^{-G}$ denotes normalized embedding of image $x_i$ after removing the component lying in subspace $G$. The gain
 \begin{equation}
- R_{ij}^{-G}=\cos(c_i^{-G},c_j^{-G})\geq\tau_R,\qquad
- e_{ij}^G=\Delta_{ij}^G\left(\tfrac12+\tfrac12R_{ij}^{-G}\right).
+    \Delta_{ij}^{G} = \cos(u_i^{-G},u_j^{-G})-\cos(u_i,u_j)
 \end{equation}
-Thus large geometric gain receives stronger evidence when the remaining concepts match. The projection uses $u_i$, not the sparse reconstruction $D^\top c_i$.
+measures how much closer the two images become after removing group $G$. So $\Delta_{ij}^{G}>0$ indicates that directions associated with $G$ were partly responsible for separating $i$ and $j$ in the original representation.
+We retain candidates with gain above a positive minimum threshold $\tau_D$.
+
+However, the removed group should also be expressed differently in the two images. We therefore require a sufficiently large activation contrast $|A_i^G-A_j^G| > \tau_A $ between images $x_i$ and $x_j$. For example, if $G$ contains grass-related concepts, a candidate is more informative when these concepts are strongly active in one image but weakly active in the other.
+
+A large gain can arise spuriously as well, since removing a subspace may make two otherwise unrelated images geometrically closer. We therefore check whether the concepts \emph{outside} $G$ are still alike. Let $c_i^{-G}$ denote the sparse decomposed vector of image $x_i$ with coordinates in $G$ removed. We measure residual concept agreement
+\[
+R_{ij}^{-G}
+=
+\cos(c_i^{-G},c_j^{-G})
+\geq \tau_R,
+\]
+which receives stronger evidence when the remaining concepts match.
 
 \paragraph{Audit groups and consolidate edges.}
-A group should reveal relations beyond those induced by generic projection or accidental activation patterns. Its score $S(G)$ combines accepted gain, anchor coverage, residual agreement and alignment between activation contrast and gain, with a hubness penalty (Appendix~\ref{app:graphmath}). Equal-rank random subspaces and shuffled activations provide two null families. Their pooled score quantile $T_G$ calibrates the group. Sufficiently covered groups with $S(G)>T_G$ pass; a fixed cap retains those with the largest score excess. Null calibration is an operational filter, not a causal test or false-discovery guarantee.
+Previous step evaluated individual candidate pairs. We now evaluate each concept group $G$ as a whole: a useful group should reveal a consistent set of relations, without being spuriously influenced by a few high-gain pairs caused by an arbitrary projection or accidental activation pattern.
 
-Passing groups contribute evidence scaled by their relative null excess:
+We summarize the quality of group $G$ with a score $S(G)$ that rewards
+four properties: large accepted gains $\Delta_{ij}^{G}$, broad anchor coverage, strong residual concept agreement $R_{ij}^{-G}$, and alignment between activation contrast and gain. A penalty downweights groups whose edges collapse onto a small number of destination images:
+
 \begin{equation}
- r_G=\min\!\left(1,\frac{\max(0,S(G)-T_G)}{\max(|S(G)|,\epsilon)}\right),\quad
- \tilde e_{ij}=\max_{G\text{ retained}}r_Ge_{ij}^G.
+S(G)
+=
+\frac{
+\operatorname{medianGain}(G)\,
+\operatorname{coverage}(G)\,
+\operatorname{agreement}(G)\,
+\operatorname{alignment}(G)
+}{
+1+\operatorname{Gini}(G)+\operatorname{maxIndegree}(G)/N
+}.
 \end{equation}
-Missing group edges have evidence zero. We keep the strongest outgoing edges and cap destination indegrees to limit hubs. The final graph stores normalized donor preferences and absolute anchor confidence:
+
+A high group score is not sufficient by itself, because some score can arise
+even when the removed subspace has no meaningful semantic role. We perform 2 tests where compare each group against synthetic null groups.
+
+Equal-rank random subspaces test whether similar relation structure can be obtained by removing an arbitrary subspace of the same dimension. Shuffled activations test whether the observed activation--gain relationship survives when the concept activations are randomly reassigned across images.
+
+The pooled null-score distribution defines a threshold $\tau_G$ at the chosen
+quantile. A group is retained only if it has sufficient coverage and $S(G) > \tau_G$. Among the passing groups, a fixed cap keeps those with the largest excess above their null threshold.
+
+We then convert the group's excess above the null threshold into a confidence factor:
 \begin{equation}
- p_T(j\mid i)=\frac{\tilde e_{ij}}{\sum_k\tilde e_{ik}},\qquad
- q_i=\operatorname{clip}_{[0,1]}\max_j\tilde e_{ij}.
+ r_G=\min\!\left(1,\frac{\max(0,S(G)-\tau_G)}{\max(|S(G)|,\epsilon)}\right)
 \end{equation}
-These quantities are computed after pruning. Unsupported anchors have zero relational contribution. The output is a fixed sparse graph with concept attribution for each edge.
+This factor is close to zero for groups that barely exceed the null threshold and increases as the separation from the null becomes stronger. Each retained edge proposed by group $G$ is reweighted as
+\[
+\tilde e_{ij}^{G}=r_G * e_{ij}^{G}.
+\]
+Now same pairwise evidence contributes more when it comes from a well-calibrated group. 
+
+After group-level calibration, we merge the surviving pairwise evidence across all retained groups. If multiple groups propose the same directed edge $i\rightarrow j$, we keep the strongest evidence. To keep the teacher graph sparse, we retain only the strongest outgoing edges for each anchor and impose a maximum destination indegree. The latter prevents a small number of images from becoming universal hubs.
+ 
+After pruning, the remaining outgoing evidence for anchor $i$ is normalized into a teacher distribution
+\[
+p_T(j\mid i) = \frac{\tilde e_{ij}} {\sum_k \tilde e_{ik}}.
+\]
+This distribution specifies which donor images the teacher prefers for anchor $i$.
+
+We also keep the absolute confidence of the strongest surviving relation:
+\[
+q_i=\max_j \tilde e_{ij}, \qquad q_i\in[0,1].
+\]
+Obtained $p_T(\cdot\mid i)$ describes the relative preference over donors and $q_i$ measures how strongly the teacher trusts the anchor's relational signal.
+
+The result of pretraining stage is a fixed sparse teacher graph. Each supported anchor image $x_i$ has a small set of donor images, normalized teacher probabilities, an anchor confidence, and an attribution to the concept group that produced the retained relation. Unsupported anchors contribute no relational loss.
 
 \subsection{Stage 4: Graph-guided SimCLR training}
-The graph serves two purposes: it increases opportunities for related images to meet, and it tells the student how to distribute similarity among them. The sampler visits every training image once per epoch, placing an available sampled teacher neighbour in the same batch when possible. Ordinary two-view SimCLR remains the base objective. Graph neighbours are not substituted for its positives: they remain other-image negatives in its contrastive denominator. A separate loss on the backbone encourages agreement with teacher relations, while the contrastive head learns instance discrimination.
+Now, built teacher graph will influence training in two ways. First, it changes batch composition so that graph-related images are more likely to appear together. Second, it provides a relational target that tells the student how similarity should be distributed among these images.
 
-For a batch $B$, average the two normalized backbone views and renormalize, $s_i=\operatorname{norm}[\operatorname{norm}(h_i^{(1)})+\operatorname{norm}(h_i^{(2)})]$. The student's distribution includes every other image in the batch:
+The standard two-view SimCLR objective remains unchanged: the positive pair for image $x_i$ is still formed by two augmentations of the same image. Teacher neighbours are therefore not substituted for SimCLR positives. 
+
+The implemented graph-aware sampler still visits every training image once per epoch.  And whenever possible it places one of the anchor's teacher neighbours in the same batch. This increases the number of batches in which a graph relation can be used by introduced objective.
+
+For a batch $B$, we obtain a backbone's representation of image $x_i$ before it is being processed by a projection head:
+\[
+s_i=\operatorname{norm}[\operatorname{norm}(h_i^{(1)})+\operatorname{norm}(h_i^{(2)})]
+\] 
+Pairwise cosine similarities within the batch are converted into a student distribution:
 \begin{equation}
  p_S^B(j\mid i)=\frac{\exp(s_i^\top s_j/\tau_S)}
  {\sum_{k\in B:k\ne i}\exp(s_i^\top s_k/\tau_S)}.
 \end{equation}
-Restrict $p_T$ to available batch donors and renormalize to obtain $p_T^B$. If $B_S$ contains anchors with at least one such donor, training minimizes
+For anchor $i$, this distribution describes how the student sees similarity across the other images in the current batch.
+
+The teacher distribution $p_T(\cdot\mid i)$ is defined over the full graph, however the student can only compare images present in the batch. We need to restrict $p_T$ to only use teacher neighbours that occur in current batch $B$ and renormalize the remaining probabilities, yielding $p_T^B$. 
+
+The idea of relational loss is simple. The teacher distribution acts as the fixed target, and the KL term encourages the student's similarity distribution to reproduce its relative donor preferences. Let $B_S=\{i\in B:\text{at least one teacher donor of $i$ occurs in }B\}$. The loss is
 \begin{equation}
- \mathcal L(t)=\mathcal L_{\mathrm{SimCLR}}+
- \lambda(t)\frac{1}{|B_S|}\sum_{i\in B_S}q_i
- D_{\mathrm{KL}}(p_T^B(\cdot\mid i)\,\|\,p_S^B(\cdot\mid i)).
- \label{eq:objective}
+\mathcal{L}_{\mathrm{CoSpRo}} =
+\frac{1}{|B_S|}
+\sum_{i\in B_S} q_i\ * D_{\mathrm{KL}}
+\left(
+p_T^B(\cdot\mid i) \;\|\; p_S^B(\cdot\mid i)
+\right).
 \end{equation}
-The relational term is zero for an empty $B_S$. Confidence scales each anchor's contribution without changing its relative donor preferences. The graph weight warms up after an initial SimCLR-only period. Appendix~\ref{app:graphmath} gives the implemented SimCLR normalization, which fixes the relative loss scale. After pretraining, we discard CLIP, SpLiCE, the graph and the projection head. Only the student backbone and downstream classifier are used for prediction.
+with $\mathcal{L}_{\mathrm{CoSpRo}}=0$ when $B_S$ is empty. Complete training objective is
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{\mathrm{SimCLR}} + \lambda\mathcal{L}_{\mathrm{CoSpRo}}
+\end{equation}
 
 \section{Experimental Protocol}
-\paragraph{Data and representations.}
-Waterbirds contains 4,795 training images with group counts 3,498, 184, 56 and 1,057 in $(y,a)$ order 00, 01, 10 and 11. Validation contains 1,199 images with group counts 467, 466, 133 and 133. The held-out test set contains 5,794 images with group counts 2,255, 2,255, 642 and 642. The frozen teacher is OpenCLIP ViT-B/32 with the \textit{laion2b\_s34b\_b79k} checkpoint. The dictionary uses the complete cleaned Open Images V7 vocabulary and sparse regression weight 0.25. The corresponding signal artifact has 20,931 concept coordinates. The image mean is the frozen SpLiCE centering vector stored in the cache.
+We evaluate on Waterbirds using its 4,795 training images to build a fixed, label-free teacher graph and pretrain a randomly initialized ResNet-18. All main runs use 500 epochs, batch size 128, the same augmentations and optimization schedule, four student seeds and a single fixed graph seed. The SimCLR and relational temperatures are 0.05 and 0.25 and KL maximum relational weight of 0.5 is used.
 
-\paragraph{Student optimization.}
-The student is a randomly initialized ResNet-18 with the ImageNet-style stem (\textit{resnet18\_large}). Training uses 500 SSL epochs, batch size 128 and SGD with learning rate 0.01, momentum 0.9 and weight decay $10^{-4}$. Learning rate is multiplied by 0.1 at epochs 350, 400 and 450. SimCLR temperature is 0.05; relational temperature is 0.25. Standard views use random resized crops with minimum scale 0.2, horizontal flips, color jitter and grayscale conversion. The main study has student seeds 1--4 with one locked graph seed 0 and uses $\lambda_{\max}=0.5$ for both KL arms.
-
-\paragraph{Linear evaluation.}
-Every 25 SSL epochs, a frozen-feature logistic probe is fitted on the \textit{ds\_train} subset containing 56 examples per group (224 total). The subset uses training-group annotations. Training statistics standardize features. Full-batch float64 L-BFGS minimizes mean cross-entropy with L2 coefficient 0.001 on classifier weights. Convergence requires ten consecutive external optimization epochs with maximum absolute objective gradient below $10^{-6}$. Each external step allows up to 20 inner iterations with a safety limit of 200 external epochs. Reported metrics average the final ten converged probe optimization epochs. All student comparisons use the representation at SSL epoch 500. These ten optimization epochs are not independent experimental replicates. Standard deviations below are sample deviations across student seeds.
-
-\paragraph{Controls.}
-SimCLR uses standard batches and no graph loss. CoSpRo sampler-only uses graph-aware batches with KL weight zero. Raw-CLIP sampler-only provides the corresponding control for the raw teacher. The raw-CLIP teacher uses centered-CLIP neighbours with CoSpRo's supported anchors, outgoing row budgets, row weight profiles and anchor confidence. Both graphs obey the same maximum indegree. Each teacher induces its own batches, so the KL comparison must also be interpreted alongside the two sampler-only arms.
-
-\paragraph{Reproducibility and held-out evaluation.}
-Matched seeds share initialization; teacher loading and periodic probes are isolated from the training RNG. The historical evidence archive contains configurations, graph identities and all 680 periodic probe records from 34 graph-study runs. Updated control endpoints are recorded separately with run configurations and converged epoch-500 metrics. Every epoch-500 probe satisfies the convergence criterion. Historical probe views depend partly on the run seed, so the reported deviation describes the complete training-and-evaluation run. Some older saved feature tensors require reconstruction of the seeded loader order because they lack explicit sample IDs. The archived test-selection record identifies configurations and checkpoints but lacks a contemporaneous selection timestamp; it cannot independently verify when those choices were frozen. The reported evaluation uses the selected configuration, the same training subset for probe fitting and the epoch-500 encoder.
+We compare ordinary SimCLR, CoSpRo and raw-CLIP graph samplers without KL and the corresponding graphs with CoSpRo loss. Frozen student features at epoch 500 are evaluated with the same logistic probe fitted on 224 group-balanced training examples. Group labels are used for this probe and evaluation. We report mean and sample standard deviation across student seeds, using held-out test results for the main comparison and validation results for the additional controls. Full graph, training, probe and provenance settings appear in Appendices~\ref{app:provenance} and \ref{app:graphmath}.
 
 \section{Results}
 \subsection{Matched Waterbirds comparison}
 \begin{table}[htbp]
 \centering
-\caption{Waterbirds held-out test evaluation at SSL epoch 500, seeds 1--4. Both KL arms use
-$\lambda_{\max}=0.5$. Values are percentages (mean $\pm$ sample standard
-deviation).}
+\caption{Waterbirds held-out test evaluation at SSL epoch 500, seeds 1--4. Both KL configurations use $\lambda=0.5$. Values are percentages (mean $\pm$ sample standard deviation).}
 \begin{tabular}{lrr}
 \toprule
 Method & Avg. & WGA \\
@@ -176,14 +250,14 @@ Raw CLIP + KL & $52.64 \pm 2.39$ & $48.48 \pm 3.44$ \\
 \label{tab:main}
 \end{table}
 
-CoSpRo achieves higher mean WGA by 3.82 percentage points relative to SimCLR and 2.16 points relative to matched raw-CLIP supervision in the four-seed Waterbirds evaluation (Table~\ref{tab:main}). The corresponding average-accuracy differences are +1.41 and +0.74 points. The sampler-only comparisons support a contribution from the relational objective beyond graph-aware batching. These results provide positive empirical evidence of improved robustness under the evaluated protocol; they do not establish statistical superiority across training seeds or settings. Appendix~\ref{app:seedresults} reports every seed and all four groups. The value $\lambda_{\max}=0.5$ was selected empirically in a preliminary development screen.
+CoSpRo achieves higher mean WGA by 3.82 percentage points relative to SimCLR and 2.16 points relative to matched raw-CLIP supervision in the four-seed Waterbirds evaluation (Table~\ref{tab:main}). The corresponding average-accuracy differences are +1.41 and +0.74 points. The sampler-only comparisons support a contribution from the relational objective beyond graph-aware batching. These results provide positive empirical evidence of improved robustness under the evaluated protocol. Appendix~\ref{app:seedresults} reports every seed and all four groups. The value $\lambda=0.5$ was selected empirically.
 
 \subsection{Do projected relations add value beyond concept similarity?}
-The semantic-graph control finds nearest neighbours of normalized SpLiCE reconstructions, preserving CoSpRo's supported anchors, row budgets, weight profiles, confidence and maximum indegree. Both use graph-aware batching and the same KL settings. Direct transfer instead predicts the normalized reconstruction through a separate head with cosine loss, ordinary batches and auxiliary weight 0.1 (Appendix~\ref{app:direct}). These comparisons distinguish projected relations, ordinary semantic relations and direct feature prediction; they are not pure loss ablations because neighbour identity changes batches and direct transfer uses a different head and weight.
+The semantic-graph control finds nearest neighbours of normalized SpLiCE reconstructions, preserving CoSpRo's supported anchors, row budgets, weight profiles, confidence and maximum indegree. Both use graph-aware batching and the same KL settings. Direct transfer instead predicts the normalized reconstruction through a separate head with cosine loss, ordinary batches and auxiliary weight 0.1 (Appendix~\ref{app:direct}). These comparisons distinguish projected relations, ordinary semantic relations and direct feature prediction.
 
 \begin{table}[htbp]
 \centering
-\caption{Waterbirds \textbf{validation} at epoch 500, seeds 1--4. Mean $\pm$ sample standard deviation in percent. These controls share the backbone, optimization and probe protocol; they have not all received held-out test evaluation.}
+\caption{Waterbirds validation at epoch 500, seeds 1--4. Mean $\pm$ sample standard deviation in percent. These controls share the backbone, optimization and probing protocol}
 \begin{tabular}{lrr}
 \toprule
 Method & Avg. & WGA \\
@@ -198,24 +272,23 @@ CoSpRo + KL & $53.46\pm3.05$ & $50.00\pm3.23$ \\
 \label{tab:semantic}
 \end{table}
 
-Across all four seeds, CoSpRo has 1.99-point higher mean WGA than semantic neighbours (Table~\ref{tab:semantic}). The paired differences are $+7.25,-1.88,+1.60,+1.01$ points: the evidence favors projected relations on average, but the effect is heterogeneous and modest relative to seed variation. The four-seed comparison is weaker than the initial seeds 1/3 comparison (+4.42 points). Direct reconstruction transfer similarly falls from 50.43\% WGA on seeds 1/3 to 46.61\% over all four seeds, only 1.07 points above SimCLR. CoSpRo's mean exceeds direct transfer by 3.39 points, without establishing general superiority of relational over coordinate transfer. Appendix~\ref{app:validation} reports all endpoints; Appendix~\ref{app:lassl} includes the single completed LA-SSL adaptation.
+Across all four seeds, CoSpRo has 1.99-point higher mean WGA than semantic neighbours (Table~\ref{tab:semantic}). The paired differences are $+7.25,-1.88,+1.60,+1.01$ points: the evidence favors projected relations on average, but the effect is heterogeneous and modest relative to seed variation. CoSpRo's mean exceeds direct transfer by 3.39 points, without establishing general superiority of relational over coordinate transfer. Appendix~\ref{app:validation} reports all endpoints; Appendix~\ref{app:lassl} includes the single completed LA-SSL adaptation.
 
 \subsection{What do the retained relations capture?}
-The graph has 12 selected concept groups and 12,239 directed edges, covering 4,582 of 4,795 training images (95.56\%), with maximum indegree 10. The selected concepts include Bamboo, Great grey owl and Tawny owl. All selected groups are singletons, so these experiments do not establish a benefit from multi-concept grouping. Selection discovers concept-dependent geometry rather than exclusively background concepts.
+The waterbirds graph has 12 selected concept groups and 12,239 directed edges, covering 4,582 of 4,795 training images (95.56\%), with maximum indegree 10. The selected concepts include Bamboo, Great grey owl and Tawny owl. All selected groups are singletons, so these experiments do not establish a benefit from multi-concept grouping.
 
-Post-hoc labels show both useful cross-context relations and target mismatches (Appendix~\ref{app:graphaudit}). For landbirds on water, same-target cross-background relations carry 59.22\% of CoSpRo's confidence-weighted graph mass versus 44.96\% for the raw graph. For waterbirds on land, the corresponding share barely changes (48.26\% versus 48.95\%), while wrong-target mass increases to 45.76\% from 39.73\%. These failures limit the interpretation of projection as nuisance removal even though the complete pipeline improves mean student WGA. Frozen-feature diagnostics confirm that the concept representation contains useful predictive information, but use different preprocessing and external pretraining; they are reported separately in Appendix~\ref{app:signal}.
+Post-hoc labels show both useful cross-context relations and target mismatches (Appendix~\ref{app:graphaudit}). For landbirds on water, same-target cross-background relations carry 59.22\% of CoSpRo's confidence-weighted graph mass versus 44.96\% for the raw graph. For waterbirds on land, the corresponding share barely changes (48.26\% versus 48.95\%), while wrong-target mass increases to 45.76\% from 39.73\%. These failures suggest that projection can't claim to simply remove spurious information, despite improving mean test WGA. Frozen-feature diagnostics confirm that the concept representation contains useful predictive information, but use different preprocessing and external pretraining; they are reported separately in Appendix~\ref{app:signal}.
 
 \section{Limitations}
-The experiments cover Waterbirds and one frozen graph seed. Four student seeds leave uncertainty about the average effect. The 224-example group-balanced probe uses labels and group annotations, so label-free pretraining does not make the full evaluation pipeline unsupervised. The results concern this probe regime and do not estimate performance under a large fully supervised training budget.
+The study uses one dataset, one frozen graph seed, and four student seeds; estimated gains may change with graph construction or training randomness. The 224-example group-balanced probe uses labels and group annotations, so only graph construction and SSL are label-free. Results for this probe regime do not establish performance with a larger supervised budget.
 
-Concept names do not uniquely identify causal factors. A direction can contain both object and background information and subspace projection does not generate a counterfactual image. Null calibration compares operational scores; it does not establish causal identification or control a multiple-testing false-discovery rate. The wrong-target relations in the graph show why an increase in cosine similarity is not sufficient evidence of a useful training pair. Background remains linearly predictable from the student and the per-group results include losses as well as gains.
+Concept directions can mix object and background information. Projection reflects associations in the learned representation, while null calibration provides a reference for evaluating them and leaves causal interpretation and multiple-testing control to separate analyses. Wrong-target graph edges and mixed per-group outcomes indicate that projection removes some unwanted signal while preserving other spurious information. Auxiliary linear background probes reach 90.91--91.66\% validation accuracy across the four CoSpRo seeds, so background information remains accessible.
 
-The method depends on the frozen encoder, its external pretraining data and the coverage of the text vocabulary. Sparse reconstruction also discards some CLIP information. Graph construction adds a frozen preprocessing cost, while each student uses the same 500-epoch budget as its controls. The teacher is not used at inference. The expanded direct-transfer and semantic-graph comparisons show substantial seed sensitivity. The latter supports only a tentative attribution of the gain to projection; neither establishes general superiority of relational transfer. The LA-SSL adaptation has one seed and does not support a reliable ranking against this external baseline.
+The method depends on CLIP's external pretraining and vocabulary coverage; sparse reconstruction loses some CLIP information. Graph construction adds preprocessing cost, though the core student runs share a 500-epoch budget. The semantic-graph and direct-transfer controls are seed-sensitive and do not establish that projection or relational transfer is generally superior.
 
 \begin{samepage}
 \section{Conclusion}
-CoSpRo uses concept-subspace projections to discover relations for self-supervised pretraining. Its fixed teacher graph supplies a training signal to a separate encoder without target or group labels during discovery or SSL. The four-seed Waterbirds comparison yields higher mean average and worst-group accuracy than SimCLR and matched raw-CLIP supervision, providing positive empirical evidence of robustness benefits under this protocol. Four-seed validation controls favor projected relations on average, but semantic neighbours remain competitive and direct reconstruction transfer is seed-sensitive. These controls support a qualified empirical result rather than a general guarantee of nuisance removal or method superiority. The evidence motivates separating concept representation, relation quality and student transfer when designing robust self-supervised objectives.
-
+CoSpRo uses concept-subspace projections to build a fixed teacher graph for label-free relational pretraining of a separate encoder. On Waterbirds, its four-seed mean test average and worst-group accuracies exceed those of SimCLR and matched raw-CLIP graph supervision. Validation controls weakly favor projected over semantic neighbours. The graph contains wrong-target edges, so the results support a protocol-specific robustness gain, which can be studied even further.
 \end{samepage}
 
 \begingroup
@@ -315,6 +388,43 @@ W.~Zhu, S.~Liu, C.~Fernandez-Granda and N.~Razavian.
 Making Self-supervised Learning Robust to Spurious Correlation via
 Learning-speed Aware Sampling. \emph{arXiv:2311.16361}, 2023.
 \url{https://arxiv.org/abs/2311.16361v2}.
+
+\bibitem[El Banani et~al.(2023)]{elbanani2023language}
+M.~El Banani, K.~Desai and J.~Johnson.
+Learning Visual Representations via Language-Guided Sampling.
+\emph{CVPR}, 2023. \url{https://arxiv.org/abs/2302.12248}.
+
+\bibitem[Ghosh et~al.(2026)]{ghosh2026cabs}
+A.~Ghosh et~al.
+Concept-Aware Batch Sampling Improves Language-Image Pretraining.
+\emph{CVPR}, pp.~3056--3068, 2026.
+\url{https://openaccess.thecvf.com/content/CVPR2026/html/Ghosh_Concept-Aware_Batch_Sampling_Improves_Language-Image_Pretraining_CVPR_2026_paper.html}.
+
+\bibitem[Sachidananda et~al.(2023)]{sachidananda2023gcbs}
+V.~Sachidananda, Z.~Yang and C.~Zhu.
+Global Selection of Contrastive Batches via Optimization on Sample
+Permutations. \emph{ICML}, pp.~29542--29562, 2023.
+\url{https://proceedings.mlr.press/v202/sachidananda23a.html}.
+
+\bibitem[Thirukovalluru et~al.(2025)]{thirukovalluru2025b3}
+R.~Thirukovalluru et~al.
+Breaking the Batch Barrier (B3) of Contrastive Learning via Smart
+Batch Mining. \emph{NeurIPS}, 2025.
+\url{https://proceedings.neurips.cc/paper_files/paper/2025/hash/21aa6840fcaa0cc3a1d16bafede47a2f-Abstract-Conference.html}.
+
+\bibitem[Yang et~al.(2023)]{yang2023batchsampler}
+Z.~Yang, T.~Huang, M.~Ding, Y.~Dong, R.~Ying, Y.~Cen,
+Y.~Geng and J.~Tang.
+BatchSampler: Sampling Mini-Batches for Contrastive Learning in Vision,
+Language, and Graphs. \emph{KDD}, 2023.
+\url{https://doi.org/10.1145/3580305.3599263}.
+
+\bibitem[Khosla et~al.(2020)]{khosla2020supcon}
+P.~Khosla et~al.
+Supervised Contrastive Learning. \emph{NeurIPS}, 2020.
+\url{https://arxiv.org/abs/2004.11362}.
+
+
 \end{thebibliography}
 \endgroup
 
@@ -337,8 +447,7 @@ Minimum gain / coverage & $10^{-4}$ / 0.01 \\
 Null calibration & 32 trials per family; pooled quantile 0.95 \\
 Group cap & 12 after the full audit \\
 Teacher graph & Up to 3 outgoing edges; maximum indegree 10 \\
-Graph seed & 0 shared across student seeds \\
-Spatial and CoBalT evidence & Disabled \\
+Graph seed & 0 and shared across student seeds \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -348,25 +457,25 @@ Spatial and CoBalT evidence & Disabled \\
 \begin{table}[htbp]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\caption{Waterbirds held-out test evaluation at epoch 500; KL weight 0.5. Groups are $(y,a)$ in order 00, 01, 10, 11. Values are percentages.}
+\caption{Waterbirds held-out test evaluation at epoch 500; KL weight 0.5. Groups are in form $(y,a)$. Values are percentages.}
 \begin{tabular}{lrrrrrrr}
 \toprule
-Method & Seed & Avg. & WGA & 00 & 01 & 10 & 11 \\
+Method & Seed & Avg. & WGA & (0,0) & (0,1) & (1,0) & (1,1) \\
 \midrule
 SimCLR & 1 & 49.34 & 42.17 & 42.17 & 47.45 & 65.58 & 64.95 \\
 SimCLR & 2 & 51.50 & 45.63 & 45.63 & 56.90 & 52.18 & 52.49 \\
 SimCLR & 3 & 53.24 & 49.89 & 49.89 & 54.46 & 56.70 & 57.32 \\
 SimCLR & 4 & 53.78 & 49.58 & 53.88 & 49.58 & 56.39 & 65.58 \\
 \addlinespace
-CoSpRo sampler & 1 & 50.05 & 45.94 & 45.94 & 47.01 & 59.97 & 65.26 \\
-CoSpRo sampler & 2 & 49.41 & 46.25 & 47.85 & 46.25 & 54.21 & 61.21 \\
-CoSpRo sampler & 3 & 51.59 & 46.39 & 46.39 & 49.67 & 62.93 & 65.26 \\
-CoSpRo sampler & 4 & 56.73 & 48.75 & 58.98 & 56.32 & 48.75 & 58.26 \\
-\addlinespace
 Raw CLIP sampler & 1 & 52.83 & 49.49 & 49.49 & 54.72 & 55.45 & 55.30 \\
 Raw CLIP sampler & 2 & 49.43 & 45.59 & 46.78 & 45.59 & 56.70 & 64.95 \\
 Raw CLIP sampler & 3 & 47.91 & 37.56 & 37.56 & 49.05 & 66.82 & 61.37 \\
 Raw CLIP sampler & 4 & 53.28 & 50.86 & 51.62 & 50.86 & 57.48 & 63.40 \\
+\addlinespace
+CoSpRo sampler & 1 & 50.05 & 45.94 & 45.94 & 47.01 & 59.97 & 65.26 \\
+CoSpRo sampler & 2 & 49.41 & 46.25 & 47.85 & 46.25 & 54.21 & 61.21 \\
+CoSpRo sampler & 3 & 51.59 & 46.39 & 46.39 & 49.67 & 62.93 & 65.26 \\
+CoSpRo sampler & 4 & 56.73 & 48.75 & 58.98 & 56.32 & 48.75 & 58.26 \\
 \addlinespace
 Raw CLIP + KL & 1 & 50.38 & 47.05 & 47.05 & 50.78 & 54.36 & 56.70 \\
 Raw CLIP + KL & 2 & 52.14 & 47.27 & 51.75 & 47.27 & 57.63 & 65.11 \\
@@ -384,8 +493,7 @@ CoSpRo + KL & 4 & 55.78 & 53.08 & 53.08 & 58.63 & 54.05 & 57.01 \\
 
 \begin{table}[htbp]
 \centering\small
-\caption{Paired CoSpRo differences in percentage points at epoch 500.
-CoSpRo and raw-CLIP KL use weight 0.5.}
+\caption{Paired CoSpRo differences in percentage points at final epoch}
 \begin{tabular}{rrrrrrr}
 \toprule
 & \multicolumn{2}{c}{vs. SimCLR} & \multicolumn{2}{c}{vs. own sampler} & \multicolumn{2}{c}{vs. raw CLIP + KL} \\
@@ -402,23 +510,36 @@ Mean & +1.41 & +3.82 & +1.43 & +3.81 & +0.74 & +2.16 \\
 \end{table}
 
 \section{Graph and Loss Details}\label{app:graphmath}
-The basis keeps singular values $\sigma>10^{-6}\max(\sigma_{\max},1)$. Projections with norm at most $10^{-12}$ are rejected; zero-norm residual codes receive similarity zero. The score is
-\begin{equation}
- S(G)=\frac{\operatorname{medianGain}(G)\operatorname{coverage}(G)
- \operatorname{agreement}(G)\operatorname{alignment}(G)}
- {1+\operatorname{Gini}(G)+\operatorname{maxIndegree}(G)/N}.
-\end{equation}
-Gain, coverage, residual agreement and destination indegrees use accepted edges. Alignment is the correlation between activation difference and gain over positive-gain candidates before the residual gate, clipped to $[0,1]$ (zero for a degenerate correlation). Each random-subspace trial obtains an equal-rank basis from Gaussian directions, recomputes projected neighbours and retains the original group activation vector and residual coordinate mask. Each activation-shuffle trial retains the group's projection geometry and residual agreement while permuting activations across images. Both apply the same candidate-selection and scoring rules. There are 32 trials of each type; the pooled 0.95 score quantile gives $T_G$. Passing groups are ranked by $S(G)-T_G$, followed by strongest-evidence duplicate resolution, outgoing top-3 pruning and destination top-10 pruning. The reported graph has 504 candidate groups (503 singletons and one pair), 441 passing the null filter and 12 retained. These counts emphasize that the null audit is not a background detector or a multiple-testing correction.
 
-For completeness, with normalized projection-head outputs $v_a$ for the $2|B|$ views, the implemented base objective is
+\paragraph{Projection and group-score details.}
+The SVD basis retains singular values satisfying
+\[
+\sigma > 10^{-6}\max(\sigma_{\max},1).
+\]
+Projected embeddings with norm at most $10^{-12}$ are rejected; zero-norm residual codes receive similarity zero. In $S(G)$, median gain, coverage, mean residual agreement and destination indegrees use accepted edges. Alignment is the correlation of $|A_i^G-A_j^G|$ with $\Delta_{ij}^G$ among positive-gain candidates before the residual gate, clipped to $[0,1]$. Neighbor concentration is measured using the Gini coefficient of destination indegrees and the maximum indegree.
+
+\paragraph{Null calibration and graph pruning.}
+For each group, 32 equal-rank Gaussian-subspace trials recompute projected neighbours, and 32 activation-shuffle trials retain the original geometry and residual agreement. Both use the observed candidate-selection and scoring procedure. The pooled score $0.95$ quantile defines $\tau_G$; passing groups are ranked by $S(G)-\tau_G$ and capped at 12.
+
+Duplicate directed edges keep the strongest evidence, followed by caps of three outgoing edges per anchor and ten incoming edges per destination. Of 504 audited groups (503 singletons and one pair), 441 (87.5\%) exceed their null threshold and 12 survive the cap.
+
+\paragraph{Implemented training objective.}
+For normalized projection-head views $v_a$ in batch $B$, the implemented SimCLR term is
 \begin{equation}
- \mathcal L_{\mathrm{SimCLR}}=-\frac{\tau_C}{0.07}\frac{1}{2|B|}\sum_a
- \log\frac{\exp(v_a^\top v_{a^+}/\tau_C)}{\sum_{b\ne a}\exp(v_a^\top v_b/\tau_C)}.
+\mathcal{L}_{\mathrm{SimCLR}} = -\frac{\tau_C}{0.07} \frac{1}{2|B|}
+\sum_a \log
+\frac{
+    \exp(v_a^\top v_{a^+}/\tau_C)
+}{
+    \sum_{b\neq a}\exp(v_a^\top v_b/\tau_C)
+}.
 \end{equation}
-The positive $a^+$ is the other view of the same image. The prefactor $\tau_C/0.07$ sets its scale relative to Eq.~\ref{eq:objective}. The relational softmax masks the anchor's sample ID. KL starts after epoch 10 and warms over ten epochs to 0.5, then remains constant through epoch 500; this weight was selected in a preliminary development screen. Unsupported batches contribute zero graph loss. An empty-graph fallback exists in the trainer, but matched graph-control runs require a nonempty graph.
+Here $a^+$ is the other view of the same image. The factor $\tau_C/0.07$ follows the SupCon implementation's temperature scaling \citep{khosla2020supcon}.
+
+The relational softmax uses backbone representations and masks the anchor ID. Only donors present in the batch enter the restricted teacher distribution, with zero teacher mass on other batch members, meaning anchors without a donor contribute no relational loss. The relational weight starts after epoch 10, rises over ten epochs to $\lambda_{\max}=0.5$, and stays there through epoch 500. This value was chosen in a preliminary development comparison. An empty graph falls back to SimCLR, but graph-control experiments require nonempty graphs.
 
 \section{Post-hoc Graph Audit}\label{app:graphaudit}
-The graph contains 12 selected concept groups and 12,239 directed edges. It supports 4,582 of 4,795 training images (95.56\% coverage), with maximum indegree 10 and indegree Gini 0.573. These global counts do not describe relation quality equally well for every source group. Concept projection can retain substantial wrong-target evidence. For the 56 training waterbirds on land, wrong-target relations account for 45.76\% of CoSpRo's confidence-weighted graph mass and 39.73\% of the matched raw teacher's mass. Same-target cross-context relations account for 48.26\% and 48.95\%, respectively. These post-hoc annotations diagnose graph quality and remain excluded from graph construction.
+The selected graph has 12 concept groups and 12,239 directed edges, supporting 4,582/4,795 anchors (95.56\% coverage); maximum indegree is 10 and indegree Gini is 0.573. Post-hoc labels show uneven relation quality: among the 56 training waterbirds on land, CoSpRo has 48.26\% same-target cross-background mass and 45.76\% wrong-target mass, versus 48.95\% and 39.73\% for the raw graph. Labels were excluded from construction.
 
 \begin{table}[htbp]
 \centering\small
@@ -437,10 +558,8 @@ $(1,1)$ & 1.25 & 8.66 & 2.51 & 9.77 \\
 \label{tab:graph}
 \end{table}
 
-Table~\ref{tab:graph} shows that the effect depends on the source group. For landbirds on water, the same-target cross-background share increases from 44.96\% to 59.22\%. For waterbirds on land it barely changes, while the wrong-target share increases.
-
 \section{Frozen Representation Diagnostics}\label{app:signal}
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Frozen-feature diagnostic with the same 224 probe-training IDs and L2 coefficient 0.001. Values are validation percentages. These representations use deterministic diagnostic preprocessing and external pretraining where applicable; they are not matched SSL student runs.}
 \begin{tabular}{lrrr}
@@ -457,38 +576,30 @@ ImageNet ResNet-18 & 512 & 78.98 & 76.23 \\
 \label{tab:signal}
 \end{table}
 
-The SpLiCE reconstruction retains a useful supervised evaluation signal: 77.98\% Avg. and 72.75\% WGA. All five diagnostics fit the 224 probe-training examples perfectly, including the random encoder. Training accuracy alone therefore provides little evidence of generalization at this sample budget. Teacher-feature fusion also improves the saved-student diagnostic, although it requires teacher features at inference and combines deterministic teacher views with historical seeded student views. It does not demonstrate improved standalone student pretraining.
+The SpLiCE reconstruction yields 77.98\% Avg. and 72.75\% WGA on this diagnostic. All five probes fit the 224 training examples perfectly, including the random encoder, so training accuracy alone does not show generalization at this sample size.
 
-\section{Direct-Transfer Diagnostic}\label{app:direct}
-We compare relational transfer with direct prediction of a frozen target. A separate head $g_\psi$ predicts a unit-normalized target $t_i$ from each student view:
+\section{Direct Transfer and Validation Endpoints}
+\label{app:direct}
+\label{app:validation}
+
+For direct reconstruction transfer, a separate head $g_\psi$ predicts the
+unit-normalized frozen SpLiCE reconstruction $t_i$ from each student view:
 \begin{equation}
  \mathcal{L}_{\mathrm{transfer}}=
  \frac{1}{2|B_V|}\sum_{i\in B_V}\sum_{v=1}^{2}
  \left[1-\cos\!\left(g_\psi(f_\theta(x_i^{(v)})),t_i\right)\right].
 \end{equation}
-Targets are centered raw-CLIP embeddings, normalized SpLiCE reconstructions or a fixed derangement of the reconstructions. $B_V$ contains valid target rows. The training objective is $\mathcal{L}_{\mathrm{SimCLR}}+\alpha(t)\mathcal{L}_{\mathrm{transfer}}$; the matched SimCLR arm retains the head with $\alpha=0$. All four arms use ordinary batches, seeds 1 and 3, 500 epochs, SimCLR temperature 0.05 and maximum transfer weight 0.1 after the same delay and warm-up. Comparisons are therefore made within this direct-transfer experiment.
+Here $B_V$ contains valid target rows. Training minimizes
+$\mathcal{L}_{\mathrm{SimCLR}}+\alpha(t)\mathcal{L}_{\mathrm{transfer}}$
+with ordinary batches and SimCLR temperature 0.05. The transfer weight starts
+after epoch 10, rises to 0.1 over the next ten epochs, and remains there
+through epoch 500.
 
-\begin{table}[htbp]
-\centering\small
-\caption{Direct transfer at SimCLR temperature 0.05. Validation percentages
-at epoch 500. Each entry reports Avg./WGA.}
-\begin{tabular}{lrrr}
-\toprule
-Target & Seed 1 & Seed 3 & Mean \\
-\midrule
-Matched SimCLR & 50.29 / 44.54 & 52.63 / 47.32 & 51.46 / 45.93 \\
-Raw CLIP & 52.96 / 45.86 & 52.88 / 49.62 & 52.92 / 47.74 \\
-SpLiCE reconstruction & 54.71 / 50.75 & 53.54 / 50.11 & 54.13 / 50.43 \\
-Shuffled reconstruction & 51.96 / 46.68 & 51.54 / 46.47 & 51.75 / 46.57 \\
-\bottomrule
-\end{tabular}
-\label{tab:direct}
-\end{table}
+Table~\ref{tab:semantic} gives four-seed means. The endpoints below show
+their seed variation under the same probe protocol. They are validation
+results and should not be compared numerically with the held-out test
+results in Table~\ref{tab:main}.
 
-The original seeds 1 and 3 favor aligned reconstruction targets over shuffled targets. This is an exploratory, two-seed comparison. Completing reconstruction seeds 2 and 4 reduces its mean WGA from 50.43 to 46.61\% (Table~\ref{tab:semantic}); the raw and shuffled targets have not been expanded to four seeds. Thus the initial target comparison does not establish a reliable advantage over those alternatives.
-
-\section{Expanded Validation Endpoints}\label{app:validation}
-The semantic and reconstruction controls include the completed seeds 2 and 4. CoSpRo validation endpoints come from the core four-seed study; its seeds 1 and 3 reproduce the corresponding graph-ablation endpoints exactly under matching training/probe settings. Each row below is one student seed, not a mean over independent probe draws. Test results in Table~\ref{tab:main} must not be numerically compared to these validation values.
 \begin{table}[htbp]
 \centering\small
 \caption{Validation Avg./WGA percentages at SSL epoch 500.}
@@ -505,9 +616,27 @@ CoSpRo + KL & 55.80 / 51.61 & 53.29 / 50.00 & 49.21 / 45.49 & 55.55 / 52.89 \\
 \end{tabular}
 \end{table}
 
-\section{Preliminary LA-SSL Adaptation}\label{app:lassl}
-We implement the learning-speed-aware sampling rule of \citet{zhu2023lassl} within the same ResNet-18, 500-epoch, batch-size-128 SimCLR and linear-probe protocol. Learning-speed estimates use exponentiated two-view projection similarity and an exponential moving average. The adaptation uses EMA coefficient 0.1, sampling scale 10 and quantile 0.1, updating every two epochs after a ten-epoch warm-up (first update at epoch 12). The coefficient is an explicit implementation choice; it is not specified in the cited algorithm. Sampling uses replacement with $N$ draws per epoch. Scoring requires an additional no-gradient pass, so equal training epochs do not imply equal computation. This is a protocol-matched adaptation, not a reproduction of the original paper's architecture or reported benchmark scores.
+\section{LA-SSL Adaptation}\label{app:lassl}
+We implement the learning-speed-aware sampling rule of \citet{zhu2023lassl} within the same ResNet-18, 500-epoch, batch-size-128 SimCLR and linear-probe protocol. Learning-speed estimates use exponentiated two-view projection similarity and an exponential moving average. The adaptation uses EMA coefficient 0.1, sampling scale 10 and quantile 0.1, updating every two epochs after a ten-epoch warm-up (first update at epoch 12).
 
-The completed seed 1 yields 50.38\% Avg. and 45.61\% WGA on validation, versus 50.29/44.54 for SimCLR and 55.80/51.61 for CoSpRo on the same seed. All probes converged at epoch 500. One seed, one adaptation setting and no held-out test result are insufficient to establish superiority over LA-SSL.
+\begin{table}[H]
+\centering\small
+\caption{LA-SSL validation results at SSL epoch 500. Groups follow $(y,a) = 00, 01, 10, 11$. Mean and sample standard deviation are across seeds.}
+\begin{tabular}{lrrrrrr}
+\toprule
+Seed & Avg. & WGA & 00 & 01 & 10 & 11 \\
+\midrule
+1 & 50.38 & 45.61 & 45.61 & 50.43 & 53.38 & 63.91 \\
+2 & 52.13 & 46.68 & 46.68 & 55.15 & 54.89 & 57.89 \\
+3 & 51.79 & 45.18 & 45.18 & 54.94 & 60.15 & 55.64 \\
+4 & 53.38 & 47.54 & 47.54 & 55.15 & 53.38 & 67.67 \\
+\midrule
+Mean $\pm$ SD & $51.92\pm1.23$ & $46.25\pm1.06$ & & & & \\
+\bottomrule
+\end{tabular}
+\label{tab:lassl}
+\end{table}
+
+All four probes converged at epoch 500, and group 00 is the worst group in every seed. Relative to matched SimCLR, LA-SSL's four-seed mean changes Avg./WGA by $-0.19/+0.71$ points. Relative to CoSpRo, it is lower by 1.54 Avg. points and 3.74 WGA points.
 
 \end{document}
