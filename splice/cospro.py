@@ -294,10 +294,13 @@ def _group_concepts(
         return []
 
     active = torch.as_tensor(active_indices, dtype=torch.long)
-    active_codes = codes[:, active].T
+    # Keep only one concept-by-sample copy. F.normalize would allocate a
+    # second copy of this matrix, which is prohibitively large for CelebA's
+    # 162k samples and 20k-concept vocabulary.
+    active_codes = codes.index_select(1, active).T.contiguous()
     if sample_weights_tensor is not None:
-        active_codes = active_codes * sample_weights_tensor.sqrt().unsqueeze(0)
-    active_codes = F.normalize(active_codes, dim=1)
+        active_codes.mul_(sample_weights_tensor.sqrt().unsqueeze(0))
+    active_codes.div_(active_codes.norm(dim=1, keepdim=True).clamp_min(1e-12))
     active_dictionary = F.normalize(dictionary[active], dim=1)
     families: dict[str, int] = {}
     groups = _DisjointSet(active_indices)
@@ -377,10 +380,9 @@ def _concept_group_report_diagnostics(
     """Collect grouping evidence for the human-facing report without changing grouping."""
 
     codes = cache["splice_codes"]
-    occurrences = (codes > 0).float()
-    frequencies = occurrences.mean(dim=0)
+    frequencies = (codes > 0).float().mean(dim=0)
     text_directions = F.normalize(cache["dictionary"], dim=1)
-    activation_directions = F.normalize(codes.T, dim=1)
+    activation_norms = torch.linalg.vector_norm(codes, dim=0).clamp_min(1e-12)
 
     below_minimum = frequencies < config.min_concept_frequency
     above_maximum = frequencies > config.max_concept_frequency
@@ -416,7 +418,8 @@ def _concept_group_report_diagnostics(
             for right_index in indices[left_offset + 1:]:
                 text_similarity = float(text_directions[left_index] @ text_directions[right_index])
                 coactivation = float(
-                    activation_directions[left_index] @ activation_directions[right_index]
+                    torch.dot(codes[:, left_index], codes[:, right_index])
+                    / (activation_norms[left_index] * activation_norms[right_index])
                 )
                 text_passed = text_similarity >= config.text_similarity_threshold
                 coactivation_passed = coactivation >= config.coactivation_threshold

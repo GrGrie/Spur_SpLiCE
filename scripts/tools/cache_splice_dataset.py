@@ -127,7 +127,18 @@ def main(argv: list[str] | None = None) -> None:
         return_weights=True,
     ).eval()
 
-    sample_ids, clip_embeddings, splice_codes = [], [], []
+    # Allocate the final CPU-backed arrays up front. Keeping one tensor per
+    # batch and concatenating them after the last batch temporarily requires a
+    # second copy of the entire CelebA cache (the sparse codes alone are
+    # several GiB with the full Open Images vocabulary).
+    sample_ids = [""] * len(images)
+    clip_embeddings = torch.empty(
+        (len(images), splice_model.image_mean.numel()), dtype=torch.float32
+    )
+    splice_codes = torch.empty(
+        (len(images), splice_model.dictionary.shape[0]), dtype=torch.float32
+    )
+    offset = 0
     for batch_number, batch in enumerate(loader, start=1):
         indices = [item[0] for item in batch]
         raw_images = [item[1] for item in batch]
@@ -136,17 +147,20 @@ def main(argv: list[str] | None = None) -> None:
             clip_batch = F.normalize(splice_model.clip.encode_image(clip_input).float(), dim=1)
             centered = F.normalize(clip_batch - splice_model.image_mean, dim=1)
             code_batch = splice_model.decompose(centered)
-        sample_ids.extend(f"{args.dataset}:{index}" for index in indices)
-        clip_embeddings.append(clip_batch.cpu())
-        splice_codes.append(code_batch.cpu())
+        start = offset
+        stop = start + len(indices)
+        sample_ids[start:stop] = [f"{args.dataset}:{index}" for index in indices]
+        clip_embeddings[start:stop].copy_(clip_batch.cpu())
+        splice_codes[start:stop].copy_(code_batch.cpu())
+        offset = stop
         print(f"[INFO] Cached batch {batch_number}/{len(loader)}", flush=True)
 
     cache = {
         "cache_version": SPLICE_DATASET_CACHE_VERSION,
         "sample_ids": sample_ids,
-        "clip_embeddings": torch.cat(clip_embeddings),
+        "clip_embeddings": clip_embeddings,
         "image_mean": splice_model.image_mean.detach().cpu(),
-        "splice_codes": torch.cat(splice_codes),
+        "splice_codes": splice_codes,
         "dictionary": splice_model.dictionary.detach().cpu(),
         "vocabulary": splice.get_vocabulary(args.splice_vocab, args.splice_vocab_size),
         "provenance": {

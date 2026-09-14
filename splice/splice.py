@@ -236,7 +236,9 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         )
 
         if os.path.isfile(concept_path):
-            concepts = torch.load(concept_path, map_location=torch.device(device))
+            concepts = torch.load(
+                concept_path, map_location=torch.device(device), weights_only=True
+            )
         else:
             with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
@@ -262,7 +264,9 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         download_root or os.path.expanduser("~/.cache/splice/"),
         "means",
     )
-    image_mean = torch.load(mean_path, map_location=torch.device(device))
+    image_mean = torch.load(
+        mean_path, map_location=torch.device(device), weights_only=True
+    )
     splice = SPLICE(
         image_mean=image_mean,
         dictionary=concepts,

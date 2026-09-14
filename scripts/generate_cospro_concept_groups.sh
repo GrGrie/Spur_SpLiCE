@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=CoSpRo-Concept-Groups
 #SBATCH --partition=informatik-mind
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=5
+# CelebA's full SpLiCE code matrix is about 13.6 GiB; grouping needs one
+# additional concept-by-sample workspace even when it is normalized in place.
+#SBATCH --mem=40G
 #SBATCH --time=06:00:00
 #SBATCH --output=outputs/SLURM/%x-%j.out
 #SBATCH --error=outputs/SLURM/%x-%j.err
