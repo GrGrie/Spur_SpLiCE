@@ -28,6 +28,7 @@ from splice.cospro import (
     project_out,
     save_concept_groups_json,
     save_splice_dataset_cache,
+    topk_neighbors,
     validate_splice_dataset_cache,
 )
 from splice.cospro_reporting import render_concept_groups_report, render_teacher_graph_report
@@ -60,6 +61,22 @@ from scripts.tools.run_cospro_pipeline import main as run_cospro_pipeline_main
 
 
 class SplicePipelineTests(unittest.TestCase):
+    def test_lsh_neighbors_are_deterministic_unique_and_exclude_self(self):
+        generator = torch.Generator().manual_seed(9)
+        features = torch.nn.functional.normalize(torch.randn(64, 8, generator=generator), dim=1)
+        first_indices, first_values = topk_neighbors(
+            features, 5, backend="lsh", ann_tables=3, ann_bucket_size=8, seed=4,
+        )
+        second_indices, second_values = topk_neighbors(
+            features, 5, backend="lsh", ann_tables=3, ann_bucket_size=8, seed=4,
+        )
+        torch.testing.assert_close(first_indices, second_indices)
+        torch.testing.assert_close(first_values, second_values)
+        self.assertTrue(torch.isfinite(first_values).all())
+        rows = torch.arange(len(features)).view(-1, 1)
+        self.assertFalse(torch.any(first_indices == rows))
+        self.assertTrue(all(len(set(row.tolist())) == 5 for row in first_indices))
+
     def test_celeba_dataset_aliases_are_canonicalized_at_artifact_boundaries(self):
         self.assertEqual(canonical_dataset_name("CelebA"), "celeba")
         self.assertEqual(canonical_dataset_name("celebA"), "celeba")
@@ -493,6 +510,32 @@ class SplicePipelineTests(unittest.TestCase):
             self.assertIn("All group decisions", html)
             self.assertIn("Confidence and intervention evidence", html)
             self.assertIn("Final graph statistics", html)
+
+    def test_teacher_audit_resumes_atomic_per_group_checkpoints(self):
+        config = CrpAuditConfig(
+            min_concept_frequency=0.1,
+            max_concept_frequency=0.9,
+            projected_neighbors=3,
+            graph_top_k=2,
+            null_trials=1,
+            null_quantile=0.0,
+            min_coverage=0.0,
+            seed=7,
+        )
+        cache = self._tiny_splice_dataset_cache()
+        concept_groups = build_concept_groups(cache, config)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checkpoints = Path(temporary_directory) / "checkpoints"
+            first = build_teacher_graph(
+                cache, concept_groups, config, checkpoint_dir=checkpoints,
+            )
+            self.assertEqual(len(list(checkpoints.glob("group_*.pt"))), len(concept_groups["groups"]))
+            with patch("splice.cospro._neighbor_geometry", side_effect=AssertionError("must resume")):
+                second = build_teacher_graph(
+                    cache, concept_groups, config, checkpoint_dir=checkpoints,
+                )
+            torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
+            torch.testing.assert_close(first["weights"], second["weights"])
 
     def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
         config = CrpAuditConfig(

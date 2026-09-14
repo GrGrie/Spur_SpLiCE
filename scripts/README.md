@@ -31,6 +31,21 @@ path saved there for `--resume`.
 recorded separately from manifest matrices and are not collected by the
 matrix result collector.
 
+For a dataset with exactly one completed graph under
+`$SPUR_SPLICE_OUTPUT_ROOT/shared/<dataset>/graphs` (or `outputs/shared/...`),
+the launcher automatically adds `--splice_mode cospro_relational`, the graph
+path, and the pipeline's CoSpRo defaults for batch size (128), worker count (4),
+SimCLR temperature (0.05), relation weight (0.5), and relation temperature
+(0.25). Later CLI options override these defaults. Select a graph explicitly
+when a sweep produced more than one:
+
+```bash
+sbatch scripts/run_training.sbatch --dataset celebA --seed 1 \
+  --cospro_teacher_graph /path/to/teacher_graph.json
+```
+
+Without a graph it emits a warning and performs ordinary SimCLR training.
+
 For the predeclared seed/arm matrix below, keep the manifest as the source of
 truth. A single matrix cell can also be submitted directly:
 
@@ -162,8 +177,18 @@ bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cach
 
 # The second argument may be one JSON file or the whole sweep directory.
 bash scripts/build_cospro_teacher_graphs.sh /scratch/path/splice_dataset_cache.pt \
-  outputs/shared/waterbirds/graphs/concept_groups
+  outputs/shared/waterbirds/graphs/concept_groups \
+  --device auto --neighbor-backend auto
 ```
+
+`auto` uses exact chunked cosine search on small datasets and deterministic
+random-hyperplane LSH above 20,000 samples. Projection and neighbour search run
+on CUDA when the Slurm GPU is available; the sparse residual-concept gate stays
+on CPU to avoid copying the full concept matrix to VRAM. Raw neighbours and
+each finished group are written atomically to `group_checkpoints/` below the
+audit directory. Resubmitting the same build command restores these files.
+Checkpoint identity includes the groups, sample order, source artifact, and
+complete audit/ANN configuration, so incompatible checkpoints are rejected.
 
 Execution-only cache settings such as batch size, worker count, and device are
 not part of its directory name. Cache-affecting settings are: model, pretrained
