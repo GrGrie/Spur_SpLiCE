@@ -215,13 +215,27 @@ def render(dataset_root: Path, artifact_root: Path, output_dir: Path) -> tuple[P
             pair["right_annotation"] = _annotate(pair["right_id"], metadata, dataset_root)
             pair["decision_reason"] = decision_reason(pair, graph_group, graph["config"])
 
+        # Slots serialize their own pair copies; point them at the annotated records.
+        annotated = {(p["row"], p["column"]): p for p in panel_group["pairs"]}
+        for slot in panel_group.get("slots", []):
+            if slot["pair"]:
+                slot["pair"] = annotated[(slot["pair"]["row"], slot["pair"]["column"])]
+
     pdf_path = output_dir / "concept_panels.pdf"
     page = canvas.Canvas(str(pdf_path), pagesize=(1500, 1100), pageCompression=1)
     page.setTitle("CoSpRo annotated concept panels")
-    for panel_group in panels["groups"]:
+    pages = []
+    for group in panels["groups"]:
+        slots = group.get("slots")
+        if slots:
+            pages.extend((group, slots[start:start+4], "Retained" if start == 0 else "Not retained")
+                         for start in (0, 4))
+        else:
+            pages.append((group, [dict(pair=p, title="", candidate_count=None) for p in group["pairs"]], ""))
+    for panel_group, slots, status in pages:
         page.setFillColor(black)
         page.setFont("Helvetica-Bold", 23)
-        page.drawString(30, 1055, f"G{panel_group['group_id']}: {', '.join(panel_group['concepts'])}")
+        page.drawString(30, 1055, f"G{panel_group['group_id']}: {', '.join(panel_group['concepts'])} — {status}")
         page.setFont("Helvetica", 10)
         page.drawString(
             30,
@@ -239,8 +253,16 @@ def render(dataset_root: Path, artifact_root: Path, output_dir: Path) -> tuple[P
             f"max donor indegree {thresholds['maximum_indegree']}.",
         )
         positions = ((30, 535), (770, 535), (30, 45), (770, 45))
-        for pair, (x, y) in zip(panel_group["pairs"], positions):
-            _draw_pair(page, pair, x, y, 700, 450)
+        for slot, (x, y) in zip(slots, positions):
+            page.setFillColor(black)
+            page.setFont("Helvetica-Bold", 12)
+            count = slot["candidate_count"]
+            page.drawString(x, y + 455, slot["title"] + (f" (pool: {count})" if count is not None else ""))
+            if slot["pair"]:
+                _draw_pair(page, slot["pair"], x, y, 700, 450)
+            else:
+                page.setFont("Helvetica", 12)
+                page.drawString(x, y + 400, "No candidate in this stratum for this concept.")
         page.showPage()
     page.save()
 

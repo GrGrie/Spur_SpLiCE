@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from scripts.tools.build_submission_figure import graph_mass, select_examples, enrich, build
+from scripts.tools.select_graph_panels import stratify, relation_key, discover_panels
 
 
 def fixture(root):
@@ -66,9 +67,80 @@ class SubmissionFigureTests(unittest.TestCase):
             self.assertTrue((output / 'details/concept_panels.pdf').is_file())
             evidence = json.loads((output / 'evidence.json').read_text())
             self.assertEqual(len(evidence['examples']), 4)
-            self.assertTrue(all(r['pair'] for r in evidence['examples']))
+            self.assertEqual(sum(r['pair'] is not None for r in evidence['examples']), 2)
             with self.assertRaises(FileExistsError):
                 build(argparse.Namespace(artifact_root=artifacts, dataset_root=root, panels=source, output_dir=output))
+
+    def test_strata_cover_inverse_relation_and_diverse_sources(self):
+        pairs = []
+        for retained in (True, False):
+            for i, left in enumerate(((0, 0), (0, 1), (1, 0), (1, 1))):
+                for j, right in enumerate(((0, 0), (0, 1), (1, 0), (1, 1))):
+                    pairs.append(dict(row=i, column=j+4, left_id=str(i), right_id=str(j+4),
+                                      retained=retained, gain=10-i, source_group=list(left),
+                                      stratum=relation_key(left, right)))
+        slots = stratify(pairs)
+        self.assertEqual(len(slots), 8)
+        self.assertTrue(all(s['pair'] for s in slots))
+        self.assertEqual(len({tuple(s['pair']['source_group']) for s in slots[:4]}), 4)
+        self.assertEqual(slots[2]['pair']['stratum'], 'different_y_same_a')
+        self.assertEqual(slots[2]['candidate_count'], 4)
+
+    def test_cache_discovery_finds_pairs_outside_old_manifest(self):
+        import torch
+        from splice.cospro import CrpAuditConfig, build_teacher_graph, build_concept_groups
+        torch.manual_seed(42)
+        n, k = 24, 4
+        codes = torch.rand(n, k)
+        cache = dict(cache_version=1, sample_ids=[f'waterbirds:{i}' for i in range(n)],
+                     clip_embeddings=torch.nn.functional.normalize(codes + .1, dim=1),
+                     splice_codes=codes, dictionary=torch.eye(k), image_mean=torch.zeros(k),
+                     vocabulary=[f'concept{i}' for i in range(k)])
+        metadata = [dict(y=str((i//2)%2), place=str(i%2), split='0') for i in range(n)]
+        config = CrpAuditConfig(projected_neighbors=5, null_trials=2, null_quantile=0.,
+                                min_coverage=0., max_concept_frequency=1.,
+                                max_selected_groups=4, text_similarity_threshold=.99)
+        graph = build_teacher_graph(cache, build_concept_groups(cache, config), config, device='cpu')
+        # Selection can be empty for a random fixture; keep a real audited group
+        # but no final edges, exercising non-retained candidate reconstruction.
+        from splice.graph_io import save_graph_json
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d)/'graph.json'
+            save_graph_json(graph, path)
+            graph = json.loads(path.read_text())
+            from PIL import Image
+            root = Path(d)
+            rows = [{**m, 'img_filename': f'{i}.png'} for i, m in enumerate(metadata)]
+            with (root/'metadata.csv').open('w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+                writer.writeheader(); writer.writerows(rows)
+            for i in range(n):
+                Image.new('RGB', (80, 60), (i*10, 100, 180)).save(root/f'{i}.png')
+            graphs = root/'artifacts/shared/waterbirds/graphs'
+            graphs.mkdir(parents=True)
+            for name in ('crp_graph', 'raw_clip_graph'):
+                (graphs/f'{name}.json').write_text(json.dumps(graph))
+            cache_path = root/'cache.pt'
+            torch.save(cache, cache_path)
+            output = root/'figure'
+            build(argparse.Namespace(artifact_root=root/'artifacts', dataset_root=root,
+                                     splice_dataset_cache=cache_path, panels=None, output_dir=output))
+            evidence = json.loads((output/'evidence.json').read_text())
+            self.assertTrue(all(s['pair'] for s in evidence['examples']))
+            detailed = json.loads((output/'details/concept_panels.json').read_text())
+            self.assertEqual(len(detailed['groups']), k)
+            self.assertTrue(all(len(g['slots']) == 8 for g in detailed['groups']))
+        if any(g['selected'] for g in graph['groups']):
+            self.assertTrue(discover_panels(cache, graph, metadata)['groups'])
+        for group in graph['groups']:
+            group['selected'] = True
+        graph['weights'] = [[0.]*len(r) for r in graph['weights']]
+        panels = discover_panels(cache, graph, metadata)
+        self.assertEqual(len(panels['groups']), k)
+        self.assertTrue(any(s['pair'] for g in panels['groups'] for s in g['slots'][4:]))
+        cache['sample_ids'] = cache['sample_ids'][::-1]
+        with self.assertRaisesRegex(ValueError, 'IDs/order'):
+            discover_panels(cache, graph, metadata)
 
 
 if __name__ == '__main__':

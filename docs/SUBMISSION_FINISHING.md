@@ -62,6 +62,46 @@ Aggregation refuses validation results, unconverged probes, incorrect group coun
 
 ## 4. Build the graph-evidence figure
 
+### Updated: stratified selection (17 September)
+
+The old 20-pair manifest often contains only same-label/same-background
+pairs. It cannot supply the categories required by the compact figure.
+The default workflow now reconstructs projected candidates from the original
+frozen SpLiCE cache for **every selected concept**. It never changes the graph,
+repeats teacher inference, reruns null calibration, or trains a student.
+
+Submit from the repository root (Python runs only inside SLURM):
+
+```bash
+mkdir -p outputs/SLURM
+sbatch scripts/run_graph_figures.sbatch \
+  --dataset-root /path/to/waterbirds \
+  --splice-dataset-cache /path/to/original/splice_dataset_cache.pt
+```
+
+The dataset directory must contain `metadata.csv`. Use the cache that produced
+`outputs/shared/waterbirds/graphs/crp_graph.json`, not a newly computed cache.
+The job checks sample IDs/order, concept vocabulary, shared provenance, retained
+candidate coverage, and retained projection gains against the saved graph.
+Pass `--artifact-root /path/to/outputs` to use a relocated artifact tree.
+Dependencies: the training environment plus matplotlib, Pillow and reportlab.
+
+Output: `outputs/reports/graph_figures_JOBID/`. The compact figure shows all
+four same/different combinations of bird label y and background a, preferring
+retained relations. `details/concept_panels.pdf` contains two pages per selected
+concept: retained and non-retained candidates, each stratified into the four
+combinations. Selection balances source groups and image reuse before sorting
+by gain; it reports candidate counts and missing categories explicitly.
+Edges retained under another concept are excluded from that concept's panel.
+`details/concept_panels.json` records per-stratum source-group counts and the
+selection rule. Images are unmodified; only embedding similarities change.
+These label-stratified examples are illustrative, not prevalence estimates.
+
+`--panels FILE` remains available only for explicitly rendering an existing
+selection. It cannot recover missing categories. Previous reports and the
+original manifest are preserved. The legacy instructions below describe that
+older fixed-pool workflow; use the SLURM command above for new reports.
+
 The existing detailed renderer requires ReportLab; the compact figure also uses Matplotlib and Pillow. Install missing rendering dependencies in your chosen rendering environment if necessary:
 
 ```bash
@@ -73,6 +113,7 @@ Use the directory that directly contains `metadata.csv` and the Waterbirds image
 ```bash
 python -m scripts.tools.build_submission_figure \
   --dataset-root /path/to/waterbirds \
+  --panels outputs/reports/paper_evidence/visual/concept_panels.json \
   --output-dir outputs/reports/submission_graph_figure
 ```
 

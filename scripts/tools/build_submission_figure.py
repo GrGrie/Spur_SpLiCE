@@ -8,6 +8,7 @@ from pathlib import Path
 
 from splice.artifacts import atomic_write_json, resolve_output_root, sha256_file
 from scripts.tools.render_concept_panels import _metadata, _annotate, decision_reason, render
+from scripts.tools.select_graph_panels import RELATIONS, relation_key, discover_panels
 
 
 def read(path):
@@ -80,21 +81,24 @@ def enrich(panels, graph, metadata, dataset_root):
             relation = "wrong_target" if not same else ("cross_background" if left["spurious_attribute"] != right["spurious_attribute"] else "same_background")
             pairs.append({**pair, "group_id": group["group_id"], "concepts": group["concepts"],
                           "left_annotation": left, "right_annotation": right, "relation": relation,
+                          "stratum": relation_key(left["group"], right["group"]),
                           "decision_reason": decision_reason(pair, actual, graph["config"])})
     return pairs
 
 
 def select_examples(pairs):
     """Prespecified illustrative categories; never claim these are prevalence estimates."""
-    definitions = [("Retained: same target, different background", True, "cross_background"),
-                   ("Retained: incorrect target relation", True, "wrong_target"),
-                   ("Rejected: same target, different background", False, "cross_background"),
-                   ("Rejected: different targets", False, "wrong_target")]
     selected = []
-    for title, retained, relation in definitions:
-        candidates = [p for p in pairs if p["retained"] == retained and p["relation"] == relation]
-        candidates.sort(key=lambda p: (-p["gain"], p["group_id"], p["left_id"], p["right_id"]))
-        selected.append(dict(title=title, candidate_count=len(candidates), pair=candidates[0] if candidates else None))
+    used = set()
+    for relation, title in RELATIONS:
+        candidates = [p for p in pairs if p["stratum"] == relation]
+        candidates.sort(key=lambda p: (not p["retained"], p["group_id"] in used,
+                                       -p["gain"], p["group_id"], p["left_id"], p["right_id"]))
+        pair = candidates[0] if candidates else None
+        if pair:
+            used.add(pair["group_id"])
+            title += " — " + ("retained" if pair["retained"] else "not retained")
+        selected.append(dict(title=title, candidate_count=len(candidates), pair=pair))
     return selected
 
 
@@ -112,7 +116,7 @@ def draw_figure(selected, mass, output):
         pair = selection["pair"]
         title = figure.add_subplot(slot[1, :]); title.axis("off")
         if pair is None:
-            title.text(0, .95, selection["title"] + "\nNo example in the frozen 20-pair selection.", va="top", wrap=True)
+            title.text(0, .95, selection["title"] + "\nNo example in the audited candidate pool.", va="top", wrap=True)
             continue
         for side, column in (("left_annotation", 0), ("right_annotation", 1)):
             ax = figure.add_subplot(slot[0, column]); ax.axis("off")
@@ -127,7 +131,7 @@ def draw_figure(selected, mass, output):
         title.text(0, .98, text, va="top", fontsize=9)
     colors = ("#2878a4", "#ba5a32")
     for col, (metric, heading) in enumerate((("cross_background", "Same target, different background"),
-                                           ("wrong_target", "Wrong target (either background)"))):
+                                           ("wrong_target", "Different y (either background)"))):
         ax = figure.add_subplot(grid[2, col]); x = np.arange(4)
         for offset, (arm, color) in enumerate(zip(("raw_clip", "cospro"), colors)):
             values = [mass[arm][group]["percent"][metric] for group in ("00", "01", "10", "11")]
@@ -144,14 +148,26 @@ def draw_figure(selected, mass, output):
 
 def build(args):
     root = args.artifact_root
-    source = args.panels or root / "reports/paper_evidence/visual/concept_panels.json"
+    cache_path = getattr(args, "splice_dataset_cache", None)
+    source = args.panels
     crp_path = root / "shared/waterbirds/graphs/crp_graph.json"
     raw_path = root / "shared/waterbirds/graphs/raw_clip_graph.json"
     crp, raw = read(crp_path), read(raw_path)
     if crp["sample_ids"] != raw["sample_ids"]:
         raise ValueError("Raw and CoSpRo graph sample IDs differ")
     metadata = _metadata(args.dataset_root)
-    pairs = enrich(read(source), crp, metadata, args.dataset_root)
+    if args.output_dir.exists():
+        raise FileExistsError(args.output_dir)
+    if cache_path:
+        import torch
+        panels = discover_panels(torch.load(cache_path, map_location="cpu", weights_only=True), crp, metadata)
+        source = cache_path
+    elif source:
+        panels = read(source)
+    else:
+        raise ValueError("Supply --splice-dataset-cache ORIGINAL_CACHE.pt to rebuild stratified illustrations. "
+                         "--panels explicitly reuses an existing selection; the old 20-pair pool is not used by default.")
+    pairs = enrich(panels, crp, metadata, args.dataset_root)
     for pair in pairs:
         for side in ("left_annotation", "right_annotation"):
             if not Path(pair[side]["image"]).is_file():
@@ -161,21 +177,24 @@ def build(args):
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=False)
     atomic_write_json(output / "evidence.json", dict(
-        posthoc_only=True, selection_rule="Within each declared category in the frozen pool: descending gain, then group/sample IDs. Missing categories remain empty.",
-        interpretation="Illustrative label-stratified examples, not unbiased samples. Retained does not imply correct target semantics. Bars use all graph edges, q_i * p_T(j|i).",
+        posthoc_only=True, selection_rule=panels.get("selection", "Explicit supplied panel manifest") +
+        " Compact figure: one per y/a relation, prefer retained, then unused concepts, gain and IDs.",
+        interpretation="Illustrative label-stratified examples, not prevalence estimates or image interventions. "
+        "Labels only select illustrations. Bars use all graph edges, q_i * p_T(j|i).",
         sources={str(p): sha256_file(p) for p in (source, crp_path, raw_path, args.dataset_root / "metadata.csv")},
         examples=selected, graph_mass=mass, all_pairs=pairs))
     draw_figure(selected, mass, output)
     # Reuse the detailed renderer on a COPY, preserving the frozen selection manifest.
     details = output / "details"
     details.mkdir()
-    atomic_write_json(details / "concept_panels.json", read(source))
+    atomic_write_json(details / "concept_panels.json", panels)
     render(args.dataset_root, root, details)
-    caption = ("Post-hoc audit of CoSpRo relations. Image pairs illustrate prespecified retained/rejected and target/context categories "
-               "within the frozen 20-pair pool; the highest-gain pair in each category is shown, and absent categories are explicitly marked. "
+    caption = ("Post-hoc audit of CoSpRo relations. Pairs cover the four same/different label and background combinations. "
+               "Selection prefers retained relations and distinct concepts; detailed panels separate retained and non-retained candidates. "
+               "The candidate pool and deterministic selection rule are recorded in the accompanying JSON; absent categories are marked. "
                "These examples are illustrative, not prevalence estimates. Labels are used only for this audit. "
                "Bars aggregate all edges using anchor confidence times normalized teacher probability, separately within each source group. "
-               "Wrong-target relations include both backgrounds. Projection can reveal cross-background relations while also linking different targets.")
+               "Different-label relations include both backgrounds. Images are unchanged; similarities describe embedding projections.")
     (output / "caption.txt").write_text(caption + "\n", encoding="utf-8")
     tex = ("\\begin{figure}[t]\n\\centering\n\\includegraphics[width=\\linewidth]{\\detokenize{" +
            (output / "graph_evidence.pdf").as_posix() + "}}\n\\caption{" + caption +
@@ -188,7 +207,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, required=True, help="Directory containing Waterbirds metadata.csv and images")
     parser.add_argument("--artifact-root", type=Path, default=resolve_output_root())
-    parser.add_argument("--panels", type=Path)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--panels", type=Path, help="Explicitly reuse a panel manifest (legacy mode)")
+    selection.add_argument("--splice-dataset-cache", type=Path, help="Original frozen .pt cache; rebuild all selected concept panels")
     parser.add_argument("--output-dir", type=Path, required=True, help="New directory; existing reports are never overwritten")
     build(parser.parse_args())
 
