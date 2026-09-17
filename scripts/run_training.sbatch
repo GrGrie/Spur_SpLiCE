@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=spur-splice-train
+#SBATCH --job-name=cospro-train-celeba_s4
 #SBATCH --partition=informatik-mind
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=5
-#SBATCH --mem=32G
-#SBATCH --time=24:00:00
+#SBATCH --mem=40G
+#SBATCH --time=72:00:00
 #SBATCH --output=outputs/SLURM/train-%j.out
 #SBATCH --error=outputs/SLURM/train-%j.err
 
