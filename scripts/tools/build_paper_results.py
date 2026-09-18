@@ -261,7 +261,7 @@ def build(root: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", type=Path)
-    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "paper_results.json")
+    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "paper" / "paper_results.json")
     args = parser.parse_args()
     root = resolve_output_root(args.artifact_root)
     payload = build(root)

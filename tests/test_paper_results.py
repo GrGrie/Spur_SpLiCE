@@ -16,7 +16,7 @@ class PaperResultsTests(unittest.TestCase):
         self.assertEqual(summary["mean"], 2.5)
 
     def test_checked_registry_rebuilds_from_committed_outputs(self):
-        expected = json.loads((PROJECT_ROOT / "paper_results.json").read_text(encoding="utf-8"))
+        expected = json.loads((PROJECT_ROOT / "paper" / "paper_results.json").read_text(encoding="utf-8"))
         self.assertEqual(build(PROJECT_ROOT / "outputs"), expected)
 
 

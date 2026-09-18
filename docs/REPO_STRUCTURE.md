@@ -27,8 +27,10 @@ Spur_SpLiCE/
   docs/
     REPO_STRUCTURE.md            this canonical policy
     history/                     dated migration and recovery records
-  paper_results.json             checked compact registry for paper claims
-  CoSpRo.tex                     paper source
+    notes/                       dated working notes on paper and submission changes
+  paper/
+    CoSpRo.tex                   paper source
+    paper_results.json           checked compact registry for paper claims
 ```
 
 `output/`, `save/`, `tmp/`, `wandb/`, and `datasets/` are machine-local legacy

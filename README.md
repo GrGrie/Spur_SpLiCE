@@ -158,7 +158,7 @@ the snapshots with `SPUR_SPLICE_UPDATE_GOLDEN=1 python -m pytest tests/test_gold
 and review the diff under `tests/golden/`. On the cluster the same suite runs on a
 V100 through `sbatch scripts/run_golden_smoke.sbatch`.
 
-The checked root `paper_results.json` is regenerated from the selected artifact
+The checked `paper/paper_results.json` is regenerated from the selected artifact
 tree. Its historical source aggregate is `reports/paper/test_summary.json`
 inside the archived pre-unification artifact package.
 

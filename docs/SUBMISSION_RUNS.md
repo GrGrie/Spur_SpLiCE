@@ -1,7 +1,7 @@
 # Submission runs
 
 For checkpoint-only held-out evaluation of the completed controls and the
-graph-evidence figure, follow [SUBMISSION_FINISHING.md](SUBMISSION_FINISHING.md).
+graph-evidence figure, follow [SUBMISSION_FINISHING.md](notes/SUBMISSION_FINISHING.md).
 Those workflows do not launch SSL training.
 
 Run from the repository root with the existing `grgrie-train` environment.
@@ -63,7 +63,7 @@ the retained seed-1/3 target bank. It does not regenerate targets from a new cac
 
 Reference: Zhu, Liu, Fernandez-Granda and Razavian,
 [Making Self-supervised Learning Robust to Spurious Correlation via Learning-speed Aware Sampling](https://arxiv.org/pdf/2311.16361),
-arXiv:2311.16361v2 (the version cited by `zhu2023lassl` in `CoSpRo.tex`).
+arXiv:2311.16361v2 (the version cited by `zhu2023lassl` in `paper/CoSpRo.tex`).
 The implementation follows Algorithm 1 and Eq. (3), with the similarity
 definition in Section 4.1: `exp(dot(normalized projections) / temperature)`.
 It computes two-view similarity for **every** training image each epoch,
@@ -138,7 +138,7 @@ The launchers do not overwrite historical aggregate reports; collect results
 later with the existing `scripts.tools.collect_results` tool, supplying a new
 `--output` filename if preserving an existing aggregate.
 
-Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](SUBMISSION_CLAIM_CHANGES.md).
+Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](notes/SUBMISSION_CLAIM_CHANGES.md).
 
 ## Files added or changed
 
@@ -156,4 +156,4 @@ Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](SUBMISSION_CL
 | `experiments/spurious_eval/training/ssl_loop.py` | Restored transfer loss path and added diagnostics |
 | `experiments/spurious_eval/training/checkpointing.py` | Adaptive sampler checkpoint state |
 | `tests/test_submission_controls.py` | Historical settings, alignment, gradients, sampling and resume checks |
-| `CoSpRo.tex`, `README.md`, this document, `SUBMISSION_CLAIM_CHANGES.md` | Claim calibration and reproduction instructions |
+| `paper/CoSpRo.tex`, `README.md`, this document, `notes/SUBMISSION_CLAIM_CHANGES.md` | Claim calibration and reproduction instructions |
