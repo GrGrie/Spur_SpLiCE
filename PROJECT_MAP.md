@@ -34,6 +34,7 @@ training images
 | Experiment matrix and execution identity | `experiments/runner.py`, `experiments/manifests/` |
 | Checked paper registry | `tools/paper/build_paper_results.py`, `paper/paper_results.json` |
 | HTML reports | `splice/reporting.py`, `scripts/tools/render_report.py` |
+| Grouping and graph diagnostics, dashboard | `cospro/diagnostics/`, `scripts/run_cospro_diagnostics.sbatch` |
 
 The teacher-input flow has three explicit module interfaces: the SpLiCE dataset
 cache serializes frozen train-split representations, concept grouping consumes

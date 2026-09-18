@@ -99,6 +99,24 @@ lists only `compat/` and serialized-field readers.
 
 ## Phase 2 — Diagnostics for concept groups and teacher graphs
 
+**Status: implemented (2026-09-18)** in `cospro/diagnostics/` with `scripts/run_cospro_diagnostics.sbatch`.
+The label and graph tiers already ran locally on the Waterbirds sweep; the cache tier (NPMI, text
+coherence, bootstrap stability, AUC selectivity) runs on the cluster. First readings:
+
+- Across the 31 grouping configurations the partition barely moves: at most 20 composite groups of two or
+  three concepts (44 at text 0.5 / coactivation 0.1). The grouping thresholds are a weak lever in this range.
+- The null test passes 425–450 of about 500 groups in every sweep graph. These graphs share 6% of their
+  edges with raw CLIP and reach a lower balanced counterfactual rate (0.18–0.19) than raw CLIP (0.20).
+  The paper graph keeps the top 12 groups and reaches 0.23 with minority reach 59% (raw CLIP 52%).
+  Group selection is the decisive lever.
+- Edge confidence is calibrated in the paper graph: the counterfactual rate rises from 1.4% in the lowest
+  decile to 8% in the highest, while both baselines stay flat.
+- Background groups ({Bamboo}, {Sunset}, {Autumn}) produce most counterfactual edges; owl groups link
+  images that share class and background.
+- Balanced counterfactual rate compares against the raw-CLIP graph at equal degree. Degree-matched random
+  neighbours reach 0.25 at balanced same class 0.50, so the random baseline shows the class loss
+  rather than a target.
+
 This phase answers three questions: how good is a grouping, how good is a graph and how two hyperparameter
 settings compare. It adds a new module that only reads existing artifacts, so trained results stay untouched.
 

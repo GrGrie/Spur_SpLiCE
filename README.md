@@ -102,6 +102,22 @@ launcher warns and runs standard SimCLR.
 See [scripts/README.md](scripts/README.md) for resume commands and the
 differences between standalone runs and manifest matrices.
 
+## Diagnose concept groups and teacher graphs
+
+`cospro/diagnostics` measures how well a grouping and a teacher graph do their job and renders a
+dashboard: sweep heatmaps over the grouping thresholds, a graph comparison with baselines,
+(y, a) transition matrices, confidence calibration, per-group AUC selectivity and an edge gallery.
+
+```bash
+sbatch scripts/run_cospro_diagnostics.sbatch
+python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterbirds/diagnostics.json \
+  --data-folder /path/to/datasets --gallery-graph cospro --output diagnostics.html
+```
+
+The cluster job reads the SpLiCE cache from scratch and writes the compact JSON record, which Git
+synchronizes. Rendering runs on any machine; the gallery needs a local copy of the dataset.
+Label-based metrics are post-hoc: they guide manual selection and stay out of automatic tuning.
+
 ## Run the complete CelebA pipeline
 
 `scripts/run_cospro_pipeline.sh` defaults to CelebA and runs all five stages in
