@@ -33,11 +33,12 @@ matrix result collector.
 
 For a dataset with exactly one completed graph under
 `$SPUR_SPLICE_OUTPUT_ROOT/shared/<dataset>/graphs` (or `outputs/shared/...`),
-the launcher automatically adds `--splice_mode cospro_relational`, the graph
-path, and the pipeline's CoSpRo defaults for batch size (128), worker count (4),
-SimCLR temperature (0.05), relation weight (0.5), and relation temperature
-(0.25). Later CLI options override these defaults. Select a graph explicitly
-when a sweep produced more than one:
+the launcher automatically adds the graph path and `--preset cospro_student`.
+The preset (`cospro/config/presets.py`) selects `cospro_relational` training with
+batch size 128, 4 workers, SimCLR temperature 0.05, relation weight 0.5 and
+relation temperature 0.25; later CLI options override it. The same preset works for
+any direct call: `python spur_splice.py --preset cospro_student --cospro_teacher_graph PATH`.
+Select a graph explicitly when a sweep produced more than one:
 
 ```bash
 sbatch scripts/run_training.sbatch --dataset celebA --seed 1 \

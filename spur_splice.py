@@ -39,6 +39,7 @@ from splice.cospro_training import (
 )
 from cospro.config.options import ConfigError, str_to_bool  # noqa: F401  (str_to_bool re-exported)
 from cospro.config.training import (
+    PROBE_MOMENTUM,
     RELATIONAL_GRAPH_MODES,
     TrainingConfig,
     build_training_parser,
@@ -369,7 +370,7 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
         "lr_decay_epochs": args.linear_lr_decay_epochs,
         "lr_decay_rate": args.linear_lr_decay_rate,
         "weight_decay": args.linear_weight_decay,
-        "momentum": 0.9,
+        "momentum": PROBE_MOMENTUM,
         "cosine": args.cosine,
         "seed": args.seed,
         "device": args.device,
@@ -648,7 +649,7 @@ def _wandb_identity(wandb_run) -> dict[str, object] | None:
 
 
 def write_run_status(args: argparse.Namespace, payload: dict[str, object]) -> None:
-    """Persist completion, W&B finish, and cleanup state beside run artifacts."""
+    """Persist completion, W&B finish and cleanup state beside run artifacts."""
 
     status_path = Path(args.save_folder) / "run_status.json"
     temporary_path = status_path.with_suffix(status_path.suffix + ".tmp")

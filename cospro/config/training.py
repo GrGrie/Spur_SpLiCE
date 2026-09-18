@@ -50,7 +50,7 @@ class OptimizationOptions:
     epochs: int = option(500, parse=int)
     learning_rate: float = option(0.01, parse=float)
     lr_decay_epochs: Any = option(
-        "auto", parse=str, help="Comma-separated SSL LR milestones, or 'auto' for 70%%, 80%%, and 90%% of --epochs.",
+        "auto", parse=str, help="Comma-separated SSL LR milestones, or 'auto' for 70%%, 80%% and 90%% of --epochs.",
     )
     lr_decay_rate: float = option(0.1, parse=float)
     weight_decay: float = option(1e-4, parse=float)
@@ -158,7 +158,7 @@ class ProbeOptions:
     linear_learning_rate: float = option(1.0, parse=float)
     linear_lr_decay_epochs: Any = option(
         "auto", parse=str,
-        help="Comma-separated probe LR milestones, or 'auto' for 60%%, 75%%, and 90%% of probe epochs.",
+        help="Comma-separated probe LR milestones, or 'auto' for 60%%, 75%% and 90%% of probe epochs.",
     )
     linear_lr_decay_rate: float = option(0.2, parse=float)
     linear_weight_decay: float = option(0.0, parse=float)
@@ -252,20 +252,24 @@ TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (LaSSLOptions, "LA-SSL"),
 )
 
-# Defaults the standalone linear probe shares with the trainer's linear_* options.
+# Standalone linear-probe option -> trainer ProbeOptions field it shares its default with.
+_PROBE_OPTION_SOURCES = {
+    "train_set_linear_layer": "train_set_linear_layer",
+    "epochs": "linear_probe_epochs",
+    "probe_solver": "linear_probe_solver",
+    "probe_l2": "linear_probe_l2",
+    "probe_tolerance": "linear_probe_tolerance",
+    "probe_max_epochs": "linear_probe_max_epochs",
+    "learning_rate": "linear_learning_rate",
+    "lr_decay_epochs": "linear_lr_decay_epochs",
+    "lr_decay_rate": "linear_lr_decay_rate",
+    "weight_decay": "linear_weight_decay",
+    "spurious_probe": "linear_spurious_probe",
+}
+PROBE_MOMENTUM = 0.9
 LINEAR_PROBE_DEFAULTS: dict[str, Any] = {
-    "train_set_linear_layer": "ds_train",
-    "epochs": 100,
-    "probe_solver": "logistic",
-    "probe_l2": 1e-3,
-    "probe_tolerance": 1e-6,
-    "probe_max_epochs": 200,
-    "learning_rate": 1.0,
-    "lr_decay_epochs": "auto",
-    "lr_decay_rate": 0.2,
-    "weight_decay": 0.0,
-    "momentum": 0.9,
-    "spurious_probe": True,
+    **{name: section_defaults(ProbeOptions)[source] for name, source in _PROBE_OPTION_SOURCES.items()},
+    "momentum": PROBE_MOMENTUM,
 }
 
 

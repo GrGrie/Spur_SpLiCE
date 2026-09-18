@@ -30,6 +30,7 @@ from experiments.spurious_eval.training.reproducibility import make_dataloader_k
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
+from cospro.config import LINEAR_PROBE_DEFAULTS, training_defaults
 from splice.settings import wandb_entity
 
 
@@ -59,7 +60,10 @@ def resolve_lr_decay_epochs(value: str | list[int], total_epochs: int) -> list[i
     return milestones
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
+    """Standalone probe options; shared defaults come from cospro.config.LINEAR_PROBE_DEFAULTS."""
+
+    defaults = LINEAR_PROBE_DEFAULTS
     parser = argparse.ArgumentParser("Linear probing on spurious-correlation datasets")
     parser.add_argument(
         "--dataset",
@@ -68,7 +72,10 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(CANONICAL_DATASET_REGISTRY),
     )
     parser.add_argument("--data_folder", default="./datasets")
-    parser.add_argument("--train_set_linear_layer", default="ds_train", choices=["train", "val", "ds_train", "us_train", "balanced_train"])
+    parser.add_argument(
+        "--train_set_linear_layer", default=defaults["train_set_linear_layer"],
+        choices=["train", "val", "ds_train", "us_train", "balanced_train"],
+    )
     parser.add_argument(
         "--eval_split",
         default=None,
@@ -88,36 +95,41 @@ def parse_args() -> argparse.Namespace:
         help="Directory for downstream probe artifacts; defaults to the checkpoint directory.",
     )
     parser.add_argument("--head", default="mlp", choices=["mlp", "linear", "fixed", "identity"], help="Accepted for SpurSSL command compatibility")
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--num_workers", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=training_defaults()["batch_size"])
+    parser.add_argument("--num_workers", type=int, default=training_defaults()["num_workers"])
+    parser.add_argument("--epochs", type=int, default=defaults["epochs"])
     parser.add_argument(
         "--ssl_epoch",
         type=int,
         default=0,
         help="SSL checkpoint epoch recorded in downstream feature/result artifacts.",
     )
-    parser.add_argument("--probe_solver", choices=["logistic", "sgd"], default="logistic")
-    parser.add_argument("--probe_l2", type=float, default=1e-3)
-    parser.add_argument("--probe_tolerance", type=float, default=1e-6)
-    parser.add_argument("--probe_max_epochs", type=int, default=200)
-    parser.add_argument("--learning_rate", type=float, default=1.0)
-    parser.add_argument("--lr_decay_epochs", default="auto")
-    parser.add_argument("--lr_decay_rate", type=float, default=0.2)
-    parser.add_argument("--weight_decay", type=float, default=0.0)
-    parser.add_argument("--momentum", type=float, default=0.9)
+    parser.add_argument("--probe_solver", choices=["logistic", "sgd"], default=defaults["probe_solver"])
+    parser.add_argument("--probe_l2", type=float, default=defaults["probe_l2"])
+    parser.add_argument("--probe_tolerance", type=float, default=defaults["probe_tolerance"])
+    parser.add_argument("--probe_max_epochs", type=int, default=defaults["probe_max_epochs"])
+    parser.add_argument("--learning_rate", type=float, default=defaults["learning_rate"])
+    parser.add_argument("--lr_decay_epochs", default=defaults["lr_decay_epochs"])
+    parser.add_argument("--lr_decay_rate", type=float, default=defaults["lr_decay_rate"])
+    parser.add_argument("--weight_decay", type=float, default=defaults["weight_decay"])
+    parser.add_argument("--momentum", type=float, default=defaults["momentum"])
     parser.add_argument("--cosine", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--use_wandb", action="store_true")
-    parser.add_argument("--wandb_name", default="Spur_SpLiCE")
+    parser.add_argument("--wandb_name", default=training_defaults()["wandb_name"])
     parser.add_argument("--entity", default=wandb_entity())
     parser.add_argument(
         "--spurious_probe",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=defaults["spurious_probe"],
         help="Also measure how linearly predictable the spurious attribute remains.",
     )
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    parser = build_parser()
     args = parser.parse_args()
     try:
         args.eval_split = resolve_evaluation_split(args.eval_split, args.final_test)
@@ -130,44 +142,23 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+# Options a trainer-built namespace may omit, beyond the parser defaults. --final_test only
+# guards the command line, so programmatic callers pass eval_split directly.
+_PROGRAMMATIC_DEFAULTS = {
+    "run_recorder": None,
+    "study": "adhoc",
+    "arm": "linear_probe",
+    "attempt_id": "standalone",
+    "retain_probe_artifacts_every": 0,
+    "ssl_total_epochs": 0,
+}
+
+
 def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
-    defaults = {
-        "dataset": "waterbirds",
-        "data_folder": "./datasets",
-        "train_set_linear_layer": "ds_train",
-        "eval_split": "val",
-        "model": "resnet18_large",
-        "ckpt": "",
-        "artifact_dir": "",
-        "head": "mlp",
-        "batch_size": 256,
-        "num_workers": 32,
-        "epochs": 100,
-        "ssl_epoch": 0,
-        "probe_solver": "logistic",
-        "probe_l2": 1e-3,
-        "probe_tolerance": 1e-6,
-        "probe_max_epochs": 200,
-        "learning_rate": 1.0,
-        "lr_decay_epochs": "auto",
-        "lr_decay_rate": 0.2,
-        "weight_decay": 0.0,
-        "momentum": 0.9,
-        "cosine": False,
-        "seed": 0,
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
-        "use_wandb": False,
-        "wandb_name": "Spur_SpLiCE",
-        "entity": wandb_entity(),
-        "spurious_probe": True,
-        "run_recorder": None,
-        "study": "adhoc",
-        "arm": "linear_probe",
-        "attempt_id": "standalone",
-        "retain_probe_artifacts_every": 0,
-        "ssl_total_epochs": 0,
-    }
-    for key, value in defaults.items():
+    defaults = vars(build_parser().parse_args([]))
+    defaults.pop("final_test")
+    defaults["eval_split"] = resolve_evaluation_split(None, False)
+    for key, value in {**defaults, **_PROGRAMMATIC_DEFAULTS}.items():
         if not hasattr(args, key):
             setattr(args, key, value)
     args.lr_decay_epochs = resolve_lr_decay_epochs(args.lr_decay_epochs, args.epochs)

@@ -62,7 +62,7 @@ class TrainingLauncherTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         command = shlex.split(result.stdout)
-        self.assertEqual(command[command.index("--splice_mode") + 1], "cospro_relational")
+        self.assertEqual(command[command.index("--preset") + 1], "cospro_student")
         self.assertEqual(command[command.index("--cospro_teacher_graph") + 1], graph.as_posix())
         self.assertEqual(command[-4:], ["--dataset", "celebA", "--seed", "1"])
 

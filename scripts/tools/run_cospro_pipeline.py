@@ -27,6 +27,8 @@ from scripts.tools.generate_cospro_concept_groups import (
     _dataset_image_resolver,
     concept_group_directory,
 )
+from cospro.config import DEFAULT_PERIODIC_PROBE_FREQ, preset_values, training_defaults
+from cospro.config.training import LINEAR_TRAIN_SPLITS
 from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, run_directory, scratch_root
 from splice.settings import data_folder, wandb_entity
 from splice.cospro import (
@@ -116,90 +118,107 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cache.add_argument("--splice-vocab-size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
     cache.add_argument("--splice-l1-penalty", type=float, default=0.25)
 
+    # Grouping and audit defaults come from CoSpRoAuditConfig; student defaults are the training
+    # defaults with the cospro_student preset applied (cospro/config/presets.py).
+    audit_defaults = CoSpRoAuditConfig()
+    student_defaults = {**training_defaults(), **preset_values("cospro_student")}
+
     grouping = parser.add_argument_group("concept grouping")
-    grouping.add_argument("--min-concept-frequency", type=float, default=0.01)
-    grouping.add_argument("--max-concept-frequency", type=float, default=0.95)
-    grouping.add_argument("--text-similarity-threshold", type=float, default=0.82)
-    grouping.add_argument("--coactivation-threshold", type=float, default=0.35)
-    grouping.add_argument("--min-group-size", type=int, default=1)
-    grouping.add_argument("--similarity-chunk-size", type=int, default=512)
+    grouping.add_argument("--min-concept-frequency", type=float, default=audit_defaults.min_concept_frequency)
+    grouping.add_argument("--max-concept-frequency", type=float, default=audit_defaults.max_concept_frequency)
+    grouping.add_argument("--text-similarity-threshold", type=float, default=audit_defaults.text_similarity_threshold)
+    grouping.add_argument("--coactivation-threshold", type=float, default=audit_defaults.coactivation_threshold)
+    grouping.add_argument("--min-group-size", type=int, default=audit_defaults.min_group_size)
+    grouping.add_argument("--similarity-chunk-size", type=int, default=audit_defaults.similarity_chunk_size)
 
     audit = parser.add_argument_group("teacher graph audit")
-    audit.add_argument("--max-selected-groups", type=int, default=0)
-    audit.add_argument("--projected-neighbors", type=int, default=20)
-    audit.add_argument("--activation-difference-quantile", type=float, default=0.75)
-    audit.add_argument("--min-intervention-gain", type=float, default=1e-4)
-    audit.add_argument("--min-coverage", type=float, default=0.01)
-    audit.add_argument("--graph-top-k", type=int, default=3)
-    audit.add_argument("--max-indegree", type=int, default=10)
-    audit.add_argument("--indegree-factor", type=float, default=3.0)
-    audit.add_argument("--null-trials", type=int, default=16)
-    audit.add_argument("--null-quantile", type=float, default=0.95)
-    audit.add_argument("--audit-seed", type=int, default=0)
-    audit.add_argument("--orthogonal-tolerance", type=float, default=1e-6)
-    audit.add_argument("--graph-device", default="auto")
-    audit.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"), default="auto")
-    audit.add_argument("--ann-threshold", type=int, default=20_000)
-    audit.add_argument("--ann-tables", type=int, default=8)
-    audit.add_argument("--ann-bucket-size", type=int, default=512)
+    audit.add_argument("--max-selected-groups", type=int, default=audit_defaults.max_selected_groups)
+    audit.add_argument("--projected-neighbors", type=int, default=audit_defaults.projected_neighbors)
     audit.add_argument(
-        "--use-residual-splice-gate", action=argparse.BooleanOptionalAction, default=True,
+        "--activation-difference-quantile", type=float, default=audit_defaults.activation_difference_quantile,
     )
-    audit.add_argument("--residual-splice-similarity-threshold", type=float, default=0.25)
+    audit.add_argument("--min-intervention-gain", type=float, default=audit_defaults.min_intervention_gain)
+    audit.add_argument("--min-coverage", type=float, default=audit_defaults.min_coverage)
+    audit.add_argument("--graph-top-k", type=int, default=audit_defaults.graph_top_k)
+    audit.add_argument("--max-indegree", type=int, default=audit_defaults.max_indegree)
+    audit.add_argument("--indegree-factor", type=float, default=audit_defaults.indegree_factor)
+    audit.add_argument("--null-trials", type=int, default=audit_defaults.null_trials)
+    audit.add_argument("--null-quantile", type=float, default=audit_defaults.null_quantile)
+    audit.add_argument("--audit-seed", type=int, default=audit_defaults.seed)
+    audit.add_argument("--orthogonal-tolerance", type=float, default=audit_defaults.orthogonal_tolerance)
+    audit.add_argument("--graph-device", default="auto")
+    audit.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"), default=audit_defaults.neighbor_backend)
+    audit.add_argument("--ann-threshold", type=int, default=audit_defaults.ann_threshold)
+    audit.add_argument("--ann-tables", type=int, default=audit_defaults.ann_tables)
+    audit.add_argument("--ann-bucket-size", type=int, default=audit_defaults.ann_bucket_size)
+    audit.add_argument(
+        "--use-residual-splice-gate", action=argparse.BooleanOptionalAction,
+        default=audit_defaults.use_residual_splice_gate,
+    )
+    audit.add_argument(
+        "--residual-splice-similarity-threshold", type=float,
+        default=audit_defaults.residual_splice_similarity_threshold,
+    )
 
     student = parser.add_argument_group("student training")
     student.add_argument("--study", default="", help="Defaults to <dataset>_cospro_pipeline.")
-    student.add_argument("--seed", type=int, default=1)
+    student.add_argument("--seed", type=int, default=1, help="The pipeline trains seed 1 unless told otherwise.")
     student.add_argument("--student-existing", choices=("error", "reuse", "resume", "new-attempt"), default="error")
     student.add_argument("--attempt-id")
-    student.add_argument("--student-device", default="cuda" if torch.cuda.is_available() else "cpu")
+    student.add_argument("--student-device", default=student_defaults["device"])
     student.add_argument("--model", choices=SSL_RESNET_MODEL_NAMES, default=None)
-    student.add_argument("--head", choices=("linear", "mlp", "identity"), default="mlp")
-    student.add_argument("--feat-dim", type=int, default=128)
-    student.add_argument("--epochs", type=int, default=500)
-    student.add_argument("--batch-size", type=int, default=128)
-    student.add_argument("--num-workers", type=int, default=4)
-    student.add_argument("--learning-rate", type=float, default=0.01)
-    student.add_argument("--lr-decay-epochs", default="auto")
-    student.add_argument("--lr-decay-rate", type=float, default=0.1)
-    student.add_argument("--weight-decay", type=float, default=1e-4)
-    student.add_argument("--momentum", type=float, default=0.9)
-    student.add_argument("--optimizer", choices=("SGD", "AdamW"), default="SGD")
-    student.add_argument("--temp", type=float, default=0.05)
-    student.add_argument("--simclr-weight", type=float, default=1.0)
-    student.add_argument("--splice-weight", type=float, default=0.5)
-    student.add_argument("--cospro-temperature", "--crp-temperature", dest="cospro_temperature", type=float, default=0.25)
-    student.add_argument("--cospro-start-epoch", "--crp-start-epoch", dest="cospro_start_epoch", type=int, default=10)
-    student.add_argument("--cospro-warmup-epochs", "--crp-warmup-epochs", dest="cospro_warmup_epochs", type=int, default=10)
-    student.add_argument("--cospro-decay-start-epoch", "--crp-decay-start-epoch", dest="cospro_decay_start_epoch", type=int, default=0)
-    student.add_argument("--cospro-decay-end-epoch", "--crp-decay-end-epoch", dest="cospro_decay_end_epoch", type=int, default=0)
-    student.add_argument("--ssl-crop-min", type=float, default=0.2)
-    student.add_argument("--rank-eval-freq", type=int, default=100)
-    student.add_argument("--print-freq", type=int, default=10)
-    student.add_argument("--save-freq", type=int, default=50)
-    student.add_argument("--checkpoint-keep-count", type=int, default=2)
-    student.add_argument("--keep-checkpoints", action=argparse.BooleanOptionalAction, default=True)
-    student.add_argument("--delete-checkpoints-after-training", action=argparse.BooleanOptionalAction, default=True)
-    student.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
-    student.add_argument("--channels-last", action=argparse.BooleanOptionalAction, default=True)
-    student.add_argument("--cudnn-enabled", action=argparse.BooleanOptionalAction, default=True)
-    student.add_argument("--cosine", action=argparse.BooleanOptionalAction, default=False)
+    student.add_argument("--head", choices=("linear", "mlp", "identity"), default=student_defaults["head"])
+    for option, value_type in (
+        ("feat_dim", int), ("epochs", int), ("batch_size", int), ("num_workers", int), ("learning_rate", float),
+        ("lr_decay_epochs", str), ("lr_decay_rate", float), ("weight_decay", float), ("momentum", float),
+    ):
+        student.add_argument("--" + option.replace("_", "-"), type=value_type, default=student_defaults[option])
+    student.add_argument("--optimizer", choices=("SGD", "AdamW"), default=student_defaults["optimizer"])
+    student.add_argument("--temp", type=float, default=student_defaults["temp"])
+    student.add_argument("--simclr-weight", type=float, default=student_defaults["simclr_weight"])
+    student.add_argument("--splice-weight", type=float, default=student_defaults["splice_weight"])
+    for option, value_type in (
+        ("cospro_temperature", float), ("cospro_start_epoch", int), ("cospro_warmup_epochs", int),
+        ("cospro_decay_start_epoch", int), ("cospro_decay_end_epoch", int),
+    ):
+        flag = option.replace("_", "-")
+        student.add_argument(
+            "--" + flag, "--" + flag.replace("cospro-", "crp-", 1), dest=option, type=value_type,
+            default=student_defaults[option],
+        )
+    for option, value_type in (
+        ("ssl_crop_min", float), ("rank_eval_freq", int), ("print_freq", int), ("save_freq", int),
+        ("checkpoint_keep_count", int),
+    ):
+        student.add_argument("--" + option.replace("_", "-"), type=value_type, default=student_defaults[option])
+    student.add_argument(
+        "--keep-checkpoints", action=argparse.BooleanOptionalAction, default=True,
+        help="The pipeline retains the final student checkpoint on scratch by default.",
+    )
+    for option in ("delete_checkpoints_after_training", "amp", "channels_last", "cudnn_enabled", "cosine"):
+        student.add_argument(
+            "--" + option.replace("_", "-"), action=argparse.BooleanOptionalAction, default=student_defaults[option],
+        )
 
     probe = parser.add_argument_group("linear evaluation")
     probe.add_argument(
-        "--linear-train-split",
-        choices=("train", "ds_train", "us_train", "balanced_train", "val"),
-        default="ds_train",
+        "--linear-train-split", choices=LINEAR_TRAIN_SPLITS, default=student_defaults["train_set_linear_layer"],
     )
     probe.add_argument("--linear-eval-split", choices=("val", "test"), default="val")
     probe.add_argument("--linear-probe-mode", choices=("final", "periodic", "none"), default="periodic")
-    probe.add_argument("--linear-probe-freq", type=int, default=25)
-    probe.add_argument("--linear-probe-solver", choices=("logistic", "sgd"), default="logistic")
-    probe.add_argument("--linear-probe-epochs", type=int, default=100)
-    probe.add_argument("--linear-probe-l2", type=float, default=1e-3)
-    probe.add_argument("--linear-probe-tolerance", type=float, default=1e-6)
-    probe.add_argument("--linear-probe-max-epochs", type=int, default=200)
-    probe.add_argument("--linear-spurious-probe", action=argparse.BooleanOptionalAction, default=True)
+    probe.add_argument("--linear-probe-freq", type=int, default=DEFAULT_PERIODIC_PROBE_FREQ)
+    probe.add_argument(
+        "--linear-probe-solver", choices=("logistic", "sgd"), default=student_defaults["linear_probe_solver"],
+    )
+    for option, value_type in (
+        ("linear_probe_epochs", int), ("linear_probe_l2", float), ("linear_probe_tolerance", float),
+        ("linear_probe_max_epochs", int),
+    ):
+        probe.add_argument("--" + option.replace("_", "-"), type=value_type, default=student_defaults[option])
+    probe.add_argument(
+        "--linear-spurious-probe", action=argparse.BooleanOptionalAction,
+        default=student_defaults["linear_spurious_probe"],
+    )
 
     tracking = parser.add_argument_group("tracking and collection")
     tracking.add_argument("--use-wandb", action=argparse.BooleanOptionalAction, default=False)

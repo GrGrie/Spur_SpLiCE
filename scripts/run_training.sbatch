@@ -50,16 +50,11 @@ RUN_ID="${SLURM_JOB_ID:-local-$$}"
 CHECKPOINT_ROOT="${SPUR_SPLICE_SCRATCH_ROOT}/manual/${RUN_ID}"
 source scripts/announce_results.sh
 announce_results "${CHECKPOINT_ROOT}/run.json" "training folder: ${CHECKPOINT_ROOT}/<storage name>/ (or the --checkpoint_dir you passed)" "W&B: the run link printed by wandb below"
+# With a teacher graph and no explicit --splice_mode, train the CoSpRo student: the cospro_student
+# preset (cospro/config/presets.py) sets its values and later options in "$@" override them.
 automatic_graph_args=()
 if [[ "${has_graph}" == "1" && "${has_splice_mode}" != "1" ]]; then
-  automatic_graph_args+=(
-    --batch_size "${COSPRO_BATCH_SIZE:-128}"
-    --num_workers "${COSPRO_NUM_WORKERS:-4}"
-    --temp "${COSPRO_SIMCLR_TEMPERATURE:-0.05}"
-    --splice_mode cospro_relational
-    --splice_weight "${COSPRO_SPLICE_WEIGHT:-0.5}"
-    --cospro_temperature "${COSPRO_TEMPERATURE:-0.25}"
-  )
+  automatic_graph_args+=(--preset cospro_student)
 elif [[ "${has_graph}" != "1" && "${has_splice_mode}" != "1" ]]; then
   canonical_dataset="$(printf '%s' "${dataset_value}" | tr '[:upper:]' '[:lower:]' | tr -d '_-')"
   case "${canonical_dataset}" in
@@ -73,15 +68,7 @@ elif [[ "${has_graph}" != "1" && "${has_splice_mode}" != "1" ]]; then
     mapfile -d '' graph_candidates < <(find "${GRAPH_ROOT}" -type f -name teacher_graph.json -print0 | sort -z)
   fi
   if [[ "${#graph_candidates[@]}" == "1" ]]; then
-    automatic_graph_args+=(
-      --batch_size "${COSPRO_BATCH_SIZE:-128}"
-      --num_workers "${COSPRO_NUM_WORKERS:-4}"
-      --temp "${COSPRO_SIMCLR_TEMPERATURE:-0.05}"
-      --splice_mode cospro_relational
-      --splice_weight "${COSPRO_SPLICE_WEIGHT:-0.5}"
-      --cospro_temperature "${COSPRO_TEMPERATURE:-0.25}"
-      --cospro_teacher_graph "${graph_candidates[0]}"
-    )
+    automatic_graph_args+=(--preset cospro_student --cospro_teacher_graph "${graph_candidates[0]}")
     echo "[INFO] Using CoSpRo teacher graph: ${graph_candidates[0]}" >&2
   elif [[ "${#graph_candidates[@]}" -gt "1" ]]; then
     echo "ERROR: found multiple teacher graphs for ${dataset_value} under ${GRAPH_ROOT}." >&2
