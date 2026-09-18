@@ -3,5 +3,6 @@
 *.sbatch text eol=lf
 *.sh     text eol=lf
 
-# Fixtures whose exact bytes enter a fingerprint keep LF endings on every platform.
-tests/fixtures/storage_identity_graph.json -text
+# JSON artifacts are hashed (graph fingerprints, SHA-256 attestations, storage-identity fixtures),
+# so their bytes stay LF on every platform.
+*.json text eol=lf
