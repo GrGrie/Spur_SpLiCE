@@ -33,14 +33,14 @@ On the cluster, set `DATA_FOLDER` if it differs from the default. The submission
 helper launches the matrix and a dependent result collector:
 
 ```bash
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.yaml
 ```
 
 Inspect the matrix without training:
 
 ```bash
-python -m experiments.runner experiments/manifests/waterbirds_cospro.json --list
-python -m experiments.runner experiments/manifests/waterbirds_cospro.json --task 0 --dry-run
+python -m experiments.runner experiments/manifests/waterbirds_cospro.yaml --list
+python -m experiments.runner experiments/manifests/waterbirds_cospro.yaml --task 0 --dry-run
 ```
 
 The held-out test protocol is declared in the manifest and must be requested
@@ -48,8 +48,8 @@ explicitly. It runs one final probe on `test` instead of periodic validation
 probes:
 
 ```bash
-python -m experiments.runner experiments/manifests/waterbirds_cospro.json --task 0 --locked-test
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json --locked-test
+python -m experiments.runner experiments/manifests/waterbirds_cospro.yaml --task 0 --locked-test
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.yaml --locked-test
 ```
 
 Locked-test runs default to the separate `locked-test` attempt ID; ordinary
@@ -146,9 +146,16 @@ Use `--no-embed-images` only when a placeholder-only report is intentional.
 
 ```bash
 conda activate grgrie-train
-pip install -e .
-python -m unittest discover -s tests -p 'test_*.py'
+pip install -e ".[dev]"
+python -m pytest
 ```
+
+The golden tests in `tests/test_golden_*.py` freeze runner commands, teacher-graph
+structure and two-epoch training runs for every training mode on synthetic data.
+A behaviour change appears as a snapshot diff. After an intended change, regenerate
+the snapshots with `SPUR_SPLICE_UPDATE_GOLDEN=1 python -m pytest tests/test_golden_*.py`
+and review the diff under `tests/golden/`. On the cluster the same suite runs on a
+V100 through `sbatch scripts/run_golden_smoke.sbatch`.
 
 The checked root `paper_results.json` is regenerated from the selected artifact
 tree. Its historical source aggregate is `reports/paper/test_summary.json`
