@@ -466,7 +466,7 @@ def format_storage_name(args: argparse.Namespace) -> str:
         "wandb_run_name",
         "wandb_tags",
     }
-    # Historical option names keep storage names, and resumed checkpoint folders, stable.
+    # Historical option names keep storage names stable, so a resumed run reuses its checkpoint folder.
     fingerprint_payload = with_legacy_option_names({
         key: value
         for key, value in vars(args).items()

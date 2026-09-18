@@ -1,6 +1,6 @@
 """Golden end-to-end training runs: two CPU epochs per training mode on a synthetic Waterbirds.
 
-Each mode runs ``spur_splice.py`` in a subprocess, exactly as the cluster launchers do, and the
+Each mode runs ``spur_splice.py`` in a subprocess exactly as the cluster launchers do. The
 per-epoch losses plus final probe metrics from ``run.json`` are compared with the snapshot.
 Floating-point results depend on the BLAS build, so each operating system keeps its own snapshot
 (``training_runs.<system>.json``). The first run on a new system creates it for review and commit.

@@ -63,6 +63,19 @@ Phase 2 depends only on existing artifacts, so it runs as a parallel track right
 
 ## Phase 1 — Conventions and quick wins
 
+**Status: done (2026-09-18)** on branch `refactor`, one commit per step. Notes:
+
+- `splice/settings.py` and `scripts/load_splice_cluster_env.sh` are the single sources of cluster paths
+  and the W&B entity. `run_cospro_pipeline.sh` forwards only the variables that are set.
+- `splice/compat.py` holds every CRP-era name. Storage names hash the configuration under the historical
+  option names (pinned by `tests/test_storage_identity.py`), so resumed runs keep their checkpoint folders.
+  The `waterbirds_crp` study, `crp_graph.json` and the `--crp_*` options stay as historical records.
+- Kept on purpose: `--cudnn_benchmark` and `indegree_factor` feed stored identities (storage names,
+  W&B run names, graph configs).
+- Moved to phase 3: the CoSpRo student defaults that `run_training.sbatch` injects in automatic graph mode.
+  They belong in a named preset of the typed configuration.
+- Follow-up: a style pass over older comments and docs for the rules in `AGENTS.md`.
+
 **Steps**
 
 1. **SLURM lint test** (`tests/test_slurm_launchers.py`): parse every `#SBATCH` header and assert
