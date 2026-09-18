@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import torch
 
-from scripts.tools import evaluate_submission_checkpoints as tool
+from tools.paper import evaluate_submission_checkpoints as tool
 
 
 def result():

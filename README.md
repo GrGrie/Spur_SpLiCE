@@ -16,7 +16,10 @@ student inference.
 - `experiments/spurious_eval/` — datasets, models, training and linear probes.
 - `experiments/runner.py` — the single seed/arm experiment runner.
 - `experiments/manifests/` — reproducible experiment definitions.
-- `scripts/` — one Slurm adapter plus small cache/report tools.
+- `scripts/` — Slurm launchers; `scripts/tools/` holds the cache, grouping, graph and collection stages.
+- `tools/maintenance/` — output migration, legacy archiving, cleanup and W&B export.
+- `tools/paper/` — paper registry, submission figures and checkpoint evaluation.
+- `paper/` — the manuscript and its checked `paper_results.json`.
 - `outputs/` — Git-friendly run records, shared JSON artifacts, aggregate reports and ignored Slurm logs.
 - `tests/` — tests for the current method only.
 
@@ -69,7 +72,7 @@ python -m scripts.tools.cache_splice_dataset --help
 python -m scripts.tools.generate_cospro_concept_groups --help
 python -m scripts.tools.build_cospro_teacher_graphs --help
 python -m scripts.tools.build_cospro_baseline_graphs --help
-python -m scripts.tools.build_paper_results --artifact-root /path/to/artifact-tree
+python -m tools.paper.build_paper_results --artifact-root /path/to/artifact-tree
 ```
 
 Teacher-graph construction now selects deterministic cosine-LSH search for

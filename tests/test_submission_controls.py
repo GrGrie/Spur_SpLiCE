@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from experiments.complete_projection_controls import MANIFESTS, validate_inputs
+from tools.paper.complete_projection_controls import MANIFESTS, validate_inputs
 from experiments.runner import command_for, load_manifest
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint

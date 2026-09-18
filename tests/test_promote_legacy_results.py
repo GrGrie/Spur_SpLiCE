@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.tools.promote_legacy_results import build_run_record, infer_identity
+from tools.maintenance.promote_legacy_results import build_run_record, infer_identity
 
 
 class LegacyPromotionTests(unittest.TestCase):

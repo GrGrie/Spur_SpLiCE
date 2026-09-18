@@ -12,11 +12,11 @@ The evaluator selects the already reported semantic-graph and reconstruction run
 export DATA_FOLDER=/home/xar68reb/Datasets
 
 # Inspect the eight identities/paths without loading data or checkpoint tensors.
-python -m scripts.tools.evaluate_submission_checkpoints prepare --dry-run
+python -m tools.paper.evaluate_submission_checkpoints prepare --dry-run
 
 # Validate and hash all checkpoints and create a timestamped evaluation plan.
 # This reads checkpoint metadata but does not evaluate test images.
-python -m scripts.tools.evaluate_submission_checkpoints prepare
+python -m tools.paper.evaluate_submission_checkpoints prepare
 
 # Run the two frozen-encoder probes for each seed (four jobs).
 mkdir -p outputs/SLURM
@@ -26,7 +26,7 @@ sbatch scripts/run_submission_checkpoint_tests.sh
 Alternatively, run sequentially without SLURM:
 
 ```bash
-python -m scripts.tools.evaluate_submission_checkpoints run
+python -m tools.paper.evaluate_submission_checkpoints run
 ```
 
 This calls the existing standalone linear-probe implementation, never the SSL trainer or the manifest `--locked-test` training route. Only the probe is fitted. Settings remain ResNet-18 large, SSL epoch 500, seed-matched randomness, 224 group-balanced `ds_train` images, batch size 128, four workers, the existing random-crop/flip probe-training views and resized test views, float64 logistic fitting, L2 0.001, tolerance 1e-6 and maximum 200 external probe epochs. It does not switch to a different probe preprocessing protocol. The auxiliary background probe and W&B logging are omitted because neither is needed for this comparison; target-probe fitting is unchanged.
@@ -47,7 +47,7 @@ Pass `--checkpoints-json paths.json` to `prepare`. Archived hashes still have to
 After all four jobs finish:
 
 ```bash
-python -m scripts.tools.evaluate_submission_checkpoints summarize
+python -m tools.paper.evaluate_submission_checkpoints summarize
 ```
 
 Default output: `outputs/reports/submission_checkpoint_test/`:
@@ -111,7 +111,7 @@ python -m pip install matplotlib reportlab pillow
 Use the directory that directly contains `metadata.csv` and the Waterbirds images:
 
 ```bash
-python -m scripts.tools.build_submission_figure \
+python -m tools.paper.build_submission_figure \
   --dataset-root /path/to/waterbirds \
   --panels outputs/reports/paper_evidence/visual/concept_panels.json \
   --output-dir outputs/reports/submission_graph_figure

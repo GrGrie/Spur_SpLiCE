@@ -11,5 +11,5 @@ set -euo pipefail
 export PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 cd "${PROJECT_DIR}"
 source scripts/load_splice_cluster_env.sh
-"${PYTHON_BIN}" -u -m scripts.tools.build_submission_figure \
+"${PYTHON_BIN}" -u -m tools.paper.build_submission_figure \
   --output-dir "${PROJECT_DIR}/outputs/reports/graph_figures_${SLURM_JOB_ID}" "$@"

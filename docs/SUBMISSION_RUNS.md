@@ -12,8 +12,8 @@ modify completed results. The random-crop probe protocol is unchanged.
 
 ```bash
 export DATA_FOLDER=/home/xar68reb/Datasets
-python -m experiments.complete_projection_controls --seed 2
-python -m experiments.complete_projection_controls --seed 4
+python -m tools.paper.complete_projection_controls --seed 2
+python -m tools.paper.complete_projection_controls --seed 4
 ```
 
 Cluster alternative (each job runs the two controls sequentially):
@@ -144,7 +144,7 @@ Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](notes/SUBMISS
 
 | Files | Purpose |
 |---|---|
-| `experiments/complete_projection_controls.py` | Seed launcher and historical input checks |
+| `tools/paper/complete_projection_controls.py` | Seed launcher and historical input checks |
 | `experiments/manifests/waterbirds_semantic_completion.yaml`, `waterbirds_direct_completion.yaml`, `waterbirds_la_ssl.yaml` | Existing runner configurations |
 | `scripts/run_projection_controls.sh`, `scripts/run_la_ssl.sh` | Cluster launchers |
 | `splice/concept_distillation.py` | Restored historical transfer implementation |

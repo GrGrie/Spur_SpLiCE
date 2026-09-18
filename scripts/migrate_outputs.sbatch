@@ -21,7 +21,7 @@ cd "${PROJECT_DIR}"
 run_migration() {
     local migration_mode="$1"
     shift
-    "${PYTHON_BIN}" -m scripts.tools.migrate_outputs "${SOURCE}" --mode "${migration_mode}" "$@"
+    "${PYTHON_BIN}" -m tools.maintenance.migrate_outputs "${SOURCE}" --mode "${migration_mode}" "$@"
 }
 
 echo "[migration] project=${PROJECT_DIR}"

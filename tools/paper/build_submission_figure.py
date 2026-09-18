@@ -7,8 +7,8 @@ import math
 from pathlib import Path
 
 from splice.artifacts import atomic_write_json, resolve_output_root, sha256_file
-from scripts.tools.render_concept_panels import _metadata, _annotate, decision_reason, render
-from scripts.tools.select_graph_panels import RELATIONS, relation_key, discover_panels
+from tools.paper.render_concept_panels import _metadata, _annotate, decision_reason, render
+from tools.paper.select_graph_panels import RELATIONS, relation_key, discover_panels
 
 
 def read(path):

@@ -13,5 +13,5 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 cd "${PROJECT_DIR}"
 source scripts/load_splice_cluster_env.sh
-"${PYTHON_BIN}" -u -m scripts.tools.evaluate_submission_checkpoints run \
+"${PYTHON_BIN}" -u -m tools.paper.evaluate_submission_checkpoints run \
     --seed "${SLURM_ARRAY_TASK_ID:?Submit this script as a SLURM array}" "$@"

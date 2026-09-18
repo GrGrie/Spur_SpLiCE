@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from scripts.tools.build_paper_results import PROJECT_ROOT, _distribution, _quantile, build
+from tools.paper.build_paper_results import PROJECT_ROOT, _distribution, _quantile, build
 
 
 class PaperResultsTests(unittest.TestCase):

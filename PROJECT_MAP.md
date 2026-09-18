@@ -32,7 +32,7 @@ training images
 | Dataset adapters | `experiments/spurious_eval/datasets/` |
 | Linear evaluation | `experiments/spurious_eval/linear_probe.py` |
 | Experiment matrix and execution identity | `experiments/runner.py`, `experiments/manifests/` |
-| Checked paper registry | `scripts/tools/build_paper_results.py`, `paper/paper_results.json` |
+| Checked paper registry | `tools/paper/build_paper_results.py`, `paper/paper_results.json` |
 | HTML reports | `splice/reporting.py`, `scripts/tools/render_report.py` |
 
 The teacher-input flow has three explicit module interfaces: the SpLiCE dataset

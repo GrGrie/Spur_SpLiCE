@@ -2,7 +2,7 @@ import csv
 import json
 from pathlib import Path
 
-from scripts.tools.cleanup_local_outputs import build_plan
+from tools.maintenance.cleanup_local_outputs import build_plan
 
 
 def _write(path: Path, text: str) -> None:
@@ -11,7 +11,7 @@ def _write(path: Path, text: str) -> None:
 
 
 def test_cleanup_requires_evidence_for_checkpoints(tmp_path, monkeypatch):
-    import scripts.tools.cleanup_local_outputs as cleanup
+    import tools.maintenance.cleanup_local_outputs as cleanup
 
     monkeypatch.setattr(cleanup, "PROJECT_ROOT", tmp_path)
     source = tmp_path / "outputs" / "legacy"
@@ -28,7 +28,7 @@ def test_cleanup_requires_evidence_for_checkpoints(tmp_path, monkeypatch):
 
 
 def test_cleanup_exports_csv_and_ignores_intermediate_checkpoint(tmp_path, monkeypatch):
-    import scripts.tools.cleanup_local_outputs as cleanup
+    import tools.maintenance.cleanup_local_outputs as cleanup
 
     monkeypatch.setattr(cleanup, "PROJECT_ROOT", tmp_path)
     source = tmp_path / "outputs" / "legacy"
@@ -55,7 +55,7 @@ def test_cleanup_exports_csv_and_ignores_intermediate_checkpoint(tmp_path, monke
 
 
 def test_cleanup_removes_reproducible_tensor_cache_without_result(tmp_path, monkeypatch):
-    import scripts.tools.cleanup_local_outputs as cleanup
+    import tools.maintenance.cleanup_local_outputs as cleanup
 
     monkeypatch.setattr(cleanup, "PROJECT_ROOT", tmp_path)
     source = tmp_path / "outputs" / "legacy"
@@ -67,7 +67,7 @@ def test_cleanup_removes_reproducible_tensor_cache_without_result(tmp_path, monk
 
 
 def test_cleanup_does_not_treat_checkpoint_in_cache_directory_as_cache(tmp_path, monkeypatch):
-    import scripts.tools.cleanup_local_outputs as cleanup
+    import tools.maintenance.cleanup_local_outputs as cleanup
 
     monkeypatch.setattr(cleanup, "PROJECT_ROOT", tmp_path)
     source = tmp_path / "outputs" / "legacy"

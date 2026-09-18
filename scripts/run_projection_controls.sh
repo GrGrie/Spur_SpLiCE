@@ -17,4 +17,4 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
   export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
 fi
-"${PYTHON_BIN}" -u -m experiments.complete_projection_controls "$@"
+"${PYTHON_BIN}" -u -m tools.paper.complete_projection_controls "$@"

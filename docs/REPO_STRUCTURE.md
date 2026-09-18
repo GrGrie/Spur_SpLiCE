@@ -15,9 +15,12 @@ Spur_SpLiCE/
     spurious_eval/               datasets, training, and evaluation code
     runner.py                    canonical seed/arm launcher
   scripts/
-    tools/                       maintenance, collection, and reporting tools
+    tools/                       cache, grouping, graph, pipeline and collection stages
     *.sh                         user-facing cluster submission helpers
     *.sbatch                     Slurm job bodies
+  tools/
+    maintenance/                 output migration, legacy archiving, cleanup and W&B export
+    paper/                       paper registry, submission figures and checkpoint evaluation
   schemas/                       versioned machine-readable contracts
   tests/                         unit tests and small committed fixtures
   data/
@@ -162,7 +165,7 @@ cluster copy belongs in quarantine and must be removed after its compact
 results have been promoted and its archive has been verified.
 
 For the pre-unification Windows quarantine, run
-`python scripts/tools/cleanup_local_outputs.py` without flags first. Its
+`python tools/maintenance/cleanup_local_outputs.py` without flags first. Its
 `--apply` mode records the complete decision and promoted legacy CSV rows in
 `outputs/reports/local-cleanup/windows-pre-unification.json`. It deletes a
 checkpoint only with result evidence, deletes reproducible tensor caches, and

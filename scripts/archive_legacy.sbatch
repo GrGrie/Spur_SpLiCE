@@ -29,13 +29,13 @@ echo "[legacy-archive] manifest=${MANIFEST}"
 common_args=(--source "${SOURCE}" --archive "${ARCHIVE}" --manifest "${MANIFEST}")
 case "${MODE}" in
     --scan)
-        "${PYTHON_BIN}" -u -m scripts.tools.archive_legacy --source "${SOURCE}"
+        "${PYTHON_BIN}" -u -m tools.maintenance.archive_legacy --source "${SOURCE}"
         ;;
     --archive)
-        "${PYTHON_BIN}" -u -m scripts.tools.archive_legacy "${common_args[@]}" --apply
+        "${PYTHON_BIN}" -u -m tools.maintenance.archive_legacy "${common_args[@]}" --apply
         ;;
     --delete-after-verify)
-        "${PYTHON_BIN}" -u -m scripts.tools.archive_legacy \
+        "${PYTHON_BIN}" -u -m tools.maintenance.archive_legacy \
             "${common_args[@]}" --apply --delete-source-after-verify
         ;;
     *)

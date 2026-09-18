@@ -16,7 +16,7 @@ WATERBIRDS_ROOT="${DATA_FOLDER}/waterbirds"
 
 test -f "${WATERBIRDS_ROOT}/metadata.csv"
 
-"${PYTHON_BIN}" -u -m scripts.tools.build_submission_figure \
+"${PYTHON_BIN}" -u -m tools.paper.build_submission_figure \
  --dataset-root "${WATERBIRDS_ROOT}" \
  --artifact-root "${PROJECT_DIR}/outputs" \
  --output-dir "${PROJECT_DIR}/outputs/reports/submission_graph_figure_${SLURM_JOB_ID}"

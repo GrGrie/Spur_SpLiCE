@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.tools.archive_legacy import archive_legacy
+from tools.maintenance.archive_legacy import archive_legacy
 from scripts.tools.collect_results import collect
-from scripts.tools.migrate_outputs import apply_migration, discover_result_root, migration_plan
+from tools.maintenance.migrate_outputs import apply_migration, discover_result_root, migration_plan
 from splice.artifacts import BINARY_SIZE_THRESHOLD
 from splice.run_recording import RunRecorder
 
@@ -119,7 +119,7 @@ class ResultLifecycleTests(unittest.TestCase):
             readme.write_text("# Outputs\n", encoding="utf-8")
 
             self.assertEqual(discover_result_root(source), source.resolve())
-            with patch("scripts.tools.migrate_outputs.OUTPUT_ROOT", base / "canonical"):
+            with patch("tools.maintenance.migrate_outputs.OUTPUT_ROOT", base / "canonical"):
                 plan = migration_plan(source)
                 by_name = {item["source"].name: item for item in plan}
                 self.assertTrue(by_name["last.pt"]["heavy_binary"])
@@ -149,7 +149,7 @@ class ResultLifecycleTests(unittest.TestCase):
             (run / "run_status.json").write_text(json.dumps({"status": "complete"}), encoding="utf-8")
             (run / "args.json").write_text(json.dumps({"dataset": "waterbirds"}), encoding="utf-8")
             destination = base / "canonical"
-            with patch("scripts.tools.migrate_outputs.OUTPUT_ROOT", destination):
+            with patch("tools.maintenance.migrate_outputs.OUTPUT_ROOT", destination):
                 plan = migration_plan(source)
                 summary = apply_migration(plan)
                 repeated = apply_migration(plan)

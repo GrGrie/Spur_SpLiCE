@@ -10,8 +10,8 @@ import pytest
 # Figure rendering needs the optional paper dependencies (pip install -e .[paper]).
 pytest.importorskip("reportlab")
 
-from scripts.tools.build_submission_figure import graph_mass, select_examples, enrich, build
-from scripts.tools.select_graph_panels import stratify, relation_key, discover_panels
+from tools.paper.build_submission_figure import graph_mass, select_examples, enrich, build
+from tools.paper.select_graph_panels import stratify, relation_key, discover_panels
 
 
 def fixture(root):
