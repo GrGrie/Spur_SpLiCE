@@ -1,355 +1,490 @@
-# Refactoring plan
+# CoSpRo refactoring: plan, decisions and handoff log
 
-Status: proposal, 2026-09-18. Builds on [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md)
-(candidates C1–C8) and the project rules in [`AGENTS.md`](../AGENTS.md).
+Last updated: 2026-09-18. Branch `refactor` (worktree `E:\Programming\Spur_SpLiCE-refactor`).
 
-## Goals
+This document is the single source of truth for the refactor. It records what the code looked like, what hurt,
+which designs were weighed, which were kept and why, what is done and what comes next. It is written so that a
+different engineer or model can continue the work from here without the original conversation.
 
-1. Adding a dataset, a concept vocabulary, a training method or an ablation touches one file plus a registry line.
-2. Every hyperparameter has one default, defined in one place.
-3. Concept groups and teacher graphs come with quantitative metrics and visual evidence, comparable across hyperparameter settings.
-4. Paper numbers stay reproducible through every step.
-
-## Constraints every phase respects
-
-- **SLURM.** Each new cluster entry point ships with its launcher in the same change. Resources: one V100,
-  at most 5 CPUs, at most 8G memory per CPU.
-- **Storage.** Binaries go to `/scratch/xar68reb/CoSpRo/`, compact JSON goes to `outputs/` and syncs through Git.
-  Intermediate epoch checkpoints are deleted during training to protect the `/home` quota.
-- **W&B.** WGA stays visible per probe epoch in W&B across all refactors.
-- **English** for code, comments and docs, following the style rules in `AGENTS.md`.
-- **Timing.** Phases that change command lines (3 onward) land between studies, after the current run matrix completes.
-  `experiments.runner` resumes an attempt only when its command matches exactly.
-
-## Phase order at a glance
-
-| Phase | Content | Risk | Value | Cluster work |
-|---|---|---|---|---|
-| 0 | Safety net: tests, golden snapshots, CI | none | enables everything | one smoke job |
-| 1 | Conventions: SLURM lint, launcher template, quick wins | low | high | none |
-| 2 | Concept-group and teacher-graph diagnostics | low (new code only) | very high | diagnostics jobs |
-| 3 | Typed configuration (C2) | medium | high | re-run golden checks |
-| 4 | `TrainingMethod` seam (C1) + W&B metric contract | medium | very high | smoke job per method |
-| 5 | Trainer, callbacks, storage policy (C4) | medium | high | smoke job |
-| 6 | Dataset adapters (C3) | low | high for new datasets | cache check per dataset |
-| 7 | Linear probe as a library function (C5) | low | medium | none |
-| 8 | `cospro/` package and `ConceptDictionary` (C6, C7) | medium | high for vocab ablations | graph rebuild check |
-| 9 | Package layout move (C8) | low with shims | navigation | none |
-
-Phase 2 depends only on existing artifacts, so it runs as a parallel track right after phase 1.
+`ARCHITECTURE_REVIEW.md` (Russian, personal working note) holds the first review. Everything needed to continue is
+restated here in English.
 
 ---
 
-## Phase 0 — Safety net
+## 0. How to continue this work
 
-**Status: done (2026-09-18).** 117 tests pass locally; the Linux training snapshot appears with the first
-`run_golden_smoke.sbatch` run. Manifests moved to YAML in the same change.
+### 0.1 Where things are
 
-**Steps**
+| Item | Location |
+|---|---|
+| Refactor branch | `refactor` on `origin` (GitHub `GrGrie/Spur_SpLiCE`) |
+| Refactor checkout on the author's PC | `E:\Programming\Spur_SpLiCE-refactor` (a `git worktree` of the main checkout) |
+| Main checkout (author keeps working on `main`) | `E:\Programming\Spur_SpLiCE` |
+| Local Python | conda env `grgrie-train`: `C:\Users\GrGrie\miniconda3\envs\grgrie-train\python.exe` (torch 2.11 nightly) |
+| Cluster Python | conda env `grgrie-train` on the SLURM cluster (torch 2.5.1+cu118), loaded by `scripts/load_splice_cluster_env.sh` |
+| Local Waterbirds copy | `E:\Datasets\waterbirds` (used for post-hoc labels and dashboard thumbnails) |
+| Cluster scratch | `/scratch/xar68reb/CoSpRo/` (checkpoints, feature caches, SpLiCE caches) |
 
-1. Add `pytest` to a dev extra in `pyproject.toml` and move project metadata there from `setup.py`.
-   `scripts/freeze_environment.sbatch` records the exact cluster package versions in `environment/`.
-2. Golden command snapshot: for every manifest, seed, arm and `locked_test` variant, store the output of
-   `experiments.runner.command_for` in `tests/golden/commands.json`.
-3. Golden numeric smoke test: a synthetic 32×32 dataset with 64 images and 4 groups, two SSL epochs on CPU for each
-   training mode. Store loss values and probe metrics with a tolerance.
-4. Golden graph test: `build_concept_groups` and `build_teacher_graph` on the fixture cache produce a stored
-   `graph_fingerprint`.
-5. GitHub Actions workflow running `pytest` on CPU.
-6. `scripts/run_golden_smoke.sbatch`: runs the suite on the cluster and every training mode on a V100 with AMP.
-   AMP changes the numbers, so the GPU run checks completion, finite metrics and a recorded WGA.
+The refactor merges into `main` after the last phase. Every phase lands as small commits on `refactor` and is
+pushed. The author pulls `refactor` on the cluster to run cluster checks.
 
-**Done when** `pytest` passes locally and in CI, the three golden files are committed and one cluster smoke job has completed.
+### 0.2 Working rules
 
-## Phase 1 — Conventions and quick wins
+- Read `AGENTS.md` first. It holds the language and style rules (English, no comma before "and", no word
+  "nuisance", affirmative statements), the SLURM rules (V100, at most 5 CPUs, at most 8G per CPU, one launcher per
+  cluster task, `announce_results` banner) and the storage rules (`/home` quota, binaries to scratch, JSON to
+  `outputs/`).
+- Commits and PR descriptions carry **no** Claude co-author trailer and no "Generated with" line.
+- One commit per logical step. Run the full test suite before every commit.
+- Every change that touches command lines, stored configuration or artifacts first adds or checks a pinning test
+  (see section 3), then changes the code.
 
-**Status: done (2026-09-18)** on branch `refactor`, one commit per step. Notes:
+### 0.3 Commands
 
-- `splice/settings.py` and `scripts/load_splice_cluster_env.sh` are the single sources of cluster paths
-  and the W&B entity. `run_cospro_pipeline.sh` forwards only the variables that are set.
-- `splice/compat.py` holds every CRP-era name. Storage names hash the configuration under the historical
-  option names (pinned by `tests/test_storage_identity.py`), so resumed runs keep their checkpoint folders.
-  The `waterbirds_crp` study, `crp_graph.json` and the `--crp_*` options stay as historical records.
-- Kept on purpose: `--cudnn_benchmark` and `indegree_factor` feed stored identities (storage names,
-  W&B run names, graph configs).
-- Moved to phase 3: the CoSpRo student defaults that `run_training.sbatch` injects in automatic graph mode.
-  They belong in a named preset of the typed configuration.
-- Follow-up: a style pass over older comments and docs for the rules in `AGENTS.md`.
+```bash
+# local tests (the Windows sandbox needs a writable basetemp)
+python -m pytest -q --basetemp=<writable temp dir>
 
-**Steps**
+# simulate a Slurm job environment for the launcher tests
+SLURM_JOB_ID=1 python -m pytest -q
 
-1. **SLURM lint test** (`tests/test_slurm_launchers.py`): parse every `#SBATCH` header and assert
-   `cpus-per-task ≤ 5`, `mem ≤ 8G × cpus`, `gres=gpu:1` on GPU jobs and a log path under `outputs/SLURM/`.
-   The rule becomes executable and every future launcher is checked automatically.
-2. **Launcher template** `scripts/_template.sbatch`: resource header, `set -euo pipefail`,
-   `load_splice_cluster_env.sh`, one Python call with `"$@"` passthrough. New launchers copy it.
-3. Move hyperparameter defaults out of `run_training.sbatch`, `run_cospro_pipeline.sh` and siblings.
-   The manifest carries the values and the launcher forwards arguments.
-4. Collect cluster paths and identities (`/scratch/xar68reb/CoSpRo`, `/home/xar68reb/Datasets`, W&B entity) in
-   `scripts/load_splice_cluster_env.sh` as environment variables with the current values as defaults.
-5. Rename internal `crp_*` names to `cospro_*` (C7). Readers of old artifacts keep working through one
-   `compat.upgrade_graph_artifact` function.
-6. Move `CoSpRo.tex`, `iclr2027_conference.sty` and `paper_results.json` to `paper/`, dated notes to `docs/notes/`.
-7. Split `scripts/tools/` into `tools/maintenance/` (migration, archive, cleanup) and `tools/paper/` (figures,
-   submission evaluation, paper registry). Pipeline stages stay in place until phase 8.
-8. Delete the dead code listed in section 8 of the review.
+# regenerate golden snapshots after an intended behaviour change, then review the diff in tests/golden/
+SPUR_SPLICE_UPDATE_GOLDEN=1 python -m pytest tests/test_golden_*.py
 
-**Done when** the SLURM lint test passes, golden snapshots are unchanged and `grep -rn "crp_" --include=*.py`
-lists only `compat/` and serialized-field readers.
+# cluster: full suite plus all training modes on the GPU
+sbatch scripts/run_golden_smoke.sbatch
 
-## Phase 2 — Diagnostics for concept groups and teacher graphs
-
-**Status: implemented (2026-09-18)** in `cospro/diagnostics/` with `scripts/run_cospro_diagnostics.sbatch`.
-The label and graph tiers already ran locally on the Waterbirds sweep; the cache tier (NPMI, text
-coherence, bootstrap stability, AUC selectivity) runs on the cluster. First readings:
-
-- Across the 31 grouping configurations the partition barely moves: at most 20 composite groups of two or
-  three concepts (44 at text 0.5 / coactivation 0.1). The grouping thresholds are a weak lever in this range.
-- The null test passes 425–450 of about 500 groups in every sweep graph. These graphs share 6% of their
-  edges with raw CLIP and reach a lower balanced counterfactual rate (0.18–0.19) than raw CLIP (0.20).
-  The paper graph keeps the top 12 groups and reaches 0.23 with minority reach 59% (raw CLIP 52%).
-  Group selection is the decisive lever.
-- Edge confidence is calibrated in the paper graph: the counterfactual rate rises from 1.4% in the lowest
-  decile to 8% in the highest, while both baselines stay flat.
-- Background groups ({Bamboo}, {Sunset}, {Autumn}) produce most counterfactual edges; owl groups link
-  images that share class and background.
-- Balanced counterfactual rate compares against the raw-CLIP graph at equal degree. Degree-matched random
-  neighbours reach 0.25 at balanced same class 0.50, so the random baseline shows the class loss
-  rather than a target.
-
-This phase answers three questions: how good is a grouping, how good is a graph and how two hyperparameter
-settings compare. It adds a new module that only reads existing artifacts, so trained results stay untouched.
-
-### 2.1 Two tiers of metrics
-
-- **Label-free metrics** use only the SpLiCE cache and the artifacts. They are safe for choosing hyperparameters
-  inside the label-free protocol.
-- **Post-hoc metrics** also read the hidden labels `y` and the spurious attribute `a` from dataset metadata. They explain
-  and validate the method. Each post-hoc metric reads labels from one module, `cospro/diagnostics/labels.py`,
-  which keeps the separation auditable. Open decision for the paper protocol: whether post-hoc metrics on the validation
-  split may guide hyperparameter choice, or serve for explanation only.
-
-### 2.2 Concept-group metrics
-
-Computed per grouping configuration.
-
-| Metric | Definition | Reading |
-|---|---|---|
-| Text coherence | mean pairwise cosine of concept text embeddings inside each composite group | high means the group is one meaning |
-| Co-activation coherence (NPMI) | mean over concept pairs in a group of `log(p(i,j) / (p(i)p(j))) / -log p(i,j)`, with `p` from binary SpLiCE activations over images | standard topic-coherence score in `[-1, 1]`; high means the concepts fire on the same images |
-| Separation | silhouette score of composite groups on text embeddings with cosine distance | high means groups are distinct from their neighbours |
-| Image coverage | fraction of images with positive activation for at least one composite group | how much of the dataset the grouping explains |
-| Structure | group count, singleton fraction, maximum size, size entropy | detects over-merging (one giant group) or under-merging (all singletons) |
-| Bootstrap stability | mean adjusted Rand index (ARI) between the grouping on the full cache and groupings on five 80% image subsamples | high means the grouping reflects the data robustly |
-| Cross-config agreement | ARI and variation of information between two configurations on their shared active concepts | how much a hyperparameter change reshapes the partition |
-| Audit yield | fraction of groups that pass the null test in the graph stage | links grouping to its downstream use |
-| Spurious selectivity (post-hoc) | `abs(AUC_a − 0.5) − abs(AUC_y − 0.5)` where `AUC_a` and `AUC_y` measure how well group activation predicts `a` and `y` | high marks groups that carry the spurious attribute and leave the class intact |
-| Spurious fragmentation (post-hoc) | number of groups needed to reach 80% of the total positive spurious selectivity | low means synonyms such as "water", "lake" and "ocean" landed in one group |
-
-The paper update of 2026-09-12 records that all 12 selected groups are singletons. Fragmentation and NPMI turn that
-observation into a number and show which thresholds produce multi-concept spurious groups.
-
-### 2.3 Teacher-graph metrics
-
-| Metric | Definition | Reading |
-|---|---|---|
-| Coverage, edge count, effective donor count, indegree Gini | existing `degree_stats` | graph shape and hubness |
-| Novelty over raw CLIP | fraction of teacher edges absent from the raw CLIP kNN at the same `k` | near zero means the graph repeats CLIP kNN |
-| Concept contrast | mean absolute difference of the source group activation across an edge, divided by that activation's standard deviation | high means edges connect images that differ in the removed concept |
-| Residual agreement | mean residual SpLiCE similarity over edges | high means the remaining content matches |
-| Null margin | observed score divided by null threshold, per selected group | strength of evidence per group |
-| Seed stability | Jaccard overlap of edge sets built with two audit seeds | robustness of the graph |
-| Group transition matrix (post-hoc) | edge-weight mass from each `(y, a)` group to each `(y', a')` group | the central picture of what the graph teaches |
-| Counterfactual edge rate (post-hoc) | weighted fraction of edges with `y_i = y_j` and `a_i ≠ a_j` | headline graph metric |
-| Class consistency (post-hoc) | weighted fraction of edges with `y_i = y_j` | edges that preserve the class |
-| Lift (post-hoc) | counterfactual edge rate divided by the rate of the matched raw-CLIP graph and of a degree-matched random graph | improvement over baselines |
-| Minority reach (post-hoc) | fraction of minority-group anchors with at least one counterfactual edge | whether the graph reaches the groups WGA depends on |
-| Confidence calibration (post-hoc) | counterfactual edge rate per edge-confidence decile | a rising curve validates the confidence weights used in the relational KL |
-
-The matched baselines already exist (`raw_clip_graph.json`, `semantic_splice_graph.json` from
-`build_cospro_baseline_graphs.py`), so every graph metric appears next to its two baselines.
-
-### 2.4 Link to training outcomes
-
-Every SSL run records the teacher-graph metrics in its W&B config and `run.json`. A W&B scatter of counterfactual edge
-rate against final WGA across graph variants then shows whether the graph metric predicts the training outcome.
-A predictive metric allows cheap graph selection before any 500-epoch run.
-
-### 2.5 Visual dashboards
-
-One HTML dashboard per stage, rendered locally from synchronized JSON. Thumbnails come from the local dataset copy.
-The dashboard renders the metric panels alone when the dataset is absent.
-
-**Concept-group dashboard**
-
-1. Sweep heatmaps over `text_similarity_threshold × coactivation_threshold`: NPMI, silhouette, singleton fraction,
-   fragmentation and ARI to a reference setting. One glance shows the useful region of the grid.
-2. Concept map: 2D UMAP of active concept text embeddings, coloured by composite group, point size by frequency,
-   hover shows concept names.
-3. Selectivity scatter (post-hoc): `AUC_y` on the x axis, `AUC_a` on the y axis, one point per group, selected groups
-   highlighted. Correct behaviour places background groups in the upper-left region.
-4. Group cards sorted by spurious selectivity, each with concepts, pairwise evidence and top-activating thumbnails
-   (reusing the existing card code).
-
-**Teacher-graph dashboard**
-
-1. Summary table: every metric for the teacher graph and its two baselines side by side.
-2. Transition matrices: three `(y, a) × (y', a')` heatmaps for raw CLIP, semantic SpLiCE and CoSpRo.
-   Mass on same-class, flipped-attribute cells is the visual signature of a correct graph.
-3. Edge gallery: stratified edge sample by source group and confidence decile, shown as anchor → neighbour image pairs
-   with the group concepts and edge confidence. Post-hoc view marks counterfactual edges with a coloured frame.
-   Builds on `select_graph_panels.py` and `render_concept_panels.py`.
-4. Null-test strip plot: per group, the null score distribution with the observed score marked.
-5. Calibration curve and degree histograms.
-
-### 2.6 Implementation
-
-```text
-cospro/diagnostics/            # new module; moves with the phase 8 package
-  labels.py                    # sole reader of y and a
-  group_metrics.py             # label-free and post-hoc group metrics
-  graph_metrics.py             # label-free and post-hoc graph metrics
-  sweep.py                     # evaluates a list of grouping configs on one cache
-  dashboard.py                 # renders HTML from metrics JSON
-scripts/run_group_diagnostics.sbatch   # 5 CPU, 40G; reads cache from scratch
-scripts/run_graph_diagnostics.sbatch   # 5 CPU, 40G, V100 for neighbour search
-tools/render_cospro_dashboard.py       # local PC entry point
+# diagnostics (cluster computes, any machine renders)
+sbatch scripts/run_cospro_diagnostics.sbatch
+python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterbirds/diagnostics.json \
+    --data-folder E:/Datasets --gallery-graph cospro --output tmp/diagnostics.html
 ```
 
-Outputs: `outputs/reports/cospro_diagnostics/<dataset>/<artifact_id>/metrics.json` plus `edge_sample.json`
-(a few hundred sampled edges with sample IDs). Both are compact and synchronize through Git. HTML stays local.
+### 0.4 Tool gotchas met during this refactor
 
-**Done when** both dashboards render for Waterbirds, every metric has a unit test on the fixture cache with a
-hand-computed expected value and the sweep job has produced a heatmap over at least a 4 × 4 threshold grid.
-
-### 2.7 Choosing between two groupings
-
-A grouping is an intermediate artifact: its value is the teacher graph it produces and the WGA that graph
-earns. "Best" therefore follows a funnel, cheap to expensive:
-
-1. **Validity filters (label-free, automatic).** Keep configurations with maximum group size under a cap,
-   mean NPMI above a floor, bootstrap ARI of at least 0.8 and a positive audit yield.
-2. **Graph proxy (post-hoc, manual).** Build the graph for every survivor and rank by the group-balanced
-   counterfactual rate: the mean over the four `(y, a)` anchor groups of the fraction of edge weight that keeps
-   `y` and flips `a`. Plot it against coverage and keep the Pareto front.
-3. **Short training.** 100-epoch single-seed runs for the top five configurations, compared on validation WGA.
-4. **Full training.** 500 epochs over four seeds for the winner.
-5. **Proxy check.** Spearman correlation between step 2 and step 3 across the short runs. A strong correlation
-   makes step 2 the default selector for later sweeps.
-
-Step 2 reads training-split labels. A cleaner variant builds the cache and graph for the validation split with
-the same hyperparameters and scores the proxy there, keeping selection on the split that already selects models.
-
-**First reading of the current Waterbirds graphs (2026-09-18, post-hoc).** Group-balanced counterfactual
-rate: CoSpRo 0.23, semantic SpLiCE 0.20, raw CLIP 0.20. Minority anchors with a counterfactual edge:
-CoSpRo 59%, semantic SpLiCE 54%, raw CLIP 52%. Per concept group, the background groups {Bamboo}, {Sunset}
-and {Autumn} produce counterfactual edge rates of 5–7%, while the owl groups produce 1–3% and mostly link
-images that share both class and background. A grouping that merges background synonyms into a few strong
-groups is the direction the proxy rewards. The global counterfactual rate is dominated by majority anchors,
-so the group-balanced form is the one to report.
-
-## Phase 3 — Typed configuration (C2)
-
-**Steps**
-
-1. Define frozen dataclasses: `DataConfig`, `ModelConfig`, `SSLConfig`, `ProbeConfig`, `RunIdentity`,
-   `StorageConfig`, `TrackingConfig`. Each validates itself in `__post_init__`.
-2. `load_config(manifest, arm, seed, overrides)` merges `common`, arm args and dotted overrides such as
-   `ssl.temperature=0.05`.
-3. The CLI becomes a thin adapter: `--manifest`, `--arm`, `--seed`, `--set key=value`.
-4. Runner writes `command.json` schema `experiment-command-v2` and records the resolved config.
-5. Manifest `sweep` block: `{"method.weight": [0, 0.25, 0.5]}` expands into arms automatically.
-
-**Done when** golden numeric results match phase 0, every default lives in one dataclass field and launchers carry
-resources and paths only.
-
-## Phase 4 — `TrainingMethod` seam (C1) and W&B metric contract
-
-**Steps**
-
-1. Protocol `TrainingMethod` with `Config`, `wrap_loader`, `extra_loss`, `provenance`, `input_artifacts`.
-2. Adapters: `SimCLROnly`, `CoSpRoRelational`, `FrozenConceptDistill`, `LaSSL`, registered by name.
-3. `ssl_loop` calls `method.extra_loss` through one path. Dataset adapters lose all knowledge of the training mode.
-4. W&B metric contract in `tracking/metrics.py`: stable keys such as `probe/val/wga`, `probe/val/avg_acc`,
-   `probe/val/group_acc/<g>`, `train/loss/*`, `method/*`. `wandb.define_metric("probe/val/wga", summary="max")` plus a
-   `last` value. `run.json` stores the same keys. A mapping from old keys keeps `export_wandb_runs.py` working.
-5. One smoke launcher per method: `scripts/smoke_methods.sbatch` runs two epochs of each method on the V100.
-
-**Done when** `grep splice_mode` returns only the CLI adapter and `compat/`, a new method needs one file plus a
-registry line (proved by a test that registers a dummy method) and W&B shows `probe/val/wga` for each smoke run.
-
-## Phase 5 — Trainer, callbacks and storage policy (C4)
-
-**Steps**
-
-1. `Trainer.fit()` owns the epoch loop and emits `on_epoch_end`, `on_train_end` and `on_failure`.
-2. Callbacks: `RankMetrics`, `PeriodicProbe`, `WandbLogger`, `RunRecordLogger`, `CheckpointPolicy`.
-3. `StoragePolicy` in one module: rolling epoch checkpoints in the run folder, deletion as training proceeds, the final
-   checkpoint moved to scratch with a SHA-256 attestation in `run.json`. Tests assert the peak number of checkpoints
-   in the run folder, which protects the `/home` quota.
-4. `TrainingState` bundles model, optimizer, scaler, loader generator and method state for save and resume.
-5. `spur_splice.py` shrinks to a short entry point.
-
-**Done when** golden results match, a unit test simulates 10 epochs with a fake model and checks the files left in
-`/home` and scratch. A cluster smoke job resumes from a checkpoint with identical metrics.
-
-## Phase 6 — Dataset adapters (C3)
-
-**Steps**
-
-1. `SpuriousDataset` base class with `read_metadata()` returning columns `path, y, a, split`, plus `load_image()`.
-2. One generic `build_loader(dataset, role, config)` for the roles `ssl`, `rank`, `probe_train` and `probe_eval`.
-3. `@register_dataset(name, aliases=...)` replaces the three registry dictionaries and the bash `case` statement.
-4. Image size and model compatibility become dataset attributes.
-5. Dataset onboarding checklist in `docs/ADDING_A_DATASET.md`: adapter file, cache launcher run, diagnostics run,
-   manifest.
-
-**Done when** Waterbirds, CelebA and Spur-CIFAR10 each fit in about 50 lines and a shared test suite runs against every
-registered dataset.
-
-## Phase 7 — Linear probe as a library function (C5)
-
-**Steps**
-
-1. `evaluate_probe(encoder, dataset, ProbeConfig) -> ProbeResult` as a pure computation.
-2. `persist_probe_result` writes features to scratch and JSON to `outputs/`.
-3. The trainer callback, `evaluate_submission_checkpoints.py` and the standalone CLI all call `evaluate_probe`.
-
-**Done when** the 35-field `Namespace` bridge is gone and probe tests run on synthetic features.
-
-## Phase 8 — `cospro/` package and concept dictionaries (C6, C7)
-
-**Steps**
-
-1. Split `splice/cospro.py` into `cache.py`, `grouping.py`, `neighbors.py`, `audit.py`, `graph.py` and `pipeline.py`.
-2. `NeighborIndex` with `ExactNeighbors` and `LshNeighbors`, tested against each other on the fixture.
-3. `ConceptDictionary` (words, text embeddings, provenance) with adapters for LAION, Open Images V7 and any text file.
-   Manifest entry: `dictionary: {kind: file, path: ..., order: frequency | file, size: N}`.
-4. Pipeline stages move from `scripts/tools/` to `cospro/cli/`. Launchers keep their names.
-5. Vocabulary ablation manifest: the same grouping and graph pipeline over two or three dictionaries, compared through
-   the phase 2 dashboards.
-
-**Done when** the golden graph fingerprint matches and a new vocabulary needs a text file plus a manifest entry.
-
-## Phase 9 — Package layout (C8)
-
-**Steps**
-
-1. `git mv` into the target layout from the review, section C8, one package per commit.
-2. Re-export shims at old import paths for one release, each emitting a `DeprecationWarning`.
-3. Vendored SpLiCE moves to `third_party/splice/` with a NOTICE describing local modifications.
-4. Update `PROJECT_MAP.md`, `docs/REPO_STRUCTURE.md` and `scripts/README.md`.
-
-**Done when** all tests pass, every launcher runs its `--help` path in the SLURM lint test and the shims are the
-only references to old paths.
+| Gotcha | Symptom | Remedy |
+|---|---|---|
+| Backslashes inside `bash` heredocs sent through the agent's Bash tool | `\n` and `\0` arrive mangled; string replacements silently miss | Write edit scripts to a file with the file-writing tool, then run them. Every scripted replacement asserts that its anchor exists. |
+| `core.autocrlf=true` on the author's Windows machine | Worktree files carry CRLF; anchors with `\n` stop matching | The edit helper normalizes to `\n`, edits, restores the original newline style. Fixtures whose bytes enter a fingerprint are marked `-text` in `.gitattributes`. |
+| `bash` on Windows resolves to the WSL relay in System32 | Launcher tests fail with `execvpe(/bin/bash) failed` | `tests/test_training_launchers.py` uses Git Bash on Windows. |
+| Tests running inside a Slurm job | `SLURM_JOB_ID` switches launchers to their cluster branch; real training starts on a busy GPU | Launcher tests drop every `SLURM_*` variable and use an empty `SPUR_SPLICE_OUTPUT_ROOT`. |
+| Two scratch variables | `SPUR_SPLICE_SCRATCH_ROOT` overrides the legacy `SPUR_SPLICE_ARTIFACT_ROOT` | Tests set `SPUR_SPLICE_SCRATCH_ROOT`. |
+| `pytest` `--basetemp` | pytest creates only the last path component | Launchers create the parent directory; `run_golden_smoke.sbatch` uses node-local `$TMPDIR`. |
+| `torch.backends.cudnn.version()` on a CUDA build without a visible GPU | `ValueError: min() arg is an empty sequence` | Fixed in `spur_splice._cudnn_version`. |
+| `reportlab` | Only the paper figure tools need it | `pytest.importorskip` in `tests/test_submission_figure.py`; extra `paper`. |
+| Browser pane and `file://` URLs | The pane refuses local files | Serve `tmp/` with `python -m http.server` (see `.claude/launch.json` in the main checkout). |
+| Float bytes across platforms | Graph JSON hashes differ between Windows and Linux | Golden graph test compares structure with a tolerance; training snapshots are per operating system. |
 
 ---
 
-## Decisions for the author
+## 1. Goals and constraints
 
-Resolved on 2026-09-18:
+### 1.1 Goals
 
-1. Post-hoc metrics guide manual selection; automatic tuning uses label-free metrics only.
-2. Manifests are YAML (`experiments/manifests/*.yaml`); the runner still reads legacy JSON.
-3. The method and package name is CoSpRo; phase 1 renames every `crp_*` identifier.
-4. `ARCHITECTURE_REVIEW.md` stays in Russian as a personal working note.
+1. Adding a dataset, a concept vocabulary, a training method or an ablation touches one file plus a registry line.
+2. Every hyperparameter has one default in one place; named presets cover the recurring non-default setups.
+3. Concept groups and teacher graphs come with quantitative metrics and visual evidence, comparable across settings.
+4. Paper numbers stay reproducible through every step; runs started before a step resume after it.
+
+### 1.2 Constraints
+
+- **SLURM.** All training, probing, caching, grouping and graph building runs on the cluster through `sbatch`.
+  Each new cluster entry point ships with its launcher in the same commit. Resources: one V100 (an A40 also works),
+  at most 5 CPUs, at most 8G per CPU. Every launcher prints `Results expected in: ...` at the top of its `.out` file.
+- **Storage.** `/home` has a 100 GB quota (about 70 GB used). Checkpoints and tensors go to
+  `/scratch/xar68reb/CoSpRo/` (slow HDD, write once per stage). Compact JSON results go under `outputs/` and
+  synchronize through Git between the cluster, the laptop and the PC.
+- **W&B.** Every SSL run logs to W&B; worst-group accuracy (WGA) is the headline metric.
+- **Label-free protocol.** Concept grouping, graph building and SSL use no labels. Post-hoc label metrics guide
+  manual selection only; automatic tuning uses label-free metrics.
+
+---
+
+## 2. Status at a glance
+
+| Phase | Content | Status | Main commits |
+|---|---|---|---|
+| 0 | Safety net: golden tests, packaging, CI, cluster smoke launcher | done, cluster-verified (jobs 23823481, 23823905) | `0c97c92`, `37d6096`, `08739b9` |
+| 1 | Conventions: SLURM lint, template, single sources for defaults and cluster identity, CRP→CoSpRo rename, layout of paper and tools, dead code | done | `567d70c` … `af0a346` |
+| 2 | Concept-group and teacher-graph diagnostics with dashboard | done; cache tier awaits a cluster run | `177fced` |
+| 3 | Typed configuration, presets, sweeps | **next** (design in section 6) | – |
+| 4 | `TrainingMethod` seam and W&B metric contract | planned | – |
+| 5 | Trainer, callbacks, storage policy | planned | – |
+| 6 | Dataset adapters | planned | – |
+| 7 | Linear probe as a library function | planned | – |
+| 8 | `cospro/` pipeline package and concept dictionaries | planned | – |
+| 9 | Package layout move | planned | – |
+
+Other commits on the branch: `b51575f` AGENTS.md rules, `00a4c8b` paper commas, `3f2a5fb` YAML manifests,
+`8ae09d5` review and plan.
+
+---
+
+## 3. Invariants and how they are pinned
+
+These are the stored identities that link code to past results. Breaking one silently orphans checkpoints,
+breaks resume or changes paper provenance. Each has a test.
+
+| Invariant | Where it lives | Why it matters | Pinned by |
+|---|---|---|---|
+| Runner command identity | `experiments/runner.py` compares a new command with `command.json` before `reuse` or `resume` | A changed command blocks resuming an interrupted 500-epoch run | `tests/golden/commands.json` (92 commands); `_comparable` compares `--manifest_path` by file stem |
+| Manifest fingerprint | `manifest_fingerprint` (SHA-256 of the parsed manifest) in `execution.json` | Identifies which manifest produced a run | YAML files parse to the same mapping as the JSON originals (checked at conversion) |
+| Run storage name | `spur_splice.format_storage_name` hashes `vars(args)` minus a list of excluded keys | Selects the checkpoint folder; a changed hash makes a resumed run write into a new folder and leaves old checkpoints undeleted in `/home` | `tests/test_storage_identity.py`; historical option names through `splice.compat.with_legacy_option_names` |
+| Flat training namespace | `vars(args)` feeds the storage hash, `args.json`, `run.json` config, the W&B config and the checkpoint `opt` payload | Every key rename or addition changes all four | Phase 3 adds `tests/golden/resolved_configs.json` |
+| Checkpoint graph fingerprint | `opt["cospro_graph_fingerprint"]` or the legacy `opt["crp_graph_fingerprint"]` | Resume refuses a changed teacher graph | `tests/test_reproducibility.py` covers both generations |
+| Artifact type strings | `splice_crp_v2_teacher_graph`, `splice_crp_v3_teacher_graph`, `splice_crp_concept_groups`, `cospro_teacher_graph_v3` | Validators accept old graphs and groups | `splice/compat.py` constants |
+| Sample IDs | `<dataset>:<metadata row>` | Align caches, groups, graphs and labels | `validate_teacher_graph`, diagnostics label tests |
+| Numerical behaviour | training loop, probe, graph builder | Paper numbers | `tests/golden/training_runs.<os>.json`, `tests/golden/teacher_graph.json` |
+| Launcher contract | `#SBATCH` headers, `announce_results` | Cluster rules and discoverable results | `tests/test_slurm_launchers.py` |
+
+Known consequence already accepted: the W&B config of runs after phase 1 carries `cospro_temperature` and other
+`cospro_*` keys; runs before carry `crp_*`. W&B filters on these fields split the two generations.
+
+---
+
+## 4. Problem catalogue (what this refactor fights)
+
+Each entry: evidence, consequence, phase that addresses it. File references point at the state before the refactor
+unless marked.
+
+**P1. One string decides the training method everywhere.** `splice_mode` appeared 64 times in 10 files:
+`spur_splice.py` (choices, validation, loader building, regularizer building, config recording), `ssl_loop.py`
+(branches on `requires_crp_indices` / `requires_concept_transfer` attributes), each dataset adapter (whitelists of
+modes and a frozen-distillation branch inside `make_waterbirds_ssl_loader`), `run_cospro_pipeline.py`,
+`export_wandb_runs.py`. Adding a method or an ablation variant meant editing all of them. The two regularizers had
+different call signatures, so the loop had to know which one it held (a Liskov violation). → phase 4.
+
+**P2. Three sources for the same default.** SimCLR temperature was 0.5 in argparse, 0.05 in manifests, 0.05 in
+`run_training.sbatch` and 0.05 in `run_cospro_pipeline.sh`; batch size 256 / 128; CoSpRo temperature 0.1 / 0.25.
+→ phase 1 removed the shell copies; phase 3 turns the remaining two meanings into a base default plus a named preset.
+
+**P3. The flat `argparse.Namespace` is the interface of every function.** About 110 fields; each function reads a
+handful; `parse_args` and `build_ssl_loader` mutate it (`relational_graph_empty`, `teacher_graph_*`,
+`run_recorder_instance`), so call order became part of the interface. `build_linear_probe_args` copies 35 fields into a
+fake namespace to call a CLI entry point. → phases 3 (typed sections), 5, 7.
+
+**P4. `spur_splice.py` held eight responsibilities** (CLI, validation, naming, loader building, model building, epoch
+loop, retention and cleanup, W&B and run records) in 1243 lines. → phases 3, 4, 5.
+
+**P5. Dataset adapters are shallow copies.** Waterbirds, CelebA and Spur-CIFAR10 each carry about 250 lines with
+three near-identical loader factories. Registry entries are untyped dictionaries plus alias tables in Python and a
+`case` statement in bash. → phase 6.
+
+**P6. `splice/cospro.py` is a 1528-line module** with cache validation, grouping, neighbour search (exact and LSH),
+auditing, null controls, graph assembly and a CLI; `build_teacher_graph` alone spans about 300 lines. Vocabularies are
+special-cased by name. → phase 8.
+
+**P7. Folder names contradicted roles.** Library code under `experiments/spurious_eval/`, the vendored SpLiCE library
+mixed with the CoSpRo method and with infrastructure in `splice/`, pipeline stages next to one-off migrations in
+`scripts/tools/`, the paper in the repository root. → phase 1 moved the paper and the tools; phase 9 finishes.
+
+**P8. Hard-coded personal paths and identities** (`/scratch/xar68reb/CoSpRo`, `/home/xar68reb/Datasets`,
+`gsgrechkin-rptu`) in library code. → phase 1 (`splice/settings.py`, `load_splice_cluster_env.sh`).
+
+**P9. CRP-era names mixed with CoSpRo names** (`CrpAuditConfig`, `args.crp_temperature`, shim modules, shim
+scripts). → phase 1 (`splice/compat.py` is now the only place that knows the old names).
+
+**P10. No executable safety net.** No pytest in the environment, launcher tests broke on Windows, no CI, no numerical
+regression tests. → phase 0.
+
+**P11. Concept groups and graphs could only be judged by reading HTML pages.** No metric compared two grouping
+configurations or a graph with its baselines. → phase 2.
+
+**P12. Cluster logs did not say where results land.** → phase 1 follow-up (`announce_results`).
+
+---
+
+## 5. Principles adopted
+
+1. **Strangler fig.** New typed modules grow next to the old code; the old surface becomes a thin adapter over them
+   and disappears only when nothing stored depends on it. A big-bang rewrite was rejected because the flat namespace
+   is part of four stored identities (section 3).
+2. **Pin before change.** Every step that could move a stored identity first adds a snapshot or identity test.
+3. **The CLI surface is a public contract.** Existing flags keep their names and meanings; new behaviour arrives as new
+   options. This keeps runner command identity and manifests stable.
+4. **One compatibility module.** `splice/compat.py` holds every historical name. New code uses current names only.
+5. **Pure validation, separate resolution.** Configuration checks that need no I/O live with the configuration types;
+   checks that touch the filesystem (graph exists, target bank loads) live in a resolution step.
+6. **Two adapters make a seam.** A plug-in interface is introduced where two or more implementations exist today
+   (training methods, neighbour search, datasets, dictionaries).
+7. **Small commits, pushed often,** so the author can pull and run cluster checks at any point.
+
+---
+
+## 6. Phases
+
+### Phase 0 — Safety net (done)
+
+**Delivered**
+
+- `pyproject.toml` with project metadata (package `cospro`), extras `dev`, `paper`, `diagnostics`; `setup.py` removed;
+  `requirements.txt` gained `pyyaml`.
+- Golden tests (`tests/golden_support.py` builds every fixture deterministically):
+  - `test_golden_commands.py`: all runner commands for every manifest, seed, arm and locked-test variant.
+  - `test_golden_graph.py`: grouping and graph structure on a synthetic cache (neighbour indices exact, floats with
+    tolerance).
+  - `test_golden_training.py`: two CPU epochs of each training mode (SimCLR, CoSpRo, CoSpRo KL-only, frozen concept
+    distillation, LA-SSL) on a synthetic Waterbirds (80 images, 4 groups, background colour as the spurious
+    attribute). Snapshots per operating system: `training_runs.windows.json`, `training_runs.linux.json`.
+    `SPUR_SPLICE_GOLDEN_DEVICE=cuda` runs the same modes on a GPU with AMP; the GPU run checks completion only.
+- `.github/workflows/tests.yml` (CPU, triggers on `main` and pull requests).
+- `scripts/run_golden_smoke.sbatch`, `scripts/freeze_environment.sbatch`.
+
+**Decisions and rejected alternatives**
+
+- Graph golden by file hash: rejected, float serialization differs across platforms. Adopted: structural comparison
+  with tolerance.
+- One training snapshot for all platforms: rejected after the first cluster run; BLAS differences exceed tolerance.
+  Adopted: per-OS snapshots, created on first run and committed.
+- GPU numeric comparison: rejected, AMP and cuDNN are nondeterministic; the GPU run proves the modes run.
+- The synthetic dataset first gave 100% WGA everywhere, which pins nothing. The class mark was made small and weak
+  so modes produce different WGA values.
+
+**Follow-ups**: `scripts/freeze_environment.sbatch` has not run yet; the cluster (torch 2.5.1) and the local PC
+(torch 2.11 nightly) use different torch versions.
+
+### Phase 1 — Conventions and quick wins (done)
+
+**Delivered**
+
+1. `tests/test_slurm_launchers.py` enforces resources, log paths and the `announce_results` banner;
+   `scripts/_template.sbatch`; `scripts/announce_results.sh`.
+2. Defaults: `run_cospro_pipeline.sh` forwards only environment variables that are set; the Python CLI owns every
+   pipeline default (equivalence checked for three scenarios). `cache_splice_dataset.sh` lost its SpLiCE literals.
+3. Cluster identity: `splice/settings.py` (Python) and `scripts/load_splice_cluster_env.sh` (bash) hold the scratch
+   root, the dataset root and the W&B entity, each overridable by environment variable.
+4. CRP→CoSpRo rename of classes, functions, options and tests; `splice/compat.py`; shim modules and scripts removed.
+5. `paper/` (manuscript, style, `paper_results.json`), `docs/notes/` (dated notes), `tools/maintenance/`,
+   `tools/paper/`.
+6. `experiments/spurious_eval/training/reproducibility.py` shares `seed_worker`, `make_dataloader_kwargs` and
+   `preserve_rng_state`; dead branches removed.
+
+**Decisions and rejected alternatives**
+
+- Replacing the pipeline's environment-variable interface by a YAML pipeline config: postponed to phase 3/8. The
+  author uses `EPOCHS=10 bash scripts/run_cospro_pipeline.sh`; the forwarding table keeps that habit with one source of
+  defaults.
+- Renaming `crp_graph.json`, the `waterbirds_crp` study or arm names: rejected, they are provenance for paper results.
+- Removing `--cudnn_benchmark` (it only forbids `true`) and `CoSpRoAuditConfig.indegree_factor`: rejected, both feed
+  stored identities (storage hash, W&B run name, graph configs).
+- Merging the trainer's and the probe's `set_seed`: rejected, the trainer also disables cuDNN and enables
+  deterministic algorithms; merging would change probe behaviour when the probe runs standalone.
+- Command identity by manifest path: replaced by comparison by file stem, since every manifest value is expanded into
+  its own flag.
+- Storage names: adopted `with_legacy_option_names` so the hash stays computed over the historical option names.
+  Rejected: hashing the new names (orphans checkpoint folders of resumed runs).
+- `cleanup_local_outputs.py` keeps a literal scratch path because it runs as a standalone file without the package.
+
+**Deferred from phase 1 to phase 3**: the CoSpRo student values injected by `run_training.sbatch` in automatic graph
+mode. **Open follow-up**: a style pass over older comments and documents for the `AGENTS.md` rules.
+
+### Phase 2 — Diagnostics (done, cache tier pending on the cluster)
+
+**Delivered**: package `cospro/diagnostics/`.
+
+| Module | Role |
+|---|---|
+| `labels.py` | Only reader of `y` and `a`; maps `<dataset>:<row>` to labels and display names from the dataset metadata |
+| `group_metrics.py` | Structure, text coherence, NPMI, silhouette, image coverage, bootstrap ARI, cross-configuration ARI and VI, post-hoc AUC selectivity and fragmentation |
+| `graph_metrics.py` | Structure, edge Jaccard, null-test selection; post-hoc transition matrices, balanced counterfactual and same-class rates, minority reach, confidence calibration, per-group edge semantics, stratified edge samples |
+| `evaluate.py` | Builds one JSON record (schema `cospro-diagnostics-v1`) for a sweep directory plus named graphs |
+| `dashboard.py` | Self-contained HTML (matplotlib PNGs, JPEG thumbnails) |
+| `__main__.py` | `python -m cospro.diagnostics evaluate|dashboard` |
+
+Launcher `scripts/run_cospro_diagnostics.sbatch` (CPU, finds the single SpLiCE cache under scratch).
+Record in Git: `outputs/reports/cospro_diagnostics/waterbirds/diagnostics.json` (label and graph tiers).
+
+**Decisions and rejected alternatives**
+
+- Lift over a degree-matched random graph as the headline: rejected. Random neighbours of a minority anchor mostly come
+  from the majority group of the same class, so the random balanced counterfactual rate (0.25) beats every real graph
+  while the random balanced same-class rate collapses to 0.50. Adopted: balanced counterfactual read together with
+  balanced same class, compared with the raw-CLIP graph at the same degree.
+- Minority groups as "below the mean group size": rejected, it marked waterbird/water (1057 of 4795) as minority.
+  Adopted: below half of the mean.
+- Random edge samples for the gallery: rejected, they show majority-to-majority edges. Adopted: per concept group the
+  two highest-confidence edges plus two edges from minority anchors.
+- Two launchers (grouping, graph) and a separate local rendering tool from the first plan: merged into one launcher and
+  one module entry point.
+- Not built yet: the UMAP concept map, null-test strip plots, group cards with top-activating thumbnails (the older HTML
+  reports still render group cards).
+
+**Findings on Waterbirds (post-hoc, 2026-09-18)**
+
+- The 31 grouping configurations barely change the partition: at most 20 composite groups of two or three concepts
+  (44 at text 0.5 / coactivation 0.1, which has no graph).
+- The null test passes 425–450 of about 500 groups. Sweep graphs (no selection cap) share 6% of edges with raw CLIP and
+  score balanced counterfactual 0.18–0.19, below raw CLIP (0.20). The paper graph keeps the top 12 groups and scores
+  0.23 with minority reach 59% (raw CLIP 52%, semantic SpLiCE 54%). **Group selection is the decisive lever.**
+- Confidence is calibrated in the paper graph: counterfactual rate 1.4% in the lowest decile, 8% in the highest;
+  baselines stay flat.
+- Background groups ({Bamboo}, {Sunset}, {Autumn}) produce most counterfactual edges; owl groups link images that
+  share class and background. The gallery shows Bamboo edges joining the same bird species on water and on bamboo.
+
+**Choosing between groupings (protocol agreed with the author)**
+
+1. Label-free validity filters: maximum group size cap, NPMI floor, bootstrap ARI ≥ 0.8, positive audit yield.
+2. Graph proxy (post-hoc, manual): balanced counterfactual rate with balanced same class and minority reach, against
+   raw CLIP. A cleaner variant scores the proxy on a validation-split cache and graph.
+3. 100-epoch single-seed runs for the top five, compared on validation WGA.
+4. 500 epochs over four seeds for the winner.
+5. Spearman correlation between steps 2 and 3 decides whether step 2 becomes the default selector.
+
+Given the findings, the next sweep should vary selection (`max_selected_groups`, `null_quantile`) rather than the
+grouping thresholds.
+
+### Phase 3 — Typed configuration, presets and sweeps (next)
+
+**Problem addressed**: P2, P3 (first half), P4 (CLI and validation part).
+
+**Design**
+
+1. `cospro/config/training.py` declares the training configuration as frozen dataclass sections. Every field name equals
+   today's argparse `dest`, so the flat projection is identical to today's namespace:
+   `ExperimentIdentity` (study, arm, attempt, run record, manifest path), `StorageOptions` (checkpoint and artifact
+   directories, retention), `DataOptions`, `ModelOptions`, `OptimizerOptions`, `SSLOptions`, `RuntimeOptions` (device,
+   AMP, channels-last, cuDNN), `ProbeOptions`, `TrackingOptions`, `CoSpRoOptions`, `ConceptTransferOptions`,
+   `LaSSLOptions`. Field metadata carries the CLI flags (including aliases such as `--crp_temperature` and
+   `--ssl-crop-min`), help text, choices and the argument style (value, store-true flag, optional boolean).
+2. `build_parser()` generates the argparse parser from the sections, in today's order. `spur_splice.parse_args` becomes:
+   parse → `TrainingConfig.from_namespace` → pure validation (`ConfigError` with today's messages, reported through
+   `parser.error`) → resolution (filesystem checks, graph fingerprint, target bank, derived fields such as warm-up,
+   `n_cls`, run names and storage name) → flat namespace.
+3. `cospro/config/presets.py` defines named presets. `cospro_student` = batch 128, 4 workers, SimCLR temperature 0.05,
+   `cospro_relational`, relation weight 0.5, relation temperature 0.25. `spur_splice.py --preset NAME` applies a preset
+   before explicit flags; the preset name stays out of the namespace, so a preset run and the equivalent explicit flags
+   share one storage name. `run_training.sbatch` uses `--preset cospro_student` instead of numbers;
+   `run_cospro_pipeline.py` takes its student defaults from the same preset and its grouping and audit defaults from
+   `CoSpRoAuditConfig`.
+4. `ProbeOptions` defaults feed the trainer's `linear_*` options and `linear_probe.py` (its parser and
+   `normalize_args`, which today repeat the same defaults twice).
+5. Manifest sweeps: an optional `sweeps` block expands into arms inside `load_manifest`:
+   ```yaml
+   sweeps:
+     weight:                   # prefix of the generated arm names
+       base: cospro            # arm whose arguments the grid overrides
+       grid:
+         splice_weight: [0.25, 0.5, 1.0]
+         cospro_temperature: [0.1, 0.25]
+   ```
+   Generated arm names are `weight__splice_weight-0.25__cospro_temperature-0.1`. Existing manifests have no `sweeps`
+   block, so their commands and fingerprints stay unchanged.
+
+**Pinning first**: `tests/test_config_resolution.py` with `tests/golden/resolved_configs.json`, captured from the code
+before the change: the flat namespace for every runner command of every manifest (graphs copied to a temporary output
+root, a fake target bank under a temporary scratch root), plus standalone variants (defaults, LA-SSL, Spur-CIFAR10,
+final test, legacy `--crp_*` flags, boolean spellings) and a list of invalid argument sets with their expected error
+messages. Volatile entries (paths, runtime versions, storage name) are normalized; the storage name stays pinned by
+`test_storage_identity.py`.
+
+**Alternatives considered**
+
+| Alternative | Verdict | Reason |
+|---|---|---|
+| Hydra / OmegaConf | rejected | New CLI syntax and run-directory conventions would change runner commands and `run.json`; interpolation hides values; YAML manifests plus dataclasses cover the need |
+| pydantic models | rejected for now | Extra dependency on the cluster env; frozen dataclasses with explicit checks suffice. Revisit if validation grows. |
+| Nested configuration in `vars(args)` | rejected | Changes the storage hash, `run.json`, W&B config and checkpoint `opt` of every run (section 3) |
+| `command.json` schema v2 with `--set section.key=value` overrides | rejected | The CLI surface stays unchanged, so command identity needs no new schema |
+| Presets as manifest includes (`extends:`) | deferred | Presets serve standalone runs; manifests stay explicit records of every value |
+| Declarative option table without dataclasses | rejected | Loses typed sections that phases 4, 5 and 7 consume |
+
+**Done when**: the resolution snapshot and all golden tests pass unchanged; `run_training.sbatch`,
+`run_cospro_pipeline.py` and `linear_probe.py` carry no student or probe literals; a sweep test expands a grid into
+the expected arms and commands.
+
+### Phase 4 — `TrainingMethod` seam and W&B metric contract (planned)
+
+**Design**
+
+- Protocol `TrainingMethod`: `name`, `Options` (its dataclass section from phase 3), `wrap_loader(loader, dataset)`,
+  `extra_loss(batch, embeddings, model, epoch) -> LossTerms`, `provenance() -> dict`, `input_artifacts() -> list[Path]`,
+  `state_dict()` / `load_state_dict()` for resume.
+- Adapters: `SimCLROnly`, `CoSpRoRelational` (graph sampler and relational KL), `FrozenConceptDistill` (target bank and
+  cosine head), `LaSSL` (learning-speed sampler). Registry by name with a decorator.
+- `ssl_loop` calls `method.extra_loss` through one path. Dataset adapters stop receiving `splice_mode`.
+- W&B metric contract (`cospro/tracking/metrics.py`): stable keys `probe/val/wga`, `probe/val/avg_acc`,
+  `probe/val/group_acc/<group>`, `train/loss/<term>`, `method/<name>/<diagnostic>`;
+  `wandb.define_metric("probe/val/wga", summary="max")` plus the last value. `run.json` stores the same keys. A key map
+  keeps the current human-readable keys ("Last linear val worst-group acc") for `export_wandb_runs.py`,
+  `collect_results.py` and `build_paper_results.py`.
+- Teacher-graph diagnostics from phase 2 (balanced counterfactual, minority reach) go into the W&B config of relational
+  runs, so W&B can scatter graph quality against final WGA.
+
+**Open questions**: keep logging the old W&B keys next to the new ones for one study (recommended) or switch at once;
+whether LA-SSL is a method or a sampler option (it keeps the plain SimCLR loss).
+
+**Rejected**: subclassing `SimCLRLoss` per method (couples loss and sampling); keeping capability flags
+(`requires_graph_indices`) as the dispatch mechanism.
+
+### Phase 5 — Trainer, callbacks, storage policy (planned)
+
+- `Trainer.fit()` owns the epoch loop and emits `on_epoch_end`, `on_train_end`, `on_failure`.
+- Callbacks: `RankMetrics`, `PeriodicProbe`, `WandbLogger`, `RunRecordLogger`, `CheckpointPolicy`.
+- `StoragePolicy`: rolling epoch checkpoints in the run folder, deletion during training, final checkpoint to scratch
+  with a SHA-256 attestation in `run.json`. A test simulates ten epochs with a fake model and asserts the peak number of
+  checkpoint files in the run folder (the `/home` quota guard).
+- `TrainingState` bundles model, optimizer, scaler, loader generator and method state for save and resume.
+- `spur_splice.py` shrinks to parse, build, fit.
+- **Rejected**: PyTorch Lightning or Accelerate. They own RNG handling, checkpoint layout and logging; this project needs
+  exact RNG isolation for observational probes, a custom storage split between `/home` and scratch and record
+  attestations.
+
+### Phase 6 — Dataset adapters (planned)
+
+- `SpuriousDataset` base class with `read_metadata()` returning `path, y, a, split` plus `load_image()`; one
+  `build_loader(dataset, role, options)` for the roles `ssl`, `rank`, `probe_train`, `probe_eval`.
+- `@register_dataset(name, aliases=...)` replaces the registry dictionaries and the bash `case` statement.
+- Image size and model compatibility become dataset attributes (today: `if dataset == "spur_cifar10"` in three places).
+- `docs/ADDING_A_DATASET.md`: adapter, cache launcher, diagnostics run, manifest.
+- Keep the vendored WILDS compatibility layer; mark it as third-party.
+
+### Phase 7 — Linear probe as a library function (planned)
+
+- `evaluate_probe(encoder, dataset, ProbeOptions) -> ProbeResult` without file or W&B side effects;
+  `persist_probe_result` writes features to scratch and JSON to `outputs/`.
+- The trainer callback, `tools/paper/evaluate_submission_checkpoints.py` and the CLI call `evaluate_probe`; the
+  35-field namespace bridge disappears.
+
+### Phase 8 — `cospro/` pipeline package and concept dictionaries (planned)
+
+- Split `splice/cospro.py` into `cospro/cache.py`, `grouping.py`, `neighbors.py`, `audit.py`, `graph.py`,
+  `pipeline.py`; `NeighborIndex` with `ExactNeighbors` and `LshNeighbors` tested against each other.
+- `ConceptDictionary` (words, text embeddings, provenance) with adapters for LAION, Open Images V7 and any text file;
+  manifest entry `dictionary: {kind: file, path: ..., order: frequency | file, size: N}`.
+- Selection becomes an explicit, swappable stage (`SelectionRule`: null-quantile pass, top-k by null excess, post-hoc
+  audit only for reports), since phase 2 showed selection decides graph quality.
+- Pipeline stages move from `scripts/tools/` to `cospro/cli/`; launcher names stay.
+
+### Phase 9 — Package layout (planned)
+
+Target layout (package name `cospro`):
+
+```text
+cospro/            config/ data/ models/ methods/ training/ evaluation/ pipeline stages/ diagnostics/ tracking/ cli/
+splice/            vendored SpLiCE (moves to third_party/splice/ with a NOTICE of local changes)
+experiments/       manifests/ runner.py
+scripts/           Slurm launchers
+tools/             maintenance/ paper/
+paper/ docs/ tests/ outputs/
+```
+
+`git mv` one package per commit with re-export shims at old import paths for one release; update `PROJECT_MAP.md`,
+`docs/REPO_STRUCTURE.md` and `scripts/README.md`.
+
+---
+
+## 7. Decisions taken with the author
+
+1. Post-hoc label metrics guide manual selection only; automatic tuning uses label-free metrics.
+2. Manifests are YAML; the runner still reads JSON.
+3. The method and package name is CoSpRo; historical CRP names live only in `splice/compat.py`.
+4. `ARCHITECTURE_REVIEW.md` stays in Russian; this document is the English source of truth.
+5. The refactor lives on `refactor` in a separate worktree and merges into `main` at the end.
+6. Cluster checks can run on an A40 when no V100 is free.
+
+## 8. Open questions
+
+- W&B key migration strategy (phase 4).
+- Whether the validation-split graph proxy (phase 2.7, step 2) becomes part of the paper protocol.
+- Whether to run `scripts/freeze_environment.sbatch` and pin the cluster environment in `environment/`.
+- When to merge `refactor` into `main` relative to the next training study.
