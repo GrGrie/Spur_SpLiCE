@@ -6,7 +6,10 @@
 
 : "${PROJECT_DIR:?PROJECT_DIR must be set before loading the SpLiCE environment}"
 SPLICE_CONDA_ENV="${SPLICE_CONDA_ENV:-grgrie-train}"
+# Cluster locations and identities. Python reads the same variables through splice/settings.py.
 SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${SPUR_SPLICE_ARTIFACT_ROOT:-/scratch/xar68reb/CoSpRo}}"
+DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
+WANDB_ENTITY="${WANDB_ENTITY:-gsgrechkin-rptu}"
 
 mkdir -p "${SPUR_SPLICE_SCRATCH_ROOT}"
 if [[ ! -w "${SPUR_SPLICE_SCRATCH_ROOT}" ]]; then
@@ -25,7 +28,7 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
     exit 2
 fi
 
-export SPLICE_CONDA_ENV PYTHON_BIN SPUR_SPLICE_SCRATCH_ROOT
+export SPLICE_CONDA_ENV PYTHON_BIN SPUR_SPLICE_SCRATCH_ROOT DATA_FOLDER WANDB_ENTITY
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-5}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-5}"

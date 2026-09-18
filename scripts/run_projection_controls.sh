@@ -10,7 +10,6 @@
 
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
-export DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 cd "${PROJECT_DIR}"
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
   source scripts/load_splice_cluster_env.sh

@@ -5,12 +5,12 @@ import argparse
 import hashlib
 import json
 import math
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 import statistics
 
 from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, scratch_root, sha256_file
+from splice.settings import CLUSTER_DATA_FOLDER, CLUSTER_SCRATCH_ROOT, data_folder
 
 STUDIES = {
     "semantic_splice": "next_actions_after_transfer_2026_09_07_graph_ablation",
@@ -46,7 +46,7 @@ def relocated(value):
         return scratch_root() / value.removeprefix("artifact://")
     if value.startswith("project://"):
         return PROJECT_ROOT / value.removeprefix("project://")
-    prefix = "/scratch/xar68reb/CoSpRo/"
+    prefix = f"{CLUSTER_SCRATCH_ROOT}/"
     return scratch_root() / value[len(prefix):] if value.startswith(prefix) else Path(value)
 
 
@@ -251,7 +251,7 @@ def main():
     parser.add_argument("action", choices=("prepare", "run", "summarize"))
     parser.add_argument("--artifact-root", type=Path, default=resolve_output_root())
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--data-folder", default=os.environ.get("DATA_FOLDER", "/home/xar68reb/Datasets"))
+    parser.add_argument("--data-folder", default=data_folder(CLUSTER_DATA_FOLDER))
     parser.add_argument("--checkpoints-json", type=Path, help='Optional mapping {"semantic_splice:2": "/path/last.pth", ...}')
     parser.add_argument("--seed", type=int, choices=range(1, 5))
     parser.add_argument("--device", default="cuda")

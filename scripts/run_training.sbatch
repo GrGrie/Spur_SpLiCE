@@ -91,7 +91,7 @@ elif [[ "${has_graph}" != "1" && "${has_splice_mode}" != "1" ]]; then
   fi
 fi
 "${PYTHON_BIN}" -u spur_splice.py \
-  --data_folder "${DATA_FOLDER:-/home/xar68reb/Datasets}" \
+  ${DATA_FOLDER:+--data_folder "${DATA_FOLDER}"} \
   --attempt_id "${RUN_ID}" \
   --checkpoint_dir "${CHECKPOINT_ROOT}" \
   --run_record "${CHECKPOINT_ROOT}/run.json" \

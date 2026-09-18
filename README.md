@@ -121,9 +121,10 @@ bash scripts/run_cospro_pipeline.sh --dry-run
 EPOCHS=10 USE_WANDB=0 bash scripts/run_cospro_pipeline.sh
 ```
 
-The editable configuration block at the top of the script exposes the dataset,
-storage, cache, grouping, audit, student, probe, and W&B settings. The same
-names may be supplied as environment variables. Set `DATASET=waterbirds` (or
+Every default lives in the Python CLI (`python -m scripts.tools.run_cospro_pipeline --help`).
+The launcher lists the environment variables it forwards, such as `EPOCHS`,
+`TEXT_SIMILARITY_THRESHOLD` or `USE_WANDB`; unset variables keep the Python default
+and trailing options pass through unchanged. Set `DATASET=waterbirds` (or
 `spur_cifar10`) to use the same pipeline for another registered dataset.
 Completed preprocessing artifacts are validated and reused; set
 `REBUILD_PREPROCESSING=1` to rebuild them. Student output is protected by

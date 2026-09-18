@@ -10,13 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from splice.settings import CLUSTER_SCRATCH_ROOT
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 OUTPUT_ROOT_ENV = "SPUR_SPLICE_OUTPUT_ROOT"
 SCRATCH_ROOT_ENV = "SPUR_SPLICE_SCRATCH_ROOT"
 LEGACY_SCRATCH_ROOT_ENV = "SPUR_SPLICE_ARTIFACT_ROOT"
-DEFAULT_SCRATCH_ROOT = Path("/scratch/xar68reb/CoSpRo")
+DEFAULT_SCRATCH_ROOT = Path(CLUSTER_SCRATCH_ROOT)
 BINARY_SIZE_THRESHOLD = 10 * 1024 * 1024
 BINARY_SUFFIXES = {".pt", ".pth", ".ckpt"}
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")

@@ -44,6 +44,7 @@ from splice.graph_io import graph_fingerprint
 from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
 from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
 from splice.run_recording import RunRecorder, portable_json
+from splice.settings import wandb_entity
 from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
@@ -220,7 +221,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional concise W&B display name. Checkpoint directories retain the full reproducibility name.",
     )
-    parser.add_argument("--entity", default="gsgrechkin-rptu")
+    parser.add_argument("--entity", default=wandb_entity())
     parser.add_argument("--wandb_group", default="")
     parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
     parser.add_argument(

@@ -14,6 +14,7 @@ from statistics import mean, stdev
 from typing import Any
 
 from splice.artifacts import atomic_write_json, sha256_file
+from splice.settings import CLUSTER_SCRATCH_ROOT
 
 
 _SEED = re.compile(r"^seed_?(\d+)$", re.IGNORECASE)
@@ -274,7 +275,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("--output-root", type=Path, default=Path("outputs"))
-    parser.add_argument("--scratch-root", type=Path, default=Path("/scratch/xar68reb/CoSpRo"))
+    parser.add_argument("--scratch-root", type=Path, default=Path(CLUSTER_SCRATCH_ROOT))
     parser.add_argument("--archive", type=Path)
     parser.add_argument(
         "--rebuild-archive-manifest",

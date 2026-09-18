@@ -29,6 +29,7 @@ from experiments.spurious_eval.training.checkpointing import load_encoder_checkp
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
+from splice.settings import wandb_entity
 
 
 @dataclass
@@ -109,7 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default="Spur_SpLiCE")
-    parser.add_argument("--entity", default="gsgrechkin-rptu")
+    parser.add_argument("--entity", default=wandb_entity())
     parser.add_argument(
         "--spurious_probe",
         action=argparse.BooleanOptionalAction,
@@ -156,7 +157,7 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
         "device": "cuda" if torch.cuda.is_available() else "cpu",
         "use_wandb": False,
         "wandb_name": "Spur_SpLiCE",
-        "entity": "gsgrechkin-rptu",
+        "entity": wandb_entity(),
         "spurious_probe": True,
         "run_recorder": None,
         "study": "adhoc",

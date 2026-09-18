@@ -38,7 +38,6 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
 fi
 
-DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"
 DEFAULT_OUTPUT_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${SPUR_SPLICE_ARTIFACT_ROOT:-${PROJECT_DIR}/tmp}}/features/Spur_SpLiCE"
 # The Python cache builder adds the canonical dataset name and configuration.
 OUTPUT_ROOT="${DEFAULT_OUTPUT_ROOT}"
@@ -49,11 +48,6 @@ fi
 
 "${PYTHON_BIN}" -u -m scripts.tools.cache_splice_dataset \
   --dataset "${DATASET}" \
-  --data-folder "${DATA_FOLDER}" \
+  --data-folder "${DATA_FOLDER:?set DATA_FOLDER to the dataset root}" \
   --output-root "${OUTPUT_ROOT}" \
-  --splice-model open_clip:ViT-B-32 \
-  --splice-pretrained laion2b_s34b_b79k \
-  --splice-vocab openimages_v7 \
-  --splice-vocab-size -1 \
-  --splice-l1-penalty 0.25 \
   "$@"

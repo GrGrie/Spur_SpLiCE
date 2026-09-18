@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 
 from splice.artifacts import reference
+from splice.settings import wandb_entity
 from datetime import datetime, timezone
 
 import wandb
 
 
-ENTITY = "gsgrechkin-rptu"
+ENTITY = wandb_entity()
 PROJECT = "Spur_SpLiCE"
 OUTPUT_PATH = reference("wandb_exports", "spur_splice_wandb_runs_current.json")
 

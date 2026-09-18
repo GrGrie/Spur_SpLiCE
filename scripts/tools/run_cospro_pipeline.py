@@ -27,7 +27,8 @@ from scripts.tools.generate_cospro_concept_groups import (
     _dataset_image_resolver,
     concept_group_directory,
 )
-from splice.artifacts import PROJECT_ROOT, atomic_write_json, run_directory
+from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, run_directory, scratch_root
+from splice.settings import data_folder, wandb_entity
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
     CrpAuditConfig,
@@ -91,9 +92,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dataset", type=canonical_dataset_name, choices=sorted(CANONICAL_DATASET_REGISTRY),
         default="celeba",
     )
-    paths.add_argument("--data-folder", type=Path, required=True)
-    paths.add_argument("--feature-root", type=Path, required=True)
-    paths.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "outputs")
+    data_folder_default = data_folder()
+    paths.add_argument(
+        "--data-folder", type=Path, default=data_folder_default, required=data_folder_default is None,
+        help="Dataset root; defaults to $DATA_FOLDER.",
+    )
+    paths.add_argument(
+        "--feature-root", type=Path, default=scratch_root() / "features" / "Spur_SpLiCE",
+        help="Frozen SpLiCE cache root; defaults to <scratch root>/features/Spur_SpLiCE.",
+    )
+    paths.add_argument("--output-root", type=Path, default=resolve_output_root())
     paths.add_argument("--python", default=sys.executable, help="Python interpreter used by every stage.")
     paths.add_argument("--rebuild-preprocessing", action="store_true")
     paths.add_argument("--dry-run", action="store_true")
@@ -198,7 +206,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     tracking.add_argument("--wandb-name", default="CoSpRo")
     tracking.add_argument("--wandb-group", default="")
     tracking.add_argument("--wandb-tags", default="")
-    tracking.add_argument("--entity", default="gsgrechkin-rptu")
+    tracking.add_argument("--entity", default=wandb_entity())
     tracking.add_argument("--collect-results", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args(argv)
     if args.model is None:

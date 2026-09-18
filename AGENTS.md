@@ -28,7 +28,7 @@ Applies to code, comments, docstrings, log messages, commit messages, Markdown f
 ### Cluster execution (SLURM)
 
 - The university SLURM cluster runs all training, probing, SpLiCE caching, concept grouping, teacher-graph builds and anything that writes checkpoints. The local PC runs plotting, report rendering and short CPU checks.
-- The cluster accepts work only through `sbatch`. Every cluster task ships with its own `.sbatch` or `.sh` launcher in `scripts/`, added in the same change as the Python entry point. Launchers source `scripts/load_splice_cluster_env.sh` and take hyperparameters from the experiment manifest or CLI arguments.
+- The cluster accepts work only through `sbatch`. Every cluster task ships with its own `.sbatch` or `.sh` launcher in `scripts/`, added in the same change as the Python entry point. Start from `scripts/_template.sbatch`. Launchers source `scripts/load_splice_cluster_env.sh` (the single bash source of cluster paths and the W&B entity, mirrored by `splice/settings.py`) and take hyperparameters from the experiment manifest or CLI arguments.
 - Resources per job: one V100 (`--gres=gpu:1`), `--cpus-per-task` at most 5, `--mem` at most 8G per requested CPU (1 CPU → 8G, 2 → 16G, 5 → 40G). Set DataLoader `num_workers` within `--cpus-per-task`.
 - V100 supports float16 mixed precision; use `torch.float16` autocast with a `GradScaler`.
 

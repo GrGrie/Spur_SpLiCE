@@ -9,10 +9,10 @@
 
 set -euo pipefail
 export PROJECT_DIR="${SLURM_SUBMIT_DIR}"
-WATERBIRDS_ROOT="/home/xar68reb/Datasets/waterbirds"
 cd "${PROJECT_DIR}"
 
 source scripts/load_splice_cluster_env.sh
+WATERBIRDS_ROOT="${DATA_FOLDER}/waterbirds"
 
 test -f "${WATERBIRDS_ROOT}/metadata.csv"
 

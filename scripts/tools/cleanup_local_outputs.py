@@ -74,6 +74,7 @@ def _normalize_string(value: str) -> str:
     outputs_marker = "/outputs/"
     if outputs_marker in normalized and (normalized.startswith("/") or ":/" in normalized):
         return "project://outputs/" + normalized.split(outputs_marker, 1)[1]
+    # Mirrors splice.settings.CLUSTER_SCRATCH_ROOT; this script runs standalone without the package.
     scratch_prefix = "/scratch/xar68reb/CoSpRo/"
     if normalized.startswith(scratch_prefix):
         return "artifact://" + normalized[len(scratch_prefix):]

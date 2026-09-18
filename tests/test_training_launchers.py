@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -90,10 +91,25 @@ class TrainingLauncherTests(unittest.TestCase):
 
     def test_cache_forwards_hyperparameters(self):
         result = launch("cache_splice_dataset.sh", "waterbirds", "--batch-size", "32",
-                        "--splice-l1-penalty", "0.1")
+                        "--splice-l1-penalty", "0.1", extra_env={"DATA_FOLDER": "/data"})
         self.assertEqual(result.returncode, 0, result.stderr)
         command = shlex.split(result.stdout)
         self.assertEqual(command[-4:], ["--batch-size", "32", "--splice-l1-penalty", "0.1"])
+
+    def test_cache_requires_a_dataset_root(self):
+        env = {key: value for key, value in os.environ.items() if key != "DATA_FOLDER"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            result = launch("cache_splice_dataset.sh", "waterbirds")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DATA_FOLDER", result.stderr)
+
+    def test_pipeline_forwards_only_the_variables_that_are_set(self):
+        result = launch("run_cospro_pipeline.sh", "--dry-run", extra_env={"EPOCHS": "10", "AMP": "0"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = shlex.split(result.stdout)
+        self.assertEqual(command[command.index("--epochs") + 1], "10")
+        self.assertIn("--no-amp", command)
+        self.assertNotIn("--batch-size", command)
 
     def test_pipeline_does_not_force_large_model_on_cifar(self):
         result = launch("run_cospro_pipeline.sh", "--dataset", "spur_cifar10", "--dry-run")
