@@ -31,7 +31,7 @@ from golden_support import (
     train_sample_ids,
     write_waterbirds_fixture,
 )
-from splice.cospro import CrpAuditConfig, build_concept_groups, build_teacher_graph
+from splice.cospro import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
 from splice.graph_io import save_graph_json
 from splice.artifacts import PROJECT_ROOT
 
@@ -46,7 +46,7 @@ COMMON_ARGS = [
     "--seed", "1", "--study", "golden", "--attempt_id", "golden",
     "--delete_checkpoints_after_training", "true",
 ]
-GRAPH_CONFIG = CrpAuditConfig(
+GRAPH_CONFIG = CoSpRoAuditConfig(
     text_similarity_threshold=0.8, coactivation_threshold=0.35, projected_neighbors=6,
     graph_top_k=3, max_indegree=6, null_trials=8,
 )

@@ -16,7 +16,7 @@ import torch
 from experiments.spurious_eval.datasets.registry import get_dataset_spec
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
-    CrpAuditConfig,
+    CoSpRoAuditConfig,
     build_concept_groups,
     load_concept_groups_json,
     save_concept_groups_json,
@@ -32,14 +32,14 @@ def _threshold_name(value: float) -> str:
     return f"{value:.12g}".replace("-", "neg").replace(".", "p")
 
 
-def concept_group_directory(output_root: Path, config: CrpAuditConfig) -> Path:
+def concept_group_directory(output_root: Path, config: CoSpRoAuditConfig) -> Path:
     """Return a collision-safe directory for every grouping configuration."""
 
     name = (
         f"text_{_threshold_name(config.text_similarity_threshold)}_"
         f"coactivation_{_threshold_name(config.coactivation_threshold)}"
     )
-    defaults = CrpAuditConfig()
+    defaults = CoSpRoAuditConfig()
     secondary = {
         field: getattr(config, field)
         for field in GROUPING_CONFIG_FIELDS
@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     produced = 0
     for text_threshold in dict.fromkeys(text_thresholds):
         for coactivation_threshold in dict.fromkeys(coactivation_thresholds):
-            config = CrpAuditConfig(
+            config = CoSpRoAuditConfig(
                 **config_values,
                 text_similarity_threshold=text_threshold,
                 coactivation_threshold=coactivation_threshold,

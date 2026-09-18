@@ -39,7 +39,7 @@ def discover_panels(cache, graph, metadata):
     Final retention/attribution always comes from the saved graph. Candidates
     retained under another concept are omitted from this concept's illustration.
     """
-    from splice.cospro import (validate_splice_dataset_cache, CrpAuditConfig,
+    from splice.cospro import (validate_splice_dataset_cache, CoSpRoAuditConfig,
                                _AuditGeometry, _neighbor_geometry, _relation_geometry,
                                orthonormal_basis, topk_neighbors)
     cache = validate_splice_dataset_cache(cache)
@@ -48,8 +48,8 @@ def discover_panels(cache, graph, metadata):
     for key, value in graph.get("provenance", {}).items():
         if key in cache.get("provenance", {}) and cache["provenance"][key] != value:
             raise ValueError(f"Cache/graph provenance differs: {key}")
-    config = CrpAuditConfig(**{k: v for k, v in graph["config"].items()
-                              if k in CrpAuditConfig.__dataclass_fields__})
+    config = CoSpRoAuditConfig(**{k: v for k, v in graph["config"].items()
+                              if k in CoSpRoAuditConfig.__dataclass_fields__})
     centered = cache["centered_clip"]
     raw, _ = topk_neighbors(centered, config.projected_neighbors, config.similarity_chunk_size)
     audit = _AuditGeometry(centered, raw, cache["splice_codes"])

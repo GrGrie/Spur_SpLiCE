@@ -42,9 +42,11 @@ concept_groups, config)` consumes both artifacts for projection geometry, null
 controls and sparse graph assembly. Training consumes only validated graphs
 through `splice.cospro_training`.
 
-The `splice.crp*` compatibility modules, legacy command wrappers, and serialized
-`crp_*` fields remain readable for existing artifacts and runs. New code,
-commands, reports, studies, and documentation use CoSpRo consistently.
+Code, commands, reports and documentation use CoSpRo names. `splice/compat.py` is the one
+place that knows the CRP-era names: it keeps run storage names stable, reads the graph
+fingerprint of older checkpoints and lists the historical artifact types. The `--crp_*`
+options and the `crp_relational` mode stay accepted so the historical `waterbirds_crp`
+study remains reproducible.
 
 ## Results
 

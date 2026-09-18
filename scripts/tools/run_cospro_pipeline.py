@@ -31,7 +31,7 @@ from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_roo
 from splice.settings import data_folder, wandb_entity
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
-    CrpAuditConfig,
+    CoSpRoAuditConfig,
     load_concept_groups_json,
     validate_cospro_config,
     validate_splice_dataset_cache,
@@ -168,11 +168,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     student.add_argument("--temp", type=float, default=0.05)
     student.add_argument("--simclr-weight", type=float, default=1.0)
     student.add_argument("--splice-weight", type=float, default=0.5)
-    student.add_argument("--cospro-temperature", "--crp-temperature", dest="crp_temperature", type=float, default=0.25)
-    student.add_argument("--cospro-start-epoch", "--crp-start-epoch", dest="crp_start_epoch", type=int, default=10)
-    student.add_argument("--cospro-warmup-epochs", "--crp-warmup-epochs", dest="crp_warmup_epochs", type=int, default=10)
-    student.add_argument("--cospro-decay-start-epoch", "--crp-decay-start-epoch", dest="crp_decay_start_epoch", type=int, default=0)
-    student.add_argument("--cospro-decay-end-epoch", "--crp-decay-end-epoch", dest="crp_decay_end_epoch", type=int, default=0)
+    student.add_argument("--cospro-temperature", "--crp-temperature", dest="cospro_temperature", type=float, default=0.25)
+    student.add_argument("--cospro-start-epoch", "--crp-start-epoch", dest="cospro_start_epoch", type=int, default=10)
+    student.add_argument("--cospro-warmup-epochs", "--crp-warmup-epochs", dest="cospro_warmup_epochs", type=int, default=10)
+    student.add_argument("--cospro-decay-start-epoch", "--crp-decay-start-epoch", dest="cospro_decay_start_epoch", type=int, default=0)
+    student.add_argument("--cospro-decay-end-epoch", "--crp-decay-end-epoch", dest="cospro_decay_end_epoch", type=int, default=0)
     student.add_argument("--ssl-crop-min", type=float, default=0.2)
     student.add_argument("--rank-eval-freq", type=int, default=100)
     student.add_argument("--print-freq", type=int, default=10)
@@ -218,7 +218,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def _configs(args: argparse.Namespace) -> tuple[CrpAuditConfig, CrpAuditConfig]:
+def _configs(args: argparse.Namespace) -> tuple[CoSpRoAuditConfig, CoSpRoAuditConfig]:
     grouping = {
         "min_concept_frequency": args.min_concept_frequency,
         "max_concept_frequency": args.max_concept_frequency,
@@ -249,8 +249,8 @@ def _configs(args: argparse.Namespace) -> tuple[CrpAuditConfig, CrpAuditConfig]:
         "ann_bucket_size": args.ann_bucket_size,
     }
     return (
-        validate_cospro_config(CrpAuditConfig(**grouping)),
-        validate_cospro_config(CrpAuditConfig(**audit)),
+        validate_cospro_config(CoSpRoAuditConfig(**grouping)),
+        validate_cospro_config(CoSpRoAuditConfig(**audit)),
     )
 
 
@@ -287,11 +287,11 @@ def _student_manifest(args: argparse.Namespace, graph_path: Path) -> dict:
         "splice_mode": "cospro_relational",
         "splice_weight": args.splice_weight,
         "cospro_teacher_graph": str(graph_path),
-        "cospro_temperature": args.crp_temperature,
-        "cospro_start_epoch": args.crp_start_epoch,
-        "cospro_warmup_epochs": args.crp_warmup_epochs,
-        "cospro_decay_start_epoch": args.crp_decay_start_epoch,
-        "cospro_decay_end_epoch": args.crp_decay_end_epoch,
+        "cospro_temperature": args.cospro_temperature,
+        "cospro_start_epoch": args.cospro_start_epoch,
+        "cospro_warmup_epochs": args.cospro_warmup_epochs,
+        "cospro_decay_start_epoch": args.cospro_decay_start_epoch,
+        "cospro_decay_end_epoch": args.cospro_decay_end_epoch,
         "rank_eval_freq": args.rank_eval_freq,
         "print_freq": args.print_freq,
         "save_freq": args.save_freq,

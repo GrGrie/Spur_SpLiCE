@@ -10,8 +10,8 @@ import torch
 from sklearn.linear_model import LogisticRegression
 
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
-from scripts.tools.build_crp_baseline_graphs import build_matched_raw_clip_graph
-from splice.cospro_training import CrpGraphBatchSampler, validate_teacher_graph
+from scripts.tools.build_cospro_baseline_graphs import build_matched_raw_clip_graph
+from splice.cospro_training import CoSpRoGraphBatchSampler, validate_teacher_graph
 
 
 def data():
@@ -66,7 +66,7 @@ class LogisticProbeTests(unittest.TestCase):
         raw = build_matched_raw_clip_graph(cache, reference)
         validate_teacher_graph(raw)
         torch.testing.assert_close((raw["neighbor_indices"] >= 0).sum(1), (indices >= 0).sum(1))
-        sampler = CrpGraphBatchSampler(indices, weights, 4, torch.Generator().manual_seed(0))
+        sampler = CoSpRoGraphBatchSampler(indices, weights, 4, torch.Generator().manual_seed(0))
         self.assertEqual(sorted(sum(list(sampler), [])), list(range(8)))
 
     def test_probe_entry_saves_metrics(self):

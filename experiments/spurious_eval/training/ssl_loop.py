@@ -58,7 +58,7 @@ def simclr_forward_loss(
         loss = simclr_loss
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
     if splice_regularizer is not None:
-        if getattr(splice_regularizer, "requires_crp_indices", False):
+        if getattr(splice_regularizer, "requires_graph_indices", False):
             if sample_indices is None:
                 raise ValueError("CoSpRo relational regularization requires graph-row sample indices.")
             splice_loss = splice_regularizer(embeddings, sample_indices)
@@ -126,9 +126,9 @@ def train_one_epoch(
         if args.channels_last and str(args.device).startswith("cuda"):
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
-        crp_training = getattr(splice_regularizer, "requires_crp_indices", False)
+        graph_training = getattr(splice_regularizer, "requires_graph_indices", False)
         concept_transfer = getattr(splice_regularizer, "requires_concept_transfer", False)
-        sample_indices = data[1] if (crp_training or concept_transfer) else None
+        sample_indices = data[1] if (graph_training or concept_transfer) else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(

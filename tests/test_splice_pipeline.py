@@ -20,7 +20,7 @@ from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
 from splice.cospro import (
-    CrpAuditConfig,
+    CoSpRoAuditConfig,
     build_concept_groups,
     build_teacher_graph,
     load_concept_groups_json,
@@ -33,10 +33,10 @@ from splice.cospro import (
 )
 from splice.cospro_reporting import render_concept_groups_report, render_teacher_graph_report
 from splice.cospro_training import (
-    CrpGraphBatchSampler,
-    CrpRelationalRegularizer,
-    IndexedCrpDataset,
-    build_crp_concept_report,
+    CoSpRoGraphBatchSampler,
+    CoSpRoRelationalRegularizer,
+    IndexedCoSpRoDataset,
+    build_cospro_concept_report,
     validate_teacher_graph,
 )
 from splice.model import SPLICE
@@ -88,8 +88,8 @@ class SplicePipelineTests(unittest.TestCase):
 
     def test_nondefault_grouping_settings_get_a_distinct_artifact_directory(self):
         root = Path("groups")
-        default = concept_group_directory(root, CrpAuditConfig())
-        changed = concept_group_directory(root, CrpAuditConfig(min_concept_frequency=0.02))
+        default = concept_group_directory(root, CoSpRoAuditConfig())
+        changed = concept_group_directory(root, CoSpRoAuditConfig(min_concept_frequency=0.02))
         self.assertNotEqual(default, changed)
         self.assertTrue(changed.name.startswith(default.name + "_config_"))
 
@@ -138,7 +138,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(first, second)
 
     def test_concept_group_report_does_not_hide_missing_images(self):
-        config = CrpAuditConfig(
+        config = CoSpRoAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             text_similarity_threshold=0.0,
@@ -168,7 +168,7 @@ class SplicePipelineTests(unittest.TestCase):
         cache = self._tiny_splice_dataset_cache()
         cache["provenance"] = {"dataset": "tiny"}
         cache["sample_ids"] = [f"tiny:{index}" for index in range(8)]
-        config = CrpAuditConfig(
+        config = CoSpRoAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             text_similarity_threshold=0.0,
@@ -192,7 +192,7 @@ class SplicePipelineTests(unittest.TestCase):
             self.assertIn("<img ", report)
             self.assertNotIn("image<br>unavailable", report)
 
-    def test_crp_group_sweep_accepts_bracketed_threshold_lists(self):
+    def test_cospro_group_sweep_accepts_bracketed_threshold_lists(self):
         args = parse_cospro_concept_groups_args(
             [
                 "--splice-dataset-cache", "cache.pt",
@@ -283,7 +283,7 @@ class SplicePipelineTests(unittest.TestCase):
 
         }
 
-    def test_crp_projection_removes_the_full_group_subspace(self):
+    def test_cospro_projection_removes_the_full_group_subspace(self):
         basis = orthonormal_basis(torch.tensor([[1.0, 0.0, 0.0], [1.0, 1e-9, 0.0]]))
         self.assertEqual(tuple(basis.shape), (3, 1))
         embeddings = torch.tensor([[0.6, 0.0, 0.8], [0.0, 0.6, 0.8]])
@@ -313,7 +313,7 @@ class SplicePipelineTests(unittest.TestCase):
     def test_concept_groups_are_reusable_and_include_the_complete_census(self):
         cache = self._tiny_splice_dataset_cache()
         cache["vocabulary"] = ["concept", "concepts"]
-        config = CrpAuditConfig(min_concept_frequency=0.1, max_concept_frequency=0.9)
+        config = CoSpRoAuditConfig(min_concept_frequency=0.1, max_concept_frequency=0.9)
         artifact = build_concept_groups(cache, config)
         diagnostics = artifact["diagnostics"]
 
@@ -387,7 +387,7 @@ class SplicePipelineTests(unittest.TestCase):
         cache["vocabulary"] = ["inactive", "rare", "kept", "ubiquitous"]
         artifact = build_concept_groups(
             cache,
-            CrpAuditConfig(min_concept_frequency=0.25, max_concept_frequency=0.75),
+            CoSpRoAuditConfig(min_concept_frequency=0.25, max_concept_frequency=0.75),
         )
         report = artifact["report_diagnostics"]
         self.assertEqual(
@@ -471,8 +471,8 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertEqual(images[0], (2, "image-2"))
         self.assertEqual(dataset.asserted_split, "train")
 
-    def test_crp_audit_is_deterministic_and_exports_row_stochastic_graph(self):
-        config = CrpAuditConfig(
+    def test_cospro_audit_is_deterministic_and_exports_row_stochastic_graph(self):
+        config = CoSpRoAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
@@ -512,7 +512,7 @@ class SplicePipelineTests(unittest.TestCase):
             self.assertIn("Final graph statistics", html)
 
     def test_teacher_audit_resumes_atomic_per_group_checkpoints(self):
-        config = CrpAuditConfig(
+        config = CoSpRoAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
@@ -537,8 +537,8 @@ class SplicePipelineTests(unittest.TestCase):
             torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
             torch.testing.assert_close(first["weights"], second["weights"])
 
-    def test_crp_audit_can_cap_null_passing_groups_without_labels(self):
-        config = CrpAuditConfig(
+    def test_cospro_audit_can_cap_null_passing_groups_without_labels(self):
+        config = CoSpRoAuditConfig(
             min_concept_frequency=0.1,
             max_concept_frequency=0.9,
             projected_neighbors=3,
@@ -554,7 +554,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertLessEqual(len(graph["selected_group_ids"]), 1)
         self.assertEqual(graph["config"]["max_selected_groups"], 1)
 
-    def test_crp_teacher_graph_is_bound_to_exact_training_order(self):
+    def test_cospro_teacher_graph_is_bound_to_exact_training_order(self):
         graph = validate_teacher_graph(
             self._tiny_teacher_graph(),
             [f"waterbirds:{index}" for index in range(4)],
@@ -563,7 +563,7 @@ class SplicePipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "do not exactly match"):
             validate_teacher_graph(graph, ["waterbirds:1", "waterbirds:0", "waterbirds:2", "waterbirds:3"])
 
-    def test_crp_teacher_graph_rejects_hidden_annotations(self):
+    def test_cospro_teacher_graph_rejects_hidden_annotations(self):
         graph = self._tiny_teacher_graph()
         graph["provenance"] = {"labels": [0, 1, 0, 1]}
         with self.assertRaisesRegex(ValueError, "forbidden annotation"):
@@ -593,9 +593,9 @@ class SplicePipelineTests(unittest.TestCase):
         validated = validate_teacher_graph(graph)
         self.assertEqual(validated["artifact"], "splice_semantic_splice_matched_teacher_graph")
 
-    def test_crp_batch_sampler_visits_every_anchor_and_adds_graph_donors(self):
+    def test_cospro_batch_sampler_visits_every_anchor_and_adds_graph_donors(self):
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        sampler = CrpGraphBatchSampler(
+        sampler = CoSpRoGraphBatchSampler(
             graph["neighbor_indices"],
             graph["weights"],
             batch_size=4,
@@ -615,7 +615,7 @@ class SplicePipelineTests(unittest.TestCase):
             )
         )
 
-    def test_crp_training_dataset_does_not_read_labels_or_metadata(self):
+    def test_cospro_training_dataset_does_not_read_labels_or_metadata(self):
         class ImagesOnlySource:
             def get_input(self, index):
                 return f"image-{index}"
@@ -632,12 +632,12 @@ class SplicePipelineTests(unittest.TestCase):
             def __getitem__(self, index):
                 raise AssertionError("CRP training must bypass annotation-returning __getitem__.")
 
-        dataset = IndexedCrpDataset(AnnotationReturningSubset())
+        dataset = IndexedCoSpRoDataset(AnnotationReturningSubset())
         self.assertEqual(dataset[1], (["view-a:image-9", "view-b:image-9"], 1))
 
-    def test_crp_relational_loss_prefers_teacher_aligned_student_geometry(self):
+    def test_cospro_relational_loss_prefers_teacher_aligned_student_geometry(self):
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=1.0, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         regularizer.set_epoch(1)
@@ -649,9 +649,9 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(aligned_loss))
         self.assertLess(float(aligned_loss), float(misaligned_loss))
 
-    def test_crp_schedule_has_pure_simclr_start_and_linear_ramp(self):
+    def test_cospro_schedule_has_pure_simclr_start_and_linear_ramp(self):
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=0.2, temperature=0.1, start_epoch=2, warmup_epochs=2
         )
         regularizer.set_epoch(2)
@@ -661,9 +661,9 @@ class SplicePipelineTests(unittest.TestCase):
         regularizer.set_epoch(4)
         self.assertAlmostEqual(regularizer.scheduled_weight, 0.2)
 
-    def test_crp_schedule_decays_to_zero(self):
+    def test_cospro_schedule_decays_to_zero(self):
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph,
             weight=0.2,
             temperature=0.1,
@@ -679,7 +679,7 @@ class SplicePipelineTests(unittest.TestCase):
         regularizer.set_epoch(8)
         self.assertEqual(regularizer.scheduled_weight, 0.0)
 
-    def test_crp_concept_report_ranks_graph_usage(self):
+    def test_cospro_concept_report_ranks_graph_usage(self):
         graph = self._tiny_teacher_graph()
         graph.update(
             {
@@ -708,19 +708,19 @@ class SplicePipelineTests(unittest.TestCase):
                 ],
             }
         )
-        report = build_crp_concept_report(graph)
+        report = build_cospro_concept_report(graph)
         self.assertEqual(report["teacher_projected_concepts"], ["concept_a", "concept_b"])
         self.assertEqual(report["important_concepts"][0]["concept"], "concept_a")
         self.assertAlmostEqual(report["groups"][0]["training_evidence_mass"], 1.4, places=6)
 
-    def test_empty_crp_graph_regularizer_has_zero_loss(self):
+    def test_empty_cospro_graph_regularizer_has_zero_loss(self):
         graph = self._tiny_teacher_graph()
         graph["neighbor_indices"] = torch.full((4, 2), -1)
         graph["weights"] = torch.zeros(4, 2)
         graph["confidence"] = torch.zeros(4)
         graph["anchor_confidence"] = torch.zeros(4)
         graph = validate_teacher_graph(graph)
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         regularizer.set_epoch(1)
@@ -745,8 +745,8 @@ class SplicePipelineTests(unittest.TestCase):
             batch_size=2,
             num_workers=0,
             seed=0,
-            crp_teacher_graph=str(Path(tempfile.gettempdir()) / "splice_test_empty_graph.json"),
-            crp_graph_fingerprint="digest",
+            cospro_teacher_graph=str(Path(tempfile.gettempdir()) / "splice_test_empty_graph.json"),
+            cospro_graph_fingerprint="digest",
             splice_score_threshold=None,
             splice_score_quantile=0.75,
             splice_routing_mode="semantic",
@@ -761,15 +761,15 @@ class SplicePipelineTests(unittest.TestCase):
             patch.object(spur_splice, "build_dataset_config", return_value={}),
             patch.object(spur_splice, "make_dataloader_kwargs", return_value={}),
             patch.object(spur_splice, "load_teacher_graph", return_value=(graph, "digest")),
-            patch.object(spur_splice, "build_crp_training_loader") as build_crp_loader,
+            patch.object(spur_splice, "build_cospro_training_loader") as build_graph_loader,
         ):
             result = spur_splice.build_ssl_loader(args)
 
         self.assertIs(result, loader)
         self.assertTrue(args.relational_graph_empty)
-        build_crp_loader.assert_not_called()
+        build_graph_loader.assert_not_called()
 
-    def test_crp_relational_loss_reaches_simclr_encoder(self):
+    def test_cospro_relational_loss_reaches_simclr_encoder(self):
         class TinyEncoder(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -777,7 +777,7 @@ class SplicePipelineTests(unittest.TestCase):
                 self.head = torch.nn.Linear(3, 2)
 
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         regularizer.set_epoch(1)
@@ -803,7 +803,7 @@ class SplicePipelineTests(unittest.TestCase):
                 self.head = torch.nn.Linear(3, 2)
 
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=1.0, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         regularizer.set_epoch(1)
@@ -825,7 +825,7 @@ class SplicePipelineTests(unittest.TestCase):
         self.assertGreater(regularizer.last_diagnostics["supported_anchor_fraction"], 0.0)
         self.assertGreaterEqual(regularizer.last_diagnostics["unweighted_kl"], 0.0)
 
-    def test_crp_label_free_batch_runs_through_training_loop(self):
+    def test_cospro_label_free_batch_runs_through_training_loop(self):
         class TinyEncoder(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -841,7 +841,7 @@ class SplicePipelineTests(unittest.TestCase):
                 return [image, image + 0.01], index
 
         graph = validate_teacher_graph(self._tiny_teacher_graph())
-        regularizer = CrpRelationalRegularizer(
+        regularizer = CoSpRoRelationalRegularizer(
             graph, weight=0.1, temperature=0.1, start_epoch=0, warmup_epochs=0
         )
         model = TinyEncoder()

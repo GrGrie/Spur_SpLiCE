@@ -93,7 +93,7 @@ class SubmissionFigureTests(unittest.TestCase):
 
     def test_cache_discovery_finds_pairs_outside_old_manifest(self):
         import torch
-        from splice.cospro import CrpAuditConfig, build_teacher_graph, build_concept_groups
+        from splice.cospro import CoSpRoAuditConfig, build_teacher_graph, build_concept_groups
         torch.manual_seed(42)
         n, k = 24, 4
         codes = torch.rand(n, k)
@@ -102,7 +102,7 @@ class SubmissionFigureTests(unittest.TestCase):
                      splice_codes=codes, dictionary=torch.eye(k), image_mean=torch.zeros(k),
                      vocabulary=[f'concept{i}' for i in range(k)])
         metadata = [dict(y=str((i//2)%2), place=str(i%2), split='0') for i in range(n)]
-        config = CrpAuditConfig(projected_neighbors=5, null_trials=2, null_quantile=0.,
+        config = CoSpRoAuditConfig(projected_neighbors=5, null_trials=2, null_quantile=0.,
                                 min_coverage=0., max_concept_frequency=1.,
                                 max_selected_groups=4, text_similarity_threshold=.99)
         graph = build_teacher_graph(cache, build_concept_groups(cache, config), config, device='cpu')

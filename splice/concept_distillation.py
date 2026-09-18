@@ -80,7 +80,7 @@ class ConceptDistillationRegularizer:
 
     enabled = True
     requires_concept_transfer = True
-    requires_crp_indices = False
+    requires_graph_indices = False
     requires_clip_distillation = True
 
     def __init__(self, targets: dict, target_kind: str, weight: float, start_epoch: int, warmup_epochs: int) -> None:

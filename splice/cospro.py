@@ -21,6 +21,7 @@ from typing import Any, Sequence
 import torch
 import torch.nn.functional as F
 
+from splice.compat import LEGACY_CONCEPT_GROUP_ARTIFACTS
 from splice.graph_io import save_graph_json
 
 
@@ -29,10 +30,9 @@ CONCEPT_GROUPS_VERSION = 1
 # GRAPH_VERSION remains the legacy v2 format. CoSpRo v3 has its own version
 # because its fixed-density and validation fields are method changes.
 GRAPH_VERSION = 2
-CRP_GRAPH_VERSION = 3
+COSPRO_GRAPH_VERSION = 3
 COSPRO_CONCEPT_GROUP_ARTIFACT = "cospro_concept_groups_v1"
 COSPRO_TEACHER_GRAPH_ARTIFACT = "cospro_teacher_graph_v3"
-LEGACY_CONCEPT_GROUP_ARTIFACTS = {"splice_crp_concept_groups"}
 GROUPING_CONFIG_FIELDS = (
     "min_concept_frequency",
     "max_concept_frequency",
@@ -68,7 +68,7 @@ FORBIDDEN_CACHE_KEYS = {
 
 
 @dataclass(frozen=True)
-class CrpAuditConfig:
+class CoSpRoAuditConfig:
     min_concept_frequency: float = 0.01
     max_concept_frequency: float = 0.95
     text_similarity_threshold: float = 0.82
@@ -82,7 +82,7 @@ class CrpAuditConfig:
     graph_top_k: int = 3
     max_indegree: int = 10
     # Retained as a legacy fallback for callers constructing a config without
-    # max_indegree; CRPv3 uses the absolute cap above.
+    # max_indegree; CoSpRo v3 uses the absolute cap above.
     indegree_factor: float = 3.0
     null_trials: int = 16
     null_quantile: float = 0.95
@@ -100,7 +100,7 @@ class CrpAuditConfig:
     ann_bucket_size: int = 512
 
 
-def _validate_config(config: CrpAuditConfig) -> None:
+def _validate_config(config: CoSpRoAuditConfig) -> None:
     boolean_fields = {
         "use_residual_splice_gate": config.use_residual_splice_gate,
     }
@@ -139,16 +139,12 @@ def _validate_config(config: CrpAuditConfig) -> None:
         raise ValueError("neighbor_backend must be one of: auto, exact, lsh.")
 
 
-def validate_crp_config(config: CrpAuditConfig) -> CrpAuditConfig:
+def validate_cospro_config(config: CoSpRoAuditConfig) -> CoSpRoAuditConfig:
     """Validate a complete grouping/audit configuration and return it unchanged."""
 
     _validate_config(config)
     return config
 
-
-# Canonical public spelling; the old name remains for callers and serialized
-# option dictionaries created before the method was named CoSpRo consistently.
-validate_cospro_config = validate_crp_config
 
 
 def _normalized_rows(values: torch.Tensor, name: str) -> torch.Tensor:
@@ -266,7 +262,7 @@ class _DisjointSet:
 
 def _active_concept_indices(
     codes: torch.Tensor,
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     sample_weights: torch.Tensor | None = None,
 ) -> list[int]:
     occurrences = (codes > 0).float()
@@ -285,7 +281,7 @@ def _group_concepts(
     codes: torch.Tensor,
     dictionary: torch.Tensor,
     vocabulary: Sequence[str],
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     sample_weights: torch.Tensor | None = None,
 ) -> list[list[int]]:
     """Group active concepts using text, coactivation, and lexical evidence."""
@@ -346,7 +342,7 @@ def _group_concepts(
     )
 
 
-def _grouping_config(config: CrpAuditConfig) -> dict:
+def _grouping_config(config: CoSpRoAuditConfig) -> dict:
     values = asdict(config)
     return {name: values[name] for name in GROUPING_CONFIG_FIELDS}
 
@@ -386,7 +382,7 @@ def _concept_group_diagnostics(groups: Sequence[dict], active_count: int) -> dic
 def _concept_group_report_diagnostics(
     cache: dict,
     groups: Sequence[dict],
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     representative_count: int = 5,
 ) -> dict:
     """Collect grouping evidence for the human-facing report without changing grouping."""
@@ -511,7 +507,7 @@ def _concept_group_report_diagnostics(
     }
 
 
-def build_concept_groups(splice_dataset_cache: dict, config: CrpAuditConfig) -> dict:
+def build_concept_groups(splice_dataset_cache: dict, config: CoSpRoAuditConfig) -> dict:
     """Generate reusable concept groups from a frozen SpLiCE dataset cache."""
 
     _validate_config(config)
@@ -864,7 +860,7 @@ def _residual_splice_similarity(
 def _neighbor_geometry(
     audit: _AuditGeometry,
     basis: torch.Tensor,
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     *,
     search_seed: int,
 ) -> dict:
@@ -909,7 +905,7 @@ def _neighbor_geometry(
 def _relation_geometry(
     audit: _AuditGeometry,
     neighbour_geometry: dict,
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     excluded_concept_indices: Sequence[int],
 ) -> dict:
     projected_similarity = neighbour_geometry["projected_similarity"]
@@ -929,7 +925,7 @@ def _relation_geometry(
     }
 
 
-def _score_relations(geometry: dict, activation: torch.Tensor, config: CrpAuditConfig) -> dict:
+def _score_relations(geometry: dict, activation: torch.Tensor, config: CoSpRoAuditConfig) -> dict:
     anchors = geometry["anchors"]
     neighbours = geometry["neighbours"]
     gain = geometry["gain"]
@@ -1006,7 +1002,7 @@ def _null_scores(
     group_geometry: dict,
     random_geometries: Sequence[dict],
     activation: torch.Tensor,
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     generator: torch.Generator,
 ) -> tuple[list[float], list[float]]:
     random_scores = [
@@ -1023,7 +1019,7 @@ def _null_scores(
 def _build_teacher_graph(
     n_samples: int,
     selected: list[tuple[int, dict]],
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
 ) -> dict[str, torch.Tensor | dict]:
     candidates: dict[tuple[int, int], dict[str, float | int]] = {}
     for group_id, evidence in selected:
@@ -1116,7 +1112,7 @@ def _build_teacher_graph(
 def build_teacher_graph(
     splice_dataset_cache: dict,
     concept_groups: dict,
-    config: CrpAuditConfig,
+    config: CoSpRoAuditConfig,
     concept_groups_source: dict | None = None,
     *,
     device: str | torch.device = "auto",
@@ -1143,7 +1139,7 @@ def build_teacher_graph(
 
     config_values = asdict(config)
     config_values.update(concept_groups["config"])
-    config = CrpAuditConfig(**config_values)
+    config = CoSpRoAuditConfig(**config_values)
     _validate_config(config)
     if str(device) == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1404,7 +1400,7 @@ def build_teacher_graph(
     config_payload = asdict(config)
     return {
         "artifact": COSPRO_TEACHER_GRAPH_ARTIFACT,
-        "graph_version": CRP_GRAPH_VERSION,
+        "graph_version": COSPRO_GRAPH_VERSION,
         "cache_version": int(cache.get("cache_version", SPLICE_DATASET_CACHE_VERSION)),
         "sample_ids": cache["sample_ids"],
         "config": config_payload,
@@ -1464,7 +1460,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--concept-groups", required=True, help="Reusable concept_groups.json artifact.")
     parser.add_argument("--output", required=True, help="Complete teacher graph output (.json).")
     parser.add_argument("--html", help="HTML mechanism report (default: output with .html suffix).")
-    parser.add_argument("--config", help="Optional JSON object overriding CrpAuditConfig fields.")
+    parser.add_argument("--config", help="Optional JSON object overriding CoSpRoAuditConfig fields.")
     parser.add_argument("--seed", type=int, help="Override the null-control seed.")
     parser.add_argument("--device", default="auto", help="Neighbour-search device.")
     parser.add_argument("--neighbor-backend", choices=("auto", "exact", "lsh"))
@@ -1486,7 +1482,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     config_values = json.loads(args.config) if args.config else {}
-    unknown = set(config_values).difference(CrpAuditConfig.__dataclass_fields__)
+    unknown = set(config_values).difference(CoSpRoAuditConfig.__dataclass_fields__)
     if unknown:
         raise ValueError(f"Unknown CoSpRo audit settings: {sorted(unknown)}")
     if args.seed is not None:
@@ -1497,7 +1493,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_values[name] = value
     if args.use_residual_splice_gate is not None:
         config_values["use_residual_splice_gate"] = args.use_residual_splice_gate
-    config = CrpAuditConfig(**config_values)
+    config = CoSpRoAuditConfig(**config_values)
     cache_path = Path(args.splice_dataset_cache)
     groups_path, output_path = Path(args.concept_groups), Path(args.output)
     cache = torch.load(cache_path, map_location="cpu", weights_only=True)

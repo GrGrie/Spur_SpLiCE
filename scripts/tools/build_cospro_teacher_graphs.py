@@ -12,7 +12,7 @@ import torch
 
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
-    CrpAuditConfig,
+    CoSpRoAuditConfig,
     build_teacher_graph,
     load_concept_groups_json,
 )
@@ -39,7 +39,7 @@ def _artifact_paths(path: Path) -> list[Path]:
     return artifacts
 
 
-def audit_config_name(config: CrpAuditConfig) -> str:
+def audit_config_name(config: CoSpRoAuditConfig) -> str:
     values = {key: value for key, value in asdict(config).items() if key not in GROUPING_CONFIG_FIELDS}
     digest = hashlib.sha256(json.dumps(values, sort_keys=True).encode("utf-8")).hexdigest()[:8]
     quantile = str(config.null_quantile).replace(".", "p")
@@ -51,7 +51,7 @@ def audit_config_name(config: CrpAuditConfig) -> str:
 _audit_name = audit_config_name
 
 
-def teacher_graph_path(concept_groups_path: Path, config: CrpAuditConfig) -> Path:
+def teacher_graph_path(concept_groups_path: Path, config: CoSpRoAuditConfig) -> Path:
     """Return the graph path produced for an exact concept-group artifact."""
 
     return concept_groups_path.parent / "teacher_graphs" / audit_config_name(config) / "teacher_graph.json"
@@ -95,7 +95,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     config_values = json.loads(args.config) if args.config else {}
-    unknown = set(config_values).difference(CrpAuditConfig.__dataclass_fields__)
+    unknown = set(config_values).difference(CoSpRoAuditConfig.__dataclass_fields__)
     if unknown:
         raise ValueError(f"Unknown CoSpRo audit settings: {sorted(unknown)}")
     grouping_overrides = set(config_values).intersection(GROUPING_CONFIG_FIELDS)
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> None:
         value = getattr(args, name)
         if value is not None:
             config_values[name] = value
-    config = CrpAuditConfig(**config_values)
+    config = CoSpRoAuditConfig(**config_values)
     cache = torch.load(args.splice_dataset_cache, map_location="cpu", weights_only=True)
     artifacts = _artifact_paths(args.concept_groups)
     for artifact_path in artifacts:

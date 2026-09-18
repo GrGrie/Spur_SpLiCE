@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from splice.artifacts import binary_destination, tensor_payload_bytes
+from splice.compat import saved_graph_fingerprint
 
 
 def _artifact_identity(args) -> dict[str, object] | None:
@@ -66,24 +67,19 @@ def load_checkpoint(
     device: torch.device,
     scaler=None,
     loader_generator: torch.Generator | None = None,
-    expected_crp_graph_fingerprint: str | None = None,
+    expected_cospro_graph_fingerprint: str | None = None,
     training_state=None,
 ) -> int:
     try:
         checkpoint = torch.load(path, map_location=device, weights_only=False)
     except TypeError:
         checkpoint = torch.load(path, map_location=device)
-    if expected_crp_graph_fingerprint is not None:
-        saved_options = checkpoint.get("opt")
-        saved_fingerprint = (
-            saved_options.get("crp_graph_fingerprint")
-            if isinstance(saved_options, dict)
-            else getattr(saved_options, "crp_graph_fingerprint", None)
-        )
-        if saved_fingerprint != expected_crp_graph_fingerprint:
+    if expected_cospro_graph_fingerprint is not None:
+        saved_fingerprint = saved_graph_fingerprint(checkpoint.get("opt") or {})
+        if saved_fingerprint != expected_cospro_graph_fingerprint:
             raise ValueError(
                 "Cannot resume CoSpRo training with a different teacher graph: "
-                f"checkpoint={saved_fingerprint!r}, current={expected_crp_graph_fingerprint!r}."
+                f"checkpoint={saved_fingerprint!r}, current={expected_cospro_graph_fingerprint!r}."
             )
     if training_state is not None:
         if checkpoint.get("training_state") is None:

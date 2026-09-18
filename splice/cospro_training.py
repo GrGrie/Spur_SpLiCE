@@ -13,10 +13,11 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 
 from splice.cospro import (
     COSPRO_TEACHER_GRAPH_ARTIFACT,
-    CRP_GRAPH_VERSION,
-    CrpAuditConfig,
+    COSPRO_GRAPH_VERSION,
+    CoSpRoAuditConfig,
     GRAPH_VERSION,
 )
+from splice.compat import LEGACY_TEACHER_GRAPH_ARTIFACTS
 from splice.graph_io import graph_fingerprint, load_graph_json
 
 
@@ -24,8 +25,7 @@ TEACHER_GRAPH_ARTIFACTS = {
     COSPRO_TEACHER_GRAPH_ARTIFACT,
     "splice_raw_clip_matched_teacher_graph",
     "splice_semantic_splice_matched_teacher_graph",
-    "splice_crp_v2_teacher_graph",
-    "splice_crp_v3_teacher_graph",
+    *LEGACY_TEACHER_GRAPH_ARTIFACTS,
 }
 
 LEGACY_DISABLED_CONFIG = {
@@ -87,17 +87,17 @@ def validate_teacher_graph(graph: dict, expected_sample_ids: Sequence[str] | Non
         }
         if enabled_legacy:
             raise ValueError(f"CoSpRo teacher graph uses removed CoBalT/spatial settings: {enabled_legacy}")
-        unsupported = set(config).difference(CrpAuditConfig.__dataclass_fields__).difference(LEGACY_DISABLED_CONFIG)
+        unsupported = set(config).difference(CoSpRoAuditConfig.__dataclass_fields__).difference(LEGACY_DISABLED_CONFIG)
         if unsupported:
             raise ValueError(f"CoSpRo teacher graph contains unsupported settings: {sorted(unsupported)}")
     if graph["artifact"] not in TEACHER_GRAPH_ARTIFACTS:
         raise ValueError(f"Unexpected relational teacher artifact type: {graph['artifact']!r}.")
     expected_versions = {
-        COSPRO_TEACHER_GRAPH_ARTIFACT: CRP_GRAPH_VERSION,
+        COSPRO_TEACHER_GRAPH_ARTIFACT: COSPRO_GRAPH_VERSION,
         "splice_raw_clip_matched_teacher_graph": 1,
         "splice_semantic_splice_matched_teacher_graph": 1,
         "splice_crp_v2_teacher_graph": GRAPH_VERSION,
-        "splice_crp_v3_teacher_graph": CRP_GRAPH_VERSION,
+        "splice_crp_v3_teacher_graph": COSPRO_GRAPH_VERSION,
     }
     expected_version = expected_versions[graph["artifact"]]
     version_ok = graph["graph_version"] == expected_version
@@ -178,14 +178,10 @@ def load_teacher_graph(
     return graph, graph_fingerprint(graph_path)
 
 
-def build_crp_concept_report(graph: dict) -> dict:
+def build_cospro_concept_report(graph: dict) -> dict:
     """Summarize which CoSpRo concepts actually contribute edges to SSL training."""
 
-    if graph.get("artifact") not in {
-        COSPRO_TEACHER_GRAPH_ARTIFACT,
-        "splice_crp_v2_teacher_graph",
-        "splice_crp_v3_teacher_graph",
-    }:
+    if graph.get("artifact") not in {COSPRO_TEACHER_GRAPH_ARTIFACT, *LEGACY_TEACHER_GRAPH_ARTIFACTS}:
         raise ValueError("CoSpRo concept reports require a CoSpRo teacher graph.")
     weights = torch.as_tensor(graph["weights"], dtype=torch.float32)
     group_ids = torch.as_tensor(
@@ -272,8 +268,8 @@ def build_crp_concept_report(graph: dict) -> dict:
     }
 
 
-def save_crp_concept_report(graph: dict, graph_path: str | Path) -> Path:
-    report = build_crp_concept_report(graph)
+def save_cospro_concept_report(graph: dict, graph_path: str | Path) -> Path:
+    report = build_cospro_concept_report(graph)
     source_path = Path(graph_path)
     output_path = source_path.with_name(f"{source_path.stem}.concepts.json")
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -282,7 +278,7 @@ def save_crp_concept_report(graph: dict, graph_path: str | Path) -> Path:
     return output_path
 
 
-class IndexedCrpDataset(Dataset):
+class IndexedCoSpRoDataset(Dataset):
     """Return augmented images and graph rows without reading annotations."""
 
     def __init__(self, dataset) -> None:
@@ -308,7 +304,7 @@ class IndexedCrpDataset(Dataset):
         return self.transform(image), int(index)
 
 
-class CrpGraphBatchSampler(Sampler[list[int]]):
+class CoSpRoGraphBatchSampler(Sampler[list[int]]):
     """Group anchors with weighted graph neighbours at fixed epoch cost.
 
     Every train sample occurs exactly once per epoch, matching the SimCLR
@@ -369,7 +365,7 @@ class CrpGraphBatchSampler(Sampler[list[int]]):
                 yield batch
 
 
-def build_crp_training_loader(
+def build_cospro_training_loader(
     dataset,
     graph: dict,
     batch_size: int,
@@ -377,8 +373,8 @@ def build_crp_training_loader(
     generator: torch.Generator,
     worker_init_fn=None,
 ) -> DataLoader:
-    indexed_dataset = IndexedCrpDataset(dataset)
-    batch_sampler = CrpGraphBatchSampler(
+    indexed_dataset = IndexedCoSpRoDataset(dataset)
+    batch_sampler = CoSpRoGraphBatchSampler(
         graph["neighbor_indices"],
         graph["weights"],
         batch_size,
@@ -393,16 +389,16 @@ def build_crp_training_loader(
         worker_init_fn=worker_init_fn if num_workers > 0 else None,
         generator=generator,
     )
-    loader.crp_graph = graph
+    loader.cospro_graph = graph
     return loader
 
 
-class CrpRelationalRegularizer:
+class CoSpRoRelationalRegularizer:
     """Confidence-weighted KL distillation from a fixed CoSpRo teacher graph."""
 
     enabled = True
     requires_clip_distillation = False
-    requires_crp_indices = True
+    requires_graph_indices = True
 
     def __init__(
         self,
