@@ -2,3 +2,6 @@
 # "$'\r': command not found" on the Slurm nodes, even when the file is edited on Windows.
 *.sbatch text eol=lf
 *.sh     text eol=lf
+
+# Fixtures whose exact bytes enter a fingerprint keep LF endings on every platform.
+tests/fixtures/storage_identity_graph.json -text
