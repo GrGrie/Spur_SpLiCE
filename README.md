@@ -25,7 +25,7 @@ student inference.
 
 See [PROJECT_MAP.md](PROJECT_MAP.md) for the data flow,
 [`docs/REPO_STRUCTURE.md`](docs/REPO_STRUCTURE.md) for the canonical storage
-policy, and `outputs/README.md` for result navigation.
+policy and `outputs/README.md` for result navigation.
 
 For the seed-2/4 semantic/direct-transfer completion launcher and the matched
 LA-SSL baseline, see [docs/SUBMISSION_RUNS.md](docs/SUBMISSION_RUNS.md).
@@ -53,6 +53,29 @@ probes:
 ```bash
 python -m experiments.runner experiments/manifests/waterbirds_cospro.yaml --task 0 --locked-test
 bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.yaml --locked-test
+```
+
+### Presets and sweeps
+
+Training options are declared once in `cospro/config/training.py`. Named presets in
+`cospro/config/presets.py` bundle recurring values; `cospro_student` is the CoSpRo
+student of the paper manifests:
+
+```bash
+python spur_splice.py --preset cospro_student --cospro_teacher_graph PATH --temp 0.1
+```
+
+Explicit options override the preset. A manifest can expand a grid of option values into
+arms with a `sweeps` block; each grid point becomes an arm named
+`prefix__option-value__option-value` that inherits the base arm:
+
+```yaml
+sweeps:
+  weight:
+    base: cospro
+    grid:
+      splice_weight: [0.25, 0.5, 1.0]
+      cospro_temperature: [0.1, 0.25]
 ```
 
 Locked-test runs default to the separate `locked-test` attempt ID; ordinary
@@ -122,7 +145,7 @@ Label-based metrics are post-hoc: they guide manual selection and stay out of au
 
 `scripts/run_cospro_pipeline.sh` defaults to CelebA and runs all five stages in
 order: frozen cache, one concept-group configuration, its teacher graph,
-student training, and final result collection. On Slurm, launch it once from
+student training and final result collection. On Slurm, launch it once from
 the repository root:
 
 ```bash
@@ -130,7 +153,7 @@ sbatch scripts/run_cospro_pipeline.sh
 ```
 
 `DATA_FOLDER` must resolve to either the CelebA directory itself or its parent;
-the adapter expects `list_attr_celeba.csv`, `list_eval_partition.csv`, and the
+the adapter expects `list_attr_celeba.csv`, `list_eval_partition.csv` and the
 `img_align_celeba/` image directory.
 
 For a local command or a cheap configuration check:
@@ -182,7 +205,7 @@ tree. Its historical source aggregate is `reports/paper/test_summary.json`
 inside the archived pre-unification artifact package.
 
 For this study, DONE means: a predeclared split/protocol, unique run identity,
-linked endpoint metrics, completed and converged status, and explicit limits.
+linked endpoint metrics, completed and converged status and explicit limits.
 It does not mean producing a new standalone report for every implementation
 detail or rerunning training when no scientific claim would change.
 

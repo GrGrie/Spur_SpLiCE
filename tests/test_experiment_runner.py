@@ -155,6 +155,53 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(output, base.parent / "attempt_0002")
             self.assertTrue((output / "execution.json").is_file())
 
+    SWEEP_MANIFEST = """
+name: study
+seeds: [1]
+common: {temp: 0.05}
+arms:
+  cospro:
+    flags: [use_wandb]
+    args: {splice_mode: cospro_relational, splice_weight: 0.5, cospro_teacher_graph: g.json}
+sweeps:
+  weight:
+    base: cospro
+    grid:
+      splice_weight: [0.25, 1.0]
+      cospro_temperature: [0.1, 0.25]
+"""
+
+    def _load_yaml(self, text: str) -> dict:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "study.yaml"
+            path.write_text(text, encoding="utf-8")
+            return load_manifest(path)
+
+    def test_sweeps_expand_into_one_arm_per_grid_point(self):
+        manifest = self._load_yaml(self.SWEEP_MANIFEST)
+        generated = [arm for arm in manifest["arms"] if arm.startswith("weight__")]
+        self.assertEqual(generated, [
+            "weight__splice_weight-0.25__cospro_temperature-0.1",
+            "weight__splice_weight-0.25__cospro_temperature-0.25",
+            "weight__splice_weight-1.0__cospro_temperature-0.1",
+            "weight__splice_weight-1.0__cospro_temperature-0.25",
+        ])
+        arm = manifest["arms"]["weight__splice_weight-1.0__cospro_temperature-0.1"]
+        self.assertEqual(arm["args"], {"splice_mode": "cospro_relational", "splice_weight": 1.0,
+                                       "cospro_teacher_graph": "g.json", "cospro_temperature": 0.1})
+        self.assertEqual(arm["flags"], ["use_wandb"])
+        self.assertEqual(len(matrix(manifest)), 5)
+        command, output = command_for(manifest, 1, "weight__splice_weight-1.0__cospro_temperature-0.1", "check")
+        self.assertEqual(command[command.index("--splice_weight") + 1], "1.0")
+        self.assertEqual(command[command.index("--cospro_temperature") + 1], "0.1")
+        self.assertEqual(output.parent.name, "weight__splice_weight-1.0__cospro_temperature-0.1")
+
+    def test_sweeps_reject_unknown_options_and_arms(self):
+        with self.assertRaisesRegex(ValueError, "unknown training options"):
+            self._load_yaml(self.SWEEP_MANIFEST.replace("cospro_temperature: [0.1, 0.25]", "cospro_temprature: [0.1]"))
+        with self.assertRaisesRegex(ValueError, "unknown base arm"):
+            self._load_yaml(self.SWEEP_MANIFEST.replace("base: cospro", "base: simclr"))
+
     def test_negative_task_id_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             manifest_path = Path(directory) / "manifest.json"

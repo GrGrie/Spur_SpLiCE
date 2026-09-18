@@ -107,8 +107,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 0 | Safety net: golden tests, packaging, CI, cluster smoke launcher | done, cluster-verified (jobs 23823481, 23823905) | `0c97c92`, `37d6096`, `08739b9` |
 | 1 | Conventions: SLURM lint, template, single sources for defaults and cluster identity, CRP→CoSpRo rename, layout of paper and tools, dead code | done | `567d70c` … `af0a346` |
 | 2 | Concept-group and teacher-graph diagnostics with dashboard | done; cache tier awaits a cluster run | `177fced` |
-| 3 | Typed configuration, presets, sweeps | **next** (design in section 6) | – |
-| 4 | `TrainingMethod` seam and W&B metric contract | planned | – |
+| 3 | Typed configuration, presets, sweeps | done | `aa8e738` … (see phase 3 notes) |
+| 4 | `TrainingMethod` seam and W&B metric contract | **next** | – |
 | 5 | Trainer, callbacks, storage policy | planned | – |
 | 6 | Dataset adapters | planned | – |
 | 7 | Linear probe as a library function | planned | – |
@@ -333,7 +333,36 @@ Record in Git: `outputs/reports/cospro_diagnostics/waterbirds/diagnostics.json` 
 Given the findings, the next sweep should vary selection (`max_selected_groups`, `null_quantile`) rather than the
 grouping thresholds.
 
-### Phase 3 — Typed configuration, presets and sweeps (next)
+### Phase 3 — Typed configuration, presets and sweeps (done)
+
+**Delivered (2026-09-18)**
+
+- `aa8e738` `.gitattributes` keeps every JSON file LF. Found while pinning: with `core.autocrlf` the
+  Windows checkout held CRLF JSON, so `graph_fingerprint` of the same teacher graph differed between
+  Windows (3 381 149 bytes for `crp_graph.json`) and the cluster (3 198 492 bytes). Resume across
+  machines would have refused the graph. After pulling this change on Windows, re-checkout JSON
+  files once: `git checkout -- '*.json'` in a clean tree.
+- `1b2e4bf` `tests/test_config_resolution.py` + `tests/golden/resolved_configs.json` (pinning first).
+- `6c5ab7a` `cospro/config/` (`options.py`, `training.py`, `presets.py`): fourteen sections, generated
+  parser, `normalize_training_options` (filesystem-free checks and derived values),
+  `TrainingConfig.from_namespace`, `--preset`. `spur_splice.parse_args(argv)` keeps the filesystem
+  checks and naming; `spur_splice.training_config(args)` returns the typed view.
+- `2527bc2` shared defaults: pipeline (grouping and audit from `CoSpRoAuditConfig`, student from the
+  preset), linear probe (`LINEAR_PROBE_DEFAULTS` derived from `ProbeOptions`), `run_training.sbatch`
+  (`--preset cospro_student`; the five `COSPRO_*` environment knobs are gone).
+- Runner `sweeps` block (`expand_sweeps` in `experiments/runner.py`) with tests.
+
+**Behaviour notes**
+
+- Filesystem checks (target bank, teacher graph) now run after all filesystem-free checks. With a
+  single error the message is identical; with two errors of different kinds the reported one can
+  differ from before.
+- `--preset` stays out of the resolved namespace, so a preset run shares its storage name with the
+  spelled-out equivalent (tested).
+- Sweep arm names come from option values; values that cannot form an arm name (paths) need explicit
+  arms. Unknown option names in a grid fail at manifest load.
+
+**Original design (kept for reference)**
 
 **Problem addressed**: P2, P3 (first half), P4 (CLI and validation part).
 

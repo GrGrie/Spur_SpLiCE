@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -48,7 +50,51 @@ def load_manifest(path: str | Path) -> dict:
         raise ValueError(f"Manifest is missing fields: {sorted(missing)}")
     if not manifest["seeds"] or not manifest["arms"]:
         raise ValueError("Manifest must contain at least one seed and arm.")
-    return manifest
+    return expand_sweeps(manifest)
+
+
+_ARM_TOKEN = re.compile(r"^[a-z0-9_.-]+$")
+
+
+def _sweep_token(value: object) -> str:
+    token = ("true" if value else "false") if isinstance(value, bool) else str(value).lower()
+    if not _ARM_TOKEN.fullmatch(token):
+        raise ValueError(f"Sweep value {value!r} cannot form an arm name; declare that arm explicitly.")
+    return token
+
+
+def expand_sweeps(manifest: dict) -> dict:
+    """Expand the optional ``sweeps`` block into one arm per grid point.
+
+    ``sweeps: {prefix: {base: ARM, grid: {option: [values, ...]}}}`` adds arms named
+    ``prefix__option-value__option-value`` whose arguments are the base arm's arguments overridden by
+    the grid point. Manifests without ``sweeps`` come back unchanged.
+    """
+
+    sweeps = manifest.get("sweeps")
+    if not sweeps:
+        return manifest
+    from cospro.config import training_defaults  # deferred: pulls in torch
+
+    options = set(training_defaults())
+    arms = dict(manifest["arms"])
+    for prefix, sweep in sweeps.items():
+        base_name, grid = sweep.get("base"), sweep.get("grid")
+        if base_name not in manifest["arms"]:
+            raise ValueError(f"Sweep {prefix!r} names an unknown base arm {base_name!r}.")
+        if not isinstance(grid, dict) or not grid or not all(isinstance(values, list) and values for values in grid.values()):
+            raise ValueError(f"Sweep {prefix!r} needs a grid of non-empty value lists.")
+        unknown = sorted(set(grid) - options)
+        if unknown:
+            raise ValueError(f"Sweep {prefix!r} varies unknown training options: {unknown}.")
+        base = manifest["arms"][base_name]
+        keys = list(grid)
+        for point in itertools.product(*(grid[key] for key in keys)):
+            name = "__".join([_sweep_token(prefix)] + [f"{key}-{_sweep_token(value)}" for key, value in zip(keys, point)])
+            if name in arms:
+                raise ValueError(f"Sweep {prefix!r} generates arm {name!r}, which already exists.")
+            arms[name] = {**base, "args": {**base.get("args", {}), **dict(zip(keys, point))}}
+    return {**manifest, "arms": arms}
 
 
 def matrix(manifest: dict) -> list[tuple[int, str]]:
