@@ -6,6 +6,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
 #SBATCH --time=04:00:00
+#SBATCH --output=outputs/SLURM/legacy_archive_%j.out
+#SBATCH --error=outputs/SLURM/legacy_archive_%j.err
 
 set -euo pipefail
 

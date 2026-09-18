@@ -6,6 +6,8 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=40G
 #SBATCH --time=04:00:00
+#SBATCH --output=outputs/SLURM/migrate_outputs_%j.out
+#SBATCH --error=outputs/SLURM/migrate_outputs_%j.err
 
 set -euo pipefail
 
