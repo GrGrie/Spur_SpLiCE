@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
-import math
 import os
 import platform
 import random
@@ -21,14 +20,8 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from experiments.spurious_eval import linear_probe
-from experiments.spurious_eval.datasets.registry import (
-    CANONICAL_DATASET_REGISTRY,
-    DATASET_REGISTRY,
-    canonical_dataset_name,
-)
-from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
+from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
-from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
@@ -44,264 +37,39 @@ from splice.cospro_training import (
     load_teacher_graph,
     save_cospro_concept_report,
 )
-from splice.compat import LEGACY_RELATIONAL_MODE, LEGACY_TEACHER_GRAPH_ARTIFACTS, with_legacy_option_names
+from cospro.config.options import ConfigError, str_to_bool  # noqa: F401  (str_to_bool re-exported)
+from cospro.config.training import (
+    RELATIONAL_GRAPH_MODES,
+    TrainingConfig,
+    build_training_parser,
+    normalize_training_options,
+    parse_training_arguments,
+    resolve_epoch_schedule,  # noqa: F401  (re-exported for callers of spur_splice)
+)
+from splice.compat import LEGACY_TEACHER_GRAPH_ARTIFACTS, with_legacy_option_names
 from splice.graph_io import graph_fingerprint
 from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
 from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
 from splice.run_recording import RunRecorder, portable_json
-from splice.settings import wandb_entity
 from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
 
-RELATIONAL_GRAPH_MODES = {"cospro_relational", LEGACY_RELATIONAL_MODE}
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Resolve the command line into the flat training namespace.
 
-def str_to_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    value = str(value).lower()
-    if value in {"true", "1", "yes", "y"}:
-        return True
-    if value in {"false", "0", "no", "n"}:
-        return False
-    raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}")
+    Options, defaults and filesystem-free checks live in :mod:`cospro.config.training`; this function
+    adds the checks that read files (teacher graph, target bank) and the run naming.
+    """
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Spur_SpLiCE SimCLR SSL training")
-    parser.add_argument("--print_freq", type=int, default=10)
-    parser.add_argument("--save_freq", type=int, default=50, help="Checkpoint frequency when --keep_checkpoints is enabled.")
-    parser.add_argument(
-        "--rank_eval_freq",
-        type=int,
-        default=100,
-        help="Compute full-dataset representation-rank metrics every N epochs; 0 disables them.",
-    )
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--num_workers", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=500)
-
-    parser.add_argument("--learning_rate", type=float, default=0.01)
-    parser.add_argument(
-        "--lr_decay_epochs",
-        type=str,
-        default="auto",
-        help="Comma-separated SSL LR milestones, or 'auto' for 70%%, 80%%, and 90%% of --epochs.",
-    )
-    parser.add_argument("--lr_decay_rate", type=float, default=0.1)
-    parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--optimizer", type=str, default="SGD", choices=["SGD", "AdamW"])
-
-    parser.add_argument(
-        "--dataset",
-        type=canonical_dataset_name,
-        default="waterbirds",
-        choices=sorted(CANONICAL_DATASET_REGISTRY),
-    )
-    parser.add_argument("--data_folder", type=str, default="./datasets")
-    parser.add_argument("--model", type=str, default=None, choices=SSL_RESNET_MODEL_NAMES)
-    parser.add_argument("--head", type=str, default="mlp", choices=["linear", "mlp", "identity"])
-    parser.add_argument("--feat_dim", type=int, default=128)
-    parser.add_argument("--temp", type=float, default=0.5)
-    parser.add_argument(
-        "--simclr_weight",
-        type=float,
-        default=1.0,
-        help="Weight of the SimCLR/NT-Xent objective. Set to 0 only for relational KL-only ablations.",
-    )
-    parser.add_argument("--ssl_crop_min", "--ssl-crop-min", dest="ssl_crop_min", type=float, default=0.2)
-
-    parser.add_argument("--cosine", action="store_true")
-    parser.add_argument("--warm", action="store_true")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--amp", type=str_to_bool, nargs="?", const=True, default=True)
-    parser.add_argument("--channels_last", type=str_to_bool, nargs="?", const=True, default=True)
-    parser.add_argument(
-        "--cudnn_enabled",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Enable cuDNN for SimCLR training. SpLiCE scoring still starts with cuDNN disabled.",
-    )
-    parser.add_argument("--cudnn_benchmark", type=str_to_bool, nargs="?", const=True, default=False)
-    parser.add_argument("--checkpoint_dir", type=str, default=None)
-    parser.add_argument("--artifact_dir", type=str, default="")
-    parser.add_argument("--study", type=str, default="adhoc")
-    parser.add_argument("--arm", type=str, default="training")
-    parser.add_argument("--attempt_id", type=str, default="standalone")
-    parser.add_argument("--run_record", type=str, default="")
-    parser.add_argument("--manifest_path", type=str, default="")
-    parser.add_argument(
-        "--keep_checkpoints",
-        action="store_true",
-        help="Persist epoch/last checkpoints. By default checkpoints are temporary and only support linear probing.",
-    )
-    parser.add_argument(
-        "--checkpoint_keep_count",
-        type=int,
-        default=2,
-        help="Number of most recent epoch checkpoints to retain while training.",
-    )
-    parser.add_argument(
-        "--delete_checkpoints_after_training",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Delete epoch checkpoint files after successful training while preserving last.pth.",
-    )
-    parser.add_argument(
-        "--delete_epoch_checkpoints_after_training",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Delete only epoch checkpoint files after training; preserve probe tensors and the final probe result.",
-    )
-    parser.add_argument(
-        "--retain_probe_artifacts_every",
-        type=int,
-        default=0,
-        help="Additionally retain bulky probe tensors every N SSL epochs; 0 retains only the final tensor.",
-    )
-    parser.add_argument("--resume", type=str, default="")
-
-    parser.add_argument("--train_set_linear_layer", type=str, default="ds_train", choices=["train", "ds_train", "us_train", "balanced_train", "val"])
-    parser.add_argument(
-        "--linear_eval_split",
-        type=str,
-        default=None,
-        choices=["val", "test"],
-        help="Linear-probe evaluation split. Defaults to val; test requires --final_test.",
-    )
-    parser.add_argument(
-        "--final_test",
-        action="store_true",
-        help="Evaluate a locked final configuration on test instead of the validation default.",
-    )
-    parser.add_argument(
-        "--linear_probe_mode",
-        type=str,
-        default=None,
-        choices=["final", "periodic", "none"],
-        help="Defaults to periodic on val. --final_test restricts evaluation to one final probe.",
-    )
-    parser.add_argument("--linear_probe_epochs", type=int, default=100)
-    parser.add_argument("--linear_probe_solver", choices=["logistic", "sgd"], default="logistic")
-    parser.add_argument("--linear_probe_l2", type=float, default=1e-3)
-    parser.add_argument("--linear_probe_tolerance", type=float, default=1e-6)
-    parser.add_argument("--linear_probe_max_epochs", type=int, default=200)
-    parser.add_argument(
-        "--linear_probe_freq",
-        type=int,
-        default=None,
-        help="Run periodic linear evaluation every N SSL epochs (default: 25, independent of save_freq).",
-    )
-    parser.add_argument("--linear_learning_rate", type=float, default=1.0)
-    parser.add_argument(
-        "--linear_lr_decay_epochs",
-        type=str,
-        default="auto",
-        help="Comma-separated probe LR milestones, or 'auto' for 60%%, 75%%, and 90%% of probe epochs.",
-    )
-    parser.add_argument("--linear_lr_decay_rate", type=float, default=0.2)
-    parser.add_argument("--linear_weight_decay", type=float, default=0.0)
-    parser.add_argument(
-        "--linear_spurious_probe",
-        type=str_to_bool,
-        nargs="?",
-        const=True,
-        default=True,
-        help="Log an auxiliary linear probe for residual spurious-attribute predictability.",
-    )
-
-    parser.add_argument("--use_wandb", action="store_true")
-    parser.add_argument("--wandb_name", default="Spur_SpLiCE")
-    parser.add_argument(
-        "--wandb_run_name",
-        default="",
-        help="Optional concise W&B display name. Checkpoint directories retain the full reproducibility name.",
-    )
-    parser.add_argument("--entity", default=wandb_entity())
-    parser.add_argument("--wandb_group", default="")
-    parser.add_argument("--wandb_tags", default="", help="Comma-separated W&B tags.")
-    parser.add_argument(
-        "--splice_mode",
-        type=str,
-        default="none",
-        choices=["none", "cospro_relational", "crp_relational", "frozen_concept_distill"],
-    )
-    parser.add_argument("--splice_weight", type=float, default=0.0)
-    parser.add_argument(
-        "--cospro_teacher_graph", "--crp_teacher_graph",
-        dest="cospro_teacher_graph",
-        type=str,
-        default="",
-        help="Label-free CoSpRo teacher graph used by the relational graph mode.",
-    )
-    parser.add_argument(
-        "--cospro_temperature", "--crp_temperature",
-        dest="cospro_temperature",
-        type=float,
-        default=0.1,
-        help="Temperature of the student relation distribution.",
-    )
-    parser.add_argument(
-        "--cospro_start_epoch", "--crp_start_epoch",
-        dest="cospro_start_epoch",
-        type=int,
-        default=10,
-        help="Number of pure-SimCLR epochs before relational distillation starts.",
-    )
-    parser.add_argument(
-        "--cospro_warmup_epochs", "--crp_warmup_epochs",
-        dest="cospro_warmup_epochs",
-        type=int,
-        default=10,
-        help="Linear warm-up duration for the CoSpRo relational loss weight; 0 disables warm-up.",
-    )
-    parser.add_argument(
-        "--cospro_decay_start_epoch", "--crp_decay_start_epoch",
-        dest="cospro_decay_start_epoch",
-        type=int,
-        default=0,
-        help="Epoch at which relational-loss decay begins; 0 with end=0 disables decay.",
-    )
-    parser.add_argument(
-        "--cospro_decay_end_epoch", "--crp_decay_end_epoch",
-        dest="cospro_decay_end_epoch",
-        type=int,
-        default=0,
-        help="Epoch at which relational-loss weight reaches zero.",
-    )
-    parser.add_argument("--concept_transfer_targets", default="")
-    parser.add_argument("--concept_transfer_target_kind", choices=["raw", "reconstruction", "shuffled_reconstruction"], default="reconstruction")
-    parser.add_argument("--concept_transfer_alpha_max", type=float, default=0.1)
-    parser.add_argument("--concept_transfer_start_epoch", type=int, default=10)
-    parser.add_argument("--concept_transfer_warmup_epochs", type=int, default=10)
-    parser.add_argument("--la_ssl", action="store_true")
-    parser.add_argument("--la_ssl_eta", type=float, default=0.1)
-    parser.add_argument("--la_ssl_gamma", type=float, default=10.0)
-    parser.add_argument("--la_ssl_quantile", type=float, default=0.1)
-    parser.add_argument("--la_ssl_warmup_epochs", type=int, default=10)
-    parser.add_argument("--la_ssl_update_freq", type=int, default=2)
-    args = parser.parse_args()
-    if args.model is None:
-        args.model = "resnet18" if args.dataset == "spur_cifar10" else "resnet18_large"
-    if args.la_ssl:
-        if args.splice_mode != "none" or args.simclr_weight != 1:
-            parser.error("LA-SSL uses the unchanged SimCLR objective without a teacher.")
-        if not 0 < args.la_ssl_eta <= 1 or not 0 < args.la_ssl_quantile < 1:
-            parser.error("LA-SSL requires eta in (0,1] and quantile in (0,1).")
-        if args.la_ssl_gamma <= 0 or args.la_ssl_update_freq <= 0 or args.la_ssl_warmup_epochs < 0:
-            parser.error("Invalid LA-SSL scaling or schedule.")
+    parser = build_training_parser()
+    args = parse_training_arguments(parser, argv)
+    try:
+        normalize_training_options(args)
+    except ConfigError as exc:
+        parser.error(str(exc))
     if args.splice_mode == "frozen_concept_distill":
-        if args.dataset != "waterbirds":
-            parser.error("The restored direct-transfer protocol supports Waterbirds only.")
         if not Path(args.concept_transfer_targets).is_file():
             parser.error("--concept_transfer_targets must point to the retained target bank.")
         target_artifact = load_target_artifact(args.concept_transfer_targets)
@@ -309,37 +77,6 @@ def parse_args() -> argparse.Namespace:
             parser.error("Frozen transfer requires 512-dimensional targets.")
         args.concept_transfer_target_artifact = target_artifact["artifact"]
         args.concept_transfer_cache_fingerprint = target_artifact.get("cache_fingerprint", "")
-        if min(args.concept_transfer_alpha_max, args.concept_transfer_start_epoch, args.concept_transfer_warmup_epochs) < 0:
-            parser.error("Concept-transfer schedule values must be non-negative.")
-    try:
-        args.linear_eval_split = resolve_evaluation_split(args.linear_eval_split, args.final_test)
-        args.linear_probe_mode = resolve_probe_mode(args.linear_probe_mode, args.final_test)
-    except ValueError as exc:
-        parser.error(str(exc))
-    if args.epochs <= 0:
-        parser.error("--epochs must be positive.")
-    if args.linear_probe_epochs <= 0:
-        parser.error("--linear_probe_epochs must be positive.")
-    if args.simclr_weight < 0:
-        parser.error("--simclr_weight must be non-negative.")
-    try:
-        args.lr_decay_epochs = resolve_epoch_schedule(args.lr_decay_epochs, args.epochs, (0.70, 0.80, 0.90))
-        args.linear_lr_decay_epochs = resolve_epoch_schedule(
-            args.linear_lr_decay_epochs,
-            args.linear_probe_epochs,
-            (0.60, 0.75, 0.90),
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
-    args.use_splice = args.splice_mode != "none"
-    if args.splice_mode in RELATIONAL_GRAPH_MODES and args.splice_weight < 0:
-        parser.error("--splice_weight must be non-negative for relational graph modes.")
-    if args.simclr_weight == 0 and args.splice_mode not in RELATIONAL_GRAPH_MODES:
-        parser.error("--simclr_weight 0 is supported only for CoSpRo relational training.")
-    if args.simclr_weight == 0 and args.splice_weight <= 0:
-        parser.error("KL-only relational training requires --splice_weight to be positive.")
-    if args.splice_mode in RELATIONAL_GRAPH_MODES and not args.cospro_teacher_graph.strip():
-        parser.error("--cospro_teacher_graph is required for CoSpRo relational training.")
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         graph_path = Path(args.cospro_teacher_graph)
         if not graph_path.is_file():
@@ -347,55 +84,6 @@ def parse_args() -> argparse.Namespace:
         args.cospro_graph_fingerprint = graph_fingerprint(graph_path)
     else:
         args.cospro_graph_fingerprint = None
-    if args.cospro_temperature <= 0:
-        parser.error("--cospro_temperature must be positive.")
-    if args.cospro_start_epoch < 0 or args.cospro_warmup_epochs < 0:
-        parser.error("--cospro_start_epoch and --cospro_warmup_epochs must be non-negative.")
-    if args.cospro_decay_start_epoch < 0 or args.cospro_decay_end_epoch < 0:
-        parser.error("--cospro_decay_start_epoch and --cospro_decay_end_epoch must be non-negative.")
-    if bool(args.cospro_decay_start_epoch) != bool(args.cospro_decay_end_epoch):
-        parser.error("CoSpRo decay start/end must both be zero or both be set.")
-    if args.cospro_decay_end_epoch and args.cospro_decay_end_epoch <= args.cospro_decay_start_epoch:
-        parser.error("--cospro_decay_end_epoch must be greater than --cospro_decay_start_epoch.")
-    if not 0 < args.ssl_crop_min <= 1:
-        parser.error("--ssl-crop-min must be in the interval (0, 1].")
-    if args.dataset == "spur_cifar10" and (
-        args.model.endswith("_large") or args.model == "resnet50_pretrained"
-    ):
-        parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
-    if args.cudnn_benchmark and not args.cudnn_enabled:
-        parser.error("--cudnn_benchmark true requires --cudnn_enabled true.")
-    if args.cudnn_benchmark:
-        parser.error("--cudnn_benchmark must remain false because training is reproducible by default.")
-    if args.rank_eval_freq < 0:
-        parser.error("--rank_eval_freq must be non-negative.")
-    if args.linear_probe_freq is not None and args.linear_probe_freq < 0:
-        parser.error("--linear_probe_freq must be non-negative.")
-    if args.keep_checkpoints and args.save_freq <= 0:
-        parser.error("--save_freq must be positive when --keep_checkpoints is enabled.")
-    if not 1 <= args.checkpoint_keep_count <= 2:
-        parser.error("--checkpoint_keep_count must be 1 or 2.")
-    if args.retain_probe_artifacts_every < 0:
-        parser.error("--retain_probe_artifacts_every must be non-negative.")
-    if args.batch_size > 256:
-        args.warm = True
-    if args.warm:
-        args.warmup_from = 0.01
-        args.warm_epochs = 10
-        if args.cosine:
-            eta_min = args.learning_rate * (args.lr_decay_rate**3)
-            args.warmup_to = eta_min + (args.learning_rate - eta_min) * (
-                1 + math.cos(math.pi * args.warm_epochs / args.epochs)
-            ) / 2
-        else:
-            args.warmup_to = args.learning_rate
-    else:
-        args.warmup_from = 0.0
-        args.warmup_to = args.learning_rate
-        args.warm_epochs = 0
-    if args.linear_probe_freq is None:
-        args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
-    args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
     args.runtime_versions = runtime_versions()
     args.model_name = format_run_name(args)
     args.wandb_run_name = args.wandb_run_name.strip() or format_wandb_run_name(args)
@@ -408,27 +96,10 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def resolve_epoch_schedule(value: str, total_epochs: int, fractions: tuple[float, ...]) -> list[int]:
-    """Resolve explicit milestones or scale an automatic schedule to a run length."""
-    normalized = str(value).strip().lower()
-    if normalized == "auto":
-        milestones = sorted(
-            {
-                int(round(total_epochs * fraction))
-                for fraction in fractions
-                if 0 < int(round(total_epochs * fraction)) < total_epochs
-            }
-        )
-    else:
-        try:
-            milestones = [int(epoch.strip()) for epoch in normalized.split(",") if epoch.strip()]
-        except ValueError as exc:
-            raise ValueError("LR milestones must be comma-separated integers or 'auto'.") from exc
-    if any(epoch <= 0 or epoch >= total_epochs for epoch in milestones):
-        raise ValueError(f"LR milestones must be between 1 and {total_epochs - 1}; got {milestones}.")
-    if milestones != sorted(set(milestones)):
-        raise ValueError(f"LR milestones must be unique and increasing; got {milestones}.")
-    return milestones
+def training_config(args: argparse.Namespace) -> TrainingConfig:
+    """Typed sections of a namespace returned by :func:`parse_args`."""
+
+    return TrainingConfig.from_namespace(args)
 
 
 def format_wandb_run_name(args: argparse.Namespace) -> str:
