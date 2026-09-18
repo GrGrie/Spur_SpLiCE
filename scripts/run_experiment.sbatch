@@ -10,7 +10,7 @@
 
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
-MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_cospro.json}"
+MANIFEST="${MANIFEST:-experiments/manifests/waterbirds_cospro.yaml}"
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 EXISTING_POLICY="${EXISTING_POLICY:-error}"
 export DATA_FOLDER="${DATA_FOLDER:-/home/xar68reb/Datasets}"

@@ -11,7 +11,7 @@ from experiments.runner import command_for, load_manifest, run
 from splice.artifacts import PROJECT_ROOT
 
 
-MANIFESTS = ("waterbirds_semantic_completion.json", "waterbirds_direct_completion.json")
+MANIFESTS = ("waterbirds_semantic_completion.yaml", "waterbirds_direct_completion.yaml")
 TARGET_SHA256 = "fde777c311169e14ac2381a418dd2d68434a0d5e923f7f2a77edc59501273123"
 SEMANTIC_FINGERPRINT = "eab4f961781f8e8e9dcc7b4783969bbd"
 

@@ -18,7 +18,7 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
   export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
 fi
-runner_args=(experiments/manifests/waterbirds_la_ssl.json --arm la_ssl)
+runner_args=(experiments/manifests/waterbirds_la_ssl.yaml --arm la_ssl)
 selection_given=0
 for arg in "$@"; do
   if [[ "$arg" == "--seed" || "$arg" == --seed=* || "$arg" == "--task" || "$arg" == --task=* ]]; then

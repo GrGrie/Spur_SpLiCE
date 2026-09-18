@@ -504,12 +504,20 @@ def write_run_config(args: argparse.Namespace) -> None:
     atomic_write_json(config_path, portable_json(payload))
 
 
+def _cudnn_version() -> str:
+    # cudnn.version() raises on CUDA builds of torch when no GPU is visible.
+    try:
+        return str(torch.backends.cudnn.version() or "not-available")
+    except (RuntimeError, ValueError):
+        return "not-available"
+
+
 def runtime_versions() -> dict[str, str]:
     versions = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "cuda": str(torch.version.cuda or "not-available"),
-        "cudnn": str(torch.backends.cudnn.version() or "not-available"),
+        "cudnn": _cudnn_version(),
     }
     for distribution in [
         "torch",
@@ -1025,7 +1033,9 @@ def main() -> None:
 
     manifest_payload = {}
     if args.manifest_path and Path(args.manifest_path).is_file():
-        manifest_payload = json.loads(Path(args.manifest_path).read_text(encoding="utf-8"))
+        from experiments.runner import read_manifest_file
+
+        manifest_payload = read_manifest_file(args.manifest_path)
     recorder = RunRecorder(
         args.run_record,
         identity=artifact_identity(args),

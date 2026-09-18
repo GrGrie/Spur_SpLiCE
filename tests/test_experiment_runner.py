@@ -116,6 +116,31 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(record["schema_version"], 1)
             self.assertEqual(len(record["manifest_sha256"]), 64)
 
+    def test_yaml_and_json_manifests_load_to_the_same_mapping(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "study.json").write_text(json.dumps(self._manifest()), encoding="utf-8")
+            (root / "study.yaml").write_text(
+                "name: study\nseeds: [1]\ncommon: {}\narms:\n  arm:\n    args: {splice_mode: none}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_manifest(root / "study.yaml"), load_manifest(root / "study.json"))
+
+    def test_resume_accepts_a_run_started_from_the_json_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = {**self._manifest(), "_manifest_path": str(root / "study.json")}
+            current = {**self._manifest(), "_manifest_path": str(root / "study.yaml")}
+            command, output = command_for(legacy, 1, "arm", artifact_root=root)
+            run_dir = output / "training" / "run"
+            run_dir.mkdir(parents=True)
+            (output / "command.json").write_text(json.dumps(command), encoding="utf-8")
+            (run_dir / "epoch_3.pth").write_bytes(b"checkpoint")
+            (run_dir / "run_status.json").write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+            with patch("experiments.runner.subprocess.run") as subprocess_run:
+                run(current, 1, "arm", existing="resume", artifact_root=root)
+            subprocess_run.assert_called_once()
+
     def test_new_attempt_gets_a_separate_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

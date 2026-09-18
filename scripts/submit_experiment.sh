@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-MANIFEST="${1:-experiments/manifests/waterbirds_cospro.json}"
+MANIFEST="${1:-experiments/manifests/waterbirds_cospro.yaml}"
 LOCKED_TEST=0
 if [[ "${2:-}" == "--locked-test" ]]; then
     LOCKED_TEST=1

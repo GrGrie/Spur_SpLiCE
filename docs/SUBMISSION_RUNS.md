@@ -75,7 +75,7 @@ implement the required upsampling. No labels or group annotations set weights.
 
 ```bash
 export DATA_FOLDER=/home/xar68reb/Datasets
-python -m experiments.runner experiments/manifests/waterbirds_la_ssl.json --seed 1 --arm la_ssl
+python -m experiments.runner experiments/manifests/waterbirds_la_ssl.yaml --seed 1 --arm la_ssl
 mkdir -p outputs/SLURM
 sbatch scripts/run_la_ssl.sh --seed 1
 ```
@@ -145,7 +145,7 @@ Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](SUBMISSION_CL
 | Files | Purpose |
 |---|---|
 | `experiments/complete_projection_controls.py` | Seed launcher and historical input checks |
-| `experiments/manifests/waterbirds_semantic_completion.json`, `waterbirds_direct_completion.json`, `waterbirds_la_ssl.json` | Existing runner configurations |
+| `experiments/manifests/waterbirds_semantic_completion.yaml`, `waterbirds_direct_completion.yaml`, `waterbirds_la_ssl.yaml` | Existing runner configurations |
 | `scripts/run_projection_controls.sh`, `scripts/run_la_ssl.sh` | Cluster launchers |
 | `splice/concept_distillation.py` | Restored historical transfer implementation |
 | `experiments/spurious_eval/training/la_ssl.py` | Learning-speed scoring and sampling state |

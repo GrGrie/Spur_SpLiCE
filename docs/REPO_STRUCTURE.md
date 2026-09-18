@@ -130,7 +130,7 @@ rather than leaving a broken `retained` attestation.
 
 ## Result lifecycle
 
-1. Define the study in `experiments/manifests/<study>.json`.
+1. Define the study in `experiments/manifests/<study>.yaml`.
 2. Launch through `experiments.runner` or `scripts/submit_experiment.sh`.
 3. Write small records to the attempt directory under `outputs/seeds/`.
 4. Route checkpoints and large feature payloads to the scratch root.

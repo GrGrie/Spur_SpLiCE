@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -10,15 +11,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def find_bash() -> str | None:
+    """Return a POSIX bash. On Windows the System32 bash is a WSL relay, so Git Bash is used."""
+    if os.name == "nt":
+        git_bash = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
+        return str(git_bash) if git_bash.is_file() else None
+    return shutil.which("bash")
+
+
+BASH = find_bash()
+
+
 def launch(script, *args, extra_env=None):
     env = {**os.environ, "PROJECT_DIR": str(ROOT), "PYTHON_BIN": "/bin/echo"}
     env.update(extra_env or {})
     return subprocess.run(
-        ["bash", str(ROOT / "scripts" / script), *args],
+        [BASH, str(ROOT / "scripts" / script), *args],
         cwd=ROOT, env=env, text=True, capture_output=True,
     )
 
 
+@unittest.skipIf(BASH is None, "a POSIX bash is required to exercise the Slurm launchers")
 class TrainingLauncherTests(unittest.TestCase):
     def test_standalone_auto_selects_the_only_dataset_teacher_graph(self):
         import tempfile
@@ -32,12 +45,12 @@ class TrainingLauncherTests(unittest.TestCase):
             graph.write_text("{}", encoding="utf-8")
             result = launch(
                 "run_training.sbatch", "--dataset", "celebA", "--seed", "1",
-                extra_env={"SPUR_SPLICE_OUTPUT_ROOT": temporary_directory},
+                extra_env={"SPUR_SPLICE_OUTPUT_ROOT": Path(temporary_directory).as_posix()},
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         command = shlex.split(result.stdout)
         self.assertEqual(command[command.index("--splice_mode") + 1], "cospro_relational")
-        self.assertEqual(command[command.index("--cospro_teacher_graph") + 1], str(graph))
+        self.assertEqual(command[command.index("--cospro_teacher_graph") + 1], graph.as_posix())
         self.assertEqual(command[-4:], ["--dataset", "celebA", "--seed", "1"])
 
     def test_standalone_requires_explicit_dataset_and_seed(self):
@@ -61,7 +74,7 @@ class TrainingLauncherTests(unittest.TestCase):
         ])
 
     def test_matrix_cell_does_not_keep_default_array_task(self):
-        result = launch("run_experiment.sbatch", "experiments/manifests/waterbirds_cospro.json",
+        result = launch("run_experiment.sbatch", "experiments/manifests/waterbirds_cospro.yaml",
                         "--seed", "3", "--arm", "cospro", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         command = shlex.split(result.stdout)

@@ -1,4 +1,4 @@
-"""Run a seed/arm experiment matrix from one immutable JSON manifest."""
+"""Run a seed/arm experiment matrix from one immutable YAML (or legacy JSON) manifest."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import yaml
+
 from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory, scratch_root
 from splice.run_recording import portable_json
 
@@ -19,8 +21,27 @@ PRIMARY_ATTEMPT_ID = "primary"
 LOCKED_TEST_ATTEMPT_ID = "locked-test"
 
 
+MANIFEST_SUFFIXES = (".yaml", ".yml", ".json")
+
+
+def read_manifest_file(path: str | Path) -> dict:
+    """Parse a manifest file; YAML is the canonical format and JSON stays readable."""
+
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        manifest = yaml.safe_load(text)
+    elif path.suffix.lower() == ".json":
+        manifest = json.loads(text)
+    else:
+        raise ValueError(f"Manifest must end with one of {MANIFEST_SUFFIXES}: {path}")
+    if not isinstance(manifest, dict):
+        raise ValueError(f"Manifest must contain a mapping at the top level: {path}")
+    return manifest
+
+
 def load_manifest(path: str | Path) -> dict:
-    manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+    manifest = read_manifest_file(path)
     required = {"name", "seeds", "common", "arms"}
     missing = required.difference(manifest)
     if missing:
@@ -116,18 +137,29 @@ def _read_command(path: Path) -> list[str]:
     return command
 
 
-def _without_resume(command: list[str]) -> list[str]:
+def _comparable(command: list[str]) -> list[str]:
+    """Normalize a command for identity checks.
+
+    ``--resume`` depends on the checkpoint found at launch time. ``--manifest_path`` keeps only the
+    file stem, so the JSON-to-YAML migration preserves identity; every manifest value is expanded
+    into its own flag, so the remaining command still pins the configuration.
+    """
+
     normalized = list(command)
     while "--resume" in normalized:
         index = normalized.index("--resume")
         del normalized[index:index + 2]
+    if "--manifest_path" in normalized:
+        index = normalized.index("--manifest_path") + 1
+        if index < len(normalized) and normalized[index]:
+            normalized[index] = Path(normalized[index].replace("\\", "/")).stem
     return normalized
 
 
 def _require_same_command(output: Path, command: list[str]) -> None:
     existing = portable_json({"command": _read_command(output / "command.json")})["command"]
     requested = portable_json({"command": command})["command"]
-    if _without_resume(existing) != _without_resume(requested):
+    if _comparable(existing) != _comparable(requested):
         raise RuntimeError(f"Refusing to reuse {output}: its command does not match this manifest execution.")
 
 

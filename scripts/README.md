@@ -50,7 +50,7 @@ For the predeclared seed/arm matrix below, keep the manifest as the source of
 truth. A single matrix cell can also be submitted directly:
 
 ```bash
-sbatch scripts/run_experiment.sbatch experiments/manifests/waterbirds_cospro.json \
+sbatch scripts/run_experiment.sbatch experiments/manifests/waterbirds_cospro.yaml \
   --seed 3 --arm cospro --existing error
 ```
 
@@ -70,7 +70,7 @@ default to `resnet18`; larger-image datasets retain `resnet18_large`.
 Submit an experiment matrix and its dependent result collector with:
 
 ```bash
-bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.json
+bash scripts/submit_experiment.sh experiments/manifests/waterbirds_cospro.yaml
 ```
 
 Append `--locked-test` to apply the manifest's predeclared final-only held-out
