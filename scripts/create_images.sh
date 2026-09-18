@@ -13,6 +13,8 @@ cd "${PROJECT_DIR}"
 
 source scripts/load_splice_cluster_env.sh
 WATERBIRDS_ROOT="${DATA_FOLDER}/waterbirds"
+source scripts/announce_results.sh
+announce_results "${PROJECT_DIR}/outputs/reports/submission_graph_figure_${SLURM_JOB_ID}"
 
 test -f "${WATERBIRDS_ROOT}/metadata.csv"
 

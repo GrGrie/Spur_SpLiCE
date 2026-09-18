@@ -20,6 +20,8 @@ MANIFEST="${PROJECT_DIR}/outputs/reports/legacy-archive/${LABEL}.json"
 
 cd "${PROJECT_DIR}"
 source scripts/load_splice_cluster_env.sh
+source scripts/announce_results.sh
+announce_results "${MANIFEST}" "archive: ${ARCHIVE}"
 
 echo "[legacy-archive] mode=${MODE}"
 echo "[legacy-archive] source=${SOURCE}"

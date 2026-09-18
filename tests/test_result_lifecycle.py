@@ -36,7 +36,7 @@ class ResultLifecycleTests(unittest.TestCase):
 
     def test_recorder_redacts_secrets_and_attests_scratch_artifact(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": directory}
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": directory}
         ):
             root = Path(directory)
             record_path = root / "record.json"
@@ -103,7 +103,7 @@ class ResultLifecycleTests(unittest.TestCase):
 
     def test_migration_discovers_flat_legacy_outputs_and_routes_last_pt(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": str(Path(directory) / "scratch")}
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": str(Path(directory) / "scratch")}
         ):
             base = Path(directory)
             source = base / "outputs"
@@ -139,7 +139,7 @@ class ResultLifecycleTests(unittest.TestCase):
 
     def test_migration_backfills_legacy_run_record(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": str(Path(directory) / "scratch")}
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": str(Path(directory) / "scratch")}
         ):
             base = Path(directory)
             source = base / "legacy"

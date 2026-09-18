@@ -18,6 +18,8 @@ else
   export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
 fi
 runner_args=(experiments/manifests/waterbirds_la_ssl.yaml --arm la_ssl)
+source scripts/announce_results.sh
+announce_results "${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/seeds/waterbirds_la_ssl/seed_<NN>/la_ssl/<attempt>/run.json" "checkpoints and probe features: ${SPUR_SPLICE_SCRATCH_ROOT}/{checkpoints,features}/Spur_SpLiCE/" "the runner prints the exact attempt directory below"
 selection_given=0
 for arg in "$@"; do
   if [[ "$arg" == "--seed" || "$arg" == --seed=* || "$arg" == "--task" || "$arg" == --task=* ]]; then

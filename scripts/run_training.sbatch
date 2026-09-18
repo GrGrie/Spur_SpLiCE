@@ -48,6 +48,8 @@ fi
 # options in "$@" take precedence, including --checkpoint_dir and --resume.
 RUN_ID="${SLURM_JOB_ID:-local-$$}"
 CHECKPOINT_ROOT="${SPUR_SPLICE_SCRATCH_ROOT}/manual/${RUN_ID}"
+source scripts/announce_results.sh
+announce_results "${CHECKPOINT_ROOT}/run.json" "training folder: ${CHECKPOINT_ROOT}/<storage name>/ (or the --checkpoint_dir you passed)" "W&B: the run link printed by wandb below"
 automatic_graph_args=()
 if [[ "${has_graph}" == "1" && "${has_splice_mode}" != "1" ]]; then
   automatic_graph_args+=(

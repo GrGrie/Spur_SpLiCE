@@ -232,6 +232,7 @@ def run(
     elif existing in {"reuse", "resume"}:
         raise RuntimeError(f"Cannot {existing} {output}: the execution directory is empty or absent.")
 
+    print(f"[results] Attempt directory: {output} (run.json, command.json, execution.json)", flush=True)
     print(" ".join(command))
     if dry_run:
         return output

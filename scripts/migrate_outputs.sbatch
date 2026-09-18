@@ -17,6 +17,8 @@ SOURCE="${2:-${PROJECT_DIR}/outputs}"
 
 cd "${PROJECT_DIR}"
 . "${PROJECT_DIR}/scripts/load_splice_cluster_env.sh"
+source scripts/announce_results.sh
+announce_results "${PROJECT_DIR}/outputs (canonical seeds/, reports/, shared/ trees)" "binaries: ${SPUR_SPLICE_SCRATCH_ROOT}"
 
 run_migration() {
     local migration_mode="$1"

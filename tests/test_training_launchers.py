@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -24,12 +25,23 @@ BASH = find_bash()
 
 
 def launch(script, *args, extra_env=None):
-    env = {**os.environ, "PROJECT_DIR": str(ROOT), "PYTHON_BIN": "/bin/echo"}
-    env.update(extra_env or {})
-    return subprocess.run(
-        [BASH, str(ROOT / "scripts" / script), *args],
-        cwd=ROOT, env=env, text=True, capture_output=True,
-    )
+    """Run a launcher in its local branch with ``echo`` standing in for Python.
+
+    SLURM_* variables are dropped so the tests behave the same inside a Slurm job, and an empty
+    output root keeps graphs that exist under outputs/ out of the automatic graph selection.
+    """
+    env = {key: value for key, value in os.environ.items() if not key.startswith("SLURM_")}
+    with tempfile.TemporaryDirectory() as empty_output_root:
+        env.update({
+            "PROJECT_DIR": str(ROOT),
+            "PYTHON_BIN": "/bin/echo",
+            "SPUR_SPLICE_OUTPUT_ROOT": Path(empty_output_root).as_posix(),
+        })
+        env.update(extra_env or {})
+        return subprocess.run(
+            [BASH, str(ROOT / "scripts" / script), *args],
+            cwd=ROOT, env=env, text=True, capture_output=True,
+        )
 
 
 @unittest.skipIf(BASH is None, "a POSIX bash is required to exercise the Slurm launchers")

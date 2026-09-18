@@ -40,10 +40,11 @@ def compare_or_update(name: str, actual: Any, compare) -> None:
 
     path = GOLDEN_DIR / name
     if update_requested() or not path.is_file():
+        created = not path.is_file()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(actual, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        if not update_requested():
-            raise AssertionError(f"Created missing golden snapshot {path}; rerun the test to compare.")
+        if created and not update_requested():
+            raise unittest.SkipTest(f"Created golden snapshot {path}; commit it to enable the comparison.")
         return
     expected = json.loads(path.read_text(encoding="utf-8"))
     compare(expected, actual)

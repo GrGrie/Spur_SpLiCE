@@ -17,6 +17,8 @@ PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0
 cd "${PROJECT_DIR}"
 mkdir -p outputs/SLURM environment
 source scripts/load_splice_cluster_env.sh
+source scripts/announce_results.sh
+announce_results "${PROJECT_DIR}/environment/" "cluster-conda.lock.yml, cluster-pip.lock.txt and cluster-runtime.json"
 
 conda env export --no-builds --name "${SPLICE_CONDA_ENV}" | grep -v '^prefix:' > environment/cluster-conda.lock.yml
 "${PYTHON_BIN}" -m pip freeze --exclude-editable > environment/cluster-pip.lock.txt

@@ -46,6 +46,8 @@ if [[ $# -gt 0 && "$1" != --* ]]; then
   shift
 fi
 
+source scripts/announce_results.sh
+announce_results "${OUTPUT_ROOT}/${DATASET}/splice_dataset_cache/<cache config>/splice_dataset_cache.pt"
 "${PYTHON_BIN}" -u -m scripts.tools.cache_splice_dataset \
   --dataset "${DATASET}" \
   --data-folder "${DATA_FOLDER:?set DATA_FOLDER to the dataset root}" \

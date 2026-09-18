@@ -63,6 +63,13 @@ class SlurmLauncherTests(unittest.TestCase):
                         f"--{stream} writes under outputs/SLURM/",
                     )
 
+    def test_every_launcher_announces_its_result_location(self):
+        for path in launchers():
+            with self.subTest(launcher=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("source scripts/announce_results.sh", text)
+                self.assertRegex(text, r'(?m)^\s*announce_results "', "the .out file names where results land")
+
 
 if __name__ == "__main__":
     unittest.main()

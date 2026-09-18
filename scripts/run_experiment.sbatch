@@ -38,4 +38,7 @@ fi
 if [[ -n "${SPUR_SPLICE_OUTPUT_ROOT:-}" ]]; then
   runner_args+=(--output-root "${SPUR_SPLICE_OUTPUT_ROOT}")
 fi
+source scripts/announce_results.sh
+STUDY_NAME="$(sed -n 's/^name: *//p' "${runner_args[0]}" | head -n 1)"
+announce_results "${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/seeds/${STUDY_NAME}/seed_<NN>/<arm>/<attempt>/run.json" "checkpoints and probe features: ${SPUR_SPLICE_SCRATCH_ROOT}/{checkpoints,features}/Spur_SpLiCE/${STUDY_NAME}/" "aggregate after collection: outputs/reports/${STUDY_NAME}/results.json" "the runner prints the exact attempt directory below"
 "${PYTHON_BIN}" -u -m experiments.runner "${runner_args[@]}" "$@"

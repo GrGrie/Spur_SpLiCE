@@ -17,4 +17,6 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
   export SPUR_SPLICE_SCRATCH_ROOT="${SPUR_SPLICE_SCRATCH_ROOT:-${PROJECT_DIR}/tmp}"
 fi
+source scripts/announce_results.sh
+announce_results "${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/seeds/waterbirds_{semantic,direct}_completion/seed_<NN>/<arm>/<attempt>/run.json" "the runner prints the exact attempt directories below"
 "${PYTHON_BIN}" -u -m tools.paper.complete_projection_controls "$@"

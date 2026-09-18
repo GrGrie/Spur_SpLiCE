@@ -37,6 +37,8 @@ fi
 SPLICE_DATASET_CACHE_PATH="$1"
 CONCEPT_GROUPS_PATH="$2"
 shift 2
+source scripts/announce_results.sh
+announce_results "$(dirname "${CONCEPT_GROUPS_PATH}")/teacher_graphs/<audit config>/teacher_graph.json" "HTML report next to it; for a sweep directory, below every grouping configuration"
 "${PYTHON_BIN}" -u -m scripts.tools.build_cospro_teacher_graphs \
   --splice-dataset-cache "${SPLICE_DATASET_CACHE_PATH}" \
   --concept-groups "${CONCEPT_GROUPS_PATH}" "$@"

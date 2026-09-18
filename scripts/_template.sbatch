@@ -24,6 +24,8 @@ PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0
 cd "${PROJECT_DIR}"
 mkdir -p outputs/SLURM
 source scripts/load_splice_cluster_env.sh
+source scripts/announce_results.sh
+announce_results "outputs/<where this task writes its compact JSON>" "binaries: ${SPUR_SPLICE_SCRATCH_ROOT}/<task>"
 
 # Binaries go to "${SPUR_SPLICE_SCRATCH_ROOT}", compact JSON results go under outputs/.
 "${PYTHON_BIN}" -u -m package.module "$@"

@@ -71,6 +71,11 @@ BOOLEAN_OPTIONS=(
   LINEAR_SPURIOUS_PROBE:--linear-spurious-probe USE_WANDB:--use-wandb COLLECT_RESULTS:--collect-results
 )
 
+source scripts/announce_results.sh
+PIPELINE_DATASET="${DATASET:-celeba}"
+PIPELINE_STUDY="${STUDY:-${PIPELINE_DATASET}_cospro_pipeline}"
+PIPELINE_OUTPUTS="${OUTPUT_ROOT:-${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}}"
+announce_results "${PIPELINE_OUTPUTS}/reports/${PIPELINE_STUDY}/results.json" "student run: ${PIPELINE_OUTPUTS}/seeds/${PIPELINE_STUDY}/seed_<NN>/cospro/<attempt>/run.json" "concept groups and teacher graph: ${PIPELINE_OUTPUTS}/shared/${PIPELINE_DATASET}/graphs/concept_groups/" "SpLiCE cache: ${FEATURE_ROOT:-${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE}/${PIPELINE_DATASET}/splice_dataset_cache/" "a --dataset or --study option overrides the names above"
 pipeline_args=(--python "${PYTHON_BIN}")
 for entry in "${VALUE_OPTIONS[@]}"; do
   variable="${entry%%:*}"

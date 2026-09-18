@@ -45,7 +45,7 @@ class ReproducibilityTests(unittest.TestCase):
             study="study", seed=1, arm="arm", attempt_id="attempt"
         )
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"SPUR_SPLICE_ARTIFACT_ROOT": directory}
+            os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": directory}
         ):
             local_path = Path(directory).parent / f"{Path(directory).name}-large-checkpoint.pth"
             saved_path = save_checkpoint(model, optimizer, args, 1, str(local_path))
