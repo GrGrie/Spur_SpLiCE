@@ -26,6 +26,7 @@ from experiments.spurious_eval.models.resnet import (
     build_resnet_encoder,
 )
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
+from experiments.spurious_eval.training.reproducibility import make_dataloader_kwargs
 from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
@@ -201,25 +202,6 @@ def _saved_probe_sample_ids(dataset, seed: int, batch_size: int, shuffle: bool, 
         )
         order = torch.cat(list(loader)).long()
     return [f"{dataset_name}:{int(source_indices[int(index)])}" for index in order]
-
-
-def seed_worker(worker_id: int) -> None:
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-
-def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict:
-    loader_generator = torch.Generator()
-    loader_generator.manual_seed(args.seed)
-    loader_kwargs = {
-        "num_workers": args.num_workers,
-        "pin_memory": True,
-        "generator": loader_generator,
-    }
-    if shuffle or args.num_workers > 0:
-        loader_kwargs["worker_init_fn"] = seed_worker
-    return loader_kwargs
 
 
 def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimizer, epoch: int) -> None:

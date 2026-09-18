@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import hashlib
 import importlib.metadata
 import json
@@ -33,6 +32,11 @@ from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.optim import adjust_learning_rate, build_optimizer
+from experiments.spurious_eval.training.reproducibility import (
+    make_dataloader_kwargs,
+    preserve_rng_state,
+    seed_worker,
+)
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
 from splice.cospro_training import (
     CoSpRoRelationalRegularizer,
@@ -389,10 +393,6 @@ def parse_args() -> argparse.Namespace:
         args.warmup_from = 0.0
         args.warmup_to = args.learning_rate
         args.warm_epochs = 0
-    if args.linear_probe_epochs is None:
-        args.linear_probe_epochs = 100
-    if args.linear_learning_rate is None:
-        args.linear_learning_rate = 1.0
     if args.linear_probe_freq is None:
         args.linear_probe_freq = 25 if args.linear_probe_mode == "periodic" else 0
     args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
@@ -564,25 +564,6 @@ def configure_training_backend(args: argparse.Namespace) -> None:
     )
 
 
-def seed_worker(worker_id: int) -> None:
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-
-def make_dataloader_kwargs(args: argparse.Namespace, shuffle: bool, seed: int | None = None) -> dict:
-    loader_generator = torch.Generator()
-    loader_generator.manual_seed(args.seed if seed is None else seed)
-    loader_kwargs = {
-        "num_workers": args.num_workers,
-        "pin_memory": True,
-        "generator": loader_generator,
-    }
-    if shuffle or args.num_workers > 0:
-        loader_kwargs["worker_init_fn"] = seed_worker
-    return loader_kwargs
-
-
 def build_dataset_config(args: argparse.Namespace):
     return DATASET_REGISTRY[args.dataset]["config"](
         root_dir=args.data_folder, ssl_crop_min=args.ssl_crop_min,
@@ -687,24 +668,6 @@ def build_rank_loader(args: argparse.Namespace):
         args.batch_size,
         **loader_kwargs,
     )
-
-
-@contextmanager
-def preserve_rng_state():
-    """Prevent observational probes from changing subsequent SSL randomness."""
-
-    torch_state = torch.get_rng_state()
-    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-    numpy_state = np.random.get_state()
-    python_state = random.getstate()
-    try:
-        yield
-    finally:
-        torch.set_rng_state(torch_state)
-        if cuda_states is not None:
-            torch.cuda.set_rng_state_all(cuda_states)
-        np.random.set_state(numpy_state)
-        random.setstate(python_state)
 
 
 def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
@@ -1113,21 +1076,20 @@ def main() -> None:
             time2 = time.time()
             print("epoch {}, total time {:.2f}".format(epoch, time2 - time1))
 
-            log_metrics = True
+            # Epoch metrics are logged every epoch; representation rank only on rank epochs.
             log_rank = args.rank_eval_freq > 0 and epoch % args.rank_eval_freq == 0
-            if log_metrics or log_rank:
-                with preserve_rng_state():
-                    log_rank_metrics(
-                        model,
-                        rank_loader,
-                        optimizer,
-                        train_metrics,
-                        epoch,
-                        args,
-                        wandb_run,
-                        compute_rank=log_rank,
-                        run_recorder=recorder,
-                    )
+            with preserve_rng_state():
+                log_rank_metrics(
+                    model,
+                    rank_loader,
+                    optimizer,
+                    train_metrics,
+                    epoch,
+                    args,
+                    wandb_run,
+                    compute_rank=log_rank,
+                    run_recorder=recorder,
+                )
 
             should_probe = (
                 args.linear_probe_mode == "periodic"
