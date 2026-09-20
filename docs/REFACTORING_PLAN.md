@@ -110,8 +110,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 3 | Typed configuration, presets, sweeps | done | `aa8e738` … (see phase 3 notes) |
 | 4 | `TrainingMethod` seam and W&B metric contract | done | `c0efd8b`, metric contract commit |
 | 5 | Trainer, callbacks, storage policy | done | trainer seam commit |
-| 6 | Dataset adapters | **next** | – |
-| 7 | Linear probe as a library function | planned | – |
+| 6 | Dataset adapters | done | dataset seam commit |
+| 7 | Linear probe as a library function | **next** | – |
 | 8 | `cospro/` pipeline package and concept dictionaries | planned | – |
 | 9 | Package layout move | planned | – |
 
@@ -521,16 +521,46 @@ whether LA-SSL is a method or a sampler option (it keeps the plain SimCLR loss).
 (`build_linear_probe_args`); phase 7 replaces it with `evaluate_probe` and `PeriodicProbe` then
 calls that directly.
 
-### Phase 6 — Dataset adapters (next)
+### Phase 6 — Dataset adapters (done)
 
-- `SpuriousDataset` base class with `read_metadata()` returning `path, y, a, split` plus `load_image()`; one
-  `build_loader(dataset, role, options)` for the roles `ssl`, `rank`, `probe_train`, `probe_eval`.
-- `@register_dataset(name, aliases=...)` replaces the registry dictionaries and the bash `case` statement.
-- Image size and model compatibility become dataset attributes (today: `if dataset == "spur_cifar10"` in three places).
-- `docs/ADDING_A_DATASET.md`: adapter, cache launcher, diagnostics run, manifest.
-- Keep the vendored WILDS compatibility layer; mark it as third-party.
+**Delivered (2026-09-20)**
 
-### Phase 7 — Linear probe as a library function (planned)
+- `experiments/spurious_eval/datasets/base.py`: `SpuriousDataset` (the contract plus the shared
+  group report), `DatasetConfig`, `register_dataset`, `dataset_transforms` and one `build_loader`
+  for the roles `ssl`, `rank`, `probe_train` and `probe_eval`. `build_probe_loaders` reads the
+  probe's two splits from one built dataset.
+- The three adapters keep only what differs: metadata reading, `get_input` and their attributes.
+  Together they went from 793 lines to 371 plus 211 shared; the three near-identical transform
+  functions, the three triplicated `eval` methods and the nine loader factories are gone.
+- `registry.py` is a facade over the decorator: importing it registers the adapters, and
+  `dataset_names`, `canonical_dataset_name` and `dataset_class` read the registry. The spec
+  dictionaries, the alias table and the second `DATASET_REGISTRY` with its CelebA spellings are
+  gone.
+- Image size decides the model: `default_model()` and `model_error()` replace
+  `if dataset == "spur_cifar10"` in `cospro/config/training.py` and `run_cospro_pipeline.py`, with
+  the historical message rebuilt from the name and the size.
+- `run_training.sbatch` stops listing dataset names: it matches the requested spelling against the
+  directories under `outputs/shared/`, which already carry the canonical names.
+  `cache_splice_dataset.sh` points at the Python help instead of repeating the list.
+- `docs/ADDING_A_DATASET.md` covers the adapter, the cache launcher, the diagnostics run and the
+  manifest. `wilds_compat.py` now says in its docstring that it is vendored WILDS.
+- `tests/test_dataset_adapters.py` pins the registry, the alias resolution, the atomic
+  registration, the model rules and the split, transform and order of every role for every
+  registered dataset. Golden training snapshots are unchanged.
+
+**Decisions**
+
+- `@register_dataset` takes no arguments: `name` and `aliases` are class attributes next to
+  `num_classes` and `image_size`, so a decorator cannot disagree with the class it decorates.
+- The registry is a dictionary of classes rather than of spec objects. A `DatasetSpec` beside the
+  class would be a second place to look for the same facts.
+- `read_metadata()` returning `path, y, a, split` stayed on paper. The adapters set the WILDS
+  metadata attributes directly, which is what `get_subset` and the groupers already read; a second
+  metadata representation would have to be kept in step with the first.
+- The adapters stay in `experiments/spurious_eval/datasets/`; phase 9 moves the package to
+  `cospro/data/` in one `git mv`.
+
+### Phase 7 — Linear probe as a library function (next)
 
 - `evaluate_probe(encoder, dataset, ProbeOptions) -> ProbeResult` without file or W&B side effects;
   `persist_probe_result` writes features to scratch and JSON to `outputs/`.

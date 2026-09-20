@@ -32,7 +32,7 @@ training images
 | Training methods behind one interface | `cospro/methods/` |
 | SSL training: epoch loop, callbacks, storage policy | `spur_splice.py`, `cospro/training/`, `experiments/spurious_eval/training/ssl_loop.py` |
 | Stable metric names for W&B | `cospro/tracking/` |
-| Dataset adapters | `experiments/spurious_eval/datasets/` |
+| Dataset adapters, loader roles, registry | `experiments/spurious_eval/datasets/` (see [`docs/ADDING_A_DATASET.md`](docs/ADDING_A_DATASET.md)) |
 | Linear evaluation | `experiments/spurious_eval/linear_probe.py` |
 | Experiment matrix and execution identity | `experiments/runner.py`, `experiments/manifests/` |
 | Checked paper registry | `tools/paper/build_paper_results.py`, `paper/paper_results.json` |
