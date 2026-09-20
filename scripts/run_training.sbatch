@@ -56,13 +56,19 @@ automatic_graph_args=()
 if [[ "${has_graph}" == "1" && "${has_splice_mode}" != "1" ]]; then
   automatic_graph_args+=(--preset cospro_student)
 elif [[ "${has_graph}" != "1" && "${has_splice_mode}" != "1" ]]; then
-  canonical_dataset="$(printf '%s' "${dataset_value}" | tr '[:upper:]' '[:lower:]' | tr -d '_-')"
-  case "${canonical_dataset}" in
-    celeba) canonical_dataset="celeba" ;;
-    waterbirds) canonical_dataset="waterbirds" ;;
-    spurcifar10) canonical_dataset="spur_cifar10" ;;
-  esac
-  GRAPH_ROOT="${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/shared/${canonical_dataset}/graphs"
+  # Shared results are stored under the canonical dataset name, so the directory that matches the
+  # requested spelling names the dataset. Python keeps the canonical names; this shell does not.
+  SHARED_ROOT="${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/shared"
+  requested_dataset="$(printf '%s' "${dataset_value}" | tr '[:upper:]' '[:lower:]' | tr -d '_-')"
+  GRAPH_ROOT="${SHARED_ROOT}/${requested_dataset}/graphs"
+  for shared_dataset in "${SHARED_ROOT}"/*/; do
+    [[ -d "${shared_dataset}" ]] || continue
+    shared_name="$(basename "${shared_dataset}")"
+    if [[ "$(printf '%s' "${shared_name}" | tr '[:upper:]' '[:lower:]' | tr -d '_-')" == "${requested_dataset}" ]]; then
+      GRAPH_ROOT="${shared_dataset}graphs"
+      break
+    fi
+  done
   graph_candidates=()
   if [[ -d "${GRAPH_ROOT}" ]]; then
     mapfile -d '' graph_candidates < <(find "${GRAPH_ROOT}" -type f -name teacher_graph.json -print0 | sort -z)

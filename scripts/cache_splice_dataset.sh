@@ -11,7 +11,7 @@
 set -euo pipefail
 if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
   echo "Usage: $0 DATASET [OUTPUT_ROOT] [cache options]"
-  echo "Datasets: waterbirds, celebA (celeba), spur_cifar10"
+  echo "Datasets: the names 'python -m scripts.tools.cache_splice_dataset --help' lists."
   echo "Set DATA_FOLDER to override the dataset location."
   echo "Caches are stored under OUTPUT_ROOT/<dataset>/splice_dataset_cache/<configuration>/."
   exit 0
