@@ -28,7 +28,10 @@ training images
 | CoSpRo audit and teacher graph | `splice/cospro.py`, `splice/graph_io.py` |
 | Complete cache-to-results pipeline | `scripts/run_cospro_pipeline.sh`, `scripts/tools/run_cospro_pipeline.py` |
 | Graph sampler and relational KL | `splice/cospro_training.py` |
-| SSL training | `spur_splice.py`, `experiments/spurious_eval/training/ssl_loop.py` |
+| Typed training configuration, presets, sweeps | `cospro/config/` |
+| Training methods behind one interface | `cospro/methods/` |
+| SSL training: epoch loop, callbacks, storage policy | `spur_splice.py`, `cospro/training/`, `experiments/spurious_eval/training/ssl_loop.py` |
+| Stable metric names for W&B | `cospro/tracking/` |
 | Dataset adapters | `experiments/spurious_eval/datasets/` |
 | Linear evaluation | `experiments/spurious_eval/linear_probe.py` |
 | Experiment matrix and execution identity | `experiments/runner.py`, `experiments/manifests/` |

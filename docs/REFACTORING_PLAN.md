@@ -1,6 +1,6 @@
 # CoSpRo refactoring: plan, decisions and handoff log
 
-Last updated: 2026-09-18. Branch `refactor` (worktree `E:\Programming\Spur_SpLiCE-refactor`).
+Last updated: 2026-09-20. Branch `refactor` (worktree `E:\Programming\Spur_SpLiCE-refactor`).
 
 This document is the single source of truth for the refactor. It records what the code looked like, what hurt,
 which designs were weighed, which were kept and why, what is done and what comes next. It is written so that a
@@ -109,8 +109,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 2 | Concept-group and teacher-graph diagnostics with dashboard | done; cache tier awaits a cluster run | `177fced` |
 | 3 | Typed configuration, presets, sweeps | done | `aa8e738` … (see phase 3 notes) |
 | 4 | `TrainingMethod` seam and W&B metric contract | done | `c0efd8b`, metric contract commit |
-| 5 | Trainer, callbacks, storage policy | **next** | – |
-| 6 | Dataset adapters | planned | – |
+| 5 | Trainer, callbacks, storage policy | done | trainer seam commit |
+| 6 | Dataset adapters | **next** | – |
 | 7 | Linear probe as a library function | planned | – |
 | 8 | `cospro/` pipeline package and concept dictionaries | planned | – |
 | 9 | Package layout move | planned | – |
@@ -479,20 +479,49 @@ whether LA-SSL is a method or a sampler option (it keeps the plain SimCLR loss).
 **Rejected**: subclassing `SimCLRLoss` per method (couples loss and sampling); keeping capability flags
 (`requires_graph_indices`) as the dispatch mechanism.
 
-### Phase 5 — Trainer, callbacks, storage policy (planned)
+### Phase 5 — Trainer, callbacks, storage policy (done)
 
-- `Trainer.fit()` owns the epoch loop and emits `on_epoch_end`, `on_train_end`, `on_failure`.
-- Callbacks: `RankMetrics`, `PeriodicProbe`, `WandbLogger`, `RunRecordLogger`, `CheckpointPolicy`.
-- `StoragePolicy`: rolling epoch checkpoints in the run folder, deletion during training, final checkpoint to scratch
-  with a SHA-256 attestation in `run.json`. A test simulates ten epochs with a fake model and asserts the peak number of
-  checkpoint files in the run folder (the `/home` quota guard).
-- `TrainingState` bundles model, optimizer, scaler, loader generator and method state for save and resume.
-- `spur_splice.py` shrinks to parse, build, fit.
+**Delivered (2026-09-20)**
+
+- `cospro/training/`: `trainer.py` (`Trainer.fit`, the epoch loop and the two RNG rules),
+  `state.py` (`TrainingState`), `storage.py` (`StoragePolicy`), `callbacks.py` (`Callback`,
+  `EpochReport`, `RankMetrics`, `RunRecordLogger`, `WandbLogger`, `PeriodicProbe`,
+  `CheckpointPolicy`).
+- `spur_splice.py` went from 778 to 490 lines and now parses, builds and fits. `main` is 45 lines:
+  open the run record, build the storage policy and the W&B run, build the state, build the
+  callbacks, `fit`, then finish W&B, clean up and write the status.
+- A callback holds what it needs from construction, so the hooks carry only the epoch report or the
+  failure and the trainer never passes itself around.
+- `EpochReport` carries the raw epoch metrics, the learning rate and whatever diagnostics the
+  callbacks add; `cospro.tracking.epoch_payload` turns it into the historical metric event, which
+  both the run record and W&B store. `ssl_loop.log_rank_metrics` disappeared into this split.
+- `tests/test_trainer.py` runs ten epochs with a stubbed training step and asserts the peak number
+  of live checkpoint files: `--checkpoint_keep_count` recovery checkpoints, one more while a probe
+  reads its temporary one. It also pins that an observing callback cannot move the training RNG
+  stream and that a failing epoch reaches `on_failure` and the caller.
+- Golden training snapshots, storage names and `run_status.json` are unchanged.
+
+**Decisions**
+
+- The callbacks run inside `preserve_rng_state`, so the whole dispatch is observational by
+  construction. Before, each observer had to remember to preserve state on its own.
+- W&B closes after `fit` returns instead of in `on_train_end`, so the final linear probe still logs
+  into the run. `WandbLogger` owns the run, its identity and its finish state, and it writes into
+  the status dictionary `run_status.json` persists.
+- `StoragePolicy` and `CheckpointPolicy` stay separate: the policy answers where a file goes and how
+  long it stays, the callback answers when the trainer writes one.
+- The probe deletes its temporary checkpoint in a `finally`, so a failed probe no longer leaves one
+  behind. `save_freq = 0` no longer divides by zero.
+- Removed as dead: `get_probe_score`, `maybe_run_periodic_probe`, `maybe_run_final_probe`.
 - **Rejected**: PyTorch Lightning or Accelerate. They own RNG handling, checkpoint layout and logging; this project needs
   exact RNG isolation for observational probes, a custom storage split between `/home` and scratch and record
   attestations.
 
-### Phase 6 — Dataset adapters (planned)
+**Follow-up**: the linear probe still travels through the 35-field namespace bridge
+(`build_linear_probe_args`); phase 7 replaces it with `evaluate_probe` and `PeriodicProbe` then
+calls that directly.
+
+### Phase 6 — Dataset adapters (next)
 
 - `SpuriousDataset` base class with `read_metadata()` returning `path, y, a, split` plus `load_image()`; one
   `build_loader(dataset, role, options)` for the roles `ssl`, `rank`, `probe_train`, `probe_eval`.
