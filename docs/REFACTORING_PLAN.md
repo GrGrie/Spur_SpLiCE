@@ -111,8 +111,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 4 | `TrainingMethod` seam and W&B metric contract | done | `c0efd8b`, metric contract commit |
 | 5 | Trainer, callbacks, storage policy | done | trainer seam commit |
 | 6 | Dataset adapters | done | dataset seam commit |
-| 7 | Linear probe as a library function | **next** | – |
-| 8 | `cospro/` pipeline package and concept dictionaries | planned | – |
+| 7 | Linear probe as a library function | done | probe seam commit |
+| 8 | `cospro/` pipeline package and concept dictionaries | **next** | – |
 | 9 | Package layout move | planned | – |
 
 Other commits on the branch: `b51575f` AGENTS.md rules, `00a4c8b` paper commas, `3f2a5fb` YAML manifests,
@@ -560,14 +560,42 @@ calls that directly.
 - The adapters stay in `experiments/spurious_eval/datasets/`; phase 9 moves the package to
   `cospro/data/` in one `git mv`.
 
-### Phase 7 — Linear probe as a library function (next)
+### Phase 7 — Linear probe as a library function (done)
 
-- `evaluate_probe(encoder, dataset, ProbeOptions) -> ProbeResult` without file or W&B side effects;
-  `persist_probe_result` writes features to scratch and JSON to `outputs/`.
-- The trainer callback, `tools/paper/evaluate_submission_checkpoints.py` and the CLI call `evaluate_probe`; the
-  35-field namespace bridge disappears.
+**Delivered (2026-09-20)**
 
-### Phase 8 — `cospro/` pipeline package and concept dictionaries (planned)
+- `cospro/evaluation/probe.py`: `evaluate_probe(encoder, dataset, ProbeOptions) -> ProbeResult`
+  writes no file, opens no W&B run and reads no run identity. `persist_probe_result` writes the
+  feature tensors to scratch and the result JSON beside the run and attests both;
+  `log_probe_result` sends one probe to W&B; `probe_checkpoint` composes the three around an
+  encoder loaded from a checkpoint.
+- `ProbeOptions` holds what the measurement needs and `ProbeArtifacts` holds where its outputs go,
+  so the split between measuring and storing is visible in the signatures.
+- `linear_probe.py` went from 745 to 225 lines: it parses the command line into those two objects
+  and dispatches. `build_linear_probe_args`, the 35-field namespace bridge, is gone;
+  `spur_splice.probe_options` builds a typed `ProbeOptions` with 20 named fields instead.
+- `tools/paper/evaluate_submission_checkpoints.py` calls the library directly and maps the frozen
+  `PROTOCOL` onto `ProbeOptions`, leaving the stored protocol unchanged. Its `code_hash` now covers
+  `cospro/` as well, so a lock still cannot survive a change to any file the evaluation runs
+  through.
+- A probe inside a training run logs into that run and never opens a second one; the standalone CLI
+  still creates its own run when none is active.
+- `tests/test_probe_library.py` pins that measuring writes nothing (torch.save and the JSON writer
+  are made to raise), that persisting writes both artifacts with the right retention and emits the
+  per-epoch events, and that logging sends both key sets. Golden training snapshots, which compare
+  the final probe metrics, are unchanged.
+
+**Decisions**
+
+- The per-epoch probe events reach the run record from `persist_probe_result` rather than from the
+  loop, which keeps `evaluate_probe` pure. Their order inside `run.json` is unchanged: the feature
+  artifact, the epoch events, the result artifact, then the final event.
+- The features are written after the measurement instead of before it, so a crashed probe leaves no
+  half-attested tensor. A crash now loses the extraction work, which costs one forward pass.
+- `evaluate_probe` keeps its prints, including the closing summary. A silent measurement would make
+  cluster logs unreadable, and printing is not a side effect a caller has to undo.
+
+### Phase 8 — `cospro/` pipeline package and concept dictionaries (next)
 
 - Split `splice/cospro.py` into `cospro/cache.py`, `grouping.py`, `neighbors.py`, `audit.py`, `graph.py`,
   `pipeline.py`; `NeighborIndex` with `ExactNeighbors` and `LshNeighbors` tested against each other.
