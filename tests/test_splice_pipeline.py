@@ -486,7 +486,7 @@ class SplicePipelineTests(unittest.TestCase):
         )
         cache = self._tiny_splice_dataset_cache()
         concept_groups = build_concept_groups(cache, config)
-        with patch("splice.cospro._group_concepts", side_effect=AssertionError("must not regroup")):
+        with patch("cospro.pipeline.grouping._group_concepts", side_effect=AssertionError("must not regroup")):
             first = build_teacher_graph(cache, concept_groups, config)
             second = build_teacher_graph(cache, concept_groups, config)
         torch.testing.assert_close(first["neighbor_indices"], second["neighbor_indices"])
@@ -532,7 +532,7 @@ class SplicePipelineTests(unittest.TestCase):
                 cache, concept_groups, config, checkpoint_dir=checkpoints,
             )
             self.assertEqual(len(list(checkpoints.glob("group_*.pt"))), len(concept_groups["groups"]))
-            with patch("splice.cospro._neighbor_geometry", side_effect=AssertionError("must resume")):
+            with patch("cospro.pipeline.graph._neighbor_geometry", side_effect=AssertionError("must resume")):
                 second = build_teacher_graph(
                     cache, concept_groups, config, checkpoint_dir=checkpoints,
                 )
