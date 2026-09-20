@@ -17,6 +17,9 @@ from splice.artifacts import PROJECT_ROOT, artifact_uri, atomic_write_json, scra
 
 SCHEMA = "run-record-v1"
 _SECRET = re.compile(r"(token|secret|password|api[_-]?key)", re.IGNORECASE)
+# A URI already carries its own scheme, so it is portable and stays verbatim. This covers the
+# W&B run link as well as the project:// and artifact:// references written by earlier passes.
+_URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
 def _utc_now() -> str:
@@ -27,6 +30,8 @@ def _json_safe(value: Any, key: str = "") -> Any:
     if _SECRET.search(key):
         return "<redacted>"
     if value is None or isinstance(value, (str, int, float, bool)):
+        if isinstance(value, str) and _URI.match(value):
+            return value
         if isinstance(value, str) and (Path(value).is_absolute() or "/" in value or "\\" in value):
             normalized = value.replace("\\", "/")
             for root, prefix in ((PROJECT_ROOT, "project://"), (scratch_root(), "artifact://")):

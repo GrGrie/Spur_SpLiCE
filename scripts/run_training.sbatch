@@ -60,7 +60,7 @@ elif [[ "${has_graph}" != "1" && "${has_splice_mode}" != "1" ]]; then
   # requested spelling names the dataset. Python keeps the canonical names; this shell does not.
   SHARED_ROOT="${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/shared"
   requested_dataset="$(printf '%s' "${dataset_value}" | tr '[:upper:]' '[:lower:]' | tr -d '_-')"
-  GRAPH_ROOT="${SHARED_ROOT}/${requested_dataset}/graphs"
+  GRAPH_ROOT="${SHARED_ROOT}/${dataset_value}/graphs"
   for shared_dataset in "${SHARED_ROOT}"/*/; do
     [[ -d "${shared_dataset}" ]] || continue
     shared_name="$(basename "${shared_dataset}")"
