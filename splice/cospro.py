@@ -52,9 +52,16 @@ from cospro.pipeline.grouping import (  # noqa: F401
     save_concept_groups_json,
     validate_concept_groups,
 )
+from cospro.pipeline.selection import (  # noqa: F401
+    NullQuantilePass,
+    SelectionRule,
+    selection_rule,
+)
 from cospro.pipeline.neighbors import (  # noqa: F401
-    _exact_topk_neighbors,
-    _lsh_topk_neighbors,
+    ExactNeighbors,
+    LshNeighbors,
+    NeighborIndex,
+    build_index,
     orthonormal_basis,
     project_out,
     topk_neighbors,

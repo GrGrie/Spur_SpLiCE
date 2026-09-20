@@ -28,7 +28,8 @@ from cospro.pipeline.audit import (
 from cospro.pipeline.cache import SPLICE_DATASET_CACHE_VERSION, _atomic_torch_save, validate_splice_dataset_cache
 from cospro.pipeline.config import CoSpRoAuditConfig, _validate_config
 from cospro.pipeline.grouping import validate_concept_groups
-from cospro.pipeline.neighbors import orthonormal_basis, topk_neighbors
+from cospro.pipeline.neighbors import build_index, orthonormal_basis
+from cospro.pipeline.selection import SelectionRule, selection_rule
 
 # GRAPH_VERSION remains the legacy v2 format. CoSpRo v3 has its own version
 # because its fixed-density and validation fields are method changes.
@@ -139,6 +140,7 @@ def build_teacher_graph(
     device: str | torch.device = "auto",
     checkpoint_dir: str | Path | None = None,
     resume: bool = True,
+    selection: str | SelectionRule | None = None,
 ) -> dict:
     """Build a validated, label-free CoSpRo teacher graph.
 
@@ -147,6 +149,7 @@ def build_teacher_graph(
     """
 
     _validate_config(config)
+    rule = selection_rule(selection)
     cache = validate_splice_dataset_cache(splice_dataset_cache)
     concept_groups = validate_concept_groups(concept_groups)
     if [str(value) for value in concept_groups["sample_ids"]] != [
@@ -208,11 +211,16 @@ def build_teacher_graph(
             temporary_manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             os.replace(temporary_manifest, manifest_path)
 
-    resolved_backend = (
-        "lsh"
-        if config.neighbor_backend == "auto" and len(search_features) >= config.ann_threshold
-        else "exact" if config.neighbor_backend == "auto" else config.neighbor_backend
+    neighbor_index = build_index(
+        config.neighbor_backend,
+        len(search_features),
+        chunk_size=config.similarity_chunk_size,
+        ann_threshold=config.ann_threshold,
+        ann_tables=config.ann_tables,
+        ann_bucket_size=config.ann_bucket_size,
+        seed=config.seed,
     )
+    resolved_backend = neighbor_index.name
     print(
         f"[INFO] Neighbour search backend={resolved_backend} device={device} "
         f"samples={len(search_features)}",
@@ -228,15 +236,8 @@ def build_teacher_graph(
             raise RuntimeError(f"Raw-neighbour checkpoint has an invalid shape: {raw_checkpoint}")
         print(f"[INFO] Restored raw neighbours from {raw_checkpoint}", flush=True)
     else:
-        raw_neighbours, _ = topk_neighbors(
-            search_features,
-            config.projected_neighbors,
-            config.similarity_chunk_size,
-            backend=config.neighbor_backend,
-            ann_threshold=config.ann_threshold,
-            ann_tables=config.ann_tables,
-            ann_bucket_size=config.ann_bucket_size,
-            seed=config.seed,
+        raw_neighbours, _ = neighbor_index.search(
+            search_features, min(config.projected_neighbors, len(search_features) - 1),
         )
         if raw_checkpoint is not None:
             _atomic_torch_save({
@@ -330,9 +331,9 @@ def build_teacher_graph(
         )
         null_scores = torch.tensor(random_scores + shuffled_scores)
         threshold = float(torch.quantile(null_scores, config.null_quantile)) if null_scores.numel() else math.inf
-        selected = (
-            evidence["coverage"] >= config.min_coverage
-            and evidence["score"] > threshold
+        selected = rule.accepts(
+            {"coverage": evidence["coverage"], "score": evidence["score"], "null_threshold": threshold},
+            config,
         )
         null_excess_score = max(0.0, evidence["score"] - threshold)
         null_excess_ratio = min(
@@ -399,18 +400,7 @@ def build_teacher_graph(
             flush=True,
         )
 
-    candidate_evidence.sort(
-        key=lambda item: (
-            -float(audited_groups[item[0]]["null_excess_score"]),
-            -float(audited_groups[item[0]]["score"]),
-            item[0],
-        )
-    )
-    selected_evidence = (
-        candidate_evidence[: config.max_selected_groups]
-        if config.max_selected_groups
-        else candidate_evidence
-    )
+    selected_evidence = rule.retain(candidate_evidence, audited_groups, config)
     retained_group_ids = {group_id for group_id, _ in selected_evidence}
     for group in audited_groups:
         if group["selected"] and group["group_id"] not in retained_group_ids:
@@ -433,6 +423,7 @@ def build_teacher_graph(
             "concept_groups_version": concept_groups["concept_groups_version"],
         },
         "provenance": dict(cache.get("provenance", {})),
+        "selection": rule.provenance(config),
         "neighbor_search": {
             "requested_backend": config.neighbor_backend,
             "resolved_backend": resolved_backend,

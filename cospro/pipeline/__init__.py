@@ -28,13 +28,30 @@ from cospro.pipeline.grouping import (
     save_concept_groups_json,
     validate_concept_groups,
 )
-from cospro.pipeline.neighbors import orthonormal_basis, project_out, topk_neighbors
+from cospro.pipeline.neighbors import (
+    NEIGHBOR_INDEXES,
+    ExactNeighbors,
+    LshNeighbors,
+    NeighborIndex,
+    build_index,
+    orthonormal_basis,
+    project_out,
+    topk_neighbors,
+)
+from cospro.pipeline.selection import (
+    SELECTION_RULES,
+    NullQuantilePass,
+    SelectionRule,
+    selection_rule,
+)
 
 __all__ = [
     "CONCEPT_GROUPS_VERSION", "COSPRO_CONCEPT_GROUP_ARTIFACT", "COSPRO_GRAPH_VERSION",
-    "COSPRO_TEACHER_GRAPH_ARTIFACT", "CoSpRoAuditConfig", "FORBIDDEN_CACHE_KEYS", "GRAPH_VERSION",
-    "GROUPING_CONFIG_FIELDS", "REQUIRED_CACHE_KEYS", "SPLICE_DATASET_CACHE_VERSION",
-    "build_concept_groups", "build_teacher_graph", "load_concept_groups_json", "orthonormal_basis",
-    "project_out", "save_concept_groups_json", "save_splice_dataset_cache", "topk_neighbors",
-    "validate_concept_groups", "validate_cospro_config", "validate_splice_dataset_cache",
+    "COSPRO_TEACHER_GRAPH_ARTIFACT", "CoSpRoAuditConfig", "ExactNeighbors", "FORBIDDEN_CACHE_KEYS",
+    "GRAPH_VERSION", "GROUPING_CONFIG_FIELDS", "LshNeighbors", "NEIGHBOR_INDEXES", "NeighborIndex",
+    "NullQuantilePass", "REQUIRED_CACHE_KEYS", "SELECTION_RULES", "SPLICE_DATASET_CACHE_VERSION",
+    "SelectionRule", "build_concept_groups", "build_index", "build_teacher_graph",
+    "load_concept_groups_json", "orthonormal_basis", "project_out", "save_concept_groups_json",
+    "save_splice_dataset_cache", "selection_rule", "topk_neighbors", "validate_concept_groups",
+    "validate_cospro_config", "validate_splice_dataset_cache",
 ]

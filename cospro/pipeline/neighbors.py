@@ -40,9 +40,7 @@ def project_out(centered_embeddings: torch.Tensor, basis: torch.Tensor) -> torch
     return F.normalize(residual, dim=1)
 
 
-def _exact_topk_neighbors(
-    features: torch.Tensor, k: int, chunk_size: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+def _exact_search(features: torch.Tensor, k: int, chunk_size: int) -> tuple[torch.Tensor, torch.Tensor]:
     indices, similarities = [], []
     for start in range(0, len(features), chunk_size):
         stop = min(start + chunk_size, len(features))
@@ -55,7 +53,7 @@ def _exact_topk_neighbors(
     return torch.cat(indices), torch.cat(similarities)
 
 
-def _lsh_topk_neighbors(
+def _lsh_search(
     features: torch.Tensor,
     k: int,
     chunk_size: int,
@@ -126,6 +124,102 @@ def _lsh_topk_neighbors(
     return torch.cat(final_indices), torch.cat(final_similarities)
 
 
+class NeighborIndex:
+    """The neighbourhood query the audit makes, in one shape for every backend.
+
+    ``search`` returns the ``k`` nearest rows of ``features`` for every row, excluding the row
+    itself, plus their cosine similarities, both sorted by descending similarity.
+    """
+
+    #: The ``--neighbor-backend`` value that selects this index.
+    name: ClassVar[str] = ""
+
+    def __init__(self, *, chunk_size: int = 512, seed: int = 0, **options) -> None:
+        self.chunk_size = int(chunk_size)
+        self.seed = int(seed)
+        self.options = options
+
+    def search(self, features: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+    def provenance(self) -> dict:
+        """What the teacher graph records about how its neighbours were found."""
+
+        return {"backend": self.name, "approximate": False}
+
+
+NEIGHBOR_INDEXES: dict[str, type[NeighborIndex]] = {}
+
+
+def register_index(cls: type[NeighborIndex]) -> type[NeighborIndex]:
+    if not cls.name:
+        raise ValueError(f"{cls.__name__} must declare a backend name.")
+    if cls.name in NEIGHBOR_INDEXES:
+        raise ValueError(f"Neighbour backend {cls.name!r} is registered twice.")
+    NEIGHBOR_INDEXES[cls.name] = cls
+    return cls
+
+
+@register_index
+class ExactNeighbors(NeighborIndex):
+    """Every pair, in chunks. The reference every approximate index is compared with."""
+
+    name = "exact"
+
+    def search(self, features: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return _exact_search(features, k, self.chunk_size)
+
+
+@register_index
+class LshNeighbors(NeighborIndex):
+    """SimHash buckets plus an exact rerank, for datasets too large to compare pairwise."""
+
+    name = "lsh"
+
+    def search(self, features: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return _lsh_search(
+            features, k, self.chunk_size,
+            tables=int(self.options.get("tables", 8)),
+            bucket_size=int(self.options.get("bucket_size", 512)),
+            seed=self.seed,
+        )
+
+    def provenance(self) -> dict:
+        return {
+            "backend": self.name,
+            "approximate": True,
+            "tables": int(self.options.get("tables", 8)),
+            "bucket_size": int(self.options.get("bucket_size", 512)),
+        }
+
+
+def resolve_backend(backend: str, n_samples: int, ann_threshold: int) -> str:
+    """The backend a request selects. ``auto`` picks LSH once the dataset is large enough."""
+
+    if backend != "auto":
+        return backend
+    return "lsh" if n_samples >= ann_threshold else "exact"
+
+
+def build_index(
+    backend: str,
+    n_samples: int,
+    *,
+    chunk_size: int = 512,
+    ann_threshold: int = 20_000,
+    ann_tables: int = 8,
+    ann_bucket_size: int = 512,
+    seed: int = 0,
+) -> NeighborIndex:
+    """The index a configuration selects, already resolved from ``auto``."""
+
+    resolved = resolve_backend(backend, n_samples, ann_threshold)
+    index_class = NEIGHBOR_INDEXES.get(resolved)
+    if index_class is None:
+        raise ValueError(f"Unknown neighbour backend: {backend!r}")
+    return index_class(chunk_size=chunk_size, seed=seed, tables=ann_tables, bucket_size=ann_bucket_size)
+
+
 def topk_neighbors(
     features: torch.Tensor,
     k: int,
@@ -137,18 +231,13 @@ def topk_neighbors(
     ann_bucket_size: int = 512,
     seed: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Cosine neighbours via exact chunks or a scalable PyTorch LSH index."""
+    """Cosine neighbours through the index a backend name selects."""
 
     n_samples = len(features)
     if n_samples < 2:
         raise ValueError("At least two samples are required to construct relations.")
-    k = min(k, n_samples - 1)
-    resolved = "lsh" if backend == "auto" and n_samples >= ann_threshold else backend
-    resolved = "exact" if resolved == "auto" else resolved
-    if resolved == "exact":
-        return _exact_topk_neighbors(features, k, chunk_size)
-    if resolved == "lsh":
-        return _lsh_topk_neighbors(
-            features, k, chunk_size, tables=ann_tables, bucket_size=ann_bucket_size, seed=seed,
-        )
-    raise ValueError(f"Unknown neighbour backend: {backend!r}")
+    index = build_index(
+        backend, n_samples, chunk_size=chunk_size, ann_threshold=ann_threshold,
+        ann_tables=ann_tables, ann_bucket_size=ann_bucket_size, seed=seed,
+    )
+    return index.search(features, min(k, n_samples - 1))
