@@ -108,8 +108,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 1 | Conventions: SLURM lint, template, single sources for defaults and cluster identity, CRP→CoSpRo rename, layout of paper and tools, dead code | done | `567d70c` … `af0a346` |
 | 2 | Concept-group and teacher-graph diagnostics with dashboard | done; cache tier awaits a cluster run | `177fced` |
 | 3 | Typed configuration, presets, sweeps | done | `aa8e738` … (see phase 3 notes) |
-| 4 | `TrainingMethod` seam and W&B metric contract | **next** | – |
-| 5 | Trainer, callbacks, storage policy | planned | – |
+| 4 | `TrainingMethod` seam and W&B metric contract | done | `c0efd8b`, metric contract commit |
+| 5 | Trainer, callbacks, storage policy | **next** | – |
 | 6 | Dataset adapters | planned | – |
 | 7 | Linear probe as a library function | planned | – |
 | 8 | `cospro/` pipeline package and concept dictionaries | planned | – |
@@ -421,7 +421,41 @@ messages. Volatile entries (paths, runtime versions, storage name) are normalize
 `run_cospro_pipeline.py` and `linear_probe.py` carry no student or probe literals; a sweep test expands a grid into
 the expected arms and commands.
 
-### Phase 4 — `TrainingMethod` seam and W&B metric contract (planned)
+### Phase 4 — `TrainingMethod` seam and W&B metric contract (done)
+
+**Delivered (2026-09-20)**
+
+- `cospro/methods/`: `base.py` (interface, registry, `LoaderContext`, `LossTerms`), `simclr.py`,
+  `relational.py`, `concept_transfer.py`, `la_ssl.py`. A method owns `wrap_loader`, `extra_loss`,
+  `diagnostics`, `provenance`, `input_artifacts`, `sampling_state` and `refresh_sampling`.
+- Selection is data-driven: each class declares the `splice_mode` values it serves (`modes`) or
+  `requires_la_ssl`; `method_for` resolves them and registration rejects two claims on one mode.
+- Dataset adapters lost their mode whitelists and the Waterbirds frozen-transfer branch. The
+  frozen method rebuilds the loader around `FrozenConceptTransferSubset` using the same subset,
+  transform and generator, so sampling and augmentation stay identical.
+- `ssl_loop` has one call path and creates a meter per diagnostic the method reports, keeping the
+  historical `relational_<name>` metric names.
+- `cospro/tracking/metrics.py`: canonical W&B keys logged next to the historical ones, with
+  `probe/<split>/wga` as the run summary metric.
+
+**Decisions**
+
+- Graph provenance keeps its historical key names (`teacher_graph_artifact`, `relational_graph_empty`,
+  ...); `spur_splice` copies `method.provenance()` onto the namespace, so `run.json` and the W&B
+  config look exactly as before.
+- Canonical metric keys go to W&B only. Adding them to `run.json` would change every metric event
+  and the golden training snapshots for no reader today; phase 5 revisits this when logging moves
+  into callbacks.
+- The three run-name formatters still branch on `splice_mode`. Their strings (`cospro-relational`,
+  `crp-v2-relational`, `la-ssl`, `concept-transfer`) are part of stored identities, so they stay.
+- Rejected: dispatching on capability flags (`requires_graph_indices`), subclassing `SimCLRLoss`
+  per method, and moving LA-SSL into a sampler option (it stays a method because it wraps the
+  loader and saves state).
+
+**Follow-up**: put the phase 2 graph metrics (balanced counterfactual, minority reach) into the
+W&B config of relational runs, so W&B can scatter graph quality against final WGA.
+
+**Original design (kept for reference)**
 
 **Design**
 

@@ -31,6 +31,7 @@ from experiments.spurious_eval.training.probe_loop import extract_features, make
 from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
 from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
 from cospro.config import LINEAR_PROBE_DEFAULTS, training_defaults
+from cospro.tracking import canonical_probe_metrics, define_wandb_metrics
 from splice.settings import wandb_entity
 
 
@@ -625,8 +626,12 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
             run_spurious_attribute_probe(train_features, val_features, feature_dim, args, device)
         )
     if wandb_run is not None:
+        define_wandb_metrics(wandb_run, split=args.eval_split)
         wandb_run.log(
-            {key: value for key, value in final_metrics.items() if not isinstance(value, list)},
+            {
+                **{key: value for key, value in final_metrics.items() if not isinstance(value, list)},
+                **canonical_probe_metrics(final_metrics, split=args.eval_split),
+            },
             step=supcon_epoch,
         )
         wandb_run.log(

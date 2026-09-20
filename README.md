@@ -185,6 +185,28 @@ python -m scripts.tools.generate_cospro_concept_groups \
 
 Use `--no-embed-images` only when a placeholder-only report is intentional.
 
+## Training methods and tracked metrics
+
+Each training method lives in `cospro/methods/`: `SimCLROnly`, `CoSpRoRelational`,
+`FrozenConceptDistill` and `LaSSL`. A method owns the loader it needs, the loss term it adds to
+SimCLR, the diagnostics it reports, the artifacts it consumes and the sampler state it saves.
+Adding a method means adding one module with `@register_method`, declaring the `splice_mode`
+values it serves and adding its options section in `cospro/config`.
+
+Every run logs two sets of W&B keys: the historical sentence-style names that `run.json`,
+`collect_results` and the paper registry read, plus canonical names that stay stable across
+refactors (`cospro/tracking/metrics.py`):
+
+```text
+probe/<split>/wga            worst-group accuracy, the run summary metric
+probe/<split>/wga_avg10      averaged over the last ten probe epochs
+probe/<split>/avg_acc        average accuracy
+probe/<split>/group_acc/<g>  per-group accuracy
+probe/spurious/wga           residual predictability of the spurious attribute
+train/loss/<term>            SSL loss terms
+method/<name>                diagnostics of the training method
+```
+
 ## Verification
 
 ```bash

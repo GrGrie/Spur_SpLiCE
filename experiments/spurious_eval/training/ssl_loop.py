@@ -6,6 +6,7 @@ import time
 import torch
 import torch.nn.functional as F
 
+from cospro.tracking import canonical_train_metrics
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.metrics import entropy_effective_rank
 from experiments.spurious_eval.models.simclr import SimCLRModel
@@ -235,5 +236,5 @@ def log_rank_metrics(
     if run_recorder is not None:
         run_recorder.log_metrics("ssl", epoch, payload)
     if wandb_run is not None:
-        wandb_run.log(payload, step=epoch)
+        wandb_run.log({**payload, **canonical_train_metrics(payload)}, step=epoch)
     return payload
