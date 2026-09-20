@@ -449,7 +449,7 @@ the expected arms and commands.
 - The three run-name formatters still branch on `splice_mode`. Their strings (`cospro-relational`,
   `crp-v2-relational`, `la-ssl`, `concept-transfer`) are part of stored identities, so they stay.
 - Rejected: dispatching on capability flags (`requires_graph_indices`), subclassing `SimCLRLoss`
-  per method, and moving LA-SSL into a sampler option (it stays a method because it wraps the
+  per method and moving LA-SSL into a sampler option (it stays a method because it wraps the
   loader and saves state).
 
 **Follow-up**: put the phase 2 graph metrics (balanced counterfactual, minority reach) into the
