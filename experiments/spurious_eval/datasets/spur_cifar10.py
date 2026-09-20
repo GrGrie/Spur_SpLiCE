@@ -6,24 +6,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw
-from torchvision import datasets, transforms
+from PIL import ImageDraw
+from torchvision import datasets
 
-from experiments.spurious_eval.metrics import compute_group_metrics
-from experiments.spurious_eval.datasets.augmentation import (
-    build_ssl_transform,
-)
+from experiments.spurious_eval.datasets.base import DatasetConfig, SpuriousDataset, register_dataset
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.transforms import (
-    TwoCropTransform,
-)
-from experiments.spurious_eval.datasets.wilds_compat import (
-    CombinatorialGrouper,
-    WILDSDataset,
-    get_eval_loader,
-    get_ssl_train_loader,
-    get_train_loader,
-)
+from experiments.spurious_eval.datasets.wilds_compat import CombinatorialGrouper
 
 
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
@@ -54,15 +42,9 @@ LINE_COLORS = [
 ]
 
 
-
-
 @dataclass(frozen=True)
-class SpurCIFAR10Config:
-    root_dir: str = "./datasets"
+class SpurCIFAR10Config(DatasetConfig):
     image_size: int = 32
-    train_split: str = "ds_train"
-    eval_split: str = "val"
-    ssl_crop_min: float = 0.2
     val_fraction: float = 0.1
     train_spurious_correlation: float = 0.95
     eval_spurious_correlation: float = 0.1
@@ -71,38 +53,17 @@ class SpurCIFAR10Config:
     download: bool = True
 
 
-def spur_cifar10_transforms(
-    image_size: int = 32,
-    ssl_crop_min: float = 0.2,
-) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
-    normalize = transforms.Normalize(mean=CIFAR10_MEAN, std=CIFAR10_STD)
-    ssl_train_transform = build_ssl_transform(
-        image_size=image_size, crop_min=ssl_crop_min,
-        color_jitter=(0.4, 0.4, 0.4, 0.1), color_jitter_p=0.8,
-        grayscale_p=0.2, normalize=normalize,
-    )
-    linear_train_transform = transforms.Compose(
-        [
-            transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]
-    )
-    eval_transform = transforms.Compose(
-        [
-            transforms.Resize((image_size, image_size)),
-            transforms.ToTensor(),
-            normalize,
-        ]
-    )
-    return ssl_train_transform, linear_train_transform, eval_transform
-
-
-class SpurCIFAR10Dataset(WILDSDataset):
+@register_dataset
+class SpurCIFAR10Dataset(SpuriousDataset):
     """CIFAR-10 with one class-associated horizontal-line color per class."""
 
-    _dataset_name = "spur_cifar10"
+    name = "spur_cifar10"
+    aliases = ("spur-cifar10",)
+    num_classes = 10
+    image_size = 32
+    mean = CIFAR10_MEAN
+    std = CIFAR10_STD
+    Config = SpurCIFAR10Config
 
     def __init__(
         self,
@@ -140,7 +101,7 @@ class SpurCIFAR10Dataset(WILDSDataset):
         labels = np.concatenate([train_labels, test_labels])
         self._y_array = torch.LongTensor(labels)
         self._y_size = 1
-        self._n_classes = 10
+        self._n_classes = self.num_classes
         train_spurious = self._make_spurious_values(train_labels[:train_split_count], train_spurious_correlation, spurious_seed)
         val_spurious = self._make_spurious_values(train_labels[train_split_count:], eval_spurious_correlation, spurious_seed + 1)
         test_spurious = self._make_spurious_values(test_labels, eval_spurious_correlation, spurious_seed + 2)
@@ -166,6 +127,21 @@ class SpurCIFAR10Dataset(WILDSDataset):
             raise ValueError(f"Split scheme {self._split_scheme} not recognized")
         self._eval_grouper = CombinatorialGrouper(dataset=self, groupby_fields=["line_color", "y"])
         super().__init__(root_dir, split_scheme)
+
+    @classmethod
+    def from_config(cls, config: SpurCIFAR10Config) -> "SpurCIFAR10Dataset":
+        """The spurious correlation and the val split are drawn at construction, so they come
+        from the configuration rather than from a file."""
+
+        return cls(
+            config.root_dir,
+            val_fraction=config.val_fraction,
+            train_spurious_correlation=config.train_spurious_correlation,
+            eval_spurious_correlation=config.eval_spurious_correlation,
+            spurious_seed=config.spurious_seed,
+            line_width=config.line_width,
+            download=config.download,
+        )
 
     @staticmethod
     def _find_cifar_root(root_dir: Path) -> Path:
@@ -207,117 +183,3 @@ class SpurCIFAR10Dataset(WILDSDataset):
         y1 = min(height - 1, y0 + max(1, self.line_width) - 1)
         draw.rectangle([0, y0, width - 1, y1], fill=self.line_colors[line_color])
         return image
-
-    def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
-        metrics = compute_group_metrics(y_pred, y_true, metadata)
-        lines = [f"Average acc: {metrics.average:.3f}"]
-        for idx, (acc, count) in enumerate(zip(metrics.group_accuracy, metrics.group_counts)):
-            if count > 0:
-                lines.append(f"  group {idx} [n = {count:6.0f}]:\tacc = {acc:5.3f}")
-        lines.append(f"Worst-group acc: {metrics.worst_group:.3f}")
-        lines.append(f"Best-group  acc: {metrics.best_group:.3f}")
-        return metrics.as_spurssl_dict(), "\n".join(lines)
-
-
-def make_spur_cifar10_loaders(
-    config: SpurCIFAR10Config,
-    batch_size: int,
-    num_workers: int | None = None,
-    train_loader_kwargs: dict | None = None,
-    eval_loader_kwargs: dict | None = None,
-) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
-    train_loader_kwargs = train_loader_kwargs or {}
-    eval_loader_kwargs = eval_loader_kwargs or {}
-    if num_workers is not None:
-        train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
-        eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, linear_train_transform, eval_transform = spur_cifar10_transforms(config.image_size)
-    full_dataset = SpurCIFAR10Dataset(
-        config.root_dir,
-        val_fraction=config.val_fraction,
-        train_spurious_correlation=config.train_spurious_correlation,
-        eval_spurious_correlation=config.eval_spurious_correlation,
-        spurious_seed=config.spurious_seed,
-        line_width=config.line_width,
-        download=config.download,
-    )
-    train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
-    eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
-    train_loader = get_train_loader("standard", train_dataset, batch_size=batch_size, drop_last=False, **train_loader_kwargs)
-    eval_loader = get_eval_loader("standard", eval_dataset, batch_size=batch_size, drop_last=False, **eval_loader_kwargs)
-    return train_loader, eval_loader
-
-
-def make_spur_cifar10_ssl_loader(
-    config: SpurCIFAR10Config,
-    batch_size: int,
-    num_workers: int | None = None,
-    **loader_kwargs,
-) -> torch.utils.data.DataLoader:
-    if num_workers is not None:
-        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, _, _ = spur_cifar10_transforms(
-        config.image_size,
-        ssl_crop_min=config.ssl_crop_min,
-    )
-    full_dataset = SpurCIFAR10Dataset(
-        config.root_dir,
-        val_fraction=config.val_fraction,
-        train_spurious_correlation=config.train_spurious_correlation,
-        eval_spurious_correlation=config.eval_spurious_correlation,
-        spurious_seed=config.spurious_seed,
-        line_width=config.line_width,
-        download=config.download,
-    )
-    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
-    return get_ssl_train_loader(
-        "standard",
-        train_dataset,
-        batch_size=batch_size,
-        uniform_over_groups=False,
-        grouper=full_dataset._eval_grouper,
-        drop_last=False,
-        **loader_kwargs,
-    )
-
-
-def make_spur_cifar10_rank_loader(
-    config: SpurCIFAR10Config,
-    batch_size: int,
-    num_workers: int | None = None,
-    **loader_kwargs,
-) -> torch.utils.data.DataLoader:
-    """Build an ordered, non-augmented train loader for diagnostics only."""
-
-    if num_workers is not None:
-        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    _, _, eval_transform = spur_cifar10_transforms(config.image_size)
-    full_dataset = SpurCIFAR10Dataset(
-        config.root_dir,
-        val_fraction=config.val_fraction,
-        train_spurious_correlation=config.train_spurious_correlation,
-        eval_spurious_correlation=config.eval_spurious_correlation,
-        spurious_seed=config.spurious_seed,
-        line_width=config.line_width,
-        download=config.download,
-    )
-    rank_dataset = full_dataset.get_subset("train", transform=eval_transform)
-    return get_eval_loader(
-        "standard",
-        rank_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **loader_kwargs,
-    )
-
-
-SPUR_CIFAR10_SPEC = {
-    "dataset": SpurCIFAR10Dataset,
-    "config": SpurCIFAR10Config,
-    "ssl_loader": make_spur_cifar10_ssl_loader,
-    "rank_loader": make_spur_cifar10_rank_loader,
-    "probe_loaders": make_spur_cifar10_loaders,
-    "num_classes": 10,
-    "spurious_metadata_index": 0,
-    "target_metadata_index": 1,
-}

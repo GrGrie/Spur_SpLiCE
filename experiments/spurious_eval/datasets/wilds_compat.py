@@ -1,3 +1,10 @@
+"""Vendored third-party code: the slice of the WILDS dataset API this project depends on.
+
+Upstream: https://github.com/p-lambda/wilds (MIT). Only the pieces SpurSSL-style training needs are
+kept, so the project has no WILDS dependency. Treat this module as external: fix a bug here only to
+match upstream behaviour and put project decisions in ``base.py`` instead.
+"""
+
 from __future__ import annotations
 
 import os

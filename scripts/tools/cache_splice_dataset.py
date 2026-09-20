@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader, Dataset
 
 import splice
 from experiments.spurious_eval.datasets.registry import (
-    CANONICAL_DATASET_REGISTRY,
     canonical_dataset_name,
-    get_dataset_spec,
+    dataset_class,
+    dataset_names,
 )
 from splice.cospro import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
 
@@ -78,7 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--dataset",
         type=canonical_dataset_name,
-        choices=sorted(CANONICAL_DATASET_REGISTRY),
+        choices=dataset_names(),
         required=True,
     )
     parser.add_argument("--data-folder", required=True)
@@ -106,8 +106,7 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("batch-size must be positive and num-workers must be non-negative.")
 
     device = torch.device(args.device)
-    dataset_class = get_dataset_spec(args.dataset)["dataset"]
-    images = IndexedImages(dataset_class(args.data_folder))
+    images = IndexedImages(dataset_class(args.dataset)(args.data_folder))
     loader = DataLoader(
         images,
         batch_size=args.batch_size,

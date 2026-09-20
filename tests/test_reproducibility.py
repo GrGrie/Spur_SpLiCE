@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.ssl_loop import extract_normalized_train_features
 from spur_splice import make_dataloader_kwargs, preserve_rng_state
@@ -88,11 +87,6 @@ class ReproducibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "different teacher graph"):
                 load_checkpoint(model, optimizer, checkpoint_path, torch.device("cpu"),
                                 expected_cospro_graph_fingerprint="graph-b")
-
-    def test_every_dataset_has_a_dedicated_rank_loader(self):
-        for dataset_name, spec in DATASET_REGISTRY.items():
-            with self.subTest(dataset=dataset_name):
-                self.assertIn("rank_loader", spec)
 
     def test_rank_loader_iteration_does_not_advance_training_sampler(self):
         args = argparse.Namespace(seed=17, num_workers=0)

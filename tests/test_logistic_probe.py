@@ -82,14 +82,20 @@ class LogisticProbeTests(unittest.TestCase):
                 return compute_group_metrics(predictions, targets, meta).as_spurssl_dict(), ""
 
         loader = DataLoader(Dataset(features, labels, metadata), batch_size=40)
-        spec = {"config": lambda **kwargs: kwargs, "probe_loaders": lambda *args, **kwargs: (loader, loader), "num_classes": 2}
+
+        class ToyDataset:
+            num_classes = 2
+            Config = dict
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = argparse.Namespace(
                 dataset="toy", ckpt=str(root / "last.pth"), device="cpu", num_workers=0,
                 spurious_probe=True, probe_solver="logistic"
             )
-            with patch.dict(linear_probe.DATASET_REGISTRY, {"toy": spec}), patch.object(
+            with patch.object(linear_probe, "dataset_class", lambda name: ToyDataset), patch.object(
+                linear_probe, "build_probe_loaders", lambda *args, **kwargs: (loader, loader)
+            ), patch.object(
                 linear_probe, "build_resnet_encoder", return_value=(torch.nn.Identity(), 8)
             ), patch.object(linear_probe, "load_encoder_checkpoint"):
                 result = linear_probe.main(args, supcon_epoch=100)

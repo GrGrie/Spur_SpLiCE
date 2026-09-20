@@ -128,8 +128,8 @@ class SplicePipelineTests(unittest.TestCase):
 
         cache = {"provenance": {"dataset": "tiny"}}
         with patch(
-            "scripts.tools.generate_cospro_concept_groups.get_dataset_spec",
-            return_value={"dataset": TinyDataset},
+            "scripts.tools.generate_cospro_concept_groups.dataset_class",
+            return_value=TinyDataset,
         ):
             resolver = _dataset_image_resolver(cache, Path("dataset"))
         self.assertIsNotNone(resolver)
@@ -180,8 +180,8 @@ class SplicePipelineTests(unittest.TestCase):
             json_path = Path(temporary_directory) / "concept_groups.json"
             save_concept_groups_json(artifact, json_path)
             with patch(
-                "scripts.tools.generate_cospro_concept_groups.get_dataset_spec",
-                return_value={"dataset": TinyDataset},
+                "scripts.tools.generate_cospro_concept_groups.dataset_class",
+                return_value=TinyDataset,
             ):
                 generate_cospro_concept_groups_main(
                     [
@@ -754,11 +754,8 @@ class SplicePipelineTests(unittest.TestCase):
         )
 
         with (
-            patch.object(
-                spur_splice,
-                "DATASET_REGISTRY",
-                {"waterbirds": {"ssl_loader": lambda *args, **kwargs: loader}},
-            ),
+            patch.object(spur_splice, "build_loader", lambda *args, **kwargs: loader),
+            patch.object(spur_splice, "dataset_class", lambda name: None),
             patch.object(spur_splice, "build_dataset_config", return_value={}),
             patch.object(spur_splice, "make_dataloader_kwargs", return_value={}),
             patch("cospro.methods.relational.load_teacher_graph", return_value=(graph, "digest")),

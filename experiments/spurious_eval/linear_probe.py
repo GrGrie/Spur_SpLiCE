@@ -14,9 +14,10 @@ import torch.backends.cudnn as cudnn
 from torch.utils.data import TensorDataset
 
 from experiments.spurious_eval.datasets.registry import (
-    CANONICAL_DATASET_REGISTRY,
-    DATASET_REGISTRY,
+    build_probe_loaders,
     canonical_dataset_name,
+    dataset_class,
+    dataset_names,
 )
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
@@ -70,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset",
         type=canonical_dataset_name,
         default="waterbirds",
-        choices=sorted(CANONICAL_DATASET_REGISTRY),
+        choices=dataset_names(),
     )
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument(
@@ -367,15 +368,16 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
     set_seed(args.seed)
     device = torch.device(args.device)
 
-    dataset_spec = DATASET_REGISTRY[args.dataset]
-    config = dataset_spec["config"](
+    dataset = dataset_class(args.dataset)
+    config = dataset.Config(
         root_dir=args.data_folder,
         train_split=args.train_set_linear_layer,
         eval_split=args.eval_split,
     )
     train_loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
     val_loader_kwargs = make_dataloader_kwargs(args, shuffle=False)
-    train_loader, val_loader = dataset_spec["probe_loaders"](
+    train_loader, val_loader = build_probe_loaders(
+        dataset,
         config,
         args.batch_size,
         train_loader_kwargs=train_loader_kwargs,
@@ -402,7 +404,7 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
         cudnn.benchmark = False
 
     consume_spurssl_head_rng(feature_dim, args)
-    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=dataset_spec["num_classes"]).to(device)
+    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=dataset.num_classes).to(device)
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(
         classifier.parameters(),
@@ -481,7 +483,7 @@ def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None
         logistic_records, convergence = fit_logistic_probe(
             train_features.tensors[0], train_features.tensors[1],
             val_features.tensors[0], val_features.tensors[1],
-            num_classes=dataset_spec["num_classes"], l2=args.probe_l2,
+            num_classes=dataset.num_classes, l2=args.probe_l2,
             tolerance=args.probe_tolerance, max_epochs=args.probe_max_epochs,
         )
     for epoch in range(1, (len(logistic_records) if logistic_records is not None else args.epochs) + 1):

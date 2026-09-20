@@ -20,7 +20,7 @@ import torch
 
 from cospro.config.options import ConfigError, add_section_arguments, option, section_defaults, section_from_namespace
 from cospro.config.presets import PRESETS, preset_values
-from experiments.spurious_eval.datasets.registry import CANONICAL_DATASET_REGISTRY, DATASET_REGISTRY, canonical_dataset_name
+from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from splice.compat import LEGACY_RELATIONAL_MODE
@@ -62,7 +62,7 @@ class OptimizationOptions:
 
 @dataclass(frozen=True)
 class DataOptions:
-    dataset: str = option("waterbirds", parse=canonical_dataset_name, choices=sorted(CANONICAL_DATASET_REGISTRY))
+    dataset: str = option("waterbirds", parse=canonical_dataset_name, choices=dataset_names())
     data_folder: str = option("./datasets", parse=str)
     num_workers: int = option(32, parse=int)
     ssl_crop_min: float = option(0.2, flags=("--ssl_crop_min", "--ssl-crop-min"), parse=float)
@@ -339,8 +339,9 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
     Checks run in their historical order with their historical messages. Raises :class:`ConfigError`.
     """
 
+    dataset = dataset_class(args.dataset)
     if args.model is None:
-        args.model = "resnet18" if args.dataset == "spur_cifar10" else "resnet18_large"
+        args.model = dataset.default_model()
     if args.la_ssl:
         _require(args.splice_mode == "none" and args.simclr_weight == 1,
                  "LA-SSL uses the unchanged SimCLR objective without a teacher.")
@@ -387,10 +388,8 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
     _require(not args.cospro_decay_end_epoch or args.cospro_decay_end_epoch > args.cospro_decay_start_epoch,
              "--cospro_decay_end_epoch must be greater than --cospro_decay_start_epoch.")
     _require(0 < args.ssl_crop_min <= 1, "--ssl-crop-min must be in the interval (0, 1].")
-    _require(
-        not (args.dataset == "spur_cifar10" and (args.model.endswith("_large") or args.model == "resnet50_pretrained")),
-        "spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.",
-    )
+    incompatible_model = dataset.model_error(args.model)
+    _require(incompatible_model is None, incompatible_model or "")
     _require(not args.cudnn_benchmark or args.cudnn_enabled, "--cudnn_benchmark true requires --cudnn_enabled true.")
     _require(not args.cudnn_benchmark, "--cudnn_benchmark must remain false because training is reproducible by default.")
     _require(args.rank_eval_freq >= 0, "--rank_eval_freq must be non-negative.")
@@ -418,7 +417,7 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         args.warm_epochs = 0
     if args.linear_probe_freq is None:
         args.linear_probe_freq = DEFAULT_PERIODIC_PROBE_FREQ if args.linear_probe_mode == "periodic" else 0
-    args.n_cls = DATASET_REGISTRY[args.dataset]["num_classes"]
+    args.n_cls = dataset.num_classes
     return args
 
 

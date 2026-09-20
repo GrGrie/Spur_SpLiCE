@@ -7,67 +7,19 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
-from torchvision import transforms
 
-from experiments.spurious_eval.metrics import compute_group_metrics
-from experiments.spurious_eval.datasets.augmentation import (
-    build_ssl_transform,
-)
+from experiments.spurious_eval.datasets.base import DatasetConfig, SpuriousDataset, register_dataset
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.transforms import (
-    TwoCropTransform,
-)
-from experiments.spurious_eval.datasets.wilds_compat import (
-    CombinatorialGrouper,
-    WILDSDataset,
-    get_eval_loader,
-    get_ssl_train_loader,
-    get_train_loader,
-)
-
-
-CELEBA_MEAN = (0.485, 0.456, 0.406)
-CELEBA_STD = (0.229, 0.224, 0.225)
+from experiments.spurious_eval.datasets.wilds_compat import CombinatorialGrouper
 
 
 @dataclass(frozen=True)
-class CelebAConfig:
-    root_dir: str = "./datasets"
-    image_size: int = 224
-    train_split: str = "ds_train"
-    eval_split: str = "val"
-    ssl_crop_min: float = 0.2
+class CelebAConfig(DatasetConfig):
+    pass
 
 
-def celeba_transforms(
-    image_size: int = 224,
-    ssl_crop_min: float = 0.2,
-) -> tuple[transforms.Compose, transforms.Compose, transforms.Compose]:
-    normalize = transforms.Normalize(mean=CELEBA_MEAN, std=CELEBA_STD)
-    ssl_train_transform = build_ssl_transform(
-        image_size=image_size, crop_min=ssl_crop_min,
-        color_jitter=(0.4, 0.4, 0.4, 0.1), color_jitter_p=0.8,
-        grayscale_p=0.2, normalize=normalize,
-    )
-    linear_train_transform = transforms.Compose(
-        [
-            transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]
-    )
-    eval_transform = transforms.Compose(
-        [
-            transforms.Resize((image_size, image_size)),
-            transforms.ToTensor(),
-            normalize,
-        ]
-    )
-    return ssl_train_transform, linear_train_transform, eval_transform
-
-
-class CelebADataset(WILDSDataset):
+@register_dataset
+class CelebADataset(SpuriousDataset):
     """CelebA with Blond_Hair as target and Male as the spurious attribute.
 
     This matches the CelebA protocol used by SpurSSL, LateTVG, and the common
@@ -75,7 +27,10 @@ class CelebADataset(WILDSDataset):
     formed by gender and the target label.
     """
 
-    _dataset_name = "celeba"
+    name = "celeba"
+    aliases = ("CelebA", "celebA")
+    num_classes = 2
+    Config = CelebAConfig
 
     def __init__(self, root_dir: str = "./datasets", split_scheme: str = "official") -> None:
         self.root_dir = Path(root_dir)
@@ -101,7 +56,7 @@ class CelebADataset(WILDSDataset):
         )
         male = (self.attrs["Male"].astype(int).values == 1).astype(np.int64)
         self._y_size = 1
-        self._n_classes = 2
+        self._n_classes = self.num_classes
         self._metadata_array = torch.stack((torch.LongTensor(male), self._y_array), dim=1)
         self._metadata_fields = ["gender", "y"]
         self._metadata_map = {
@@ -154,93 +109,3 @@ class CelebADataset(WILDSDataset):
         if not image_path.exists():
             raise FileNotFoundError(f"CelebA image not found at {image_path}")
         return Image.open(image_path).convert("RGB")
-
-    def eval(self, y_pred: torch.Tensor, y_true: torch.Tensor, metadata: torch.Tensor):
-        metrics = compute_group_metrics(y_pred, y_true, metadata)
-        lines = [f"Average acc: {metrics.average:.3f}"]
-        for idx, (acc, count) in enumerate(zip(metrics.group_accuracy, metrics.group_counts)):
-            if count > 0:
-                lines.append(f"  group {idx} [n = {count:6.0f}]:\tacc = {acc:5.3f}")
-        lines.append(f"Worst-group acc: {metrics.worst_group:.3f}")
-        lines.append(f"Best-group  acc: {metrics.best_group:.3f}")
-        return metrics.as_spurssl_dict(), "\n".join(lines)
-
-
-def make_celeba_loaders(
-    config: CelebAConfig,
-    batch_size: int,
-    num_workers: int | None = None,
-    train_loader_kwargs: dict | None = None,
-    eval_loader_kwargs: dict | None = None,
-) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
-    train_loader_kwargs = train_loader_kwargs or {}
-    eval_loader_kwargs = eval_loader_kwargs or {}
-    if num_workers is not None:
-        train_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **train_loader_kwargs}
-        eval_loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **eval_loader_kwargs}
-    _, linear_train_transform, eval_transform = celeba_transforms(config.image_size)
-    full_dataset = CelebADataset(config.root_dir)
-    train_dataset = full_dataset.get_subset(config.train_split, transform=linear_train_transform)
-    eval_dataset = full_dataset.get_subset(config.eval_split, transform=eval_transform)
-    train_loader = get_train_loader("standard", train_dataset, batch_size=batch_size, drop_last=False, **train_loader_kwargs)
-    eval_loader = get_eval_loader("standard", eval_dataset, batch_size=batch_size, drop_last=False, **eval_loader_kwargs)
-    return train_loader, eval_loader
-
-
-def make_celeba_ssl_loader(
-    config: CelebAConfig,
-    batch_size: int,
-    num_workers: int | None = None,
-    **loader_kwargs,
-) -> torch.utils.data.DataLoader:
-    if num_workers is not None:
-        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    ssl_train_transform, _, _ = celeba_transforms(
-        config.image_size,
-        ssl_crop_min=config.ssl_crop_min,
-    )
-    full_dataset = CelebADataset(config.root_dir)
-    train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
-    return get_ssl_train_loader(
-        "standard",
-        train_dataset,
-        batch_size=batch_size,
-        uniform_over_groups=False,
-        grouper=full_dataset._eval_grouper,
-        drop_last=False,
-        **loader_kwargs,
-    )
-
-
-def make_celeba_rank_loader(
-    config: CelebAConfig,
-    batch_size: int,
-    num_workers: int | None = None,
-    **loader_kwargs,
-) -> torch.utils.data.DataLoader:
-    """Build an ordered, non-augmented train loader for diagnostics only."""
-
-    if num_workers is not None:
-        loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
-    _, _, eval_transform = celeba_transforms(config.image_size)
-    full_dataset = CelebADataset(config.root_dir)
-    rank_dataset = full_dataset.get_subset("train", transform=eval_transform)
-    return get_eval_loader(
-        "standard",
-        rank_dataset,
-        batch_size=batch_size,
-        drop_last=False,
-        **loader_kwargs,
-    )
-
-
-CELEBA_SPEC = {
-    "dataset": CelebADataset,
-    "config": CelebAConfig,
-    "ssl_loader": make_celeba_ssl_loader,
-    "rank_loader": make_celeba_rank_loader,
-    "probe_loaders": make_celeba_loaders,
-    "num_classes": 2,
-    "spurious_metadata_index": 0,
-    "target_metadata_index": 1,
-}

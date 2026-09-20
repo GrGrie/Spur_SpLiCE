@@ -304,9 +304,9 @@ def _thumbnail(image, size: int = 112) -> str:
 def edge_gallery(record: dict, data_folder: Path | None, names: list[str] | None) -> str:
     if data_folder is None:
         return ""
-    from experiments.spurious_eval.datasets.registry import get_dataset_spec
+    from experiments.spurious_eval.datasets.registry import dataset_class
 
-    dataset = get_dataset_spec(record["dataset"])["dataset"](str(data_folder))
+    dataset = dataset_class(record["dataset"])(str(data_folder))
     group_names = record.get("group_names") or []
     attribute_count = record.get("attribute_count")
     sections = []

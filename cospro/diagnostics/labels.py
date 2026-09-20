@@ -12,7 +12,7 @@ from typing import Sequence
 
 import numpy as np
 
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name, get_dataset_spec
+from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class
 
 
 @dataclass(frozen=True)
@@ -61,8 +61,8 @@ def load_labels(dataset: str, data_folder: str | Path) -> SampleLabels:
     """Read ``y``, ``a`` and their display names for every metadata row of a registered dataset."""
 
     name = canonical_dataset_name(dataset)
-    spec = get_dataset_spec(name)
-    source = spec["dataset"](str(data_folder))
+    adapter = dataset_class(name)
+    source = adapter(str(data_folder))
     metadata = np.asarray(source.metadata_array)
     fields = list(getattr(source, "_metadata_fields", []))
     name_map = getattr(source, "_metadata_map", None) or {}
@@ -74,8 +74,8 @@ def load_labels(dataset: str, data_folder: str | Path) -> SampleLabels:
 
     return SampleLabels(
         dataset=name,
-        y=metadata[:, spec["target_metadata_index"]].astype(np.int64),
-        a=metadata[:, spec["spurious_metadata_index"]].astype(np.int64),
-        class_names=names(spec["target_metadata_index"]),
-        attribute_names=names(spec["spurious_metadata_index"]),
+        y=metadata[:, adapter.target_metadata_index].astype(np.int64),
+        a=metadata[:, adapter.spurious_metadata_index].astype(np.int64),
+        class_names=names(adapter.target_metadata_index),
+        attribute_names=names(adapter.spurious_metadata_index),
     )

@@ -13,7 +13,7 @@ from typing import Callable
 
 import torch
 
-from experiments.spurious_eval.datasets.registry import get_dataset_spec
+from experiments.spurious_eval.datasets.registry import dataset_class
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
     CoSpRoAuditConfig,
@@ -72,8 +72,7 @@ def _dataset_image_resolver(cache: dict, data_folder: Path | None) -> Callable[[
     dataset_name = str(cache.get("provenance", {}).get("dataset", ""))
     if not dataset_name:
         raise ValueError("Dataset provenance is required to resolve report thumbnails.")
-    dataset_class = get_dataset_spec(dataset_name)["dataset"]
-    dataset = dataset_class(str(data_folder))
+    dataset = dataset_class(dataset_name)(str(data_folder))
     resolved: dict[str, str] = {}
 
     def resolve(sample_id: str) -> str:

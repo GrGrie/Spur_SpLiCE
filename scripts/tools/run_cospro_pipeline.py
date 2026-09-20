@@ -17,8 +17,9 @@ import torch
 import splice
 from experiments.runner import manifest_fingerprint
 from experiments.spurious_eval.datasets.registry import (
-    CANONICAL_DATASET_REGISTRY,
     canonical_dataset_name,
+    dataset_class,
+    dataset_names,
 )
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from scripts.tools.build_cospro_teacher_graphs import teacher_graph_path
@@ -91,7 +92,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     paths = parser.add_argument_group("pipeline and paths")
     paths.add_argument(
-        "--dataset", type=canonical_dataset_name, choices=sorted(CANONICAL_DATASET_REGISTRY),
+        "--dataset", type=canonical_dataset_name, choices=dataset_names(),
         default="celeba",
     )
     data_folder_default = data_folder()
@@ -228,12 +229,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     tracking.add_argument("--entity", default=wandb_entity())
     tracking.add_argument("--collect-results", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args(argv)
+    dataset = dataset_class(args.dataset)
     if args.model is None:
-        args.model = "resnet18" if args.dataset == "spur_cifar10" else "resnet18_large"
-    if args.dataset == "spur_cifar10" and (
-        args.model.endswith("_large") or args.model == "resnet50_pretrained"
-    ):
-        parser.error("spur_cifar10 uses 32x32 images; choose --model resnet18 or --model resnet50.")
+        args.model = dataset.default_model()
+    incompatible_model = dataset.model_error(args.model)
+    if incompatible_model is not None:
+        parser.error(incompatible_model)
     return args
 
 

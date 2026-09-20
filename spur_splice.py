@@ -27,7 +27,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from experiments.spurious_eval import linear_probe
-from experiments.spurious_eval.datasets.registry import DATASET_REGISTRY
+from experiments.spurious_eval.datasets.registry import build_loader, dataset_class
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.optim import build_optimizer
@@ -253,7 +253,7 @@ def configure_training_backend(args: argparse.Namespace) -> None:
 
 
 def build_dataset_config(args: argparse.Namespace):
-    return DATASET_REGISTRY[args.dataset]["config"](
+    return dataset_class(args.dataset).Config(
         root_dir=args.data_folder, ssl_crop_min=args.ssl_crop_min,
     )
 
@@ -261,9 +261,9 @@ def build_dataset_config(args: argparse.Namespace):
 def build_ssl_loader(args: argparse.Namespace, method):
     """The dataset's two-crop loader, wrapped by whatever loader the training method needs."""
 
-    dataset_spec = DATASET_REGISTRY[args.dataset]
-    loader = dataset_spec["ssl_loader"](
-        build_dataset_config(args), args.batch_size, **make_dataloader_kwargs(args, shuffle=True),
+    loader = build_loader(
+        dataset_class(args.dataset), "ssl", build_dataset_config(args), args.batch_size,
+        **make_dataloader_kwargs(args, shuffle=True),
     )
     context = LoaderContext(
         dataset=args.dataset,
@@ -281,12 +281,9 @@ def build_rank_loader(args: argparse.Namespace):
 
     if args.rank_eval_freq <= 0:
         return None
-    dataset_spec = DATASET_REGISTRY[args.dataset]
-    loader_kwargs = make_dataloader_kwargs(args, shuffle=False, seed=args.seed + 1_000_000)
-    return dataset_spec["rank_loader"](
-        build_dataset_config(args),
-        args.batch_size,
-        **loader_kwargs,
+    return build_loader(
+        dataset_class(args.dataset), "rank", build_dataset_config(args), args.batch_size,
+        **make_dataloader_kwargs(args, shuffle=False, seed=args.seed + 1_000_000),
     )
 
 
