@@ -87,7 +87,17 @@ class LearningSpeedState:
         self.score_loader.generator.set_state(state["score_generator"].cpu())
 
 
-def build_la_ssl_loader(loader, args, worker_init_fn):
+def build_la_ssl_loader(
+    loader,
+    *,
+    seed: int,
+    eta: float,
+    gamma: float,
+    quantile: float,
+    warmup_epochs: int,
+    update_freq: int,
+    worker_init_fn=None,
+):
     probabilities = torch.full((len(loader.dataset),), 1 / len(loader.dataset), dtype=torch.float64)
     # Replacement is essential: weighted permutations would still visit every
     # image once and would not implement LA-SSL's upsampling.
@@ -97,10 +107,9 @@ def build_la_ssl_loader(loader, args, worker_init_fn):
                   worker_init_fn=worker_init_fn if loader.num_workers else None)
     training = DataLoader(loader.dataset, sampler=sampler, generator=loader.generator, **common)
     scoring = DataLoader(loader.dataset, shuffle=False,
-                         generator=torch.Generator().manual_seed(args.seed + 2_000_000), **common)
+                         generator=torch.Generator().manual_seed(seed + 2_000_000), **common)
     training.la_ssl = LearningSpeedState(
-        scoring, sampler.weights, eta=args.la_ssl_eta, gamma=args.la_ssl_gamma,
-        quantile=args.la_ssl_quantile, warmup_epochs=args.la_ssl_warmup_epochs,
-        update_freq=args.la_ssl_update_freq,
+        scoring, sampler.weights, eta=eta, gamma=gamma, quantile=quantile,
+        warmup_epochs=warmup_epochs, update_freq=update_freq,
     )
     return training

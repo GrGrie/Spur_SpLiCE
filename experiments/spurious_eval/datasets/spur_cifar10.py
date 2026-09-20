@@ -252,11 +252,8 @@ def make_spur_cifar10_ssl_loader(
     config: SpurCIFAR10Config,
     batch_size: int,
     num_workers: int | None = None,
-    splice_mode: str = "none",
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
-    if splice_mode not in {"none", "cospro_relational", "crp_relational"}:
-        raise ValueError(f"Unsupported SSL mode for this dataset: {splice_mode}")
     if num_workers is not None:
         loader_kwargs = {"num_workers": num_workers, "pin_memory": True, **loader_kwargs}
     ssl_train_transform, _, _ = spur_cifar10_transforms(

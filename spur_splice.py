@@ -31,13 +31,8 @@ from experiments.spurious_eval.training.reproducibility import (
     seed_worker,
 )
 from experiments.spurious_eval.training.ssl_loop import log_rank_metrics, train_one_epoch
-from splice.cospro_training import (
-    CoSpRoRelationalRegularizer,
-    build_cospro_training_loader,
-    load_teacher_graph,
-    save_cospro_concept_report,
-)
 from cospro.config.options import ConfigError, str_to_bool  # noqa: F401  (str_to_bool re-exported)
+from cospro.methods import LoaderContext, build_method
 from cospro.config.training import (
     PROBE_MOMENTUM,
     RELATIONAL_GRAPH_MODES,
@@ -47,14 +42,20 @@ from cospro.config.training import (
     parse_training_arguments,
     resolve_epoch_schedule,  # noqa: F401  (re-exported for callers of spur_splice)
 )
-from splice.compat import LEGACY_TEACHER_GRAPH_ARTIFACTS, with_legacy_option_names
+from splice.compat import with_legacy_option_names
 from splice.graph_io import graph_fingerprint
-from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
 from splice.artifacts import artifact_uri, atomic_write_json, scratch_binary_directory
 from splice.run_recording import RunRecorder, portable_json
-from splice.concept_distillation import ConceptDistillationRegularizer, load_target_artifact
+from splice.concept_distillation import load_target_artifact
 from splice.splice import DEFAULT_VOCABULARY, DEFAULT_VOCABULARY_SIZE
 
+
+
+# Run-record artifact kind per training method.
+METHOD_INPUT_ARTIFACT_KINDS = {
+    "cospro_relational": "teacher_graph",
+    "frozen_concept_distill": "frozen_transfer_targets",
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -242,90 +243,22 @@ def build_dataset_config(args: argparse.Namespace):
     )
 
 
-def build_ssl_loader(args: argparse.Namespace):
+def build_ssl_loader(args: argparse.Namespace, method):
+    """The dataset's two-crop loader, wrapped by whatever loader the training method needs."""
+
     dataset_spec = DATASET_REGISTRY[args.dataset]
-    config = build_dataset_config(args)
-    loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    if args.splice_mode == "frozen_concept_distill":
-        loader_kwargs["concept_transfer_targets"] = args.concept_transfer_targets
     loader = dataset_spec["ssl_loader"](
-        config,
-        args.batch_size,
-        splice_mode=args.splice_mode,
-        **loader_kwargs,
+        build_dataset_config(args), args.batch_size, **make_dataloader_kwargs(args, shuffle=True),
     )
-    if args.splice_mode not in RELATIONAL_GRAPH_MODES:
-        return loader
-
-    args.relational_graph_empty = False
-    source_indices = getattr(loader.dataset, "indices", None)
-    if source_indices is None:
-        raise ValueError("CoSpRo training requires an SSL dataset with stable source indices.")
-    graph, loaded_graph_fingerprint = load_teacher_graph(
-        args.cospro_teacher_graph,
-        args.dataset,
-        source_indices,
-    )
-    if loaded_graph_fingerprint != args.cospro_graph_fingerprint:
-        raise ValueError("Relational teacher graph changed after argument validation; restart the run.")
-    args.cospro_graph_fingerprint = loaded_graph_fingerprint
-    args.teacher_graph_artifact = graph["artifact"]
-    args.teacher_graph_config = graph.get("config", {})
-    stats = graph.get("degree_stats", {})
-    args.teacher_graph_degree_stats = stats
-    args.teacher_graph_selected_group_ids = graph.get("selected_group_ids", [])
-    args.teacher_graph_removed_concepts = sorted(
-        {
-            concept
-            for group in graph.get("groups", [])
-            if group.get("selected")
-            for concept in group.get("concepts", [])
-        }
-    )
-    if graph["artifact"] in {COSPRO_TEACHER_GRAPH_ARTIFACT, *LEGACY_TEACHER_GRAPH_ARTIFACTS}:
-        report_path = save_cospro_concept_report(graph, args.cospro_teacher_graph)
-        concept_report = json.loads(report_path.read_text(encoding="utf-8"))
-        top_concepts = [
-            item["concept"]
-            for item in concept_report["important_concepts"]
-            if item["training_edge_count"] > 0
-        ][:10]
-        print(
-            f"[INFO] CoSpRo concept report: path={report_path}, "
-            f"teacher_projected={concept_report['teacher_projected_concepts']}, "
-            f"top_training_concepts={top_concepts}",
-            flush=True,
-        )
-    print(
-        f"[INFO] Loaded {graph['artifact']} teacher graph: "
-        f"edges={stats.get('edge_count', int((graph['neighbor_indices'] >= 0).sum()))}, "
-        f"coverage={stats.get('coverage', float((graph['weights'].sum(dim=1) > 0).float().mean())):.4f}, "
-        f"path={args.cospro_teacher_graph}",
-        flush=True,
-    )
-    if not torch.any(graph["weights"].sum(dim=1) > 0):
-        if getattr(args, "simclr_weight", 1.0) == 0:
-            raise ValueError(
-                "KL-only relational training requires a non-empty teacher graph; "
-                "the resolved graph contains no supported anchors."
-            )
-        args.relational_graph_empty = True
-        print(
-            "[WARNING] Relational teacher graph is empty; using the standard SimCLR "
-            "DataLoader and disabling relational regularization.",
-            flush=True,
-        )
-        return loader
-
-    graph_loader = build_cospro_training_loader(
-        loader.dataset,
-        graph,
-        args.batch_size,
-        args.num_workers,
-        loader.generator,
+    context = LoaderContext(
+        dataset=args.dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        seed=args.seed,
+        generator=loader.generator,
         worker_init_fn=seed_worker,
     )
-    return graph_loader
+    return method.wrap_loader(loader, context)
 
 
 def build_rank_loader(args: argparse.Namespace):
@@ -390,16 +323,19 @@ def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argpars
 
 
 def build_training_state(args: argparse.Namespace, device: torch.device):
+    method = build_method(training_config(args), graph_fingerprint=args.cospro_graph_fingerprint)
     with preserve_rng_state():
-        train_loader = build_ssl_loader(args)
+        train_loader = build_ssl_loader(args, method)
     with preserve_rng_state():
         rank_loader = build_rank_loader(args)
+    for key, value in method.provenance().items():
+        setattr(args, key, value)
     configure_training_backend(args)
     model = SimCLRModel(
         name=args.model,
         head=args.head,
         feat_dim=args.feat_dim,
-        clip_distillation_dim=512 if args.splice_mode == "frozen_concept_distill" else None,
+        clip_distillation_dim=method.clip_distillation_dim,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)
@@ -410,34 +346,10 @@ def build_training_state(args: argparse.Namespace, device: torch.device):
     criterion = SimCLRLoss(temperature=args.temp).to(device)
     optimizer = build_optimizer(args, model)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
-    if args.splice_mode in RELATIONAL_GRAPH_MODES:
-        if getattr(args, "relational_graph_empty", False):
-            splice_regularizer = None
-        else:
-            splice_regularizer = CoSpRoRelationalRegularizer(
-                train_loader.cospro_graph,
-                weight=args.splice_weight,
-                temperature=args.cospro_temperature,
-                start_epoch=args.cospro_start_epoch,
-                warmup_epochs=args.cospro_warmup_epochs,
-                decay_start_epoch=args.cospro_decay_start_epoch,
-                decay_end_epoch=args.cospro_decay_end_epoch,
-            )
-    elif args.splice_mode == "frozen_concept_distill":
-        splice_regularizer = ConceptDistillationRegularizer(
-            train_loader.dataset.targets, args.concept_transfer_target_kind,
-            args.concept_transfer_alpha_max, args.concept_transfer_start_epoch,
-            args.concept_transfer_warmup_epochs,
-        )
-    else:
-        splice_regularizer = None
-    if getattr(args, "la_ssl", False):
-        from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader
-        train_loader = build_la_ssl_loader(train_loader, args, seed_worker)
-    return train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer
+    return train_loader, rank_loader, model, criterion, optimizer, scaler, method
 
 
-def record_resolved_training_config(args: argparse.Namespace, train_loader, wandb_run) -> None:
+def record_resolved_training_config(args: argparse.Namespace, train_loader, wandb_run, method) -> None:
     """Persist values that are resolved only while constructing the dataset."""
 
     write_run_config(args)
@@ -452,35 +364,16 @@ def record_resolved_training_config(args: argparse.Namespace, train_loader, wand
                 "linear_eval_split": args.linear_eval_split,
             },
         })
-        if args.splice_mode in RELATIONAL_GRAPH_MODES:
+        for artifact in method.input_artifacts():
             recorder.register_artifact(
-                Path(args.cospro_teacher_graph),
-                kind="teacher_graph",
-                stage="input",
-                retention_state="retained",
-            )
-        elif args.splice_mode == "frozen_concept_distill":
-            recorder.register_artifact(
-                Path(args.concept_transfer_targets), kind="frozen_transfer_targets",
-                stage="input", retention_state="retained",
+                artifact, kind=METHOD_INPUT_ARTIFACT_KINDS[method.name], stage="input", retention_state="retained",
             )
     if wandb_run is not None:
-        resolved = {}
-        if args.splice_mode in RELATIONAL_GRAPH_MODES:
-            resolved.update(
-                {
-                    "teacher_graph_artifact": args.teacher_graph_artifact,
-                    "teacher_graph_config": args.teacher_graph_config,
-                    "teacher_graph_degree_stats": args.teacher_graph_degree_stats,
-                    "teacher_graph_selected_group_ids": args.teacher_graph_selected_group_ids,
-                    "teacher_graph_removed_concepts": args.teacher_graph_removed_concepts,
-                    "relational_graph_empty": getattr(args, "relational_graph_empty", False),
-                }
-            )
-        wandb_run.config.update(resolved, allow_val_change=True)
-        if args.splice_mode in RELATIONAL_GRAPH_MODES:
-            graph_path = Path(args.cospro_teacher_graph).resolve()
-            wandb_run.save(str(graph_path), base_path=str(graph_path.parent), policy="now")
+        wandb_run.config.update(method.provenance(), allow_val_change=True)
+        for artifact in method.input_artifacts():
+            if artifact.suffix == ".json":
+                resolved_path = artifact.resolve()
+                wandb_run.save(str(resolved_path), base_path=str(resolved_path.parent), policy="now")
 
 
 def get_probe_score(metrics: dict[str, float]) -> float:
@@ -707,10 +600,10 @@ def main() -> None:
             status["run_identity"]["wandb"] = _wandb_identity(wandb_run)
             recorder.set_wandb(_wandb_identity(wandb_run))
 
-        train_loader, rank_loader, model, criterion, optimizer, scaler, splice_regularizer = build_training_state(
+        train_loader, rank_loader, model, criterion, optimizer, scaler, method = build_training_state(
             args, device
         )
-        record_resolved_training_config(args, train_loader, wandb_run)
+        record_resolved_training_config(args, train_loader, wandb_run, method)
         start_epoch = (
             load_checkpoint(
                 model,
@@ -719,7 +612,7 @@ def main() -> None:
                 device,
                 scaler=scaler,
                 loader_generator=train_loader.generator,
-                training_state=getattr(train_loader, "la_ssl", None),
+                training_state=method.sampling_state(),
                 expected_cospro_graph_fingerprint=getattr(args, "cospro_graph_fingerprint", None),
             )
             + 1
@@ -734,15 +627,15 @@ def main() -> None:
             adjust_learning_rate(args, optimizer, epoch)
             time1 = time.time()
             sampling_metrics = {}
-            if hasattr(train_loader, "la_ssl"):
+            if method.sampling_state() is not None:
                 with preserve_rng_state():
                     # A separate seeded pass leaves training/probe RNG streams intact.
                     torch.manual_seed(args.seed + 2_000_000 + epoch)
                     np.random.seed(args.seed + 2_000_000 + epoch)
                     random.seed(args.seed + 2_000_000 + epoch)
-                    sampling_metrics = train_loader.la_ssl.refresh(model, device, args.temp, epoch)
+                    sampling_metrics = method.refresh_sampling(model, device, args.temp, epoch)
             train_metrics = train_one_epoch(
-                train_loader, model, criterion, optimizer, scaler, epoch, args, splice_regularizer
+                train_loader, model, criterion, optimizer, scaler, epoch, args, method
             )
             train_metrics.update(sampling_metrics)
             time2 = time.time()
@@ -777,7 +670,7 @@ def main() -> None:
                     probe_file,
                     scaler=scaler,
                     loader_generator=train_loader.generator,
-                    training_state=getattr(train_loader, "la_ssl", None),
+                    training_state=method.sampling_state(),
                 )
                 final_probe_metrics = run_linear_probe(args, str(actual_probe_file), epoch)
                 last_probe_epoch = epoch
@@ -793,7 +686,7 @@ def main() -> None:
                     os.path.join(args.save_folder, f"epoch_{epoch}.pth"),
                     scaler=scaler,
                     loader_generator=train_loader.generator,
-                    training_state=getattr(train_loader, "la_ssl", None),
+                    training_state=method.sampling_state(),
                 )
                 recorder.register_artifact(
                     recovery_checkpoint,
@@ -813,7 +706,7 @@ def main() -> None:
                 probe_file,
                 scaler=scaler,
                 loader_generator=train_loader.generator,
-                training_state=getattr(train_loader, "la_ssl", None),
+                training_state=method.sampling_state(),
             )
             final_probe_metrics = run_linear_probe(args, str(actual_probe_file), args.epochs)
             if actual_probe_file.exists():
@@ -828,7 +721,7 @@ def main() -> None:
                 os.path.join(args.save_folder, "last.pth"),
                 scaler=scaler,
                 loader_generator=train_loader.generator,
-                training_state=getattr(train_loader, "la_ssl", None),
+                training_state=method.sampling_state(),
             )
             recorder.register_artifact(
                 final_checkpoint,

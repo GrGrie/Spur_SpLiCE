@@ -12,6 +12,7 @@ from experiments.runner import command_for, load_manifest
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
 from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader, sampling_probabilities
+from cospro.methods import FrozenConceptDistill, LaSSL
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
 from splice.artifacts import PROJECT_ROOT
 from splice.concept_distillation import ConceptDistillationRegularizer, FrozenConceptTransferSubset
@@ -80,7 +81,8 @@ class SubmissionControlsTests(unittest.TestCase):
         regularizer = ConceptDistillationRegularizer(targets, "reconstruction", .1, 10, 10)
         regularizer.set_epoch(20)
         views = [torch.randn(3, 3), torch.randn(3, 3)]
-        loss, parts, _ = simclr_forward_loss(model, SimCLRLoss(.05), views, regularizer, torch.arange(3))
+        method = FrozenConceptDistill(regularizer=regularizer)
+        loss, parts, _ = simclr_forward_loss(model, SimCLRLoss(.05), views, method, torch.arange(3))
         prediction = model.clip_distillation_head(parts["_embeddings"])
         valid = torch.tensor([True, False, True, True, False, True])
         expected = .1 * (1 - torch.nn.functional.cosine_similarity(prediction, targets["reconstruction"].repeat(2, 1)))[valid].mean()
@@ -98,11 +100,10 @@ class SubmissionControlsTests(unittest.TestCase):
         torch.testing.assert_close(sampling_probabilities(torch.ones(6), .1, 10), torch.ones(6, dtype=torch.float64) / 6)
 
     def test_la_ssl_scoring_is_observational_and_resume_restores_sampling(self):
-        args = argparse.Namespace(seed=2, la_ssl_eta=.1, la_ssl_gamma=10., la_ssl_quantile=.1,
-                                  la_ssl_warmup_epochs=0, la_ssl_update_freq=1)
+        settings = dict(seed=2, eta=.1, gamma=10., quantile=.1, warmup_epochs=0, update_freq=1)
         def make_loader():
             base = DataLoader(TwoViews(), batch_size=3, generator=torch.Generator().manual_seed(2))
-            return build_la_ssl_loader(base, args, seed_worker)
+            return build_la_ssl_loader(base, worker_init_fn=seed_worker, **settings)
         loader = make_loader()
         model = TinyModel().train()
         optimizer = torch.optim.SGD(model.parameters(), lr=.01)

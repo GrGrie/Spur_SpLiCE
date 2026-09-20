@@ -33,10 +33,12 @@ def simclr_forward_loss(
     model: SimCLRModel,
     criterion: SimCLRLoss,
     image,
-    splice_regularizer=None,
+    method=None,
     sample_indices=None,
     simclr_weight: float = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
+    """SimCLR loss plus whatever the training method adds for this batch."""
+
     if simclr_weight < 0:
         raise ValueError("simclr_weight must be non-negative.")
     bsz = image[0].size(0)
@@ -46,9 +48,7 @@ def simclr_forward_loss(
         projections = F.normalize(model.head(embeddings), dim=1)
         f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        simclr_loss, decor_loss, entropy_loss, _, _ = criterion(
-            features
-        )
+        simclr_loss, decor_loss, entropy_loss, _, _ = criterion(features)
         loss = simclr_weight * simclr_loss
     else:
         # Keep a differentiable zero so an unsupported relational batch is still safe to backpropagate.
@@ -57,29 +57,12 @@ def simclr_forward_loss(
         entropy_loss = simclr_loss
         loss = simclr_loss
     splice_loss = torch.zeros((), device=loss.device, dtype=loss.dtype)
-    if splice_regularizer is not None:
-        if getattr(splice_regularizer, "requires_graph_indices", False):
-            if sample_indices is None:
-                raise ValueError("CoSpRo relational regularization requires graph-row sample indices.")
-            splice_loss = splice_regularizer(embeddings, sample_indices)
-            loss = loss + splice_loss
-            parts = {
-                "simclr": simclr_loss,
-                "decor": decor_loss,
-                "entropy": entropy_loss,
-                "splice": splice_loss,
-                "_embeddings": embeddings,
-            }
-            return loss, parts, bsz
-        if getattr(splice_regularizer, "requires_concept_transfer", False):
-            if sample_indices is None or model.clip_distillation_head is None:
-                raise ValueError("Frozen transfer requires target-bank indices and its prediction head.")
-            target_rows, valid_rows = splice_regularizer.targets_for_indices(sample_indices, embeddings.device)
-            predictions = model.clip_distillation_head(embeddings)
-            splice_loss = splice_regularizer(predictions, torch.cat([target_rows, target_rows]), valid_rows)
-            loss = loss + splice_loss
-        else:
-            raise ValueError("Unsupported SSL regularizer.")
+    terms = None if method is None else method.extra_loss(
+        model=model, embeddings=embeddings, sample_indices=sample_indices,
+    )
+    if terms is not None:
+        splice_loss = terms.value
+        loss = loss + splice_loss
     parts = {
         "simclr": simclr_loss,
         "decor": decor_loss,
@@ -91,7 +74,7 @@ def simclr_forward_loss(
 
 
 def train_one_epoch(
-    train_loader, model, criterion, optimizer, scaler, epoch: int, args, splice_regularizer
+    train_loader, model, criterion, optimizer, scaler, epoch: int, args, method
 ) -> dict[str, float]:
     model.train()
     batch_time = AverageMeter()
@@ -101,21 +84,11 @@ def train_one_epoch(
     decor_losses = AverageMeter()
     entropy_losses = AverageMeter()
     splice_losses = AverageMeter()
-    relational_diagnostics = {
-        "scheduled_weight": AverageMeter(),
-        "supported_anchor_fraction": AverageMeter(),
-        "mean_anchor_confidence": AverageMeter(),
-        "unweighted_kl": AverageMeter(),
-        "confidence_weighted_kl": AverageMeter(),
-        "q": AverageMeter(),
-        "row_mass_before_renorm": AverageMeter(),
-        "effective_donor_count": AverageMeter(),
-        "row_mass_after_renorm": AverageMeter(),
-        "valid_fraction": AverageMeter(),
-        "cosine_loss": AverageMeter(),
-    }
-    if hasattr(splice_regularizer, "set_epoch"):
-        splice_regularizer.set_epoch(epoch)
+    # One meter per diagnostic the method reports, created when the method first reports it.
+    method_diagnostics: dict[str, AverageMeter] = {}
+    needs_indices = method is not None and method.needs_sample_indices
+    if method is not None:
+        method.set_epoch(epoch)
 
     end = time.time()
     for idx, data in enumerate(train_loader):
@@ -126,9 +99,7 @@ def train_one_epoch(
         if args.channels_last and str(args.device).startswith("cuda"):
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
-        graph_training = getattr(splice_regularizer, "requires_graph_indices", False)
-        concept_transfer = getattr(splice_regularizer, "requires_concept_transfer", False)
-        sample_indices = data[1] if (graph_training or concept_transfer) else None
+        sample_indices = data[1] if needs_indices else None
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(
@@ -140,7 +111,7 @@ def train_one_epoch(
                 model,
                 criterion,
                 image,
-                splice_regularizer=splice_regularizer,
+                method=method,
                 sample_indices=sample_indices,
                 simclr_weight=getattr(args, "simclr_weight", 1.0),
             )
@@ -149,10 +120,9 @@ def train_one_epoch(
         decor_losses.update(parts["decor"].item(), bsz)
         entropy_losses.update(parts["entropy"].item(), bsz)
         splice_losses.update(parts["splice"].item(), bsz)
-        for name, meter in relational_diagnostics.items():
-            value = getattr(splice_regularizer, "last_diagnostics", {}).get(name)
+        for name, value in ({} if method is None else method.diagnostics()).items():
             if value is not None:
-                meter.update(float(value), bsz)
+                method_diagnostics.setdefault(name, AverageMeter()).update(float(value), bsz)
         optimizer.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -185,13 +155,8 @@ def train_one_epoch(
         "entropy_loss": entropy_losses.avg,
         "splice_loss": splice_losses.avg,
     }
-    metrics.update(
-        {
-            f"relational_{name}": meter.avg
-            for name, meter in relational_diagnostics.items()
-            if meter.count
-        }
-    )
+    # Historical metric names: every method diagnostic is reported under relational_<name>.
+    metrics.update({f"relational_{name}": meter.avg for name, meter in method_diagnostics.items() if meter.count})
     return metrics
 
 

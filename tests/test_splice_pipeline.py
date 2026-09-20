@@ -18,6 +18,7 @@ from experiments.spurious_eval.datasets.registry import canonical_dataset_name
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
+from cospro.methods import CoSpRoRelational
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
 from splice.cospro import (
     CoSpRoAuditConfig,
@@ -760,13 +761,14 @@ class SplicePipelineTests(unittest.TestCase):
             ),
             patch.object(spur_splice, "build_dataset_config", return_value={}),
             patch.object(spur_splice, "make_dataloader_kwargs", return_value={}),
-            patch.object(spur_splice, "load_teacher_graph", return_value=(graph, "digest")),
-            patch.object(spur_splice, "build_cospro_training_loader") as build_graph_loader,
+            patch("cospro.methods.relational.load_teacher_graph", return_value=(graph, "digest")),
+            patch("cospro.methods.relational.build_cospro_training_loader") as build_graph_loader,
         ):
-            result = spur_splice.build_ssl_loader(args)
+            method = CoSpRoRelational(graph_path="graph.json", weight=0.1, temperature=0.1)
+            result = spur_splice.build_ssl_loader(args, method)
 
         self.assertIs(result, loader)
-        self.assertTrue(args.relational_graph_empty)
+        self.assertTrue(method.provenance()["relational_graph_empty"])
         build_graph_loader.assert_not_called()
 
     def test_cospro_relational_loss_reaches_simclr_encoder(self):
@@ -787,7 +789,7 @@ class SplicePipelineTests(unittest.TestCase):
             model,
             SimCLRLoss(temperature=0.1),
             images,
-            splice_regularizer=regularizer,
+            method=CoSpRoRelational(regularizer=regularizer),
             sample_indices=torch.arange(4),
         )
         loss.backward()
@@ -813,7 +815,7 @@ class SplicePipelineTests(unittest.TestCase):
             model,
             SimCLRLoss(temperature=0.1),
             images,
-            splice_regularizer=regularizer,
+            method=CoSpRoRelational(regularizer=regularizer),
             sample_indices=torch.arange(4),
             simclr_weight=0.0,
         )
@@ -862,7 +864,7 @@ class SplicePipelineTests(unittest.TestCase):
             torch.amp.GradScaler("cuda", enabled=False),
             epoch=1,
             args=args,
-            splice_regularizer=regularizer,
+            method=CoSpRoRelational(regularizer=regularizer),
         )
         self.assertTrue(np.isfinite(metrics["loss"]))
         self.assertGreaterEqual(metrics["splice_loss"], 0.0)

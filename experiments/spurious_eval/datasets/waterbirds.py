@@ -169,7 +169,6 @@ def make_waterbirds_ssl_loader(
     config: WaterbirdsConfig,
     batch_size: int,
     num_workers: int | None = None,
-    splice_mode: str = "none",
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     if num_workers is not None:
@@ -179,23 +178,6 @@ def make_waterbirds_ssl_loader(
         ssl_crop_min=config.ssl_crop_min,
     )
     full_dataset = WaterbirdsDataset(config.root_dir)
-    if splice_mode == "frozen_concept_distill":
-        from splice.concept_distillation import FrozenConceptTransferSubset, load_target_artifact
-
-        target_path = loader_kwargs.pop("concept_transfer_targets", None)
-        if not target_path:
-            raise ValueError("frozen_concept_distill requires concept_transfer_targets.")
-        targets = load_target_artifact(target_path)
-        base_subset = full_dataset.get_subset("train", transform=None)
-        train_dataset = FrozenConceptTransferSubset(
-            base_subset, TwoCropTransform(ssl_train_transform), targets, dataset_name="waterbirds",
-        )
-        return get_ssl_train_loader(
-            "standard", train_dataset, batch_size=batch_size,
-            uniform_over_groups=False, grouper=None, drop_last=False, **loader_kwargs,
-        )
-    if splice_mode not in {"none", "cospro_relational", "crp_relational"}:
-        raise ValueError(f"Unsupported SSL mode for Waterbirds: {splice_mode}")
     train_dataset = full_dataset.get_subset("train", transform=TwoCropTransform(ssl_train_transform))
     return get_ssl_train_loader(
         "standard",
