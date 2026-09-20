@@ -763,8 +763,12 @@ class SplicePipelineTests(unittest.TestCase):
             patch.object(spur_splice, "make_dataloader_kwargs", return_value={}),
             patch("cospro.methods.relational.load_teacher_graph", return_value=(graph, "digest")),
             patch("cospro.methods.relational.build_cospro_training_loader") as build_graph_loader,
+            tempfile.TemporaryDirectory() as graph_directory,
         ):
-            method = CoSpRoRelational(graph_path="graph.json", weight=0.1, temperature=0.1)
+            # The concept report lands next to the graph, so keep it inside the temporary directory.
+            method = CoSpRoRelational(
+                graph_path=str(Path(graph_directory) / "graph.json"), weight=0.1, temperature=0.1,
+            )
             result = spur_splice.build_ssl_loader(args, method)
 
         self.assertIs(result, loader)
