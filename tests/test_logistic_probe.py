@@ -71,6 +71,7 @@ class LogisticProbeTests(unittest.TestCase):
 
     def test_probe_entry_saves_metrics(self):
         from torch.utils.data import DataLoader, TensorDataset
+        from cospro.evaluation import probe
         from experiments.spurious_eval import linear_probe
         from experiments.spurious_eval.metrics import compute_group_metrics
 
@@ -84,6 +85,7 @@ class LogisticProbeTests(unittest.TestCase):
         loader = DataLoader(Dataset(features, labels, metadata), batch_size=40)
 
         class ToyDataset:
+            name = "toy"
             num_classes = 2
             Config = dict
 
@@ -94,10 +96,10 @@ class LogisticProbeTests(unittest.TestCase):
                 spurious_probe=True, probe_solver="logistic"
             )
             with patch.object(linear_probe, "dataset_class", lambda name: ToyDataset), patch.object(
-                linear_probe, "build_probe_loaders", lambda *args, **kwargs: (loader, loader)
+                probe, "build_probe_loaders", lambda *args, **kwargs: (loader, loader)
             ), patch.object(
-                linear_probe, "build_resnet_encoder", return_value=(torch.nn.Identity(), 8)
-            ), patch.object(linear_probe, "load_encoder_checkpoint"):
+                probe, "build_resnet_encoder", return_value=(torch.nn.Identity(), 8)
+            ), patch.object(probe, "load_encoder_checkpoint"):
                 result = linear_probe.main(args, supcon_epoch=100)
             self.assertTrue(result["Probe converged"])
             saved = json.loads((root / "probe_features_epoch_100_ds_train_val.json").read_text())

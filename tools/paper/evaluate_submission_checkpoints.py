@@ -36,7 +36,10 @@ def now():
 
 
 def code_hash():
+    """Every file the evaluation runs through, so a lock cannot survive a change to any of them."""
+
     paths = sorted((PROJECT_ROOT / "experiments/spurious_eval").rglob("*.py"))
+    paths += sorted((PROJECT_ROOT / "cospro").rglob("*.py"))
     paths += [Path(__file__), PROJECT_ROOT / "splice/artifacts.py"]
     return hashlib.sha256("".join(f"{p.relative_to(PROJECT_ROOT)}:{sha256_file(p)}\n" for p in paths).encode()).hexdigest()
 
@@ -165,7 +168,10 @@ def execute(args):
         raise ValueError("Evaluation code/protocol changed since prepare; create a new plan")
     if sha256_file(lock["metadata"]) != lock["metadata_sha256"]:
         raise ValueError("Dataset metadata changed since prepare")
-    from experiments.spurious_eval.linear_probe import main as probe
+    from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
+    from experiments.spurious_eval.datasets.registry import dataset_class
+
+    protocol = lock["protocol"]
     for row in lock["rows"]:
         if args.seed is not None and row["seed"] != args.seed:
             continue
@@ -183,11 +189,22 @@ def execute(args):
             continue
         # An incomplete attempt can be rerun; it never changes the checkpoint or lock.
         destination.mkdir(parents=True, exist_ok=True)
-        options = argparse.Namespace(**PROTOCOL, seed=row["seed"], ckpt=row["checkpoint"],
-                                     artifact_dir=str(destination), data_folder=lock["data_folder"],
-                                     device=args.device, study="submission_checkpoint_test",
-                                     arm=row["arm"], attempt_id=sha256_file(lock_path)[:16])
-        probe(options)
+        options = ProbeOptions(
+            data_folder=lock["data_folder"], train_split=protocol["train_set_linear_layer"],
+            eval_split=protocol["eval_split"], batch_size=protocol["batch_size"],
+            num_workers=protocol["num_workers"], seed=row["seed"], device=args.device,
+            head=protocol["head"], solver=protocol["probe_solver"], l2=protocol["probe_l2"],
+            tolerance=protocol["probe_tolerance"], max_epochs=protocol["probe_max_epochs"],
+            epochs=protocol["epochs"], spurious_probe=protocol["spurious_probe"],
+        )
+        artifacts = ProbeArtifacts(
+            directory=destination, ssl_epoch=protocol["ssl_epoch"],
+            identity=dict(study="submission_checkpoint_test", seed=row["seed"], arm=row["arm"],
+                          attempt_id=sha256_file(lock_path)[:16]),
+        )
+        seed_probe(row["seed"])
+        probe_checkpoint(dataset_class(protocol["dataset"]), options, artifacts,
+                         model=protocol["model"], checkpoint=row["checkpoint"])
         validate_result(read(result))
         atomic_write_json(receipt, dict(completed_at=now(), lock_sha256=sha256_file(lock_path),
                                        checkpoint_sha256=row["sha256"], result_sha256=sha256_file(result)))

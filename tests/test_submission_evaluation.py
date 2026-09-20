@@ -87,15 +87,16 @@ class SubmissionEvaluationTests(unittest.TestCase):
             lock = dict(protocol=tool.PROTOCOL, code_sha256=tool.code_hash(), metadata=str(metadata),
                         metadata_sha256=tool.sha256_file(metadata), data_folder=directory, rows=[row])
             tool.atomic_write_json(root / 'lock.json', lock)
-            def fake_probe(options):
+            def fake_probe(dataset, options, artifacts, **keywords):
                 self.assertEqual(options.eval_split, 'test')
-                self.assertTrue(options.final_test)
                 self.assertEqual(options.num_workers, 4)
                 self.assertEqual(options.batch_size, 128)
-                self.assertEqual(options.train_set_linear_layer, 'ds_train')
-                tool.atomic_write_json(Path(options.artifact_dir) / 'probe_features_epoch_500_ds_train_test.json', result())
+                self.assertEqual(options.train_split, 'ds_train')
+                self.assertEqual(artifacts.ssl_epoch, 500)
+                self.assertEqual(keywords['checkpoint'], str(checkpoint))
+                tool.atomic_write_json(Path(artifacts.directory) / 'probe_features_epoch_500_ds_train_test.json', result())
             args = argparse.Namespace(output_dir=root, seed=1, device='cpu')
-            with patch('experiments.spurious_eval.linear_probe.main', side_effect=fake_probe) as probe:
+            with patch('cospro.evaluation.probe_checkpoint', side_effect=fake_probe) as probe:
                 tool.execute(args); tool.execute(args)
                 self.assertEqual(probe.call_count, 1)
             self.assertEqual(checkpoint.read_bytes(), b'frozen-encoder')

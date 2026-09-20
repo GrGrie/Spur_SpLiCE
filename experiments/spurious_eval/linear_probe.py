@@ -1,46 +1,23 @@
+"""Command line for the linear probe.
+
+The measurement itself lives in :mod:`cospro.evaluation.probe`; this module resolves the command
+line into ``ProbeOptions`` and ``ProbeArtifacts`` and dispatches. Programmatic callers build those
+two objects directly instead of assembling a namespace.
+"""
+
 from __future__ import annotations
 
 import argparse
-import math
-import random
-import time
-import json
 from pathlib import Path
-from dataclasses import dataclass
 
-import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
-from torch.utils.data import TensorDataset
 
-from experiments.spurious_eval.datasets.registry import (
-    build_probe_loaders,
-    canonical_dataset_name,
-    dataset_class,
-    dataset_names,
-)
-from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
-from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
-from experiments.spurious_eval.models.resnet import (
-    RESNET_MODEL_NAMES,
-    LinearClassifier,
-    build_resnet_encoder,
-)
-from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
-from experiments.spurious_eval.training.reproducibility import make_dataloader_kwargs
-from experiments.spurious_eval.training.probe_loop import extract_features, make_feature_loader, train_one_epoch, validate
-from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
-from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
 from cospro.config import LINEAR_PROBE_DEFAULTS, training_defaults
-from cospro.tracking import canonical_probe_metrics, define_wandb_metrics
+from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
+from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
+from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
+from experiments.spurious_eval.models.resnet import RESNET_MODEL_NAMES
 from splice.settings import wandb_entity
-
-
-@dataclass
-class ProbeHistory:
-    val_accuracy: list[float]
-    val_worst_group: list[float]
-    val_best_group: list[float]
 
 
 def resolve_lr_decay_epochs(value: str | list[int], total_epochs: int) -> list[int]:
@@ -167,578 +144,81 @@ def normalize_args(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def set_seed(seed: int) -> None:
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+def probe_options(args: argparse.Namespace) -> ProbeOptions:
+    """The measurement options a resolved command line describes."""
 
-
-def _saved_probe_sample_ids(dataset, seed: int, batch_size: int, shuffle: bool, dataset_name: str) -> list[str]:
-    """Reconstruct the exact order used by feature extraction for v2 artifacts."""
-
-    source_indices = getattr(dataset, "indices", None)
-    if source_indices is None:
-        return []
-    order = torch.arange(len(source_indices))
-    if shuffle:
-        loader = torch.utils.data.DataLoader(
-            range(len(source_indices)),
-            batch_size=batch_size,
-            shuffle=True,
-            generator=torch.Generator().manual_seed(seed),
-            num_workers=0,
-        )
-        order = torch.cat(list(loader)).long()
-    return [f"{dataset_name}:{int(source_indices[int(index)])}" for index in order]
-
-
-def adjust_learning_rate(args: argparse.Namespace, optimizer: torch.optim.Optimizer, epoch: int) -> None:
-    lr = args.learning_rate
-    if args.cosine:
-        eta_min = lr * (args.lr_decay_rate**3)
-        lr = eta_min + (lr - eta_min) * (1 + math.cos(math.pi * epoch / args.epochs)) / 2
-    else:
-        steps = np.sum(epoch > np.asarray(args.lr_decay_epochs))
-        if steps > 0:
-            lr = lr * (args.lr_decay_rate**steps)
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
-
-
-def _group_cardinalities(metadata: torch.Tensor) -> tuple[int, int]:
-    metadata = torch.as_tensor(metadata).detach().cpu()
-    if metadata.ndim != 2 or metadata.shape[1] < 2:
-        raise ValueError("Group metrics require metadata columns [context, target].")
-    contexts = metadata[:, 0].long()
-    targets = metadata[:, 1].long()
-    return (
-        max(2, int(contexts.max().item()) + 1 if contexts.numel() else 1),
-        max(2, int(targets.max().item()) + 1 if targets.numel() else 1),
-    )
-
-
-def build_named_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, dict[str, float | int | None]]:
-    """Return portable named group metrics, marking empty-group accuracy unavailable."""
-
-    group_accuracies = torch.as_tensor(group_accuracies).detach().cpu().float().view(-1)
-    group_counts = torch.as_tensor(group_counts).detach().cpu().long().view(-1)
-    context_cardinality, target_cardinality = _group_cardinalities(metadata)
-    named: dict[str, dict[str, float | int | None]] = {}
-    for target in range(target_cardinality):
-        for context in range(context_cardinality):
-            group_id = context + context_cardinality * target
-            count = int(group_counts[group_id]) if group_id < len(group_counts) else 0
-            accuracy = (
-                float(group_accuracies[group_id]) * 100
-                if count > 0 and group_id < len(group_accuracies)
-                else None
-            )
-            named[f"(target,context)=({target},{context})"] = {
-                "accuracy": accuracy,
-                "count": count,
-            }
-    return named
-
-
-def build_wandb_group_metrics(group_accuracies, group_counts, metadata) -> dict[str, float | int | None]:
-    """Name validation groups by the stable ``(target, context)`` convention."""
-
-    group_accuracies = torch.as_tensor(group_accuracies).detach().cpu().float().view(-1)
-    group_counts = torch.as_tensor(group_counts).detach().cpu().long().view(-1)
-    metadata = torch.as_tensor(metadata).detach().cpu()
-    if metadata.ndim != 2 or metadata.shape[1] < 2:
-        raise ValueError("Group W&B metrics require metadata columns [context, target].")
-    contexts = metadata[:, 0].long()
-    targets = metadata[:, 1].long()
-    # Waterbirds (the cluster control dataset) has binary target/context
-    # metadata. Keep the complete 2x2 W&B panel even if a validation split
-    # happens to contain an empty group.
-    context_cardinality, target_cardinality = _group_cardinalities(metadata)
-    metrics: dict[str, float | int | None] = {}
-    for target in range(target_cardinality):
-        for context in range(context_cardinality):
-            group_id = context + context_cardinality * target
-            count = int(group_counts[group_id]) if group_id < len(group_counts) else 0
-            accuracy = (
-                float(group_accuracies[group_id]) * 100
-                if count > 0 and group_id < len(group_accuracies)
-                else None
-            )
-            prefix = f"Linear val group (target,context)=({target},{context})"
-            metrics[f"{prefix} acc"] = accuracy
-            metrics[f"{prefix} count"] = count
-    return metrics
-
-
-def consume_spurssl_head_rng(feature_dim: int, args: argparse.Namespace) -> None:
-    """Instantiate the unused SpurSSL projection head to preserve classifier RNG state."""
-
-    if args.head == "linear":
-        torch.nn.Linear(feature_dim, 128)
-    elif args.head == "mlp":
-        torch.nn.Sequential(
-            torch.nn.Linear(feature_dim, 512),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Linear(512, 128),
-        )
-    elif args.head in {"identity", "fixed"}:
-        return
-    else:
-        raise ValueError(f"Unsupported SpurSSL head: {args.head}")
-
-
-def run_spurious_attribute_probe(
-    train_features: TensorDataset,
-    val_features: TensorDataset,
-    feature_dim: int,
-    args: argparse.Namespace,
-    device: torch.device,
-) -> dict[str, float]:
-    """Measure residual linear access to the spurious attribute."""
-
-    train_x, _, train_metadata = train_features.tensors
-    val_x, _, val_metadata = val_features.tensors
-    train_spurious = train_metadata[:, 0].long()
-    val_spurious = val_metadata[:, 0].long()
-    n_attributes = int(train_spurious.max().item()) + 1
-    train_dataset = TensorDataset(train_x, train_spurious, train_metadata)
-    val_dataset = TensorDataset(val_x, val_spurious, val_metadata)
-    if getattr(args, "probe_solver", "sgd") == "logistic":
-        records, convergence = fit_logistic_probe(
-            train_x, train_spurious, val_x, val_spurious, num_classes=n_attributes,
-            l2=args.probe_l2, tolerance=args.probe_tolerance, max_epochs=args.probe_max_epochs,
-        )
-        auxiliary_metadata = torch.stack((val_metadata[:, 1], val_metadata[:, 0]), dim=1)
-        metrics = [compute_group_metrics(r.eval_predictions, val_spurious, auxiliary_metadata) for r in records]
-        return {
-            "Spurious probe last val acc": metrics[-1].average * 100,
-            "Spurious probe average over last 10 val acc": float(np.mean([m.average for m in metrics])) * 100,
-            "Spurious probe last val worst-group acc": metrics[-1].worst_group * 100,
-            "Spurious probe average over last 10 val worst-group acc": float(np.mean([m.worst_group for m in metrics])) * 100,
-            "Spurious probe converged": convergence["converged"],
-            "Spurious probe gradient max": convergence["gradient_max"],
-        }
-    train_loader = make_feature_loader(train_dataset, args.batch_size, args.seed + 10_000, shuffle=True)
-    val_loader = make_feature_loader(val_dataset, args.batch_size, args.seed + 10_000, shuffle=False)
-
-    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=n_attributes).to(device)
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(
-        classifier.parameters(),
-        lr=args.learning_rate,
-        momentum=args.momentum,
+    return ProbeOptions(
+        data_folder=args.data_folder,
+        train_split=args.train_set_linear_layer,
+        eval_split=args.eval_split,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        seed=args.seed,
+        device=args.device,
+        head=args.head,
+        solver=args.probe_solver,
+        l2=args.probe_l2,
+        tolerance=args.probe_tolerance,
+        max_epochs=args.probe_max_epochs,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        lr_decay_epochs=tuple(args.lr_decay_epochs),
+        lr_decay_rate=args.lr_decay_rate,
         weight_decay=args.weight_decay,
+        momentum=args.momentum,
+        cosine=args.cosine,
+        spurious_probe=args.spurious_probe,
     )
-    accuracies = []
-    worst_group_accuracies = []
-    for epoch in range(1, args.epochs + 1):
-        adjust_learning_rate(args, optimizer, epoch)
-        train_one_epoch(train_loader, classifier, criterion, optimizer, device)
-        _, accuracy, predictions, labels, metadata = validate(val_loader, classifier, criterion, device)
-        # Reorder metadata so groups are (target, spurious label) for this auxiliary task.
-        auxiliary_metadata = torch.stack((metadata[:, 1], metadata[:, 0]), dim=1)
-        group_metrics = compute_group_metrics(predictions, labels, auxiliary_metadata)
-        accuracies.append(accuracy)
-        worst_group_accuracies.append(group_metrics.worst_group * 100)
 
-    window = min(10, len(accuracies))
-    return {
-        "Spurious probe last val acc": float(accuracies[-1]),
-        "Spurious probe average over last 10 val acc": float(np.mean(accuracies[-window:])),
-        "Spurious probe last val worst-group acc": float(worst_group_accuracies[-1]),
-        "Spurious probe average over last 10 val worst-group acc": float(
-            np.mean(worst_group_accuracies[-window:])
-        ),
-    }
+
+def probe_artifacts(args: argparse.Namespace, ssl_epoch: int) -> ProbeArtifacts:
+    """Where this probe writes, defaulting to the directory the checkpoint came from."""
+
+    return ProbeArtifacts(
+        directory=Path(args.artifact_dir) if args.artifact_dir else Path(args.ckpt).parent,
+        identity={name: getattr(args, name) for name in ("study", "seed", "arm", "attempt_id")},
+        ssl_epoch=ssl_epoch,
+        ssl_total_epochs=int(args.ssl_total_epochs),
+        retain_every=int(args.retain_probe_artifacts_every),
+        recorder=args.run_recorder,
+    )
+
+
+def open_wandb_run(args: argparse.Namespace):
+    """The active W&B run, or a probe run of its own. The second value says which."""
+
+    if not args.use_wandb:
+        return None, False
+    import wandb
+
+    if wandb.run is not None:
+        return wandb.run, False
+    return wandb.init(
+        project=args.wandb_name,
+        entity=args.entity,
+        config=vars(args),
+        name=f"{args.dataset}_S{args.seed}_Probe",
+    ), True
 
 
 def main(args: argparse.Namespace | None = None, supcon_epoch: int | None = None) -> dict[str, float]:
     args = parse_args() if args is None else normalize_args(args)
-    if supcon_epoch is None:
-        supcon_epoch = int(args.ssl_epoch)
-    else:
-        # Keep trainer calls that pass supcon_epoch explicitly authoritative while
-        # making the value visible to callers that inspect the normalized args.
-        args.ssl_epoch = int(supcon_epoch)
-    set_seed(args.seed)
-    device = torch.device(args.device)
-
-    dataset = dataset_class(args.dataset)
-    config = dataset.Config(
-        root_dir=args.data_folder,
-        train_split=args.train_set_linear_layer,
-        eval_split=args.eval_split,
+    # Trainer calls that pass supcon_epoch stay authoritative. The value stays visible to callers
+    # that inspect the normalized arguments.
+    args.ssl_epoch = int(args.ssl_epoch if supcon_epoch is None else supcon_epoch)
+    seed_probe(args.seed)
+    run, created = open_wandb_run(args)
+    result = probe_checkpoint(
+        dataset_class(args.dataset),
+        probe_options(args),
+        probe_artifacts(args, args.ssl_epoch),
+        model=args.model,
+        checkpoint=args.ckpt,
+        wandb_run=run,
     )
-    train_loader_kwargs = make_dataloader_kwargs(args, shuffle=True)
-    val_loader_kwargs = make_dataloader_kwargs(args, shuffle=False)
-    train_loader, val_loader = build_probe_loaders(
-        dataset,
-        config,
-        args.batch_size,
-        train_loader_kwargs=train_loader_kwargs,
-        eval_loader_kwargs=val_loader_kwargs,
-    )
-
-    encoder, feature_dim = build_resnet_encoder(
-        args.model,
-        load_pretrained_weights=not bool(args.ckpt),
-    )
-    if args.ckpt:
-        print(f"[INFO] Loading encoder checkpoint from {args.ckpt}")
-        load_encoder_checkpoint(encoder, args.ckpt)
-    elif args.model == "resnet50_pretrained":
-        print("[INFO] No checkpoint provided. Using the frozen ImageNet-pretrained encoder.")
-    else:
-        print("[INFO] No checkpoint provided. Using randomly initialized frozen encoder.")
-
-    encoder = encoder.to(device)
-    encoder.eval()
-    for parameter in encoder.parameters():
-        parameter.requires_grad = False
-    if device.type == "cuda":
-        cudnn.benchmark = False
-
-    consume_spurssl_head_rng(feature_dim, args)
-    classifier = LinearClassifier(feature_dim=feature_dim, num_classes=dataset.num_classes).to(device)
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(
-        classifier.parameters(),
-        lr=args.learning_rate,
-        momentum=args.momentum,
-        weight_decay=args.weight_decay,
-    )
-
-    print("[INFO] Extracting frozen train features")
-    train_features = extract_features(encoder, train_loader, device)
-    print("[INFO] Extracting frozen validation features")
-    val_features = extract_features(encoder, val_loader, device)
-    artifact_dir = Path(args.artifact_dir) if args.artifact_dir else Path(args.ckpt).parent
-    feature_path = artifact_dir / f"probe_features_epoch_{supcon_epoch}_{args.train_set_linear_layer}_{args.eval_split}.pt"
-    feature_payload = {"train": train_features.tensors, "evaluation": val_features.tensors,
-                       "ssl_epoch": supcon_epoch, "train_split": args.train_set_linear_layer,
-                       "eval_split": args.eval_split, "seed": args.seed,
-                       "artifact": "downstream_probe_features_v2",
-                       "artifact_version": 2,
-                       "sample_ids": {
-                    "train": _saved_probe_sample_ids(
-                        train_loader.dataset, args.seed, args.batch_size, True, args.dataset
-                    ),
-                    "evaluation": _saved_probe_sample_ids(
-                        val_loader.dataset, args.seed, args.batch_size, False, args.dataset
-                    ),
-                }}
-    identity = {name: getattr(args, name) for name in ("study", "seed", "arm", "attempt_id")}
-    stored_feature_path = binary_destination(
-        feature_path,
-        tensor_payload_bytes(feature_payload),
-        kind="features",
-        identity=identity,
-    )
-    stored_feature_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(feature_payload, stored_feature_path)
-    retention_interval = int(getattr(args, "retain_probe_artifacts_every", 0))
-    is_final_feature = bool(args.ssl_total_epochs and supcon_epoch == args.ssl_total_epochs)
-    feature_retention = "final" if is_final_feature else (
-        "retained" if retention_interval > 0 and supcon_epoch > 0 and supcon_epoch % retention_interval == 0
-        else "temporary"
-    )
-    if args.run_recorder is not None:
-        args.run_recorder.register_artifact(
-            stored_feature_path,
-            kind="probe_features",
-            stage="linear_probe",
-            epoch=supcon_epoch,
-            retention_state=feature_retention,
-        )
-    feature_loader = make_feature_loader(train_features, args.batch_size, args.seed, shuffle=True)
-    val_feature_loader = make_feature_loader(val_features, args.batch_size, args.seed, shuffle=False)
-
-    history = ProbeHistory([], [], [])
-    best_val_acc = best_val_wg_acc = best_val_bg_acc = 0.0
-    best_train_acc = best_train_wg_acc = best_train_bg_acc = 0.0
-
-    wandb_run = None
-    created_wandb_run = False
-    if args.use_wandb:
-        import wandb
-
-        wandb_run = wandb.run
-        if wandb_run is None:
-            wandb_run = wandb.init(
-                project=args.wandb_name,
-                entity=args.entity,
-                config=vars(args),
-                name=f"{args.dataset}_S{args.seed}_Probe",
-            )
-            created_wandb_run = True
-
-    convergence = {}
-    logistic_records = None
-    if args.probe_solver == "logistic":
-        logistic_records, convergence = fit_logistic_probe(
-            train_features.tensors[0], train_features.tensors[1],
-            val_features.tensors[0], val_features.tensors[1],
-            num_classes=dataset.num_classes, l2=args.probe_l2,
-            tolerance=args.probe_tolerance, max_epochs=args.probe_max_epochs,
-        )
-    for epoch in range(1, (len(logistic_records) if logistic_records is not None else args.epochs) + 1):
-        adjust_learning_rate(args, optimizer, epoch)
-        start = time.time()
-        if logistic_records is None:
-            train_loss, train_acc, train_pred, train_labels, train_metadata = train_one_epoch(
-                feature_loader, classifier, criterion, optimizer, device
-            )
-        else:
-            record = logistic_records[epoch - 1]
-            train_loss, train_pred = record.train_loss, record.train_predictions
-            train_labels, train_metadata = train_features.tensors[1:]
-            train_acc = float(train_pred.eq(train_labels).float().mean()) * 100
-        display_epoch = record.epoch if logistic_records is not None else epoch
-        train_results, _ = train_loader.dataset.eval(train_pred, train_labels, train_metadata)
-        train_wg_acc = train_results["acc_wg"] * 100
-        train_bg_acc = train_results["best_acc"] * 100
-        print(
-            "Train epoch {}, total time {:.2f}, loss {:.4f}, accuracy {:.2f}, wg accuracy {:.2f}, bg accuracy {:.2f}".format(
-                display_epoch, time.time() - start, train_loss, train_acc, train_wg_acc, train_bg_acc
-            )
-        )
-
-        if train_acc > best_train_acc:
-            best_train_acc = train_acc
-            best_train_wg_acc = train_wg_acc
-            best_train_bg_acc = train_bg_acc
-
-        if logistic_records is None:
-            val_loss, val_acc, val_pred, val_labels, val_metadata = validate(
-                val_feature_loader, classifier, criterion, device
-            )
-        else:
-            val_loss, val_pred = record.eval_loss, record.eval_predictions
-            val_labels, val_metadata = val_features.tensors[1:]
-            val_acc = float(val_pred.eq(val_labels).float().mean()) * 100
-        val_results, _ = val_loader.dataset.eval(val_pred, val_labels, val_metadata)
-        val_wg_acc = val_results["acc_wg"] * 100
-        val_bg_acc = val_results["best_acc"] * 100
-        print(
-            "Val epoch {}, loss {:.4f}, accuracy {:.2f}, wg accuracy {:.2f}, bg accuracy {:.2f}".format(
-                display_epoch, val_loss, val_acc, val_wg_acc, val_bg_acc
-            )
-        )
-
-        history.val_accuracy.append(val_acc)
-        history.val_worst_group.append(val_wg_acc)
-        history.val_best_group.append(val_bg_acc)
-        if args.run_recorder is not None:
-            args.run_recorder.log_metrics(
-                "linear_probe",
-                display_epoch,
-                {
-                    "ssl_epoch": supcon_epoch,
-                    "train_loss": train_loss,
-                    "train_accuracy": train_acc,
-                    "train_worst_group_accuracy": train_wg_acc,
-                    "train_best_group_accuracy": train_bg_acc,
-                    "eval_loss": val_loss,
-                    "eval_accuracy": val_acc,
-                    "eval_worst_group_accuracy": val_wg_acc,
-                    "eval_best_group_accuracy": val_bg_acc,
-                },
-            )
-
-        if val_acc > best_val_acc or (
-            val_acc == best_val_acc and (val_wg_acc, val_bg_acc) > (best_val_wg_acc, best_val_bg_acc)
-        ):
-            best_val_acc = val_acc
-            best_val_wg_acc = val_wg_acc
-            best_val_bg_acc = val_bg_acc
-
-    last_acc = history.val_accuracy[-1]
-    last_wg_acc = history.val_worst_group[-1]
-    last_bg_acc = history.val_best_group[-1]
-    window = min(10, len(history.val_accuracy))
-    avg_last_10_acc = float(np.mean(history.val_accuracy[-window:]))
-    avg_last_10_wg_acc = float(np.mean(history.val_worst_group[-window:]))
-    avg_last_10_bg_acc = float(np.mean(history.val_best_group[-window:]))
-    group_counts = val_results["group_counts"]
-    group_accuracies = val_results["group_accuracy"]
-    train_group_counts = train_results["group_counts"]
-    train_group_accuracies = train_results["group_accuracy"]
-    nonempty_group_ids = torch.where(group_counts > 0)[0]
-    if len(nonempty_group_ids):
-        worst_offset = torch.argmin(group_accuracies[nonempty_group_ids])
-        last_worst_group_id = int(nonempty_group_ids[worst_offset].item())
-        last_worst_group_count = int(group_counts[last_worst_group_id].item())
-    else:
-        last_worst_group_id = -1
-        last_worst_group_count = 0
-    print(
-        "Average of last 10 accuracies: {:.2f}, Average of last 10 worst-group accuracies: {:.2f}, Average of last 10 best-group accuracies: {:.2f}".format(
-            avg_last_10_acc, avg_last_10_wg_acc, avg_last_10_bg_acc
-        )
-    )
-
-    train_feature_tensor = train_features.tensors[0]
-    val_feature_tensor = val_features.tensors[0]
-    entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_feature_tensor)
-    val_entropy, val_effective_rank, val_energy_based_rank = entropy_effective_rank(val_feature_tensor)
-
-    print(f"Train - Entropy: {entropy:.4f}, Effective Rank: {effective_rank:.2f}, Energy-Based Rank: {energy_based_rank:.2f}")
-    print(f"Val   - Entropy: {val_entropy:.4f}, Effective Rank: {val_effective_rank:.2f}, Energy-Based Rank: {val_energy_based_rank:.2f}")
-
-    final_metrics = {
-        "Probe converged": convergence.get("converged", False),
-        "Probe epochs": convergence.get("epochs", args.epochs),
-        "Probe gradient max": convergence.get("gradient_max", 0.0),
-        "Linear train acc": best_train_acc,
-        "Linear train worst-group acc": best_train_wg_acc,
-        "Linear train best-group acc": best_train_bg_acc,
-        "Linear val acc": best_val_acc,
-        "Linear val worst-group acc": best_val_wg_acc,
-        "Linear val best-group acc": best_val_bg_acc,
-        "Train linear entropy": entropy,
-        "Train linear effective rank": effective_rank,
-        "Train linear energy-based rank": energy_based_rank,
-        "Val linear entropy": val_entropy,
-        "Val linear effective rank": val_effective_rank,
-        "Val linear energy-based rank": val_energy_based_rank,
-        "Last linear val acc": last_acc,
-        "Last linear val worst-group acc": last_wg_acc,
-        "Last linear val best-group acc": last_bg_acc,
-        "Average over 10 last linear val acc": avg_last_10_acc,
-        "Average over last 10 linear val acc": avg_last_10_acc,
-        "Average over last 10 linear val worst-group acc": avg_last_10_wg_acc,
-        "Average over last 10 linear val best-group acc": avg_last_10_bg_acc,
-        "Last linear val worst-group id": last_worst_group_id,
-        "Last linear val worst-group count": last_worst_group_count,
-        # Persist every group, including empty groups as zero-count entries.  The
-        # lists are deliberately detached from tensors so result JSON is portable.
-        "Linear val group accuracies": (group_accuracies.detach().cpu().float() * 100).tolist(),
-        "Linear val group counts": group_counts.detach().cpu().long().tolist(),
-        "Linear train group accuracies": (train_group_accuracies.detach().cpu().float() * 100).tolist(),
-        "Linear train group counts": train_group_counts.detach().cpu().long().tolist(),
-    }
-    if args.spurious_probe:
-        print("[INFO] Training auxiliary spurious-attribute leakage probe")
-        final_metrics.update(
-            run_spurious_attribute_probe(train_features, val_features, feature_dim, args, device)
-        )
-    if wandb_run is not None:
-        define_wandb_metrics(wandb_run, split=args.eval_split)
-        wandb_run.log(
-            {
-                **{key: value for key, value in final_metrics.items() if not isinstance(value, list)},
-                **canonical_probe_metrics(final_metrics, split=args.eval_split),
-            },
-            step=supcon_epoch,
-        )
-        wandb_run.log(
-            {
-                **{
-                    f"Linear val group {group_id} acc": (
-                        float(accuracy)
-                        if int(final_metrics["Linear val group counts"][group_id]) > 0
-                        else None
-                    )
-                    for group_id, accuracy in enumerate(final_metrics["Linear val group accuracies"])
-                },
-                **{
-                    f"Linear val group {group_id} count": int(count)
-                    for group_id, count in enumerate(final_metrics["Linear val group counts"])
-                },
-            },
-            step=supcon_epoch,
-        )
-        wandb_run.log(
-            build_wandb_group_metrics(
-                group_accuracies,
-                group_counts,
-                val_features.tensors[2],
-            ),
-            step=supcon_epoch,
-        )
-        wandb_run.config.update({"probe_solver": args.probe_solver, "probe_l2": args.probe_l2,
-                                "probe_tolerance": args.probe_tolerance,
-                                "probe_max_epochs": args.probe_max_epochs,
-                                "probe_normalization": convergence.get("normalization", "none")}, allow_val_change=True)
-        if created_wandb_run:
-            wandb_run.finish()
-    result_path = feature_path.with_suffix(".json")
-    result_payload = {"schema": "linear-probe-result-v3", "ssl_epoch": supcon_epoch,
-                      "solver": args.probe_solver,
-                      "train_split": args.train_set_linear_layer, "eval_split": args.eval_split,
-                      "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
-                      "metric_semantics": {
-                          "accuracy_unit": "percent",
-                          "average_accuracy": "sample-weighted accuracy on eval_split",
-                          "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups",
-                          "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
-                          "history_window": min(10, len(history.val_accuracy)),
-                      },
-                      "feature_artifact": {
-                          "uri": artifact_uri(stored_feature_path),
-                          "payload_bytes": tensor_payload_bytes(feature_payload),
-                          "retention_state": feature_retention,
-                      },
-                      "convergence": convergence, "metrics": final_metrics,
-                      "group_metrics": {
-                                            "val": {
-                                               "accuracy": final_metrics["Linear val group accuracies"],
-                                               "count": final_metrics["Linear val group counts"],
-                                               "named": build_named_group_metrics(
-                                                   group_accuracies,
-                                                   group_counts,
-                                                   val_features.tensors[2],
-                                               ),
-                                           },
-                                           "train": {
-                                               "accuracy": final_metrics["Linear train group accuracies"],
-                                               "count": final_metrics["Linear train group counts"],
-                                               "named": build_named_group_metrics(
-                                                   train_group_accuracies,
-                                                   train_group_counts,
-                                                   train_features.tensors[2],
-                                               ),
-                                            },
-                                        }}
-    atomic_write_json(result_path, result_payload)
-    if args.run_recorder is not None:
-        result_retention = (
-            "final"
-            if is_final_feature
-            else ("temporary" if args.ssl_total_epochs else "retained")
-        )
-        args.run_recorder.register_artifact(
-            result_path,
-            kind="probe_result",
-            stage="linear_probe",
-            epoch=supcon_epoch,
-            retention_state=result_retention,
-        )
-        args.run_recorder.log_metrics("linear_probe_final", supcon_epoch, result_payload)
-
-    print(
-        "best accuracy: {:.2f} and worst-group accuracy: {:.2f} and best-group accuracy: {:.2f}".format(
-            best_val_acc, best_val_wg_acc, best_val_bg_acc
-        )
-    )
-    print(
-        "Last accuracy: {:.2f}, Last worst-group accuracy: {:.2f}, Last best-group accuracy: {:.2f}".format(
-            last_acc, last_wg_acc, last_bg_acc
-        )
-    )
-    print("Train entropy: {:.2f}, effective rank: {}, and energy-based rank: {}".format(entropy, effective_rank, energy_based_rank))
-    print("Val entropy: {:.2f}, effective rank: {}, and energy-based rank: {}".format(val_entropy, val_effective_rank, val_energy_based_rank))
-    print(
-        "Average last 10 accuracies: {:.2f}, Average last 10 worst-group accuracies: {:.2f}, Average last 10 best-group accuracies: {:.2f}".format(
-            avg_last_10_acc, avg_last_10_wg_acc, avg_last_10_bg_acc
-        )
-    )
-    return final_metrics
+    if created:
+        run.finish()
+    return result.metrics
 
 
 if __name__ == "__main__":

@@ -16,7 +16,8 @@ from PIL import Image
 from experiments.spurious_eval.datasets.celeba import CelebADataset
 from experiments.spurious_eval.datasets.registry import canonical_dataset_name
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
-from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs, run_spurious_attribute_probe
+from cospro.evaluation.probe import ProbeOptions, spurious_attribute_metrics
+from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from cospro.methods import CoSpRoRelational
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
@@ -969,18 +970,11 @@ class SplicePipelineTests(unittest.TestCase):
         spurious = torch.tensor([0, 0, 1, 1] * 2)
         metadata = torch.stack((spurious, target), dim=1)
         dataset = torch.utils.data.TensorDataset(features, target, metadata)
-        args = argparse.Namespace(
-            batch_size=4,
-            seed=0,
-            epochs=2,
-            learning_rate=0.1,
-            momentum=0.0,
-            weight_decay=0.0,
-            cosine=False,
-            lr_decay_rate=0.2,
-            lr_decay_epochs=[],
+        options = ProbeOptions(
+            batch_size=4, seed=0, epochs=2, learning_rate=0.1, momentum=0.0, weight_decay=0.0,
+            cosine=False, lr_decay_rate=0.2, lr_decay_epochs=(), solver="sgd",
         )
-        metrics = run_spurious_attribute_probe(dataset, dataset, 2, args, torch.device("cpu"))
+        metrics = spurious_attribute_metrics(dataset, dataset, 2, options, torch.device("cpu"))
         self.assertIn("Spurious probe average over last 10 val acc", metrics)
         self.assertIn("Spurious probe average over last 10 val worst-group acc", metrics)
 

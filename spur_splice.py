@@ -26,7 +26,6 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
-from experiments.spurious_eval import linear_probe
 from experiments.spurious_eval.datasets.registry import build_loader, dataset_class
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.models.simclr import SimCLRModel
@@ -37,6 +36,7 @@ from experiments.spurious_eval.training.reproducibility import (
     seed_worker,
 )
 from cospro.config.options import ConfigError, str_to_bool  # noqa: F401  (str_to_bool re-exported)
+from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
 from cospro.methods import LoaderContext, build_method
 from cospro.training import (
     CheckpointPolicy,
@@ -287,51 +287,68 @@ def build_rank_loader(args: argparse.Namespace):
     )
 
 
+def probe_options(args: argparse.Namespace) -> ProbeOptions:
+    """The probe's own options, named by the training command line."""
+
+    return ProbeOptions(
+        data_folder=args.data_folder,
+        train_split=args.train_set_linear_layer,
+        eval_split=args.linear_eval_split,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        seed=args.seed,
+        device=args.device,
+        head=args.head,
+        solver=args.linear_probe_solver,
+        l2=args.linear_probe_l2,
+        tolerance=args.linear_probe_tolerance,
+        max_epochs=args.linear_probe_max_epochs,
+        epochs=args.linear_probe_epochs,
+        learning_rate=args.linear_learning_rate,
+        lr_decay_epochs=tuple(args.linear_lr_decay_epochs),
+        lr_decay_rate=args.linear_lr_decay_rate,
+        weight_decay=args.linear_weight_decay,
+        momentum=PROBE_MOMENTUM,
+        cosine=args.cosine,
+        spurious_probe=args.linear_spurious_probe,
+    )
+
+
+def training_wandb_run(args: argparse.Namespace):
+    """The run this training job already opened. A probe never starts a second one."""
+
+    if not args.use_wandb:
+        return None
+    import wandb
+
+    return wandb.run
+
+
 def run_linear_probe(args: argparse.Namespace, ckpt_path: str, epoch: int) -> dict[str, float]:
+    """Measure the frozen encoder of one checkpoint, leaving training RNG and backend untouched."""
+
+    artifacts = ProbeArtifacts(
+        directory=Path(args.save_folder),
+        identity=artifact_identity(args),
+        ssl_epoch=epoch,
+        ssl_total_epochs=args.epochs,
+        retain_every=args.retain_probe_artifacts_every,
+        recorder=args.run_recorder_instance,
+    )
     with preserve_rng_state():
         try:
-            return linear_probe.main(build_linear_probe_args(args, ckpt_path), supcon_epoch=epoch)
+            seed_probe(args.seed)
+            result = probe_checkpoint(
+                dataset_class(args.dataset),
+                probe_options(args),
+                artifacts,
+                model=args.model,
+                checkpoint=ckpt_path,
+                wandb_run=training_wandb_run(args),
+            )
+            return result.metrics
         finally:
             configure_training_backend(args)
-
-
-def build_linear_probe_args(args: argparse.Namespace, ckpt_path: str) -> argparse.Namespace:
-    probe_settings = {
-        "dataset": args.dataset,
-        "data_folder": args.data_folder,
-        "train_set_linear_layer": args.train_set_linear_layer,
-        "eval_split": args.linear_eval_split,
-        "model": args.model,
-        "ckpt": ckpt_path,
-        "head": args.head,
-        "batch_size": args.batch_size,
-        "num_workers": args.num_workers,
-        "epochs": args.linear_probe_epochs,
-        "probe_solver": getattr(args, "linear_probe_solver", "logistic"),
-        "probe_l2": getattr(args, "linear_probe_l2", 1e-3),
-        "probe_tolerance": getattr(args, "linear_probe_tolerance", 1e-6),
-        "probe_max_epochs": getattr(args, "linear_probe_max_epochs", 200),
-        "learning_rate": args.linear_learning_rate,
-        "lr_decay_epochs": args.linear_lr_decay_epochs,
-        "lr_decay_rate": args.linear_lr_decay_rate,
-        "weight_decay": args.linear_weight_decay,
-        "momentum": PROBE_MOMENTUM,
-        "cosine": args.cosine,
-        "seed": args.seed,
-        "device": args.device,
-        "use_wandb": args.use_wandb,
-        "wandb_name": args.wandb_name,
-        "entity": args.entity,
-        "spurious_probe": args.linear_spurious_probe,
-        "artifact_dir": args.save_folder,
-        "run_recorder": getattr(args, "run_recorder_instance", None),
-        "study": args.study,
-        "arm": args.arm,
-        "attempt_id": args.attempt_id,
-        "retain_probe_artifacts_every": args.retain_probe_artifacts_every,
-        "ssl_total_epochs": args.epochs,
-    }
-    return argparse.Namespace(**probe_settings)
 
 
 def build_training_state(args: argparse.Namespace, device: torch.device) -> TrainingState:
