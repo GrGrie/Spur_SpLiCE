@@ -5,6 +5,9 @@ from cospro.tracking.metrics import (
     canonical_probe_metrics,
     canonical_train_metrics,
     define_wandb_metrics,
+    epoch_payload,
 )
 
-__all__ = ["WGA_KEY", "canonical_probe_metrics", "canonical_train_metrics", "define_wandb_metrics"]
+__all__ = [
+    "WGA_KEY", "canonical_probe_metrics", "canonical_train_metrics", "define_wandb_metrics", "epoch_payload",
+]

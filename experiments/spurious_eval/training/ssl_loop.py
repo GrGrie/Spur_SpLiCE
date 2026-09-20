@@ -6,9 +6,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from cospro.tracking import canonical_train_metrics
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
-from experiments.spurious_eval.metrics import entropy_effective_rank
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.optim import warmup_learning_rate
 
@@ -178,63 +176,3 @@ def extract_normalized_train_features(model: SimCLRModel, rank_loader, args) -> 
     features = F.normalize(torch.cat(features, dim=0), dim=1)
     print("Extracted features shape:", features.shape)
     return features
-
-
-def log_rank_metrics(
-    model: SimCLRModel,
-    rank_loader,
-    optimizer: torch.optim.Optimizer,
-    train_metrics: dict[str, float],
-    epoch: int,
-    args,
-    wandb_run,
-    compute_rank: bool = True,
-    run_recorder=None,
-) -> dict[str, float]:
-    rank_metrics = {}
-    if compute_rank:
-        if rank_loader is None:
-            raise ValueError("Rank metrics require a dedicated rank loader.")
-        train_features = extract_normalized_train_features(model, rank_loader, args)
-        entropy, effective_rank, energy_based_rank = entropy_effective_rank(train_features)
-        print(
-            "epoch {}, entropy {:.2f}, effective rank {}, and energy-based rank {}".format(
-                epoch, entropy, effective_rank, energy_based_rank
-            )
-        )
-        rank_metrics = {
-            "Entropy": entropy,
-            "Effective rank": effective_rank,
-            "Energy-based rank": energy_based_rank,
-        }
-    payload = {
-                **rank_metrics,
-                "SSL train loss": train_metrics["loss"],
-                "SSL SimCLR loss": train_metrics["simclr_loss"],
-                "SSL decor loss": train_metrics["decor_loss"],
-                "SSL entropy loss": train_metrics["entropy_loss"],
-                "SSL splice loss": train_metrics["splice_loss"],
-                "SSL learning rate": optimizer.param_groups[0]["lr"],
-                "SSL relational scheduled weight": train_metrics.get(
-                    "relational_scheduled_weight", 0.0
-                ),
-                "SSL relational supported anchor fraction": train_metrics.get(
-                    "relational_supported_anchor_fraction", 0.0
-                ),
-                "SSL relational mean anchor confidence": train_metrics.get(
-                    "relational_mean_anchor_confidence", 0.0
-                ),
-                "SSL relational unweighted KL": train_metrics.get(
-                    "relational_unweighted_kl", 0.0
-                ),
-                "SSL relational confidence-weighted KL": train_metrics.get(
-                    "relational_confidence_weighted_kl", 0.0
-                ),
-    }
-    payload.update({f"SSL {key}": value for key, value in train_metrics.items()
-                    if key.startswith("la_ssl_") or key in {"relational_valid_fraction", "relational_cosine_loss"}})
-    if run_recorder is not None:
-        run_recorder.log_metrics("ssl", epoch, payload)
-    if wandb_run is not None:
-        wandb_run.log({**payload, **canonical_train_metrics(payload)}, step=epoch)
-    return payload

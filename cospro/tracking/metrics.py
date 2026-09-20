@@ -13,6 +13,7 @@ canonical keys below, which are stable across refactors and safe to chart, filte
     train/representation/<name>  representation-rank diagnostics
     method/<name>                whatever the training method reports
 
+``epoch_payload`` assembles the per-epoch SSL event under the historical names and
 ``define_wandb_metrics`` marks ``probe/<split>/wga`` as the run summary metric, so the W&B run
 table sorts on the best worst-group accuracy.
 """
@@ -58,6 +59,40 @@ _METHOD_DIAGNOSTIC_NAMES = {
     "unweighted KL": "unweighted_kl",
     "confidence-weighted KL": "confidence_weighted_kl",
 }
+
+
+def epoch_payload(
+    train_metrics: Mapping[str, Any],
+    *,
+    learning_rate: float,
+    diagnostics: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """One epoch's metric event under its historical key names.
+
+    ``train_metrics`` comes from the epoch loop and ``diagnostics`` from the observational
+    callbacks, such as representation rank. The run record and W&B store this payload; W&B
+    additionally receives :func:`canonical_train_metrics` of it.
+    """
+
+    payload: dict[str, Any] = dict(diagnostics or {})
+    payload.update({
+        "SSL train loss": train_metrics["loss"],
+        "SSL SimCLR loss": train_metrics["simclr_loss"],
+        "SSL decor loss": train_metrics["decor_loss"],
+        "SSL entropy loss": train_metrics["entropy_loss"],
+        "SSL splice loss": train_metrics["splice_loss"],
+        "SSL learning rate": learning_rate,
+        "SSL relational scheduled weight": train_metrics.get("relational_scheduled_weight", 0.0),
+        "SSL relational supported anchor fraction": train_metrics.get("relational_supported_anchor_fraction", 0.0),
+        "SSL relational mean anchor confidence": train_metrics.get("relational_mean_anchor_confidence", 0.0),
+        "SSL relational unweighted KL": train_metrics.get("relational_unweighted_kl", 0.0),
+        "SSL relational confidence-weighted KL": train_metrics.get("relational_confidence_weighted_kl", 0.0),
+    })
+    payload.update({
+        f"SSL {key}": value for key, value in train_metrics.items()
+        if key.startswith("la_ssl_") or key in {"relational_valid_fraction", "relational_cosine_loss"}
+    })
+    return payload
 
 
 def canonical_probe_metrics(metrics: Mapping[str, Any], *, split: str) -> dict[str, Any]:

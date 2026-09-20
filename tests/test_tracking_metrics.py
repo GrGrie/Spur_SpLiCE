@@ -6,8 +6,13 @@ import unittest
 
 import torch
 
-from cospro.tracking import canonical_probe_metrics, canonical_train_metrics, define_wandb_metrics
-from experiments.spurious_eval.training.ssl_loop import log_rank_metrics
+from cospro.tracking import (
+    canonical_probe_metrics,
+    canonical_train_metrics,
+    define_wandb_metrics,
+    epoch_payload,
+)
+from cospro.training import EpochReport, WandbLogger
 
 PROBE_METRICS = {
     "Last linear test acc": 70.0,
@@ -66,17 +71,33 @@ class MetricContractTests(unittest.TestCase):
 
     def test_epoch_logging_sends_both_key_sets(self):
         run = FakeWandbRun()
-        args = type("Args", (), {"device": "cpu", "channels_last": False})()
-        payload = log_rank_metrics(
-            model=None, rank_loader=None, optimizer=type("Opt", (), {"param_groups": [{"lr": 0.01}]})(),
-            train_metrics={"loss": 1.0, "simclr_loss": 0.9, "decor_loss": 0.0, "entropy_loss": 0.0,
-                           "splice_loss": 0.1, "relational_scheduled_weight": 0.5},
-            epoch=3, args=args, wandb_run=run, compute_rank=False,
+        report = EpochReport(
+            epoch=3,
+            train={"loss": 1.0, "simclr_loss": 0.9, "decor_loss": 0.0, "entropy_loss": 0.0,
+                   "splice_loss": 0.1, "relational_scheduled_weight": 0.5},
+            learning_rate=0.01,
+            diagnostics={"Effective rank": 7.0},
         )
-        self.assertEqual(payload["SSL train loss"], 1.0)
+        WandbLogger(run).on_epoch_end(report)
+        self.assertEqual(report.payload()["SSL train loss"], 1.0)
         self.assertEqual(run.logged["SSL train loss"], 1.0)
+        self.assertEqual(run.logged["SSL learning rate"], 0.01)
         self.assertEqual(run.logged["train/loss/total"], 1.0)
+        self.assertEqual(run.logged["train/representation/effective_rank"], 7.0)
         self.assertEqual(run.logged["method/scheduled_weight"], 0.5)
+
+    def test_epoch_payload_carries_the_method_diagnostics_it_receives(self):
+        payload = epoch_payload(
+            {"loss": 1.0, "simclr_loss": 0.9, "decor_loss": 0.0, "entropy_loss": 0.0, "splice_loss": 0.1,
+             "la_ssl_upsampled_fraction": 0.3, "relational_cosine_loss": 0.2, "relational_unweighted_kl": 0.4},
+            learning_rate=0.5,
+        )
+        self.assertEqual(payload["SSL learning rate"], 0.5)
+        self.assertEqual(payload["SSL la_ssl_upsampled_fraction"], 0.3)
+        self.assertEqual(payload["SSL relational_cosine_loss"], 0.2)
+        self.assertEqual(payload["SSL relational unweighted KL"], 0.4)
+        # A method that reports nothing still logs the relational series as zero.
+        self.assertEqual(payload["SSL relational mean anchor confidence"], 0.0)
 
 
 if __name__ == "__main__":
