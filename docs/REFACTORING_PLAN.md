@@ -112,7 +112,8 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 5 | Trainer, callbacks, storage policy | done | trainer seam commit |
 | 6 | Dataset adapters | done | dataset seam commit |
 | 7 | Linear probe as a library function | done | probe seam commit |
-| 8 | `cospro/` pipeline package and concept dictionaries | **next** | – |
+| 8 | `cospro/` pipeline package, neighbour index, selection rule | done; dictionaries deferred | pipeline split commit |
+| 8b | Concept dictionaries (`ConceptDictionary`) | **next**, needs a cluster check | – |
 | 9 | Package layout move | planned | – |
 
 Other commits on the branch: `b51575f` AGENTS.md rules, `00a4c8b` paper commas, `3f2a5fb` YAML manifests,
@@ -170,7 +171,7 @@ loop, retention and cleanup, W&B and run records) in 1243 lines. → phases 3, 4
 three near-identical loader factories. Registry entries are untyped dictionaries plus alias tables in Python and a
 `case` statement in bash. → phase 6.
 
-**P6. `splice/cospro.py` is a 1528-line module** with cache validation, grouping, neighbour search (exact and LSH),
+**P6. `splice/cospro.py` was a 1528-line module** with cache validation, grouping, neighbour search (exact and LSH),
 auditing, null controls, graph assembly and a CLI; `build_teacher_graph` alone spans about 300 lines. Vocabularies are
 special-cased by name. → phase 8.
 
@@ -595,15 +596,57 @@ calls that directly.
 - `evaluate_probe` keeps its prints, including the closing summary. A silent measurement would make
   cluster logs unreadable, and printing is not a side effect a caller has to undo.
 
-### Phase 8 — `cospro/` pipeline package and concept dictionaries (next)
+### Phase 8 — Pipeline package, neighbour index, selection rule (done)
 
-- Split `splice/cospro.py` into `cospro/cache.py`, `grouping.py`, `neighbors.py`, `audit.py`, `graph.py`,
-  `pipeline.py`; `NeighborIndex` with `ExactNeighbors` and `LshNeighbors` tested against each other.
-- `ConceptDictionary` (words, text embeddings, provenance) with adapters for LAION, Open Images V7 and any text file;
-  manifest entry `dictionary: {kind: file, path: ..., order: frequency | file, size: N}`.
-- Selection becomes an explicit, swappable stage (`SelectionRule`: null-quantile pass, top-k by null excess, post-hoc
-  audit only for reports), since phase 2 showed selection decides graph quality.
-- Pipeline stages move from `scripts/tools/` to `cospro/cli/`; launcher names stay.
+**Delivered (2026-09-20)**
+
+- `cospro/pipeline/`: `config.py`, `cache.py`, `grouping.py`, `neighbors.py`, `audit.py`,
+  `selection.py` and `graph.py`, each reading the artifact the previous stage wrote. The code moved
+  verbatim; `splice/cospro.py` is a 66-line re-export shim for scripts written against the old path.
+- The duplicate teacher-graph CLI at the bottom of the old module is gone. Nothing called it, and
+  `scripts/tools/build_cospro_teacher_graphs.py` is the stage that writes canonical paths and
+  provenance.
+- `NeighborIndex` with `ExactNeighbors` and `LshNeighbors`, registered by the `--neighbor-backend`
+  value that selects them, each reporting its own provenance. `tests/test_neighbor_index.py` holds
+  the approximate index to the exact one: the same contract, true cosine similarities, determinism
+  and full recovery of the exact neighbourhood on clustered features.
+- `SelectionRule` splits the two decisions phase 2 showed matter: `accepts` judges one group against
+  its null controls, `retain` ranks the survivors and applies the cap. `NullQuantilePass` is the
+  paper protocol and the default, and the graph records which rule produced it.
+- Golden graph and golden training snapshots are unchanged.
+
+**Decisions**
+
+- A selection rule is an argument to `build_teacher_graph`, not a `CoSpRoAuditConfig` field. That
+  configuration is hashed into the group-checkpoint identity, so a new field would invalidate every
+  audit checkpoint on the cluster. Naming rules on the command line is a deliberate later step,
+  taken together with that cost.
+- The two tests that reach into pipeline internals patch the module the function lives in. Patching
+  the shim would have silently stopped biting.
+
+### Phase 8b — Concept dictionaries (next)
+
+`ConceptDictionary` (words, text embeddings, provenance) with adapters for LAION, Open Images V7 and
+any text file, plus the manifest entry
+`dictionary: {kind: file, path: ..., order: frequency | file, size: N}`.
+
+**Why this is its own phase.** The dictionary tensor is built inside the vendored
+`splice.splice.load`: word list, CLIP text encoder, normalize, subtract the concept mean, normalize
+again, then cache to `~/.cache/splice/embeddings/`. Supporting an arbitrary word list means either
+changing that vendored path or reimplementing the embedding step beside it. Either way the change
+lands on the artifact every cache, concept group, teacher graph and training run is derived from,
+and it cannot be checked without CLIP weights and a GPU. It belongs in a pass that ends with
+`sbatch scripts/run_cospro_pipeline.sh` on the cluster and a cache rebuilt from the new path
+compared with the current one.
+
+**What it needs**: a second dictionary the project actually wants, the ordering semantics per source
+(LAION is frequency-ordered and takes its tail, Open Images keeps file order) and a decision on
+whether the manifest or the cache configuration name carries the dictionary identity, since the
+cache directory name already encodes `vocab_<name>_<size>`.
+
+**Also deferred**: moving the pipeline stages from `scripts/tools/` to `cospro/cli/`. That is a
+`git mv` with import updates, which is exactly what phase 9 does for every package in one commit
+each; doing it here alone would fragment that move.
 
 ### Phase 9 — Package layout (planned)
 

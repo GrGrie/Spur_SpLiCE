@@ -24,8 +24,8 @@ training images
 | Artifact locations and threshold routing | `splice/artifacts.py` |
 | Run lifecycle records | `splice/run_recording.py` |
 | Frozen SpLiCE dataset cache | `scripts/tools/cache_splice_dataset.py` |
-| Concept grouping | `splice/cospro.py`, `scripts/tools/generate_cospro_concept_groups.py` |
-| CoSpRo audit and teacher graph | `splice/cospro.py`, `splice/graph_io.py` |
+| Concept grouping | `cospro/pipeline/grouping.py`, `scripts/tools/generate_cospro_concept_groups.py` |
+| Neighbour search, audit, selection, teacher graph | `cospro/pipeline/`, `splice/graph_io.py` |
 | Complete cache-to-results pipeline | `scripts/run_cospro_pipeline.sh`, `scripts/tools/run_cospro_pipeline.py` |
 | Graph sampler and relational KL | `splice/cospro_training.py` |
 | Typed training configuration, presets, sweeps | `cospro/config/` |
