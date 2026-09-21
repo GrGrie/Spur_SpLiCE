@@ -1,0 +1,86 @@
+{
+  "baseline": {
+    "path": "/scratch/xar68reb/CoSpRo/verify-dictionary/23870257/caches-baseline/waterbirds/splice_dataset_cache/cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/splice_dataset_cache.pt",
+    "sha256": "07d94ff39624ab78bc08b9fe6bb6c0fdb544108c86c0d62b941c9205dcaf4282"
+  },
+  "candidate": {
+    "path": "/scratch/xar68reb/CoSpRo/verify-dictionary/23870257/caches-current/waterbirds/splice_dataset_cache/cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/splice_dataset_cache.pt",
+    "sha256": "eff7514e5036888502921ccc76bb0b34e2e3af7d54b4176fe712d8d31c1bb39c"
+  },
+  "equal": true,
+  "fields": {
+    "cache_version": {
+      "equal": true
+    },
+    "clip_embeddings": {
+      "equal": true,
+      "max_abs_difference": 0.0,
+      "shape": [
+        4795,
+        512
+      ]
+    },
+    "dictionary": {
+      "equal": true,
+      "max_abs_difference": 0.0,
+      "shape": [
+        20931,
+        512
+      ]
+    },
+    "image_mean": {
+      "equal": true,
+      "max_abs_difference": 0.0,
+      "shape": [
+        512
+      ]
+    },
+    "provenance": {
+      "baseline": {
+        "dataset": "waterbirds",
+        "splice_l1_penalty": 0.25,
+        "splice_model": "open_clip:ViT-B-32",
+        "splice_pretrained": "laion2b_s34b_b79k",
+        "splice_vocab": "openimages_v7",
+        "splice_vocab_size": -1,
+        "split": "train"
+      },
+      "candidate": {
+        "dataset": "waterbirds",
+        "splice_l1_penalty": 0.25,
+        "splice_model": "open_clip:ViT-B-32",
+        "splice_pretrained": "laion2b_s34b_b79k",
+        "splice_vocab": "openimages_v7",
+        "splice_vocab_size": -1,
+        "split": "train"
+      },
+      "checked": true,
+      "equal": true
+    },
+    "sample_ids": {
+      "equal": true,
+      "first_mismatch": null,
+      "lengths": [
+        4795,
+        4795
+      ]
+    },
+    "splice_codes": {
+      "equal": true,
+      "max_abs_difference": 0.0,
+      "shape": [
+        4795,
+        20931
+      ]
+    },
+    "vocabulary": {
+      "equal": true,
+      "first_mismatch": null,
+      "lengths": [
+        20931,
+        20931
+      ]
+    }
+  },
+  "label": "baseline vs current (openimages_v7)"
+}
