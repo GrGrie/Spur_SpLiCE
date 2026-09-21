@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import platform
 import unittest
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,17 @@ VOCABULARY = ["water", "lake", "ocean", "forest", "bamboo", "waterbird", "gull",
 
 def update_requested() -> bool:
     return os.environ.get(UPDATE_ENV, "") == "1"
+
+
+def cpu_model() -> str:
+    """The processor model, which decides the floating-point kernels a CPU run uses."""
+
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    return platform.processor() or platform.machine() or "unknown"
 
 
 def compare_or_update(name: str, actual: Any, compare) -> None:

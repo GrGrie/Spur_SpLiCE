@@ -6,8 +6,11 @@
 # bit for bit on the same node prove the code did not change the numbers; the first commit that
 # disagrees names the change that did. Every run uses 2 threads, as the golden smoke job does.
 #
+# When every commit agrees, the job also rewrites tests/golden/training_runs.linux.json on this node,
+# recording its CPU model; commit that file. The golden test compares only on nodes with that CPU.
+#
 #   sbatch --nodelist=dgx002 scripts/bisect_golden_training.sbatch
-#   COMMITS="37d6096 HEAD" sbatch --nodelist=gpu014 scripts/bisect_golden_training.sbatch
+#   COMMITS="37d6096 HEAD" sbatch --nodelist=dgx001 scripts/bisect_golden_training.sbatch
 #
 # Read the verdict at the end of the .out file: "SAME NUMBERS" or "CODE CHANGED NUMBERS".
 
@@ -59,5 +62,15 @@ for commit in ${COMMITS}; do
   reference="${REPORT_DIR}/${sha}.json"
 done
 
+set +e
 "${PYTHON_BIN}" -u -m tools.maintenance.compare_golden_reports "${REPORT_DIR}" --reference "${reference}" \
   --snapshot "${PROJECT_DIR}/tests/golden/training_runs.linux.json"
+verdict=$?
+set -e
+if [[ "${verdict}" == "0" ]]; then
+  # The phase 0 code gives these numbers on this node, so they are the node's snapshot.
+  SPUR_SPLICE_UPDATE_GOLDEN=1 "${PYTHON_BIN}" -m pytest -q tests/test_golden_training.py \
+    --basetemp="${WORK_DIR}/pytest-snapshot" -p no:cacheprovider | tail -n 1
+  echo "[golden-bisect] rewrote tests/golden/training_runs.linux.json for this CPU; review it with git diff and commit it"
+fi
+exit "${verdict}"

@@ -2,8 +2,11 @@
 
 Each mode runs ``spur_splice.py`` in a subprocess exactly as the cluster launchers do. The
 per-epoch losses plus final probe metrics from ``run.json`` are compared with the snapshot.
-Floating-point results depend on the BLAS build, so each operating system keeps its own snapshot
-(``training_runs.<system>.json``). The first run on a new system creates it for review and commit.
+Floating-point results depend on the CPU's BLAS kernels, and the probe accuracies of the 16-image
+fixture flip with them, so a snapshot holds for one operating system and one processor model
+(``training_runs.<system>.json`` records its ``cpu``). On another processor the comparison is
+skipped with a pointer to ``scripts/bisect_golden_training.sbatch``, which checks the code on that
+node against the phase 0 code instead. The first run on a new system creates the snapshot.
 
 ``SPUR_SPLICE_GOLDEN_DEVICE=cuda`` runs the same modes on a GPU with AMP and channels-last memory
 (the cluster configuration). ``SPUR_SPLICE_GOLDEN_REPORT`` names a JSON file for the run summaries.
@@ -24,8 +27,11 @@ from pathlib import Path
 import torch
 
 from golden_support import (
+    GOLDEN_DIR,
     assert_close_tree,
     compare_or_update,
+    cpu_model,
+    update_requested,
     synthetic_splice_cache,
     synthetic_target_bank,
     train_sample_ids,
@@ -144,7 +150,7 @@ class GoldenTrainingTests(unittest.TestCase):
                     assert_finite(self, summary)
                     runs[arm] = summary
 
-        actual = {"platform": platform.system(), "runs": runs}
+        actual = {"platform": platform.system(), "cpu": cpu_model(), "runs": runs}
         if REPORT:
             Path(REPORT).parent.mkdir(parents=True, exist_ok=True)
             Path(REPORT).write_text(
@@ -153,6 +159,15 @@ class GoldenTrainingTests(unittest.TestCase):
             )
         if DEVICE != "cpu":
             self.skipTest("the numeric snapshot covers CPU runs; accelerated modes completed with finite metrics")
+        snapshot = GOLDEN_DIR / SNAPSHOT
+        if snapshot.is_file() and not update_requested():
+            recorded = json.loads(snapshot.read_text(encoding="utf-8")).get("cpu")
+            if recorded != actual["cpu"]:
+                self.skipTest(
+                    f"{SNAPSHOT} was taken on {recorded!r}; this node has {actual['cpu']!r}, whose kernels "
+                    "flip probe accuracies of the tiny fixture. Check this node with "
+                    "scripts/bisect_golden_training.sbatch instead."
+                )
         compare_or_update(
             SNAPSHOT, actual,
             lambda expected, current: assert_close_tree(self, expected, current, rel=1e-3, abs_=1e-4),
