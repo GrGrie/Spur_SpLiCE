@@ -113,7 +113,7 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 6 | Dataset adapters | done | dataset seam commit |
 | 7 | Linear probe as a library function | done | probe seam commit |
 | 8 | `cospro/` pipeline package, neighbour index, selection rule | done; dictionaries deferred | pipeline split commit |
-| 8b | Concept dictionaries (`ConceptDictionary`) | **next**, needs a cluster check | – |
+| 8b | Concept dictionaries, dataset downloads | done; cluster check `verify_concept_dictionary.sbatch` pending | dictionary commit |
 | 9 | Package layout move | planned | – |
 
 Other commits on the branch: `b51575f` AGENTS.md rules, `00a4c8b` paper commas, `3f2a5fb` YAML manifests,
@@ -624,29 +624,52 @@ calls that directly.
 - The two tests that reach into pipeline internals patch the module the function lives in. Patching
   the shim would have silently stopped biting.
 
-### Phase 8b — Concept dictionaries (next)
+### Phase 8b — Concept dictionaries and dataset downloads (done, cluster check pending)
 
-`ConceptDictionary` (words, text embeddings, provenance) with adapters for LAION, Open Images V7 and
-any text file, plus the manifest entry
-`dictionary: {kind: file, path: ..., order: frequency | file, size: N}`.
+**Delivered (2026-09-21)**, after a discussion with the author about what a public reproduction
+needs. The author wants file dictionaries for ablations, will run one cluster check and wants the
+datasets downloadable by a command.
 
-**Why this is its own phase.** The dictionary tensor is built inside the vendored
-`splice.splice.load`: word list, CLIP text encoder, normalize, subtract the concept mean, normalize
-again, then cache to `~/.cache/splice/embeddings/`. Supporting an arbitrary word list means either
-changing that vendored path or reimplementing the embedding step beside it. Either way the change
-lands on the artifact every cache, concept group, teacher graph and training run is derived from,
-and it cannot be checked without CLIP weights and a GPU. It belongs in a pass that ends with
-`sbatch scripts/run_cospro_pipeline.sh` on the cluster and a cache rebuilt from the new path
-compared with the current one.
+- `cospro/pipeline/dictionary.py`: `ConceptDictionary` with the bundled `laion` and
+  `openimages_v7` kinds plus `file`, any text file with one concept per line. A file dictionary is
+  named by the SHA-256 of its selected words, which enters its cache directory name and its
+  embedding cache, so an edited file never reuses stale embeddings. The bundled kinds keep their
+  historical names, cache directories and cache provenance, so every existing cache stays valid.
+- The vendored `splice.splice.load` gained `words` and `dictionary_id`. The embedding loop moved
+  verbatim into `embed_concepts`, which the named and the explicit paths share. With a
+  deterministic stand-in for the CLIP text tower, the old and the new loader produce equal
+  dictionary tensors for Open Images (full and 300) and LAION (500), and a file holding the Open
+  Images words produces the bundled tensor.
+- `--splice-vocab file --splice-vocab-file PATH --splice-vocab-order head|tail` on the cache stage
+  and the pipeline driver; `SPLICE_VOCAB_FILE` and `SPLICE_VOCAB_ORDER` on the pipeline launcher.
+  `cache_provenance` is now the one definition the cache writes and the pipeline expects.
+- `scripts/verify_concept_dictionary.sbatch`: builds the Waterbirds cache with the code before this
+  phase (a git worktree), with this code and from a file holding the Open Images words, then
+  compares them field by field through `scripts/tools/compare_splice_caches.py`. It prints
+  `[verify] PASS` or `[verify] FAIL`.
+- `scripts/tools/download_datasets.py` and `scripts/download_datasets.sbatch`: Waterbirds from the
+  Stanford Group DRO archive, CelebA from the official release. The Waterbirds archive
+  (SHA-256 `56c51b77...`) and its `metadata.csv` (`2f023b9d...`) were downloaded and checked here;
+  the metadata hash equals the one the paper's cluster runs recorded. The CelebA annotation
+  converter writes the author's CSV files byte for byte from the official format (checked by
+  rebuilding the official format from those CSVs). The CelebA download itself needs `gdown` and
+  Google Drive's goodwill, so it was not run here; `--celeba-archive-dir` covers a manual download.
+- `tests/test_concept_dictionary.py`, `tests/test_download_datasets.py`. The pipeline-defaults
+  section of `tests/golden/resolved_configs.json` gained the two new options, both `None`.
 
-**What it needs**: a second dictionary the project actually wants, the ordering semantics per source
-(LAION is frequency-ordered and takes its tail, Open Images keeps file order) and a decision on
-whether the manifest or the cache configuration name carries the dictionary identity, since the
-cache directory name already encodes `vocab_<name>_<size>`.
+**Decisions**
 
-**Also deferred**: moving the pipeline stages from `scripts/tools/` to `cospro/cli/`. That is a
-`git mv` with import updates, which is exactly what phase 9 does for every package in one commit
-each; doing it here alone would fragment that move.
+- A word file has no comment syntax. LAION contains the concepts `#`, `##`, `#@` and `#...`, so a
+  comment rule would silently drop real concepts; with one concept per non-blank line, a copy of
+  either bundled vocabulary reads back exactly.
+- Orders are named `head` and `tail` by what they keep. LAION's file runs from rare to frequent, so
+  its natural order is `tail`; the bundled kinds refuse any other.
+- A file dictionary records its file name and its SHA-256, never the machine-local path, so caches
+  built on different machines from the same words compare equal.
+- The pipeline stages stay in `scripts/tools/`; moving them to `cospro/cli/` is part of phase 9.
+
+**Pending**: `sbatch scripts/verify_concept_dictionary.sbatch` on the cluster. Until it prints
+PASS, treat file dictionaries as unverified against the real CLIP encoder.
 
 ### Phase 9 — Package layout (planned)
 

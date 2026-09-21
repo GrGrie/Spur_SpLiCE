@@ -30,6 +30,27 @@ policy and `outputs/README.md` for result navigation.
 For the seed-2/4 semantic/direct-transfer completion launcher and the matched
 LA-SSL baseline, see [docs/SUBMISSION_RUNS.md](docs/SUBMISSION_RUNS.md).
 
+## Get the data
+
+Everything except the images ships with the repository or downloads on first use: the LAION and
+Open Images V7 concept vocabularies and the CLIP image mean are in `data/`, the OpenCLIP ViT-B-32
+weights come from Hugging Face and Spur-CIFAR10 downloads through torchvision. Waterbirds and
+CelebA come from their official sources through one command, which checks every file against the
+data the paper was computed from:
+
+```bash
+python -m scripts.tools.download_datasets --data-folder ~/Datasets
+```
+
+Waterbirds is the Group DRO archive from Stanford; its archive and `metadata.csv` are checked by
+SHA-256. CelebA is the official aligned release; every file is checked by the MD5 torchvision ships
+and the annotations are rewritten into the CSV files the adapter reads, whose SHA-256 must equal
+the paper's. The official CelebA files sit on Google Drive, which needs the `gdown` package
+(`pip install -e .[data]`) and rate-limits large downloads. When it refuses, download
+`img_align_celeba.zip`, `list_attr_celeba.txt` and `list_eval_partition.txt` from the CelebA site
+into one directory and add `--celeba-archive-dir DIR`. On the cluster,
+`sbatch scripts/download_datasets.sbatch` runs the same command for `DATA_FOLDER`.
+
 ## Run the canonical experiment
 
 On the cluster, set `DATA_FOLDER` if it differs from the default. The submission
@@ -184,6 +205,22 @@ python -m scripts.tools.generate_cospro_concept_groups \
 ```
 
 Use `--no-embed-images` only when a placeholder-only report is intentional.
+
+### Concept dictionaries
+
+The SpLiCE cache decomposes every image into the words of one concept dictionary. The default is
+Open Images V7; `SPLICE_VOCAB=laion` selects the SpLiCE LAION vocabulary. For an ablation, any text
+file with one concept per line works:
+
+```bash
+SPLICE_VOCAB=file SPLICE_VOCAB_FILE=/path/to/words.txt SPLICE_VOCAB_SIZE=5000 \
+  sbatch scripts/run_cospro_pipeline.sh
+```
+
+Blank lines are skipped and a repeated concept is an error; every other line is a concept.
+`SPLICE_VOCAB_ORDER=head` (default) or `tail` says which end a size keeps. A file dictionary is
+identified by the SHA-256 of its words, which names its cache directory and its embedding cache, so
+an edited file never reuses stale embeddings. See `cospro/pipeline/dictionary.py`.
 
 ## Training methods and tracked metrics
 

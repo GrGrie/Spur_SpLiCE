@@ -23,7 +23,9 @@ training images
 | Sparse decomposition | `splice/model.py`, `splice/splice.py`, `splice/admm.py` |
 | Artifact locations and threshold routing | `splice/artifacts.py` |
 | Run lifecycle records | `splice/run_recording.py` |
-| Frozen SpLiCE dataset cache | `scripts/tools/cache_splice_dataset.py` |
+| Frozen SpLiCE dataset cache | `scripts/tools/cache_splice_dataset.py`, `cospro/pipeline/cache.py` |
+| Concept dictionaries (bundled and file) | `cospro/pipeline/dictionary.py`, `data/vocab/` |
+| Dataset download and verification | `scripts/tools/download_datasets.py`, `scripts/download_datasets.sbatch` |
 | Concept grouping | `cospro/pipeline/grouping.py`, `scripts/tools/generate_cospro_concept_groups.py` |
 | Neighbour search, audit, selection, teacher graph | `cospro/pipeline/`, `splice/graph_io.py` |
 | Complete cache-to-results pipeline | `scripts/run_cospro_pipeline.sh`, `scripts/tools/run_cospro_pipeline.py` |
