@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from sklearn.linear_model import LogisticRegression
 
-from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
+from cospro.evaluation.logistic_probe import fit_logistic_probe
 from scripts.tools.build_cospro_baseline_graphs import build_matched_raw_clip_graph
 from cospro.methods.relational_graph import CoSpRoGraphBatchSampler, validate_teacher_graph
 
@@ -73,7 +73,7 @@ class LogisticProbeTests(unittest.TestCase):
         from torch.utils.data import DataLoader, TensorDataset
         from cospro.evaluation import probe
         from experiments.spurious_eval import linear_probe
-        from experiments.spurious_eval.metrics import compute_group_metrics
+        from cospro.metrics import compute_group_metrics
 
         features, labels = data()
         metadata = torch.stack((torch.arange(len(labels)) % 2, labels), dim=1)

@@ -15,12 +15,12 @@ from PIL import Image
 
 from cospro.data.celeba import CelebADataset
 from cospro.data.registry import canonical_dataset_name
-from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
+from cospro.evaluation.protocol import resolve_evaluation_split, resolve_probe_mode
 from cospro.evaluation.probe import ProbeOptions, spurious_attribute_metrics
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs
-from experiments.spurious_eval.losses.contrastive import SimCLRLoss
+from cospro.training.contrastive import SimCLRLoss
 from cospro.methods import CoSpRoRelational
-from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss, train_one_epoch
+from cospro.training.ssl_loop import simclr_forward_loss, train_one_epoch
 from splice.cospro import (
     CoSpRoAuditConfig,
     build_concept_groups,

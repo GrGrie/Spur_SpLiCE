@@ -10,8 +10,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
-from experiments.spurious_eval.training.ssl_loop import extract_normalized_train_features
+from cospro.training.checkpointing import load_checkpoint, save_checkpoint
+from cospro.training.ssl_loop import extract_normalized_train_features
 from spur_splice import make_dataloader_kwargs, preserve_rng_state
 
 

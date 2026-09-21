@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from cospro.methods.base import LoaderContext, TrainingMethod, register_method
-from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader
+from cospro.training.la_ssl import build_la_ssl_loader
 
 
 @register_method

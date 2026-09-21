@@ -20,9 +20,9 @@ from typing import Any, Callable, Mapping
 from cospro.tracking import canonical_train_metrics, epoch_payload
 from cospro.training.state import TrainingState
 from cospro.training.storage import StoragePolicy
-from experiments.spurious_eval.metrics import entropy_effective_rank
-from experiments.spurious_eval.training.reproducibility import preserve_rng_state
-from experiments.spurious_eval.training.ssl_loop import extract_normalized_train_features
+from cospro.metrics import entropy_effective_rank
+from cospro.training.reproducibility import preserve_rng_state
+from cospro.training.ssl_loop import extract_normalized_train_features
 
 ProbeFunction = Callable[[str, int], Mapping[str, Any]]
 

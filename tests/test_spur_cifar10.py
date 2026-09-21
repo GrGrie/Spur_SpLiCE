@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from cospro.data.spur_cifar10 import CIFAR10_CLASSES, SpurCIFAR10Dataset
-from experiments.spurious_eval.metrics import spurious_group_ids
+from cospro.metrics import spurious_group_ids
 
 
 def test_spurious_colors_match_class_at_full_correlation():

@@ -9,11 +9,11 @@ from torch.utils.data import DataLoader, Dataset
 
 from tools.paper.complete_projection_controls import MANIFESTS, validate_inputs
 from experiments.runner import command_for, load_manifest
-from experiments.spurious_eval.losses.contrastive import SimCLRLoss
-from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
-from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader, sampling_probabilities
+from cospro.training.contrastive import SimCLRLoss
+from cospro.training.checkpointing import load_checkpoint, save_checkpoint
+from cospro.training.la_ssl import build_la_ssl_loader, sampling_probabilities
 from cospro.methods import FrozenConceptDistill, LaSSL
-from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
+from cospro.training.ssl_loop import simclr_forward_loss
 from cospro.tracking.artifacts import PROJECT_ROOT
 from cospro.methods.concept_targets import ConceptDistillationRegularizer, FrozenConceptTransferSubset
 from spur_splice import preserve_rng_state, seed_worker

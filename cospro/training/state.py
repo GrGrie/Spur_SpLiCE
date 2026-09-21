@@ -15,7 +15,7 @@ from typing import Any
 import torch
 
 from cospro.methods import TrainingMethod
-from experiments.spurious_eval.training.checkpointing import load_checkpoint, save_checkpoint
+from cospro.training.checkpointing import load_checkpoint, save_checkpoint
 
 
 @dataclass

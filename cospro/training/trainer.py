@@ -19,9 +19,9 @@ import torch
 
 from cospro.training.callbacks import Callback, EpochReport
 from cospro.training.state import TrainingState
-from experiments.spurious_eval.training.optim import adjust_learning_rate
-from experiments.spurious_eval.training.reproducibility import preserve_rng_state
-from experiments.spurious_eval.training.ssl_loop import train_one_epoch
+from cospro.training.optim import adjust_learning_rate
+from cospro.training.reproducibility import preserve_rng_state
+from cospro.training.ssl_loop import train_one_epoch
 
 #: Offset of the adaptive-sampling RNG stream from the run seed.
 SAMPLING_SEED_OFFSET = 2_000_000

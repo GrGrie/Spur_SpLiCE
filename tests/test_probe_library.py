@@ -23,7 +23,7 @@ from cospro.evaluation import (
     persist_probe_result,
 )
 from cospro.evaluation import probe as probe_module
-from experiments.spurious_eval.metrics import compute_group_metrics
+from cospro.metrics import compute_group_metrics
 
 
 class GroupedFeatures(TensorDataset):

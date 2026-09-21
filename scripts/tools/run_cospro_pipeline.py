@@ -21,7 +21,7 @@ from cospro.data.registry import (
     dataset_class,
     dataset_names,
 )
-from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
+from cospro.models.resnet import SSL_RESNET_MODEL_NAMES
 from scripts.tools.build_cospro_teacher_graphs import teacher_graph_path
 from cospro.pipeline.dictionary import DICTIONARY_KINDS, ORDERS
 from scripts.tools.cache_splice_dataset import cache_provenance, concept_dictionary, resolve_cache_path

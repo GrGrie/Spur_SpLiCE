@@ -27,17 +27,17 @@ from torch.utils.data import TensorDataset
 
 from cospro.tracking import canonical_probe_metrics, define_wandb_metrics
 from cospro.data.registry import build_probe_loaders
-from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
-from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
-from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint
-from experiments.spurious_eval.training.logistic_probe import fit_logistic_probe
-from experiments.spurious_eval.training.probe_loop import (
+from cospro.metrics import compute_group_metrics, entropy_effective_rank
+from cospro.models.resnet import LinearClassifier, build_resnet_encoder
+from cospro.training.checkpointing import load_encoder_checkpoint
+from cospro.evaluation.logistic_probe import fit_logistic_probe
+from cospro.evaluation.probe_loop import (
     extract_features,
     make_feature_loader,
     train_one_epoch,
     validate,
 )
-from experiments.spurious_eval.training.reproducibility import make_dataloader_kwargs
+from cospro.training.reproducibility import make_dataloader_kwargs
 from cospro.tracking.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
 
 RESULT_SCHEMA = "linear-probe-result-v3"
