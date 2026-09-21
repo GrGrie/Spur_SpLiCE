@@ -2,7 +2,7 @@
 # Download Waterbirds and CelebA into DATA_FOLDER and verify them against the paper's files.
 # CPU only. Compute nodes need outbound HTTPS for this; without it, run the same command on any
 # machine with internet and copy DATA_FOLDER over:
-#   python -m scripts.tools.download_datasets --data-folder DATA_FOLDER
+#   python -m cospro.cli.download_datasets --data-folder DATA_FOLDER
 #
 #   sbatch scripts/download_datasets.sbatch                       # both datasets
 #   sbatch scripts/download_datasets.sbatch --datasets waterbirds
@@ -24,4 +24,4 @@ source scripts/load_splice_cluster_env.sh
 source scripts/announce_results.sh
 announce_results "${DATA_FOLDER}/waterbirds and ${DATA_FOLDER}/celeba" "verification: the [verify] lines below and dataset_manifest.json in each dataset folder"
 
-"${PYTHON_BIN}" -u -m scripts.tools.download_datasets --data-folder "${DATA_FOLDER}" "$@"
+"${PYTHON_BIN}" -u -m cospro.cli.download_datasets --data-folder "${DATA_FOLDER}" "$@"

@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from splice.cospro import (
+from cospro.pipeline import (
     COSPRO_TEACHER_GRAPH_ARTIFACT,
     COSPRO_GRAPH_VERSION,
     CoSpRoAuditConfig,

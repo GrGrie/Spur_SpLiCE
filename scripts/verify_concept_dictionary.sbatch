@@ -52,6 +52,7 @@ echo "[verify] baseline ${BASELINE_COMMIT}, current $(git rev-parse --short HEAD
 git worktree add --detach "${WORK_DIR}/baseline-code" "${BASELINE_COMMIT}"
 
 # build NAME CODE_DIR [cache options...]: one cache, from the code in CODE_DIR, with its own HOME.
+# scripts.tools.cache_splice_dataset exists in the baseline commit and, as a shim, in this one.
 build() {
   local name="$1" code_dir="$2"
   shift 2
@@ -71,10 +72,10 @@ build current "${PROJECT_DIR}" --splice-vocab openimages_v7
 build file "${PROJECT_DIR}" --splice-vocab file --splice-vocab-file "${PROJECT_DIR}/data/vocab/openimages_v7.txt"
 
 set +e
-"${PYTHON_BIN}" -u -m scripts.tools.compare_splice_caches "$(cache_of baseline)" "$(cache_of current)" \
+"${PYTHON_BIN}" -u -m cospro.cli.compare_splice_caches "$(cache_of baseline)" "$(cache_of current)" \
   --label "baseline vs current (openimages_v7)" --report "${REPORT_DIR}/baseline_vs_current.json"
 named_status=$?
-"${PYTHON_BIN}" -u -m scripts.tools.compare_splice_caches "$(cache_of current)" "$(cache_of file)" \
+"${PYTHON_BIN}" -u -m cospro.cli.compare_splice_caches "$(cache_of current)" "$(cache_of file)" \
   --ignore-provenance --label "bundled vs file dictionary" --report "${REPORT_DIR}/bundled_vs_file.json"
 file_status=$?
 set -e

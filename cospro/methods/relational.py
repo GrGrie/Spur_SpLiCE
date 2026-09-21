@@ -10,7 +10,7 @@ import torch
 
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
 from cospro.compat import LEGACY_RELATIONAL_MODE, LEGACY_TEACHER_GRAPH_ARTIFACTS
-from splice.cospro import COSPRO_TEACHER_GRAPH_ARTIFACT
+from cospro.pipeline import COSPRO_TEACHER_GRAPH_ARTIFACT
 from cospro.methods.relational_graph import (
     CoSpRoRelationalRegularizer,
     build_cospro_training_loader,

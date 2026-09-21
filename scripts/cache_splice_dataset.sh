@@ -11,7 +11,7 @@
 set -euo pipefail
 if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
   echo "Usage: $0 DATASET [OUTPUT_ROOT] [cache options]"
-  echo "Datasets: the names 'python -m scripts.tools.cache_splice_dataset --help' lists."
+  echo "Datasets: the names 'python -m cospro.cli.cache_splice_dataset --help' lists."
   echo "Set DATA_FOLDER to override the dataset location."
   echo "Caches are stored under OUTPUT_ROOT/<dataset>/splice_dataset_cache/<configuration>/."
   exit 0
@@ -48,7 +48,7 @@ fi
 
 source scripts/announce_results.sh
 announce_results "${OUTPUT_ROOT}/${DATASET}/splice_dataset_cache/<cache config>/splice_dataset_cache.pt"
-"${PYTHON_BIN}" -u -m scripts.tools.cache_splice_dataset \
+"${PYTHON_BIN}" -u -m cospro.cli.cache_splice_dataset \
   --dataset "${DATASET}" \
   --data-folder "${DATA_FOLDER:?set DATA_FOLDER to the dataset root}" \
   --output-root "${OUTPUT_ROOT}" \

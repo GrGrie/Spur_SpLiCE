@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.tools import download_datasets as tool
+from cospro.cli import download_datasets as tool
 
 
 class HashCheckTests(unittest.TestCase):

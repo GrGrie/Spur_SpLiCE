@@ -1,23 +1,12 @@
-"""Render a small HTML report from a JSON report specification."""
+"""Moved to ``cospro.cli.render_report``. This path keeps imports and ``python -m`` commands written against it working."""
 
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-
-from cospro.pipeline.html_report import render_report
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("spec", help="JSON with title and sections fields")
-    parser.add_argument("output", help="Destination .html file")
-    args = parser.parse_args()
-    spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    path = render_report(str(spec["title"]), spec["sections"], args.output)
-    print(path)
-
+import sys
 
 if __name__ == "__main__":
-    main()
+    import runpy
+
+    runpy.run_module("cospro.cli.render_report", run_name="__main__", alter_sys=True)
+else:
+    import importlib
+
+    sys.modules[__name__] = importlib.import_module("cospro.cli.render_report")

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.maintenance.archive_legacy import archive_legacy
-from scripts.tools.collect_results import collect
+from cospro.cli.collect_results import collect
 from tools.maintenance.migrate_outputs import apply_migration, discover_result_root, migration_plan
 from cospro.tracking.artifacts import BINARY_SIZE_THRESHOLD
 from cospro.tracking.run_recording import RunRecorder
@@ -82,7 +82,7 @@ class ResultLifecycleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "results.json"
-            with patch("scripts.tools.collect_results.PROJECT_ROOT", root):
+            with patch("cospro.cli.collect_results.PROJECT_ROOT", root):
                 payload = collect(manifest_path, output, output_root=root / "outputs")
             self.assertEqual(payload["status"], "partial")
             self.assertEqual(payload["matrix"]["missing"], [{"seed": 2, "arm": "arm"}])

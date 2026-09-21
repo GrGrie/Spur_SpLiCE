@@ -38,9 +38,9 @@ def now():
 def code_hash():
     """Every file the evaluation runs through, so a lock cannot survive a change to any of them."""
 
-    paths = sorted((PROJECT_ROOT / "experiments/spurious_eval").rglob("*.py"))
-    paths += sorted((PROJECT_ROOT / "cospro").rglob("*.py"))
-    paths += [Path(__file__), PROJECT_ROOT / "splice/artifacts.py"]
+    paths = sorted((PROJECT_ROOT / "cospro").rglob("*.py"))
+    paths += sorted((PROJECT_ROOT / "third_party").rglob("*.py"))
+    paths += [Path(__file__)]
     return hashlib.sha256("".join(f"{p.relative_to(PROJECT_ROOT)}:{sha256_file(p)}\n" for p in paths).encode()).hexdigest()
 
 

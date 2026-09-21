@@ -31,7 +31,7 @@ from golden_support import (
     train_sample_ids,
     write_waterbirds_fixture,
 )
-from splice.cospro import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
+from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
 from cospro.pipeline.graph_io import save_graph_json
 from cospro.tracking.artifacts import PROJECT_ROOT
 

@@ -93,7 +93,7 @@ class SubmissionFigureTests(unittest.TestCase):
 
     def test_cache_discovery_finds_pairs_outside_old_manifest(self):
         import torch
-        from splice.cospro import CoSpRoAuditConfig, build_teacher_graph, build_concept_groups
+        from cospro.pipeline import CoSpRoAuditConfig, build_teacher_graph, build_concept_groups
         torch.manual_seed(42)
         n, k = 24, 4
         codes = torch.rand(n, k)

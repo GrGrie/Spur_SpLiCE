@@ -7,7 +7,7 @@ import unittest
 import torch
 
 from golden_support import assert_close_tree, compare_or_update, synthetic_splice_cache, train_sample_ids
-from splice.cospro import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
+from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
 
 GRAPH_CONFIG = CoSpRoAuditConfig(
     text_similarity_threshold=0.8,

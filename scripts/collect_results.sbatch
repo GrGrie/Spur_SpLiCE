@@ -15,4 +15,4 @@ source scripts/load_splice_cluster_env.sh
 source scripts/announce_results.sh
 STUDY_NAME="$(sed -n 's/^name: *//p' "${MANIFEST}" | head -n 1)"
 announce_results "${PROJECT_DIR}/outputs/reports/${STUDY_NAME}/results.json"
-"${PYTHON_BIN}" -u -m scripts.tools.collect_results "${MANIFEST}"
+"${PYTHON_BIN}" -u -m cospro.cli.collect_results "${MANIFEST}"

@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from sklearn.metrics import adjusted_rand_score, mutual_info_score, roc_auc_score, silhouette_score
 
-from splice.cospro import CoSpRoAuditConfig, build_concept_groups
+from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups
 
 
 def _concept_lists(groups_artifact: dict) -> list[list[int]]:

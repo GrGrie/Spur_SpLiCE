@@ -39,5 +39,5 @@ shift
 source scripts/announce_results.sh
 announce_results "${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}/shared/<dataset>/graphs/concept_groups/<grouping config>/" "concept_groups.json plus concept_groups.html; --output-root overrides the sweep directory"
 
-"${PYTHON_BIN}" -u -m scripts.tools.generate_cospro_concept_groups \
+"${PYTHON_BIN}" -u -m cospro.cli.generate_cospro_concept_groups \
   --splice-dataset-cache "${SPLICE_DATASET_CACHE_PATH}" "$@"

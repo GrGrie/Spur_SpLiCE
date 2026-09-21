@@ -123,6 +123,7 @@ def resolve_dictionary(
         if order is not None and order != BUNDLED_ORDER[kind]:
             raise ValueError(f"The {kind} dictionary always keeps its {BUNDLED_ORDER[kind]}.")
         from third_party.splice import splice as splice_library
+
         words = splice_library.get_vocabulary(kind, size)
         return ConceptDictionary(
             kind=kind, words=tuple(words), size=size, order=BUNDLED_ORDER[kind], source=kind,

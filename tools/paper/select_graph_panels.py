@@ -39,9 +39,8 @@ def discover_panels(cache, graph, metadata):
     Final retention/attribution always comes from the saved graph. Candidates
     retained under another concept are omitted from this concept's illustration.
     """
-    from splice.cospro import (validate_splice_dataset_cache, CoSpRoAuditConfig,
-                               _AuditGeometry, _neighbor_geometry, _relation_geometry,
-                               orthonormal_basis, topk_neighbors)
+    from cospro.pipeline import CoSpRoAuditConfig, orthonormal_basis, topk_neighbors, validate_splice_dataset_cache
+    from cospro.pipeline.audit import _AuditGeometry, _neighbor_geometry, _relation_geometry
     cache = validate_splice_dataset_cache(cache)
     if cache["sample_ids"] != graph["sample_ids"]:
         raise ValueError("Cache and graph sample IDs/order differ; use the original graph cache")

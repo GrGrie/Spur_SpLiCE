@@ -17,11 +17,11 @@ from cospro.data.celeba import CelebADataset
 from cospro.data.registry import canonical_dataset_name
 from cospro.evaluation.protocol import resolve_evaluation_split, resolve_probe_mode
 from cospro.evaluation.probe import ProbeOptions, spurious_attribute_metrics
-from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs
+from cospro.cli.linear_probe import resolve_lr_decay_epochs
 from cospro.training.contrastive import SimCLRLoss
 from cospro.methods import CoSpRoRelational
 from cospro.training.ssl_loop import simclr_forward_loss, train_one_epoch
-from splice.cospro import (
+from cospro.pipeline import (
     CoSpRoAuditConfig,
     build_concept_groups,
     build_teacher_graph,
@@ -49,17 +49,17 @@ from third_party.splice.splice import (
 )
 import spur_splice
 from spur_splice import resolve_epoch_schedule
-from scripts.tools.cache_splice_dataset import IndexedImages, parse_args as parse_splice_cache_args
-from scripts.tools.cache_splice_dataset import resolve_cache_path
-from scripts.tools.build_cospro_baseline_graphs import build_matched_raw_clip_graph
-from scripts.tools.build_cospro_teacher_graphs import main as build_cospro_teacher_graphs_main
-from scripts.tools.generate_cospro_concept_groups import (
+from cospro.cli.cache_splice_dataset import IndexedImages, parse_args as parse_splice_cache_args
+from cospro.cli.cache_splice_dataset import resolve_cache_path
+from cospro.cli.build_cospro_baseline_graphs import build_matched_raw_clip_graph
+from cospro.cli.build_cospro_teacher_graphs import main as build_cospro_teacher_graphs_main
+from cospro.cli.generate_cospro_concept_groups import (
     _dataset_image_resolver,
     concept_group_directory,
     main as generate_cospro_concept_groups_main,
     parse_args as parse_cospro_concept_groups_args,
 )
-from scripts.tools.run_cospro_pipeline import main as run_cospro_pipeline_main
+from cospro.cli.run_cospro_pipeline import main as run_cospro_pipeline_main
 
 
 class SplicePipelineTests(unittest.TestCase):
@@ -110,9 +110,9 @@ class SplicePipelineTests(unittest.TestCase):
                     ]
                 )
             planned = output.getvalue()
-            self.assertIn("scripts.tools.cache_splice_dataset", planned)
-            self.assertIn("scripts.tools.generate_cospro_concept_groups", planned)
-            self.assertIn("scripts.tools.build_cospro_teacher_graphs", planned)
+            self.assertIn("cospro.cli.cache_splice_dataset", planned)
+            self.assertIn("cospro.cli.generate_cospro_concept_groups", planned)
+            self.assertIn("cospro.cli.build_cospro_teacher_graphs", planned)
             self.assertIn("experiments.runner", planned)
             self.assertFalse((root / "outputs").exists())
 
@@ -129,7 +129,7 @@ class SplicePipelineTests(unittest.TestCase):
 
         cache = {"provenance": {"dataset": "tiny"}}
         with patch(
-            "scripts.tools.generate_cospro_concept_groups.dataset_class",
+            "cospro.cli.generate_cospro_concept_groups.dataset_class",
             return_value=TinyDataset,
         ):
             resolver = _dataset_image_resolver(cache, Path("dataset"))
@@ -181,7 +181,7 @@ class SplicePipelineTests(unittest.TestCase):
             json_path = Path(temporary_directory) / "concept_groups.json"
             save_concept_groups_json(artifact, json_path)
             with patch(
-                "scripts.tools.generate_cospro_concept_groups.dataset_class",
+                "cospro.cli.generate_cospro_concept_groups.dataset_class",
                 return_value=TinyDataset,
             ):
                 generate_cospro_concept_groups_main(

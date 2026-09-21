@@ -11,7 +11,7 @@
 # Full CoSpRo pipeline: SpLiCE cache -> concept groups -> teacher graph -> student -> results.
 #
 # Defaults live in one place, the Python CLI:
-#   python -m scripts.tools.run_cospro_pipeline --help
+#   python -m cospro.cli.run_cospro_pipeline --help
 # Override any value with an environment variable from the tables below or with a trailing
 # option, for example:
 #   EPOCHS=10 USE_WANDB=0 bash scripts/run_cospro_pipeline.sh --dry-run
@@ -98,4 +98,4 @@ if [[ "${REBUILD_PREPROCESSING:-0}" == "1" ]]; then
   pipeline_args+=(--rebuild-preprocessing)
 fi
 
-"${PYTHON_BIN}" -u -m scripts.tools.run_cospro_pipeline "${pipeline_args[@]}" "$@"
+"${PYTHON_BIN}" -u -m cospro.cli.run_cospro_pipeline "${pipeline_args[@]}" "$@"

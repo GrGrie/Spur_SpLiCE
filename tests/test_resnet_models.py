@@ -5,6 +5,8 @@ import torch
 from torchvision import models
 
 from cospro.models import resnet as resnet_module
+
+
 class ResNetModelTests(unittest.TestCase):
     def test_resnet50_pretrained_uses_imagenet_v2_weights_and_large_input_stem(self):
         torchvision_encoder = models.resnet50(weights=None)

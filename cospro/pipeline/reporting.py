@@ -7,7 +7,7 @@ import statistics
 from pathlib import Path
 from typing import Callable
 
-from splice.cospro import validate_concept_groups
+from cospro.pipeline import validate_concept_groups
 from cospro.pipeline.html_report import render_report
 
 

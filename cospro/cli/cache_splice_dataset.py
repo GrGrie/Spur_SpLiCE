@@ -1,0 +1,221 @@
+"""Cache frozen CLIP embeddings and SpLiCE decompositions in dataset order."""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+
+from third_party import splice
+from cospro.data.registry import (
+    canonical_dataset_name,
+    dataset_class,
+    dataset_names,
+)
+from cospro.pipeline.cache import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
+from cospro.pipeline.dictionary import DICTIONARY_KINDS, ORDERS, ConceptDictionary, resolve_dictionary
+
+
+class IndexedImages(Dataset):
+    """Expose train images and stable source indices without labels or metadata."""
+
+    def __init__(self, dataset) -> None:
+        self.dataset = dataset
+        self.indices = dataset.get_subset("train", transform=None).indices
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, position: int):
+        index = int(self.indices[position])
+        return index, self.dataset.get_input(index)
+
+
+def identity_collate(batch):
+    return batch
+
+
+def _path_token(value: object) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("_")
+    return token or "none"
+
+
+def _float_token(value: float) -> str:
+    return f"{value:.12g}".replace("-", "neg").replace(".", "p")
+
+
+def concept_dictionary(args: argparse.Namespace) -> ConceptDictionary:
+    """The dictionary the cache options select. A namespace from before file dictionaries works."""
+
+    return resolve_dictionary(
+        args.splice_vocab,
+        size=args.splice_vocab_size,
+        path=getattr(args, "splice_vocab_file", None),
+        order=getattr(args, "splice_vocab_order", None),
+    )
+
+
+def cache_config_name(args: argparse.Namespace) -> str:
+    """Return the deterministic directory name for cache-affecting settings.
+
+    The bundled dictionaries keep their historical names; a file dictionary is named by its content.
+    """
+
+    vocabulary_size = "all" if args.splice_vocab_size <= 0 else str(args.splice_vocab_size)
+    return "__".join(
+        (
+            f"cache_v{SPLICE_DATASET_CACHE_VERSION}",
+            f"model_{_path_token(args.splice_model)}",
+            f"pretrained_{_path_token(args.splice_pretrained)}",
+            f"vocab_{_path_token(concept_dictionary(args).token)}_{vocabulary_size}",
+            f"l1_{_float_token(args.splice_l1_penalty)}",
+        )
+    )
+
+
+def cache_provenance(args: argparse.Namespace, dictionary: ConceptDictionary) -> dict:
+    """What a cache records about how it was built. The pipeline compares this before reusing one.
+
+    Caches from the bundled dictionaries record exactly what they always did, so existing caches stay
+    reusable; a file dictionary adds its content identity.
+    """
+
+    provenance = {
+        "dataset": canonical_dataset_name(args.dataset),
+        "split": "train",
+        "splice_model": args.splice_model,
+        "splice_pretrained": args.splice_pretrained,
+        "splice_vocab": args.splice_vocab,
+        "splice_vocab_size": args.splice_vocab_size,
+        "splice_l1_penalty": args.splice_l1_penalty,
+    }
+    if dictionary.kind == "file":
+        provenance["concept_dictionary"] = dictionary.provenance()
+    return provenance
+
+
+def resolve_cache_path(args: argparse.Namespace) -> Path:
+    dataset = canonical_dataset_name(args.dataset)
+    return (
+        args.output_root
+        / dataset
+        / "splice_dataset_cache"
+        / cache_config_name(args)
+        / "splice_dataset_cache.pt"
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dataset",
+        type=canonical_dataset_name,
+        choices=dataset_names(),
+        required=True,
+    )
+    parser.add_argument("--data-folder", required=True)
+    parser.add_argument(
+        "--output-root",
+        required=True,
+        type=Path,
+        help="Base feature directory; a cache-configuration directory is created below it.",
+    )
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--splice-model", default="open_clip:ViT-B-32")
+    parser.add_argument("--splice-pretrained", default="laion2b_s34b_b79k")
+    parser.add_argument(
+        "--splice-vocab", default=splice.DEFAULT_VOCABULARY, choices=DICTIONARY_KINDS,
+        help="Concept dictionary: a bundled vocabulary, or 'file' with --splice-vocab-file.",
+    )
+    parser.add_argument("--splice-vocab-size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
+    parser.add_argument(
+        "--splice-vocab-file", type=Path,
+        help="Word file of a 'file' dictionary: one concept per line, blank lines skipped.",
+    )
+    parser.add_argument(
+        "--splice-vocab-order", choices=ORDERS,
+        help="Which end of a 'file' dictionary --splice-vocab-size keeps (default: head).",
+    )
+    parser.add_argument("--splice-l1-penalty", type=float, default=0.25)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    args.dataset = canonical_dataset_name(args.dataset)
+    if args.batch_size <= 0 or args.num_workers < 0:
+        raise ValueError("batch-size must be positive and num-workers must be non-negative.")
+
+    device = torch.device(args.device)
+    images = IndexedImages(dataset_class(args.dataset)(args.data_folder))
+    loader = DataLoader(
+        images,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=identity_collate,
+    )
+
+    clip_preprocess = splice.get_preprocess(args.splice_model, pretrained=args.splice_pretrained)
+    dictionary = concept_dictionary(args)
+    print(f"[INFO] Concept dictionary {dictionary.token}: {len(dictionary.words)} concepts", flush=True)
+    splice_model = splice.load(
+        args.splice_model,
+        **dictionary.splice_load_arguments(),
+        device=device,
+        pretrained=args.splice_pretrained,
+        l1_penalty=args.splice_l1_penalty,
+        return_weights=True,
+    ).eval()
+
+    # Allocate the final CPU-backed arrays up front. Keeping one tensor per
+    # batch and concatenating them after the last batch temporarily requires a
+    # second copy of the entire CelebA cache (the sparse codes alone are
+    # several GiB with the full Open Images vocabulary).
+    sample_ids = [""] * len(images)
+    clip_embeddings = torch.empty(
+        (len(images), splice_model.image_mean.numel()), dtype=torch.float32
+    )
+    splice_codes = torch.empty(
+        (len(images), splice_model.dictionary.shape[0]), dtype=torch.float32
+    )
+    offset = 0
+    for batch_number, batch in enumerate(loader, start=1):
+        indices = [item[0] for item in batch]
+        raw_images = [item[1] for item in batch]
+        clip_input = torch.stack([clip_preprocess(image) for image in raw_images]).to(device)
+        with torch.inference_mode():
+            clip_batch = F.normalize(splice_model.clip.encode_image(clip_input).float(), dim=1)
+            centered = F.normalize(clip_batch - splice_model.image_mean, dim=1)
+            code_batch = splice_model.decompose(centered)
+        start = offset
+        stop = start + len(indices)
+        sample_ids[start:stop] = [f"{args.dataset}:{index}" for index in indices]
+        clip_embeddings[start:stop].copy_(clip_batch.cpu())
+        splice_codes[start:stop].copy_(code_batch.cpu())
+        offset = stop
+        print(f"[INFO] Cached batch {batch_number}/{len(loader)}", flush=True)
+
+    cache = {
+        "cache_version": SPLICE_DATASET_CACHE_VERSION,
+        "sample_ids": sample_ids,
+        "clip_embeddings": clip_embeddings,
+        "image_mean": splice_model.image_mean.detach().cpu(),
+        "splice_codes": splice_codes,
+        "dictionary": splice_model.dictionary.detach().cpu(),
+        "vocabulary": list(dictionary.words),
+        "provenance": cache_provenance(args, dictionary),
+    }
+    output_path = resolve_cache_path(args)
+    save_splice_dataset_cache(cache, output_path)
+    print(f"[INFO] Wrote {len(sample_ids)} aligned frozen samples to {output_path}")
+
+
+if __name__ == "__main__":
+    main()

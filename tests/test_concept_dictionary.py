@@ -27,7 +27,7 @@ from cospro.pipeline.dictionary import (
     resolve_dictionary,
     select_words,
 )
-from scripts.tools.cache_splice_dataset import cache_config_name, cache_provenance
+from cospro.cli.cache_splice_dataset import cache_config_name, cache_provenance
 from third_party.splice import splice as splice_library
 from cospro.tracking.artifacts import PROJECT_ROOT
 
