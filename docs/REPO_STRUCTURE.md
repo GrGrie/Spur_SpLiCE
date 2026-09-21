@@ -9,15 +9,24 @@ placement instructions.
 
 ```text
 Spur_SpLiCE/
-  splice/                         reusable method and artifact-lifecycle code
+  cospro/                        the project's code
+    config/                      typed options, presets and cluster settings
+    data/                        dataset adapters, loader roles and registry
+    models/  methods/  training/ encoders, training methods, trainer and storage policy
+    evaluation/                  the linear probe
+    pipeline/                    SpLiCE cache, concept groups, audit and teacher graph
+    diagnostics/  tracking/      graph diagnostics; W&B keys, run records, artifact placement
+    cli/                         every command-line stage
+  third_party/                   vendored SpLiCE and WILDS slice, licenses and NOTICE.md
+  spur_splice.py                 SSL training entry point
   experiments/
     manifests/                   versioned experiment definitions
-    spurious_eval/               datasets, training, and evaluation code
     runner.py                    canonical seed/arm launcher
   scripts/
-    tools/                       cache, grouping, graph, pipeline and collection stages
     *.sh                         user-facing cluster submission helpers
     *.sbatch                     Slurm job bodies
+  splice/  experiments/spurious_eval/  scripts/tools/
+                                 shims for historical import paths; nothing new goes here
   tools/
     maintenance/                 output migration, legacy archiving, cleanup and W&B export
     paper/                       paper registry, submission figures and checkpoint evaluation
@@ -140,7 +149,7 @@ rather than leaving a broken `retained` attestation.
 3. Write small records to the attempt directory under `outputs/seeds/`.
 4. Route checkpoints and large feature payloads to the scratch root.
 5. Record metrics and artifact integrity in `run.json` atomically.
-6. Run `scripts.tools.collect_results` after the full matrix. A missing,
+6. Run `cospro.cli.collect_results` after the full matrix. A missing,
    failed, or unattested required run makes the aggregate `partial`.
 7. Commit and push the compact run records and aggregate result JSON.
 8. Apply retention only after the aggregate and required downstream analyses
@@ -201,7 +210,7 @@ operations still require a manifest before source deletion.
 
 ## Rules for changing the layout
 
-- Resolve destinations through `splice.artifacts`; do not hard-code new output
+- Resolve destinations through `cospro.tracking.artifacts`; do not hard-code new output
   roots in training or analysis code.
 - Update this document, `.gitignore`, `outputs/README.md`, and relevant tests in
   the same commit when adding an artifact class.

@@ -64,7 +64,7 @@ only completes the two historical Waterbirds controls, with verified inputs.
 `run_cospro_pipeline.sh` runs preprocessing, graph construction, one CoSpRo
 student, and collection; it accepts `--dataset`, `--seed`, `--epochs`,
 `--batch-size`, `--output-root`, `--student-existing resume`, and the other
-options in `python3 -m scripts.tools.run_cospro_pipeline --help` directly after
+options in `python3 -m cospro.cli.run_cospro_pipeline --help` directly after
 its script name. For `spur_cifar10`, both the standalone trainer and pipeline
 default to `resnet18`; larger-image datasets retain `resnet18_large`.
 

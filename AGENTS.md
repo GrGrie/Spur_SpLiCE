@@ -28,14 +28,14 @@ Applies to code, comments, docstrings, log messages, commit messages, Markdown f
 ### Cluster execution (SLURM)
 
 - The university SLURM cluster runs all training, probing, SpLiCE caching, concept grouping, teacher-graph builds and anything that writes checkpoints. The local PC runs plotting, report rendering and short CPU checks.
-- The cluster accepts work only through `sbatch`. Every cluster task ships with its own `.sbatch` or `.sh` launcher in `scripts/`, added in the same change as the Python entry point. Start from `scripts/_template.sbatch`. Launchers source `scripts/load_splice_cluster_env.sh` (the single bash source of cluster paths and the W&B entity, mirrored by `splice/settings.py`) and take hyperparameters from the experiment manifest or CLI arguments.
+- The cluster accepts work only through `sbatch`. Every cluster task ships with its own `.sbatch` or `.sh` launcher in `scripts/`, added in the same change as the Python entry point. Start from `scripts/_template.sbatch`. Launchers source `scripts/load_splice_cluster_env.sh` (the single bash source of cluster paths and the W&B entity, mirrored by `cospro/config/settings.py`) and take hyperparameters from the experiment manifest or CLI arguments.
 - Every launcher opens its Slurm `.out` file with `announce_results` from `scripts/announce_results.sh`, naming where the job writes its results (JSON under `outputs/`, binaries under scratch, reports). `tests/test_slurm_launchers.py` checks it.
 - Resources per job: one V100 (`--gres=gpu:1`), `--cpus-per-task` at most 5, `--mem` at most 8G per requested CPU (1 CPU → 8G, 2 → 16G, 5 → 40G). Set DataLoader `num_workers` within `--cpus-per-task`.
 - V100 supports float16 mixed precision; use `torch.float16` autocast with a `GradScaler`.
 
 ### Storage
 
-- `/home` has a 100 GB quota with about 70 GB in use. The repository lives there. Checkpoints, `.pt` feature caches and other bulky binaries go to `/scratch/xar68reb/CoSpRo/` through `splice.artifacts`.
+- `/home` has a 100 GB quota with about 70 GB in use. The repository lives there. Checkpoints, `.pt` feature caches and other bulky binaries go to `/scratch/xar68reb/CoSpRo/` through `cospro.tracking.artifacts`.
 - `/scratch` is a slow HDD: write each binary once at the end of a stage and delete intermediate epoch checkpoints during training.
 - Every job writes its compact result JSON under `outputs/`. Git synchronizes these files between the cluster, the laptop and the PC, so every machine sees run status and metrics. Placement rules live in [`docs/REPO_STRUCTURE.md`](docs/REPO_STRUCTURE.md).
 

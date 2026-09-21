@@ -12,11 +12,20 @@ student inference.
 
 ## Project shape
 
-- `splice/` — sparse decomposition, CoSpRo graph construction and graph training.
-- `experiments/spurious_eval/` — datasets, models, training and linear probes.
+- `cospro/` — the project's code: `config/` (typed options, presets, cluster settings), `data/`
+  (dataset adapters and loader roles), `models/`, `methods/` (SimCLR, CoSpRo relational,
+  concept transfer, LA-SSL), `training/` (trainer, callbacks, storage policy), `evaluation/`
+  (linear probe), `pipeline/` (SpLiCE cache, concept groups, audit, teacher graph),
+  `diagnostics/`, `tracking/` (W&B keys, run records, artifact placement) and `cli/` (every
+  command-line stage).
+- `spur_splice.py` — the SSL training entry point: parse, build, fit.
+- `third_party/` — vendored SpLiCE and the WILDS slice, with their licenses and a NOTICE of local
+  changes.
 - `experiments/runner.py` — the single seed/arm experiment runner.
 - `experiments/manifests/` — reproducible experiment definitions.
-- `scripts/` — Slurm launchers; `scripts/tools/` holds the cache, grouping, graph and collection stages.
+- `scripts/` — Slurm launchers.
+- `splice/`, `experiments/spurious_eval/`, `scripts/tools/` — shims that keep the historical import
+  paths and `python -m` commands working; new code imports from `cospro` and `third_party`.
 - `tools/maintenance/` — output migration, legacy archiving, cleanup and W&B export.
 - `tools/paper/` — paper registry, submission figures and checkpoint evaluation.
 - `paper/` — the manuscript and its checked `paper_results.json`.
@@ -39,7 +48,7 @@ CelebA come from their official sources through one command, which checks every 
 data the paper was computed from:
 
 ```bash
-python -m scripts.tools.download_datasets --data-folder ~/Datasets
+python -m cospro.cli.download_datasets --data-folder ~/Datasets
 ```
 
 Waterbirds is the Group DRO archive from Stanford; its archive and `metadata.csv` are checked by
@@ -112,10 +121,10 @@ independent of `SPUR_SPLICE_SCRATCH_ROOT`, which stores large binaries.
 Build the three teacher-input stages directly:
 
 ```bash
-python -m scripts.tools.cache_splice_dataset --help
-python -m scripts.tools.generate_cospro_concept_groups --help
-python -m scripts.tools.build_cospro_teacher_graphs --help
-python -m scripts.tools.build_cospro_baseline_graphs --help
+python -m cospro.cli.cache_splice_dataset --help
+python -m cospro.cli.generate_cospro_concept_groups --help
+python -m cospro.cli.build_cospro_teacher_graphs --help
+python -m cospro.cli.build_cospro_baseline_graphs --help
 python -m tools.paper.build_paper_results --artifact-root /path/to/artifact-tree
 ```
 
@@ -184,7 +193,7 @@ bash scripts/run_cospro_pipeline.sh --dry-run
 EPOCHS=10 USE_WANDB=0 bash scripts/run_cospro_pipeline.sh
 ```
 
-Every default lives in the Python CLI (`python -m scripts.tools.run_cospro_pipeline --help`).
+Every default lives in the Python CLI (`python -m cospro.cli.run_cospro_pipeline --help`).
 The launcher lists the environment variables it forwards, such as `EPOCHS`,
 `TEXT_SIMILARITY_THRESHOLD` or `USE_WANDB`; unset variables keep the Python default
 and trailing options pass through unchanged. Set `DATASET=waterbirds` (or
@@ -199,7 +208,7 @@ access is unavailable instead of silently emitting placeholders. Repair an
 already generated report without recomputing groups with:
 
 ```bash
-python -m scripts.tools.generate_cospro_concept_groups \
+python -m cospro.cli.generate_cospro_concept_groups \
   --render-existing outputs/shared/<dataset>/graphs/concept_groups/<config>/concept_groups.json \
   --data-folder /path/to/datasets
 ```

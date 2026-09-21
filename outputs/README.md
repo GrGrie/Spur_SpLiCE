@@ -67,7 +67,7 @@ manifest is ever required, rebuild it with
 Run the collector manually when needed:
 
 ```bash
-python -m scripts.tools.collect_results experiments/manifests/waterbirds_crp.json
+python -m cospro.cli.collect_results experiments/manifests/waterbirds_crp.json
 ```
 
 Inspect a legacy tree before migration:

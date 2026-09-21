@@ -3,12 +3,12 @@
 A dataset in this project pairs a target label `y` with a spurious attribute `a` and splits its
 samples into train, validation and test. Everything else, including the transforms, the group
 report, the four loader roles and the model the image size allows, comes from
-`experiments/spurious_eval/datasets/base.py`. Adding a dataset is therefore an adapter plus a
+`cospro/data/base.py`. Adding a dataset is therefore an adapter plus a
 handful of attributes, followed by the pipeline stages that turn it into a teacher graph.
 
 ## 1. The adapter
 
-Create `experiments/spurious_eval/datasets/<name>.py`:
+Create `cospro/data/<name>.py`:
 
 ```python
 @dataclass(frozen=True)
@@ -47,7 +47,7 @@ draws its spurious correlation at construction and shows the pattern. Override
 `spurious_metadata_index` or `target_metadata_index` only when the metadata columns are in another
 order. Keep `mean` and `std` at the ImageNet defaults unless the images call for their own.
 
-Import the module in `experiments/spurious_eval/datasets/registry.py`. That import is the
+Import the module in `cospro/data/registry.py`. That import is the
 registration: no other file in the project carries a list of dataset names. The command-line
 choices, the class count, the default model and the diagnostics label reader all follow from it.
 

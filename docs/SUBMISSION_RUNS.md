@@ -135,7 +135,7 @@ Checkpoints and large feature tensors use the existing scratch policy:
 `$SPUR_SPLICE_SCRATCH_ROOT/{checkpoints,features}/Spur_SpLiCE/<study>/seed_0S/<arm>/A/`.
 Run records link the retained artifact attestations and endpoint metrics.
 The launchers do not overwrite historical aggregate reports; collect results
-later with the existing `scripts.tools.collect_results` tool, supplying a new
+later with the existing `cospro.cli.collect_results` tool, supplying a new
 `--output` filename if preserving an existing aggregate.
 
 Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](notes/SUBMISSION_CLAIM_CHANGES.md).
@@ -147,13 +147,13 @@ Exact manuscript replacements are in [SUBMISSION_CLAIM_CHANGES.md](notes/SUBMISS
 | `tools/paper/complete_projection_controls.py` | Seed launcher and historical input checks |
 | `experiments/manifests/waterbirds_semantic_completion.yaml`, `waterbirds_direct_completion.yaml`, `waterbirds_la_ssl.yaml` | Existing runner configurations |
 | `scripts/run_projection_controls.sh`, `scripts/run_la_ssl.sh` | Cluster launchers |
-| `splice/concept_distillation.py` | Restored historical transfer implementation |
-| `experiments/spurious_eval/training/la_ssl.py` | Learning-speed scoring and sampling state |
+| `cospro/methods/concept_targets.py` | Restored historical transfer implementation |
+| `cospro/training/la_ssl.py` | Learning-speed scoring and sampling state |
 | `spur_splice.py` | Optional control/baseline wiring, arguments and input recording |
 | `experiments/runner.py` | Scratch-path and attempt-name substitutions |
-| `experiments/spurious_eval/datasets/waterbirds.py` | Restored direct-transfer dataset branch |
-| `experiments/spurious_eval/models/simclr.py` | Restored optional transfer head |
-| `experiments/spurious_eval/training/ssl_loop.py` | Restored transfer loss path and added diagnostics |
-| `experiments/spurious_eval/training/checkpointing.py` | Adaptive sampler checkpoint state |
+| `cospro/data/waterbirds.py` | Restored direct-transfer dataset branch |
+| `cospro/models/simclr.py` | Restored optional transfer head |
+| `cospro/training/ssl_loop.py` | Restored transfer loss path and added diagnostics |
+| `cospro/training/checkpointing.py` | Adaptive sampler checkpoint state |
 | `tests/test_submission_controls.py` | Historical settings, alignment, gradients, sampling and resume checks |
 | `paper/CoSpRo.tex`, `README.md`, this document, `notes/SUBMISSION_CLAIM_CHANGES.md` | Claim calibration and reproduction instructions |

@@ -114,7 +114,9 @@ python -m cospro.diagnostics dashboard outputs/reports/cospro_diagnostics/waterb
 | 7 | Linear probe as a library function | done | probe seam commit |
 | 8 | `cospro/` pipeline package, neighbour index, selection rule | done; dictionaries deferred | pipeline split commit |
 | 8b | Concept dictionaries, dataset downloads | done; cluster check `verify_concept_dictionary.sbatch` pending | dictionary commit |
-| 9 | Package layout move | planned | – |
+| 9 | Package layout move | done; shims to remove after the merge into `main` | layout commits |
+
+Cluster verification of phases 1–8b: golden smoke job 23870258 (V100, AMP, channels-last, commit `8c88b20`) reproduces the phase 0 run 23823905 exactly for every SSL loss term and every probe accuracy of all five training modes; only the eigenvalue diagnostics (entropy, effective rank) and the probe gradient norms differ, in the seventh significant digit. On CPU the same code reproduces the phase 0 snapshot bit for bit, including those diagnostics. The dictionary check (`verify_concept_dictionary.sbatch`) is running.
 
 Other commits on the branch: `b51575f` AGENTS.md rules, `00a4c8b` paper commas, `3f2a5fb` YAML manifests,
 `8ae09d5` review and plan.
@@ -671,21 +673,56 @@ datasets downloadable by a command.
 **Pending**: `sbatch scripts/verify_concept_dictionary.sbatch` on the cluster. Until it prints
 PASS, treat file dictionaries as unverified against the real CLIP encoder.
 
-### Phase 9 — Package layout (planned)
+### Phase 9 — Package layout (done)
 
-Target layout (package name `cospro`):
+**Delivered (2026-09-21)**, one destination per commit, the full suite green after each:
 
-```text
-cospro/            config/ data/ models/ methods/ training/ evaluation/ pipeline stages/ diagnostics/ tracking/ cli/
-splice/            vendored SpLiCE (moves to third_party/splice/ with a NOTICE of local changes)
-experiments/       manifests/ runner.py
-scripts/           Slurm launchers
-tools/             maintenance/ paper/
-paper/ docs/ tests/ outputs/
-```
+| From | To |
+|---|---|
+| `splice/splice.py`, `model.py`, `admm.py` (vendored SpLiCE) | `third_party/splice/`, with its Apache-2.0 `LICENSE` |
+| `experiments/spurious_eval/datasets/wilds_compat.py` (WILDS slice) | `third_party/wilds_compat.py`, with `LICENSE.wilds` |
+| `splice/artifacts.py`, `run_recording.py` | `cospro/tracking/` |
+| `splice/settings.py` | `cospro/config/settings.py` |
+| `splice/compat.py` | `cospro/compat.py` |
+| `splice/graph_io.py`, `reporting.py`, `cospro_reporting.py` | `cospro/pipeline/graph_io.py`, `html_report.py`, `reporting.py` |
+| `splice/cospro_training.py`, `concept_distillation.py` | `cospro/methods/relational_graph.py`, `concept_targets.py` |
+| `experiments/spurious_eval/datasets/` | `cospro/data/` |
+| `experiments/spurious_eval/models/` | `cospro/models/` |
+| `experiments/spurious_eval/losses/contrastive.py`, `training/*` | `cospro/training/` (SSL) and `cospro/evaluation/` (probe loops) |
+| `experiments/spurious_eval/metrics.py` | `cospro/metrics.py` |
+| `experiments/spurious_eval/evaluation_protocol.py` | `cospro/evaluation/protocol.py` |
+| `experiments/spurious_eval/linear_probe.py`, `scripts/tools/*` | `cospro/cli/` |
 
-`git mv` one package per commit with re-export shims at old import paths for one release; update `PROJECT_MAP.md`,
-`docs/REPO_STRUCTURE.md` and `scripts/README.md`.
+- `third_party/NOTICE.md` lists every local change to SpLiCE, checked against the upstream
+  repository, and what the WILDS slice keeps.
+- Every old module is a shim that puts the new module object into `sys.modules` under the old name,
+  so `import old.path` returns the same object: `patch()`, the dataset registry and module state are
+  shared. Run as `python -m old.path`, a shim runs the new module. 45 shims in `splice/`,
+  `experiments/spurious_eval/` and `scripts/tools/`; nothing in the repository imports through them.
+- Launchers call `python -m cospro.cli.<stage>`. `verify_concept_dictionary.sbatch` builds every
+  cache through `scripts.tools.cache_splice_dataset`, since its baseline worktree predates
+  `cospro/cli/`.
+- The submission lock (`tools/paper/evaluate_submission_checkpoints.py`) hashes `cospro/` and
+  `third_party/`, where the evaluation code now lives.
+- Golden training, graph, command and storage-name tests are unchanged.
+
+**Decisions**
+
+- `cospro.config` and `cospro.evaluation` re-export lazily (PEP 562). With eager re-exports, the
+  light modules that moved in (`settings`, `protocol`) pulled in torch and the trainer, and formed
+  import cycles with `cospro.data`. `cospro.config.settings` now imports in 0.02 s without torch.
+- The group and rank metrics became the leaf module `cospro/metrics.py`: data, evaluation, training
+  callbacks and diagnostics all read them.
+- Moved modules keep their names except where the old one stopped fitting:
+  `cospro_training` → `relational_graph`, `concept_distillation` → `concept_targets`,
+  `cospro_reporting` → `pipeline/reporting`, `reporting` → `pipeline/html_report`,
+  `evaluation_protocol` → `evaluation/protocol`.
+- The vendored SpLiCE keeps its package name under `third_party`, so its relative imports and the
+  README's `splice.load` idiom still work; `LOCAL_DATA_ROOT` moved one level up with it.
+
+**After the merge into `main`**: once code on `main` imports from `cospro` and `third_party`, delete
+the shims in one commit (`splice/`, `experiments/spurious_eval/`, `scripts/tools/`) and drop them
+from `pyproject.toml`. Until then they cost nothing at runtime and keep old notebooks working.
 
 ---
 
