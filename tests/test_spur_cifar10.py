@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from experiments.spurious_eval.datasets.spur_cifar10 import CIFAR10_CLASSES, SpurCIFAR10Dataset
+from cospro.data.spur_cifar10 import CIFAR10_CLASSES, SpurCIFAR10Dataset
 from experiments.spurious_eval.metrics import spurious_group_ids
 
 

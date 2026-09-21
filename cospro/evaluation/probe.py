@@ -26,7 +26,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.data import TensorDataset
 
 from cospro.tracking import canonical_probe_metrics, define_wandb_metrics
-from experiments.spurious_eval.datasets.registry import build_probe_loaders
+from cospro.data.registry import build_probe_loaders
 from experiments.spurious_eval.metrics import compute_group_metrics, entropy_effective_rank
 from experiments.spurious_eval.models.resnet import LinearClassifier, build_resnet_encoder
 from experiments.spurious_eval.training.checkpointing import load_encoder_checkpoint

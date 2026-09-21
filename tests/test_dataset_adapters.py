@@ -13,7 +13,7 @@ from unittest.mock import patch
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from experiments.spurious_eval.datasets.base import (
+from cospro.data.base import (
     CANONICAL_DATASETS,
     LOADER_ROLES,
     DatasetConfig,
@@ -22,8 +22,8 @@ from experiments.spurious_eval.datasets.base import (
     build_probe_loaders,
     register_dataset,
 )
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
-from experiments.spurious_eval.datasets.transforms import TwoCropTransform
+from cospro.data.registry import canonical_dataset_name, dataset_class, dataset_names
+from cospro.data.transforms import TwoCropTransform
 
 
 class FakeSubset(TensorDataset):

@@ -13,7 +13,7 @@ from typing import Callable
 
 import torch
 
-from experiments.spurious_eval.datasets.registry import dataset_class
+from cospro.data.registry import dataset_class
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
     CoSpRoAuditConfig,

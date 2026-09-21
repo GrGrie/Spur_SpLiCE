@@ -20,7 +20,7 @@ import torch
 
 from cospro.config.options import ConfigError, add_section_arguments, option, section_defaults, section_from_namespace
 from cospro.config.presets import PRESETS, preset_values
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
+from cospro.data.registry import canonical_dataset_name, dataset_class, dataset_names
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from cospro.compat import LEGACY_RELATIONAL_MODE

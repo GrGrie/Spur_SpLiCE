@@ -13,8 +13,8 @@ import scipy.sparse as sparse
 import torch
 from PIL import Image
 
-from experiments.spurious_eval.datasets.celeba import CelebADataset
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name
+from cospro.data.celeba import CelebADataset
+from cospro.data.registry import canonical_dataset_name
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from cospro.evaluation.probe import ProbeOptions, spurious_attribute_metrics
 from experiments.spurious_eval.linear_probe import resolve_lr_decay_epochs

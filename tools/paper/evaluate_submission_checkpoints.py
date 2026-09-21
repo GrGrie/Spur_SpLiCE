@@ -145,7 +145,7 @@ def prepare(args):
             raise ValueError(f"Archived checkpoint hash mismatch: {row['checkpoint']}")
         validate_checkpoint(row["checkpoint"], row)
         row["sha256"] = digest
-    from experiments.spurious_eval.datasets.waterbirds import WaterbirdsDataset
+    from cospro.data.waterbirds import WaterbirdsDataset
     metadata = Path(WaterbirdsDataset._find_data_dir(Path(args.data_folder))) / "metadata.csv"
     # Freeze the reused baseline probes too, so aggregation cannot silently switch evidence.
     core = []
@@ -169,7 +169,7 @@ def execute(args):
     if sha256_file(lock["metadata"]) != lock["metadata_sha256"]:
         raise ValueError("Dataset metadata changed since prepare")
     from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
-    from experiments.spurious_eval.datasets.registry import dataset_class
+    from cospro.data.registry import dataset_class
 
     protocol = lock["protocol"]
     for row in lock["rows"]:

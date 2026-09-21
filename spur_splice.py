@@ -26,7 +26,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
-from experiments.spurious_eval.datasets.registry import build_loader, dataset_class
+from cospro.data.registry import build_loader, dataset_class
 from experiments.spurious_eval.losses.contrastive import SimCLRLoss
 from experiments.spurious_eval.models.simclr import SimCLRModel
 from experiments.spurious_eval.training.optim import build_optimizer

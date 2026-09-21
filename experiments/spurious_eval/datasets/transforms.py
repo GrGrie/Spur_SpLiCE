@@ -1,8 +1,12 @@
-class TwoCropTransform:
-    """Create two independently augmented views of the same image."""
+"""Moved to ``cospro.data.transforms``. This path keeps imports and ``python -m`` commands written against it working."""
 
-    def __init__(self, transform) -> None:
-        self.transform = transform
+import sys
 
-    def __call__(self, image):
-        return [self.transform(image), self.transform(image)]
+if __name__ == "__main__":
+    import runpy
+
+    runpy.run_module("cospro.data.transforms", run_name="__main__", alter_sys=True)
+else:
+    import importlib
+
+    sys.modules[__name__] = importlib.import_module("cospro.data.transforms")

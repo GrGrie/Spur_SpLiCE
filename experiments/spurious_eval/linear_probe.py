@@ -14,7 +14,7 @@ import torch
 
 from cospro.config import LINEAR_PROBE_DEFAULTS, training_defaults
 from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
+from cospro.data.registry import canonical_dataset_name, dataset_class, dataset_names
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.models.resnet import RESNET_MODEL_NAMES
 from cospro.config.settings import wandb_entity

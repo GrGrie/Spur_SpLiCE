@@ -12,7 +12,7 @@ from typing import Sequence
 
 import numpy as np
 
-from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class
+from cospro.data.registry import canonical_dataset_name, dataset_class
 
 
 @dataclass(frozen=True)

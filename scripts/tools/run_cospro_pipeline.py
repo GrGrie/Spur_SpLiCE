@@ -16,7 +16,7 @@ import torch
 
 from third_party import splice
 from experiments.runner import manifest_fingerprint
-from experiments.spurious_eval.datasets.registry import (
+from cospro.data.registry import (
     canonical_dataset_name,
     dataset_class,
     dataset_names,
