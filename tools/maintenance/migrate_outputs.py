@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from splice.artifacts import (
+from cospro.tracking.artifacts import (
     BINARY_SIZE_THRESHOLD,
     OUTPUT_ROOT,
     artifact_uri,

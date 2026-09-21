@@ -17,7 +17,7 @@ from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, se
 from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split
 from experiments.spurious_eval.models.resnet import RESNET_MODEL_NAMES
-from splice.settings import wandb_entity
+from cospro.config.settings import wandb_entity
 
 
 def resolve_lr_decay_epochs(value: str | list[int], total_epochs: int) -> list[int]:

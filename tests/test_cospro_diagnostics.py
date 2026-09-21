@@ -16,7 +16,7 @@ from cospro.diagnostics.evaluate import evaluate, write_record
 from cospro.diagnostics.labels import load_labels
 from golden_support import synthetic_splice_cache, train_sample_ids, write_waterbirds_fixture
 from splice.cospro import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph, save_splice_dataset_cache
-from splice.graph_io import save_graph_json
+from cospro.pipeline.graph_io import save_graph_json
 
 Y = np.array([0, 0, 1, 1])
 A = np.array([0, 1, 0, 1])

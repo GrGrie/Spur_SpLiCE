@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from splice.artifacts import binary_destination, tensor_payload_bytes
-from splice.compat import saved_graph_fingerprint
+from cospro.tracking.artifacts import binary_destination, tensor_payload_bytes
+from cospro.compat import saved_graph_fingerprint
 
 
 def _artifact_identity(args) -> dict[str, object] | None:

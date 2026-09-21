@@ -18,7 +18,7 @@ import torch
 from cospro.diagnostics import graph_metrics, group_metrics
 from cospro.diagnostics.labels import SampleLabels, load_labels
 from splice.cospro import validate_splice_dataset_cache
-from splice.graph_io import load_graph_json
+from cospro.pipeline.graph_io import load_graph_json
 
 SCHEMA = "cospro-diagnostics-v1"
 SWEEP_SELECTIVITY_ROWS = 25

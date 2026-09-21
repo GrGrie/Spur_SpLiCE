@@ -14,8 +14,8 @@ from experiments.spurious_eval.training.checkpointing import load_checkpoint, sa
 from experiments.spurious_eval.training.la_ssl import build_la_ssl_loader, sampling_probabilities
 from cospro.methods import FrozenConceptDistill, LaSSL
 from experiments.spurious_eval.training.ssl_loop import simclr_forward_loss
-from splice.artifacts import PROJECT_ROOT
-from splice.concept_distillation import ConceptDistillationRegularizer, FrozenConceptTransferSubset
+from cospro.tracking.artifacts import PROJECT_ROOT
+from cospro.methods.concept_targets import ConceptDistillationRegularizer, FrozenConceptTransferSubset
 from spur_splice import preserve_rng_state, seed_worker
 
 

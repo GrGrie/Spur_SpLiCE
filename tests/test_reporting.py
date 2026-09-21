@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from splice.reporting import render_report
+from cospro.pipeline.html_report import render_report
 
 
 class ReportingTests(unittest.TestCase):

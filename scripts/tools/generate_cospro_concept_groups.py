@@ -21,7 +21,7 @@ from splice.cospro import (
     load_concept_groups_json,
     save_concept_groups_json,
 )
-from splice.cospro_reporting import render_concept_groups_report
+from cospro.pipeline.reporting import render_concept_groups_report
 
 
 DEFAULT_TEXT_THRESHOLDS = (0.70, 0.75, 0.82, 0.85, 0.90)

@@ -13,8 +13,8 @@ from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
 
-from splice.artifacts import atomic_write_json, sha256_file
-from splice.settings import CLUSTER_SCRATCH_ROOT
+from cospro.tracking.artifacts import atomic_write_json, sha256_file
+from cospro.config.settings import CLUSTER_SCRATCH_ROOT
 
 
 _SEED = re.compile(r"^seed_?(\d+)$", re.IGNORECASE)

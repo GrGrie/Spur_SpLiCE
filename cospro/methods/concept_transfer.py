@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
-from splice.concept_distillation import (
+from cospro.methods.concept_targets import (
     ConceptDistillationRegularizer,
     FrozenConceptTransferSubset,
     load_target_artifact,

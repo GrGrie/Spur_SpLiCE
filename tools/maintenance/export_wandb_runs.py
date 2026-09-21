@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from splice.artifacts import reference
-from splice.settings import wandb_entity
+from cospro.tracking.artifacts import reference
+from cospro.config.settings import wandb_entity
 from datetime import datetime, timezone
 
 import wandb

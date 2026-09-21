@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from cospro.pipeline.cache import SPLICE_DATASET_CACHE_VERSION, validate_splice_dataset_cache
 from cospro.pipeline.config import GROUPING_CONFIG_FIELDS, CoSpRoAuditConfig, _validate_config
-from splice.compat import LEGACY_CONCEPT_GROUP_ARTIFACTS
+from cospro.compat import LEGACY_CONCEPT_GROUP_ARTIFACTS
 
 CONCEPT_GROUPS_VERSION = 1
 COSPRO_CONCEPT_GROUP_ARTIFACT = "cospro_concept_groups_v1"

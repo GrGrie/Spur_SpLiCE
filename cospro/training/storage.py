@@ -2,7 +2,7 @@
 
 ``/home`` carries a 100 GB quota and ``/scratch`` is a slow HDD, so one object owns every decision
 about checkpoint and probe files: canonical checkpoints leave for scratch through
-:func:`splice.artifacts.binary_destination`, an epoch checkpoint exists only to recover a crashed
+:func:`cospro.tracking.artifacts.binary_destination`, an epoch checkpoint exists only to recover a crashed
 run and the newest ``--checkpoint_keep_count`` of them survive at any moment. Once training
 completes everything except ``last.pth`` and the newest probe artifacts is deleted. The run record
 attests every retained checkpoint with its SHA-256, so a deleted file stays identifiable.
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from splice.artifacts import scratch_binary_directory
+from cospro.tracking.artifacts import scratch_binary_directory
 
 EPOCH_CHECKPOINT = re.compile(r"epoch_(\d+)\.pth")
 PROBE_FEATURES = re.compile(r"probe_features_epoch_(\d+)(?:_.+)?\.pt")

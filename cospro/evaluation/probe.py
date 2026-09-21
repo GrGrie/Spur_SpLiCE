@@ -38,7 +38,7 @@ from experiments.spurious_eval.training.probe_loop import (
     validate,
 )
 from experiments.spurious_eval.training.reproducibility import make_dataloader_kwargs
-from splice.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
+from cospro.tracking.artifacts import artifact_uri, atomic_write_json, binary_destination, tensor_payload_bytes
 
 RESULT_SCHEMA = "linear-probe-result-v3"
 FEATURE_ARTIFACT = "downstream_probe_features_v2"

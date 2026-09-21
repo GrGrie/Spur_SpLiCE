@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from experiments.runner import command_for, load_manifest, run
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 
 MANIFESTS = ("waterbirds_semantic_completion.yaml", "waterbirds_direct_completion.yaml")

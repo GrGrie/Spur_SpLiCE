@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from splice.reporting import render_report
+from cospro.pipeline.html_report import render_report
 
 
 def main() -> None:

@@ -25,7 +25,7 @@ from experiments.runner import command_for, load_manifest, matrix
 from experiments.spurious_eval import linear_probe
 from golden_support import assert_close_tree, compare_or_update, synthetic_target_bank
 from scripts.tools import run_cospro_pipeline
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 GRAPHS = ("crp_graph.json", "raw_clip_graph.json", "semantic_splice_graph.json")
 TARGET_BANK = "legacy_archives/Spur_SpLiCE/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt"

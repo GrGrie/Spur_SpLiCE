@@ -33,8 +33,8 @@ from splice.cospro import (
     topk_neighbors,
     validate_splice_dataset_cache,
 )
-from splice.cospro_reporting import render_concept_groups_report, render_teacher_graph_report
-from splice.cospro_training import (
+from cospro.pipeline.reporting import render_concept_groups_report, render_teacher_graph_report
+from cospro.methods.relational_graph import (
     CoSpRoGraphBatchSampler,
     CoSpRoRelationalRegularizer,
     IndexedCoSpRoDataset,

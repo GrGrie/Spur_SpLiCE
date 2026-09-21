@@ -8,8 +8,8 @@ from unittest.mock import patch
 from tools.maintenance.archive_legacy import archive_legacy
 from scripts.tools.collect_results import collect
 from tools.maintenance.migrate_outputs import apply_migration, discover_result_root, migration_plan
-from splice.artifacts import BINARY_SIZE_THRESHOLD
-from splice.run_recording import RunRecorder
+from cospro.tracking.artifacts import BINARY_SIZE_THRESHOLD
+from cospro.tracking.run_recording import RunRecorder
 
 
 class ResultLifecycleTests(unittest.TestCase):

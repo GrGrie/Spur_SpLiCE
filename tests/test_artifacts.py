@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from splice.artifacts import (
+from cospro.tracking.artifacts import (
     BINARY_SIZE_THRESHOLD,
     OUTPUT_ROOT,
     binary_destination,

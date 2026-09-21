@@ -32,8 +32,8 @@ from golden_support import (
     write_waterbirds_fixture,
 )
 from splice.cospro import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
-from splice.graph_io import save_graph_json
-from splice.artifacts import PROJECT_ROOT
+from cospro.pipeline.graph_io import save_graph_json
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 SNAPSHOT = f"training_runs.{platform.system().lower()}.json"
 DEVICE = os.environ.get("SPUR_SPLICE_GOLDEN_DEVICE", "cpu")

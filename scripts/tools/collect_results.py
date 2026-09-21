@@ -11,7 +11,7 @@ from statistics import mean, stdev
 from typing import Any
 
 from experiments.runner import load_manifest, matrix
-from splice.artifacts import OUTPUT_ROOT, PROJECT_ROOT, atomic_write_json, report, scratch_root, sha256_file
+from cospro.tracking.artifacts import OUTPUT_ROOT, PROJECT_ROOT, atomic_write_json, report, scratch_root, sha256_file
 
 
 def _artifact_path(uri: str) -> Path | None:

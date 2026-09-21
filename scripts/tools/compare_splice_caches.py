@@ -17,7 +17,7 @@ from typing import Any
 
 import torch
 
-from splice.artifacts import atomic_write_json, sha256_file
+from cospro.tracking.artifacts import atomic_write_json, sha256_file
 
 TENSOR_FIELDS = ("clip_embeddings", "image_mean", "splice_codes", "dictionary")
 LIST_FIELDS = ("sample_ids", "vocabulary")

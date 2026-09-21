@@ -23,8 +23,8 @@ from cospro.config.presets import PRESETS, preset_values
 from experiments.spurious_eval.datasets.registry import canonical_dataset_name, dataset_class, dataset_names
 from experiments.spurious_eval.evaluation_protocol import resolve_evaluation_split, resolve_probe_mode
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
-from splice.compat import LEGACY_RELATIONAL_MODE
-from splice.settings import wandb_entity
+from cospro.compat import LEGACY_RELATIONAL_MODE
+from cospro.config.settings import wandb_entity
 
 RELATIONAL_GRAPH_MODES = frozenset({"cospro_relational", LEGACY_RELATIONAL_MODE})
 TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill")

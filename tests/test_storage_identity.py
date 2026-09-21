@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import spur_splice
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 GRAPH = "tests/fixtures/storage_identity_graph.json"
 COMMON = ["--dataset", "waterbirds", "--device", "cpu", "--seed", "3", "--epochs", "500", "--batch_size", "128"]

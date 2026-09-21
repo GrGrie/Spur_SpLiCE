@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import spur_splice
 from cospro.config import PRESETS, TRAINING_SECTIONS, TrainingConfig, training_defaults
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 GRAPH = "tests/fixtures/storage_identity_graph.json"
 

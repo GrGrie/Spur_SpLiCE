@@ -8,8 +8,8 @@ import re
 import shutil
 from pathlib import Path
 
-from splice.artifacts import binary_destination
-from splice.run_recording import RunRecorder
+from cospro.tracking.artifacts import binary_destination
+from cospro.tracking.run_recording import RunRecorder
 
 
 def promote(record_path: str | Path, checkpoint: str | Path, label: str, reason: str, metrics: dict) -> Path:

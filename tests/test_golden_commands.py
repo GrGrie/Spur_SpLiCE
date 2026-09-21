@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from golden_support import compare_or_update
 from experiments.runner import command_for, load_manifest, matrix
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 MANIFEST_DIR = PROJECT_ROOT / "experiments" / "manifests"
 FIXED_ENV = {

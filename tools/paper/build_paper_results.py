@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 import statistics
 
-from splice.artifacts import PROJECT_ROOT, resolve_output_root
+from cospro.tracking.artifacts import PROJECT_ROOT, resolve_output_root
 
 
 ARMS = (

@@ -29,7 +29,7 @@ from cospro.pipeline.dictionary import (
 )
 from scripts.tools.cache_splice_dataset import cache_config_name, cache_provenance
 from third_party.splice import splice as splice_library
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 EMBEDDING_DIM = 512  # the bundled ViT-B-32 image mean is 512-dimensional
 _WEIGHTS = torch.randn(3, EMBEDDING_DIM, generator=torch.Generator().manual_seed(0))

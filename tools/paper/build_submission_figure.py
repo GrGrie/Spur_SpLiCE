@@ -6,7 +6,7 @@ import json
 import math
 from pathlib import Path
 
-from splice.artifacts import atomic_write_json, resolve_output_root, sha256_file
+from cospro.tracking.artifacts import atomic_write_json, resolve_output_root, sha256_file
 from tools.paper.render_concept_panels import _metadata, _annotate, decision_reason, render
 from tools.paper.select_graph_panels import RELATIONS, relation_key, discover_panels
 

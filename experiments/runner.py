@@ -14,8 +14,8 @@ import sys
 
 import yaml
 
-from splice.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory, scratch_root
-from splice.run_recording import portable_json
+from cospro.tracking.artifacts import PROJECT_ROOT, atomic_write_json, make_attempt_id, resolve_output_root, run_directory, scratch_root
+from cospro.tracking.run_recording import portable_json
 
 
 EXECUTION_SCHEMA_VERSION = 1

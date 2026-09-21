@@ -20,7 +20,7 @@ from pathlib import Path
 
 from cospro.diagnostics.dashboard import render_file
 from cospro.diagnostics.evaluate import evaluate, write_record
-from splice.settings import data_folder
+from cospro.config.settings import data_folder
 
 
 def _named_path(value: str) -> tuple[str, Path]:

@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 from golden_support import write_waterbirds_fixture
-from splice.artifacts import PROJECT_ROOT
+from cospro.tracking.artifacts import PROJECT_ROOT
 
 WANDB_STUB = '''
 """A recording stand-in for wandb: the training run sees an ordinary run object."""

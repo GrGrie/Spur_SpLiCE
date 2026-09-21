@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 
 from splice.cospro import validate_splice_dataset_cache
-from splice.graph_io import load_graph_json, save_graph_json
+from cospro.pipeline.graph_io import load_graph_json, save_graph_json
 
 
 def build_matched_raw_clip_graph(cache: dict, reference: dict) -> dict:
@@ -18,7 +18,7 @@ def build_matched_raw_clip_graph(cache: dict, reference: dict) -> dict:
     exactly. Apply the same absolute indegree cap, without using annotations.
     The complete indegree distribution and identities of donors are not matched.
     """
-    from splice.cospro_training import validate_teacher_graph
+    from cospro.methods.relational_graph import validate_teacher_graph
     reference = validate_teacher_graph(reference, cache["sample_ids"])
     n = len(cache["sample_ids"])
     indices = torch.full_like(reference["neighbor_indices"], -1)

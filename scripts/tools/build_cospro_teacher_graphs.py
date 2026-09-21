@@ -16,8 +16,8 @@ from splice.cospro import (
     build_teacher_graph,
     load_concept_groups_json,
 )
-from splice.cospro_reporting import render_teacher_graph_report
-from splice.graph_io import save_graph_json
+from cospro.pipeline.reporting import render_teacher_graph_report
+from cospro.pipeline.graph_io import save_graph_json
 
 
 def _sha256(path: Path) -> str:

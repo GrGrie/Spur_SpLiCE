@@ -31,8 +31,8 @@ from scripts.tools.generate_cospro_concept_groups import (
 )
 from cospro.config import DEFAULT_PERIODIC_PROBE_FREQ, preset_values, training_defaults
 from cospro.config.training import LINEAR_TRAIN_SPLITS
-from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, run_directory, scratch_root
-from splice.settings import data_folder, wandb_entity
+from cospro.tracking.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, run_directory, scratch_root
+from cospro.config.settings import data_folder, wandb_entity
 from splice.cospro import (
     GROUPING_CONFIG_FIELDS,
     CoSpRoAuditConfig,
@@ -40,9 +40,9 @@ from splice.cospro import (
     validate_cospro_config,
     validate_splice_dataset_cache,
 )
-from splice.cospro_training import validate_teacher_graph
-from splice.cospro_reporting import render_concept_groups_report
-from splice.graph_io import load_graph_json
+from cospro.methods.relational_graph import validate_teacher_graph
+from cospro.pipeline.reporting import render_concept_groups_report
+from cospro.pipeline.graph_io import load_graph_json
 
 
 def _sha256(path: Path) -> str:

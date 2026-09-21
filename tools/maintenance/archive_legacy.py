@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from splice.artifacts import artifact_uri, atomic_write_json, report, resolve_output_root, scratch_root, sha256_file
+from cospro.tracking.artifacts import artifact_uri, atomic_write_json, report, resolve_output_root, scratch_root, sha256_file
 
 
 CHUNK_SIZE = 1024 * 1024

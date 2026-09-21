@@ -58,11 +58,11 @@ from cospro.config.training import (
     parse_training_arguments,
     resolve_epoch_schedule,  # noqa: F401  (re-exported for callers of spur_splice)
 )
-from splice.compat import with_legacy_option_names
-from splice.graph_io import graph_fingerprint
-from splice.artifacts import artifact_uri, atomic_write_json
-from splice.run_recording import RunRecorder, portable_json
-from splice.concept_distillation import load_target_artifact
+from cospro.compat import with_legacy_option_names
+from cospro.pipeline.graph_io import graph_fingerprint
+from cospro.tracking.artifacts import artifact_uri, atomic_write_json
+from cospro.tracking.run_recording import RunRecorder, portable_json
+from cospro.methods.concept_targets import load_target_artifact
 
 
 

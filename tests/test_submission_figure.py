@@ -108,7 +108,7 @@ class SubmissionFigureTests(unittest.TestCase):
         graph = build_teacher_graph(cache, build_concept_groups(cache, config), config, device='cpu')
         # Selection can be empty for a random fixture; keep a real audited group
         # but no final edges, exercising non-retained candidate reconstruction.
-        from splice.graph_io import save_graph_json
+        from cospro.pipeline.graph_io import save_graph_json
         with tempfile.TemporaryDirectory() as d:
             path = Path(d)/'graph.json'
             save_graph_json(graph, path)

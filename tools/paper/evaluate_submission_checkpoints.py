@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import statistics
 
-from splice.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, scratch_root, sha256_file
-from splice.settings import CLUSTER_DATA_FOLDER, CLUSTER_SCRATCH_ROOT, data_folder
+from cospro.tracking.artifacts import PROJECT_ROOT, atomic_write_json, resolve_output_root, scratch_root, sha256_file
+from cospro.config.settings import CLUSTER_DATA_FOLDER, CLUSTER_SCRATCH_ROOT, data_folder
 
 STUDIES = {
     "semantic_splice": "next_actions_after_transfer_2026_09_07_graph_ablation",
