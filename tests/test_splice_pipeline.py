@@ -41,8 +41,8 @@ from splice.cospro_training import (
     build_cospro_concept_report,
     validate_teacher_graph,
 )
-from splice.model import SPLICE
-from splice.splice import (
+from third_party.splice.model import SPLICE
+from third_party.splice.splice import (
     DEFAULT_VOCABULARY,
     DEFAULT_VOCABULARY_SIZE,
     _clean_openimages_class_names,

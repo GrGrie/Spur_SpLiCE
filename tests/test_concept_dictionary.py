@@ -28,7 +28,7 @@ from cospro.pipeline.dictionary import (
     select_words,
 )
 from scripts.tools.cache_splice_dataset import cache_config_name, cache_provenance
-from splice import splice as splice_library
+from third_party.splice import splice as splice_library
 from splice.artifacts import PROJECT_ROOT
 
 EMBEDDING_DIM = 512  # the bundled ViT-B-32 image mean is 512-dimensional

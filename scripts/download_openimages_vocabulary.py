@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from splice.splice import download_openimages_vocabulary
+from third_party.splice.splice import download_openimages_vocabulary
 
 
 def main():

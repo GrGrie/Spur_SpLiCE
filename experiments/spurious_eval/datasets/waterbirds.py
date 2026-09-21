@@ -9,7 +9,7 @@ from PIL import Image
 
 from experiments.spurious_eval.datasets.base import DatasetConfig, SpuriousDataset, register_dataset
 from experiments.spurious_eval.datasets.paths import resolve_dataset_root
-from experiments.spurious_eval.datasets.wilds_compat import CombinatorialGrouper
+from third_party.wilds_compat import CombinatorialGrouper
 
 
 @dataclass(frozen=True)

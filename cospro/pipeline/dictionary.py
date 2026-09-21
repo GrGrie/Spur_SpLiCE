@@ -122,8 +122,7 @@ def resolve_dictionary(
             raise ValueError(f"The {kind} dictionary is bundled; a file path applies only to kind 'file'.")
         if order is not None and order != BUNDLED_ORDER[kind]:
             raise ValueError(f"The {kind} dictionary always keeps its {BUNDLED_ORDER[kind]}.")
-        from splice import splice as splice_library
-
+        from third_party.splice import splice as splice_library
         words = splice_library.get_vocabulary(kind, size)
         return ConceptDictionary(
             kind=kind, words=tuple(words), size=size, order=BUNDLED_ORDER[kind], source=kind,

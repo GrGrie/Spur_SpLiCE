@@ -23,7 +23,7 @@ from torchvision import transforms
 
 from experiments.spurious_eval.datasets.augmentation import build_ssl_transform
 from experiments.spurious_eval.datasets.transforms import TwoCropTransform
-from experiments.spurious_eval.datasets.wilds_compat import (
+from third_party.wilds_compat import (
     WILDSDataset,
     get_eval_loader,
     get_ssl_train_loader,

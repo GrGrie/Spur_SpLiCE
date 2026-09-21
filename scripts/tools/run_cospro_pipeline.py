@@ -14,7 +14,7 @@ from typing import Callable
 
 import torch
 
-import splice
+from third_party import splice
 from experiments.runner import manifest_fingerprint
 from experiments.spurious_eval.datasets.registry import (
     canonical_dataset_name,

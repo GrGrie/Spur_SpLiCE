@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-import splice
+from third_party import splice
 from experiments.spurious_eval.datasets.registry import (
     canonical_dataset_name,
     dataset_class,
