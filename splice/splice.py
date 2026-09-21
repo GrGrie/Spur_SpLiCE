@@ -172,7 +172,33 @@ def _select_vocabulary_lines(lines, name: str, vocabulary_size: int):
     return lines[:vocabulary_size]
 
 
-def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, pretrained: str = "laion2b_s34b_b79k", **kwargs):
+def embed_concepts(words, clip_backbone, tokenizer, device):
+    """Local change: the dictionary tensor of a word list, factored out of ``load`` unchanged.
+
+    Each word is encoded on its own, the embeddings are normalized, the concept mean is subtracted
+    and the result is normalized again.
+    """
+    concepts = []
+    for word in words:
+        tokens = tokenizer(word).to(device)
+        with torch.no_grad():
+            concept_embedding = clip_backbone.encode_text(tokens)
+        concepts.append(concept_embedding)
+    concepts = torch.nn.functional.normalize(torch.stack(concepts).squeeze(), dim=1)
+    return torch.nn.functional.normalize(concepts-torch.mean(concepts, dim=0), dim=1)
+
+
+def _cached_concept_embeddings(concept_path, read_words, clip_backbone, tokenizer, device):
+    """Local change: reuse the cached dictionary tensor, or embed the words and cache them."""
+    if os.path.isfile(concept_path):
+        return torch.load(concept_path, map_location=torch.device(device), weights_only=True)
+    os.makedirs(os.path.dirname(concept_path), exist_ok=True)
+    concepts = embed_concepts(read_words(), clip_backbone, tokenizer, device)
+    torch.save(concepts, concept_path)
+    return concepts
+
+
+def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" if torch.cuda.is_available() else "cpu", download_root = None, pretrained: str = "laion2b_s34b_b79k", words=None, dictionary_id=None, **kwargs):
     """load SpLiCE
 
     Parameters
@@ -185,6 +211,12 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
         torch device
     download_root : str
         path to download vocabulary and mean data to, otherwise "~/.cache/splice"
+    words : Sequence[str], optional
+        Local change: an explicit concept list, used instead of a named vocabulary. It is embedded
+        exactly like a named vocabulary.
+    dictionary_id : str, optional
+        Local change: the embedding-cache name of ``words``. Callers derive it from the content, so
+        an edited word list never reuses stale embeddings.
     """
     if ":" not in name:
         raise RuntimeError("Please define your CLIP backbone with the syntax \'[library]:[model]\'")
@@ -214,46 +246,39 @@ def load(name: str, vocabulary: str, vocabulary_size: int = -1, device = "cuda" 
     else:
         raise RuntimeError(f"Library {name} not supported. Try manual construction instead.")
     
-    if vocabulary in SUPPORTED_VOCAB:
-        concepts = []
-        vocab = []
-
+    concept_root = download_root or os.path.expanduser("~/.cache/splice/")
+    cache_model_name = name.replace(":", "_").replace("/", "-").replace("\\", "-")
+    cache_pretrained_name = pretrained.replace(":", "_").replace("/", "-").replace("\\", "-")
+    if words is not None:
+        # Local change: an explicit word list, cached under a content-derived name.
+        if not dictionary_id:
+            raise ValueError("An explicit word list needs a dictionary_id for its embedding cache.")
+        concept_path = os.path.join(
+            concept_root, "embeddings",
+            f"{cache_model_name}_{cache_pretrained_name}_{dictionary_id}_embeddings.pt",
+        )
+        concepts = _cached_concept_embeddings(
+            concept_path, lambda: list(words), clip_backbone, tokenizer, device,
+        )
+    elif vocabulary in SUPPORTED_VOCAB:
         vocab_path = _vocabulary_path(vocabulary, download_root)
-
-        concept_root = download_root or os.path.expanduser("~/.cache/splice/")
-        os.makedirs(os.path.join(concept_root, "embeddings"), exist_ok=True)
 
         if vocabulary_size <= 0:
             vocabulary_size_name = "full"
         else:
             vocabulary_size_name = vocabulary_size
-        cache_model_name = name.replace(":", "_").replace("/", "-").replace("\\", "-")
-        cache_pretrained_name = pretrained.replace(":", "_").replace("/", "-").replace("\\", "-")
         concept_path = os.path.join(
             concept_root,
             "embeddings",
             f"{cache_model_name}_{cache_pretrained_name}_{vocabulary}_{vocabulary_size_name}_embeddings.pt",
         )
 
-        if os.path.isfile(concept_path):
-            concepts = torch.load(
-                concept_path, map_location=torch.device(device), weights_only=True
-            )
-        else:
+        def read_words():
             with open(vocab_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
-                lines = _select_vocabulary_lines(lines, vocabulary, vocabulary_size)
-                for line in lines:
-                    line = line.strip()
-                    vocab.append(line)
-                    tokens = tokenizer(line).to(device)
-                    with torch.no_grad():
-                        concept_embedding = clip_backbone.encode_text(tokens)
-                    concepts.append(concept_embedding)
-            
-            concepts = torch.nn.functional.normalize(torch.stack(concepts).squeeze(), dim=1)
-            concepts = torch.nn.functional.normalize(concepts-torch.mean(concepts, dim=0), dim=1)
-            torch.save(concepts, concept_path)
+            return [line.strip() for line in _select_vocabulary_lines(lines, vocabulary, vocabulary_size)]
+
+        concepts = _cached_concept_embeddings(concept_path, read_words, clip_backbone, tokenizer, device)
     else:
         raise RuntimeError(f"Vocabulary {vocabulary} not supported.")
     

@@ -16,7 +16,8 @@ from experiments.spurious_eval.datasets.registry import (
     dataset_class,
     dataset_names,
 )
-from splice.cospro import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
+from cospro.pipeline.cache import SPLICE_DATASET_CACHE_VERSION, save_splice_dataset_cache
+from cospro.pipeline.dictionary import DICTIONARY_KINDS, ORDERS, ConceptDictionary, resolve_dictionary
 
 
 class IndexedImages(Dataset):
@@ -47,8 +48,22 @@ def _float_token(value: float) -> str:
     return f"{value:.12g}".replace("-", "neg").replace(".", "p")
 
 
+def concept_dictionary(args: argparse.Namespace) -> ConceptDictionary:
+    """The dictionary the cache options select. A namespace from before file dictionaries works."""
+
+    return resolve_dictionary(
+        args.splice_vocab,
+        size=args.splice_vocab_size,
+        path=getattr(args, "splice_vocab_file", None),
+        order=getattr(args, "splice_vocab_order", None),
+    )
+
+
 def cache_config_name(args: argparse.Namespace) -> str:
-    """Return the deterministic directory name for cache-affecting settings."""
+    """Return the deterministic directory name for cache-affecting settings.
+
+    The bundled dictionaries keep their historical names; a file dictionary is named by its content.
+    """
 
     vocabulary_size = "all" if args.splice_vocab_size <= 0 else str(args.splice_vocab_size)
     return "__".join(
@@ -56,10 +71,31 @@ def cache_config_name(args: argparse.Namespace) -> str:
             f"cache_v{SPLICE_DATASET_CACHE_VERSION}",
             f"model_{_path_token(args.splice_model)}",
             f"pretrained_{_path_token(args.splice_pretrained)}",
-            f"vocab_{_path_token(args.splice_vocab)}_{vocabulary_size}",
+            f"vocab_{_path_token(concept_dictionary(args).token)}_{vocabulary_size}",
             f"l1_{_float_token(args.splice_l1_penalty)}",
         )
     )
+
+
+def cache_provenance(args: argparse.Namespace, dictionary: ConceptDictionary) -> dict:
+    """What a cache records about how it was built. The pipeline compares this before reusing one.
+
+    Caches from the bundled dictionaries record exactly what they always did, so existing caches stay
+    reusable; a file dictionary adds its content identity.
+    """
+
+    provenance = {
+        "dataset": canonical_dataset_name(args.dataset),
+        "split": "train",
+        "splice_model": args.splice_model,
+        "splice_pretrained": args.splice_pretrained,
+        "splice_vocab": args.splice_vocab,
+        "splice_vocab_size": args.splice_vocab_size,
+        "splice_l1_penalty": args.splice_l1_penalty,
+    }
+    if dictionary.kind == "file":
+        provenance["concept_dictionary"] = dictionary.provenance()
+    return provenance
 
 
 def resolve_cache_path(args: argparse.Namespace) -> Path:
@@ -93,8 +129,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--splice-model", default="open_clip:ViT-B-32")
     parser.add_argument("--splice-pretrained", default="laion2b_s34b_b79k")
-    parser.add_argument("--splice-vocab", default=splice.DEFAULT_VOCABULARY)
+    parser.add_argument(
+        "--splice-vocab", default=splice.DEFAULT_VOCABULARY, choices=DICTIONARY_KINDS,
+        help="Concept dictionary: a bundled vocabulary, or 'file' with --splice-vocab-file.",
+    )
     parser.add_argument("--splice-vocab-size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
+    parser.add_argument(
+        "--splice-vocab-file", type=Path,
+        help="Word file of a 'file' dictionary: one concept per line, blank lines skipped.",
+    )
+    parser.add_argument(
+        "--splice-vocab-order", choices=ORDERS,
+        help="Which end of a 'file' dictionary --splice-vocab-size keeps (default: head).",
+    )
     parser.add_argument("--splice-l1-penalty", type=float, default=0.25)
     return parser.parse_args(argv)
 
@@ -116,10 +163,11 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     clip_preprocess = splice.get_preprocess(args.splice_model, pretrained=args.splice_pretrained)
+    dictionary = concept_dictionary(args)
+    print(f"[INFO] Concept dictionary {dictionary.token}: {len(dictionary.words)} concepts", flush=True)
     splice_model = splice.load(
         args.splice_model,
-        args.splice_vocab,
-        args.splice_vocab_size,
+        **dictionary.splice_load_arguments(),
         device=device,
         pretrained=args.splice_pretrained,
         l1_penalty=args.splice_l1_penalty,
@@ -161,16 +209,8 @@ def main(argv: list[str] | None = None) -> None:
         "image_mean": splice_model.image_mean.detach().cpu(),
         "splice_codes": splice_codes,
         "dictionary": splice_model.dictionary.detach().cpu(),
-        "vocabulary": splice.get_vocabulary(args.splice_vocab, args.splice_vocab_size),
-        "provenance": {
-            "dataset": args.dataset,
-            "split": "train",
-            "splice_model": args.splice_model,
-            "splice_pretrained": args.splice_pretrained,
-            "splice_vocab": args.splice_vocab,
-            "splice_vocab_size": args.splice_vocab_size,
-            "splice_l1_penalty": args.splice_l1_penalty,
-        },
+        "vocabulary": list(dictionary.words),
+        "provenance": cache_provenance(args, dictionary),
     }
     output_path = resolve_cache_path(args)
     save_splice_dataset_cache(cache, output_path)

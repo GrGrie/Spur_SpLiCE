@@ -23,7 +23,8 @@ from experiments.spurious_eval.datasets.registry import (
 )
 from experiments.spurious_eval.models.resnet import SSL_RESNET_MODEL_NAMES
 from scripts.tools.build_cospro_teacher_graphs import teacher_graph_path
-from scripts.tools.cache_splice_dataset import resolve_cache_path
+from cospro.pipeline.dictionary import DICTIONARY_KINDS, ORDERS
+from scripts.tools.cache_splice_dataset import cache_provenance, concept_dictionary, resolve_cache_path
 from scripts.tools.generate_cospro_concept_groups import (
     _dataset_image_resolver,
     concept_group_directory,
@@ -115,8 +116,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cache.add_argument("--cache-device", default="cuda" if torch.cuda.is_available() else "cpu")
     cache.add_argument("--splice-model", default="open_clip:ViT-B-32")
     cache.add_argument("--splice-pretrained", default="laion2b_s34b_b79k")
-    cache.add_argument("--splice-vocab", default=splice.DEFAULT_VOCABULARY)
+    cache.add_argument("--splice-vocab", default=splice.DEFAULT_VOCABULARY, choices=DICTIONARY_KINDS)
     cache.add_argument("--splice-vocab-size", type=int, default=splice.DEFAULT_VOCABULARY_SIZE)
+    cache.add_argument("--splice-vocab-file", type=Path, help="Word file of a 'file' dictionary.")
+    cache.add_argument("--splice-vocab-order", choices=ORDERS, help="Which end a size keeps (default: head).")
     cache.add_argument("--splice-l1-penalty", type=float, default=0.25)
 
     # Grouping and audit defaults come from CoSpRoAuditConfig; student defaults are the training
@@ -371,8 +374,11 @@ def main(argv: list[str] | None = None) -> None:
         splice_pretrained=args.splice_pretrained,
         splice_vocab=args.splice_vocab,
         splice_vocab_size=args.splice_vocab_size,
+        splice_vocab_file=args.splice_vocab_file,
+        splice_vocab_order=args.splice_vocab_order,
         splice_l1_penalty=args.splice_l1_penalty,
     )
+    dictionary = concept_dictionary(cache_args)
     cache_path = resolve_cache_path(cache_args)
     groups_root = args.output_root / "shared" / args.dataset / "graphs" / "concept_groups"
     groups_path = concept_group_directory(groups_root, grouping_config) / "concept_groups.json"
@@ -390,15 +396,7 @@ def main(argv: list[str] | None = None) -> None:
     python = str(Path(args.python).expanduser()) if os.sep in args.python else args.python
     env = {**os.environ, "SPUR_SPLICE_OUTPUT_ROOT": str(args.output_root)}
 
-    expected_cache_provenance = {
-        "dataset": args.dataset,
-        "split": "train",
-        "splice_model": args.splice_model,
-        "splice_pretrained": args.splice_pretrained,
-        "splice_vocab": args.splice_vocab,
-        "splice_vocab_size": args.splice_vocab_size,
-        "splice_l1_penalty": args.splice_l1_penalty,
-    }
+    expected_cache_provenance = cache_provenance(cache_args, dictionary)
 
     def validate_cache() -> None:
         cached = validate_splice_dataset_cache(
@@ -421,6 +419,8 @@ def main(argv: list[str] | None = None) -> None:
         "--splice-pretrained", args.splice_pretrained,
         "--splice-vocab", args.splice_vocab,
         "--splice-vocab-size", str(args.splice_vocab_size),
+        *(["--splice-vocab-file", str(args.splice_vocab_file)] if args.splice_vocab_file else []),
+        *(["--splice-vocab-order", args.splice_vocab_order] if args.splice_vocab_order else []),
         "--splice-l1-penalty", str(args.splice_l1_penalty),
     ]
     _stage(

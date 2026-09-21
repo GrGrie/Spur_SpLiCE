@@ -35,7 +35,8 @@ VALUE_OPTIONS=(
   DATASET:--dataset DATA_FOLDER:--data-folder FEATURE_ROOT:--feature-root OUTPUT_ROOT:--output-root
   CACHE_BATCH_SIZE:--cache-batch-size CACHE_NUM_WORKERS:--cache-num-workers CACHE_DEVICE:--cache-device
   SPLICE_MODEL:--splice-model SPLICE_PRETRAINED:--splice-pretrained SPLICE_VOCAB:--splice-vocab
-  SPLICE_VOCAB_SIZE:--splice-vocab-size SPLICE_L1_PENALTY:--splice-l1-penalty
+  SPLICE_VOCAB_SIZE:--splice-vocab-size SPLICE_VOCAB_FILE:--splice-vocab-file
+  SPLICE_VOCAB_ORDER:--splice-vocab-order SPLICE_L1_PENALTY:--splice-l1-penalty
   MIN_CONCEPT_FREQUENCY:--min-concept-frequency MAX_CONCEPT_FREQUENCY:--max-concept-frequency
   TEXT_SIMILARITY_THRESHOLD:--text-similarity-threshold COACTIVATION_THRESHOLD:--coactivation-threshold
   MIN_GROUP_SIZE:--min-group-size SIMILARITY_CHUNK_SIZE:--similarity-chunk-size
