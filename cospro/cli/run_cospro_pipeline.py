@@ -225,7 +225,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     tracking = parser.add_argument_group("tracking and collection")
-    tracking.add_argument("--use-wandb", action=argparse.BooleanOptionalAction, default=False)
+    tracking.add_argument("--use-wandb", action=argparse.BooleanOptionalAction, default=True)
     tracking.add_argument("--wandb-name", default="CoSpRo")
     tracking.add_argument("--wandb-group", default="")
     tracking.add_argument("--wandb-tags", default="")
@@ -283,8 +283,8 @@ def _student_manifest(args: argparse.Namespace, graph_path: Path) -> dict:
         flags.append("keep_checkpoints")
     if args.cosine:
         flags.append("cosine")
-    if args.use_wandb:
-        flags.append("use_wandb")
+    # Training logs to W&B by default; the manifest records the choice either way.
+    flags.append("use_wandb" if args.use_wandb else "no-use_wandb")
     locked_test = args.linear_eval_split == "test"
     if locked_test and args.linear_probe_mode != "final":
         raise ValueError("Held-out test evaluation requires --linear-probe-mode final.")
