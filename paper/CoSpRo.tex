@@ -2,6 +2,7 @@
 \usepackage{iclr2027_conference,times}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,booktabs,tabularx,microtype}
+\usepackage{graphicx}
 \usepackage{float}
 \usepackage{hyperref}
 \usepackage{url}
@@ -274,10 +275,28 @@ CoSpRo + KL & $53.46\pm3.05$ & $50.00\pm3.23$ \\
 
 Across all four seeds, CoSpRo has 1.99-point higher mean WGA than semantic neighbours (Table~\ref{tab:semantic}). The paired differences are $+7.25,-1.88,+1.60,+1.01$ points: the evidence favors projected relations on average, but the effect is heterogeneous and modest relative to seed variation. CoSpRo's mean exceeds direct transfer by 3.39 points, without establishing general superiority of relational over coordinate transfer. Appendix~\ref{app:validation} reports all endpoints; Appendix~\ref{app:lassl} includes the single completed LA-SSL adaptation.
 
+The worst-group advantage of CoSpRo holds across training (Figure~\ref{fig:curves}). Its smoothed mean worst-group accuracy leads all other methods at every probe from epoch 50 onward; from epoch 100 its margin over the semantic graph, the closest method, ranges from 0.8 to 3.0 points. Average accuracy separates later: CoSpRo leads at every probe from epoch 400 onward.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/training_curves.pdf}
+\caption{Waterbirds validation accuracy during SSL training for the methods of Table~\ref{tab:semantic}. Each line is the mean over seeds 1--4 of the periodic linear probes, run every 25 epochs, smoothed with a three-point moving average. All graph methods use the KL relational loss. Top: worst-group accuracy. Bottom: average accuracy. Table~\ref{tab:semantic} reports the unsmoothed epoch-500 values.}
+\label{fig:curves}
+\end{figure}
+
 \subsection{What do the retained relations capture?}
 The waterbirds graph has 12 selected concept groups and 12,239 directed edges, covering 4,582 of 4,795 training images (95.56\%), with maximum indegree 10. The selected concepts include Bamboo, Great grey owl and Tawny owl. All selected groups are singletons, so these experiments do not establish a benefit from multi-concept grouping.
 
-Post-hoc labels show both useful cross-context relations and target mismatches (Appendix~\ref{app:graphaudit}). For landbirds on water, same-target cross-background relations carry 59.22\% of CoSpRo's confidence-weighted graph mass versus 44.96\% for the raw graph. For waterbirds on land, the corresponding share barely changes (48.26\% versus 48.95\%), while wrong-target mass increases to 45.76\% from 39.73\%. These failures suggest that projection can't claim to simply remove spurious information, despite improving mean test WGA. Frozen-feature diagnostics confirm that the concept representation contains useful predictive information, but use different preprocessing and external pretraining; they are reported separately in Appendix~\ref{app:signal}.
+Figure~\ref{fig:edges} shows retained edges. Removing the Bamboo, Sunset, Tawny owl or Monochrome photography subspace links a bird to a bird of the same class on the other background. Removing Glory of the snow links a landbird to a waterbird, an edge that transfers the wrong class.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/edge_examples.pdf}
+\caption{Retained CoSpRo teacher edges on Waterbirds training images. Each column pairs an anchor (top) with its teacher neighbour (bottom); the column title names the concept whose subspace was removed when the edge was found. The four left pairs keep the bird class and change the background, the relations CoSpRo aims to add. They are the retained pairs of this kind with the largest projection gain, one per concept group. The dashed pair on the right is the heaviest retained wrong-class edge from another group. Class and background labels are shown for illustration and play no part in graph construction.}
+\label{fig:edges}
+\end{figure}
+
+Post-hoc labels show both useful cross-context relations and target mismatches (Figure~\ref{fig:transitions}, Appendix~\ref{app:graphaudit}). For landbirds on water, same-target cross-background relations carry 59.22\% of CoSpRo's confidence-weighted graph mass versus 44.96\% for the raw graph. For waterbirds on land, the corresponding share barely changes (48.26\% versus 48.95\%), while wrong-target mass increases to 45.76\% from 39.73\%. These failures suggest that projection can't claim to simply remove spurious information, despite improving mean test WGA. Frozen-feature diagnostics confirm that the concept representation contains useful predictive information, but use different preprocessing and external pretraining; they are reported separately in Appendix~\ref{app:signal}.
 
 \section{Limitations}
 The study uses one dataset, one frozen graph seed and four student seeds; estimated gains may change with graph construction or training randomness. The 224-example group-balanced probe uses labels and group annotations, so only graph construction and SSL are label-free. Results for this probe regime do not establish performance with a larger supervised budget.
@@ -539,7 +558,7 @@ Here $a^+$ is the other view of the same image. The factor $\tau_C/0.07$ follows
 The relational softmax uses backbone representations and masks the anchor ID. Only donors present in the batch enter the restricted teacher distribution, with zero teacher mass on other batch members, meaning anchors without a donor contribute no relational loss. The relational weight starts after epoch 10, rises over ten epochs to $\lambda_{\max}=0.5$ and stays there through epoch 500. This value was chosen in a preliminary development comparison. An empty graph falls back to SimCLR, but graph-control experiments require nonempty graphs.
 
 \section{Post-hoc Graph Audit}\label{app:graphaudit}
-The selected graph has 12 concept groups and 12,239 directed edges, supporting 4,582/4,795 anchors (95.56\% coverage); maximum indegree is 10 and indegree Gini is 0.573. Post-hoc labels show uneven relation quality: among the 56 training waterbirds on land, CoSpRo has 48.26\% same-target cross-background mass and 45.76\% wrong-target mass, versus 48.95\% and 39.73\% for the raw graph. Labels were excluded from construction.
+The selected graph has 12 concept groups and 12,239 directed edges, supporting 4,582/4,795 anchors (95.56\% coverage); maximum indegree is 10 and indegree Gini is 0.573. Post-hoc labels show uneven relation quality: among the 56 training waterbirds on land, CoSpRo has 48.26\% same-target cross-background mass and 45.76\% wrong-target mass, versus 48.95\% and 39.73\% for the raw graph. Labels were excluded from construction. Figure~\ref{fig:transitions} shows the full composition between all four groups: CoSpRo moves about 14 points of the edge mass of landbirds on water from other landbirds on water to landbirds on land, while waterbirds on land gain 6.0 points of wrong-class mass, mostly towards landbirds on land.
 
 \begin{table}[htbp]
 \centering\small
@@ -557,6 +576,13 @@ $(1,1)$ & 1.25 & 8.66 & 2.51 & 9.77 \\
 \end{tabular}
 \label{tab:graph}
 \end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/transition_matrices.pdf}
+\caption{Teacher-edge mass between Waterbirds (class, background) groups. Each anchor contributes its confidence times its teacher preference, as in the CoSpRo objective, and each row sums to 100\%. Dashed cells keep the class and change the background. Left: raw CLIP graph. Middle: CoSpRo graph. Right: CoSpRo minus raw CLIP in percentage points. LB denotes landbird and WB waterbird. Labels are used only after graph construction.}
+\label{fig:transitions}
+\end{figure}
 
 \section{Frozen Representation Diagnostics}\label{app:signal}
 \begin{table}[H]
