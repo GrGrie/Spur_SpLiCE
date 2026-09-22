@@ -5,7 +5,8 @@ Runs report two sets of keys. The historical sentence-style keys stay the primar
 canonical keys below, which are stable across refactors and safe to chart, filter and compare:
 
     probe/<split>/wga            worst-group accuracy, the headline metric
-    probe/<split>/wga_avg10      worst-group accuracy averaged over the last ten probe epochs
+    probe/<split>/wga_avg10      worst-group accuracy averaged over the last ten probe evaluations
+                                 of the run (ten SSL checkpoints, not ten probe-solver steps)
     probe/<split>/avg_acc        average accuracy
     probe/<split>/group_acc/<g>  per-group accuracy
     probe/spurious/wga           residual predictability of the spurious attribute
@@ -20,20 +21,26 @@ table sorts on the best worst-group accuracy.
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any, Mapping
 
 WGA_KEY = "probe/{split}/wga"
+ROLLING_WINDOW = 10
+# Canonical probe metric -> its mean over the last ROLLING_WINDOW probe evaluations.
+ROLLING_KEYS: dict[str, str] = {
+    "probe/{split}/wga": "probe/{split}/wga_avg10",
+    "probe/{split}/avg_acc": "probe/{split}/avg_acc_avg10",
+    "probe/{split}/best_group_acc": "probe/{split}/best_group_acc_avg10",
+}
+# Keys W&B does not chart: the probe fits its training split perfectly, so they are flat lines.
+UNCHARTED_KEYS = frozenset({"Linear train acc", "Linear train worst-group acc"})
+_rolling_history: dict[tuple[Any, str], dict[str, deque]] = {}
 
 # Historical probe key (with {split} filled in) -> canonical key.
 PROBE_KEYS: dict[str, str] = {
     "Last linear {split} acc": "probe/{split}/avg_acc",
     "Last linear {split} worst-group acc": "probe/{split}/wga",
     "Last linear {split} best-group acc": "probe/{split}/best_group_acc",
-    "Average over last 10 linear {split} acc": "probe/{split}/avg_acc_avg10",
-    "Average over last 10 linear {split} worst-group acc": "probe/{split}/wga_avg10",
-    "Average over last 10 linear {split} best-group acc": "probe/{split}/best_group_acc_avg10",
-    "Linear train acc": "probe/train/avg_acc",
-    "Linear train worst-group acc": "probe/train/wga",
     "Probe epochs": "probe/epochs",
     "Probe converged": "probe/converged",
     "Spurious probe last val acc": "probe/spurious/avg_acc",
@@ -109,6 +116,25 @@ def canonical_probe_metrics(metrics: Mapping[str, Any], *, split: str) -> dict[s
         if group < len(counts) and int(counts[group]) > 0:
             canonical[f"probe/{split}/group_acc/{group}"] = float(accuracy)
     return canonical
+
+
+def rolling_probe_metrics(run, canonical: Mapping[str, Any], *, split: str) -> dict[str, Any]:
+    """Means over the last ten probe evaluations of ``run``, the current one included.
+
+    The historical "Average over last 10" keys average the probe solver's final steps, which
+    have converged and so equal the last value. These keys average across SSL checkpoints.
+    The window lives in memory, so a resumed run starts it afresh.
+    """
+
+    history = _rolling_history.setdefault((getattr(run, "id", None) or id(run), split), {})
+    rolling = {}
+    for source, target in ROLLING_KEYS.items():
+        key = source.format(split=split)
+        if key in canonical:
+            values = history.setdefault(key, deque(maxlen=ROLLING_WINDOW))
+            values.append(float(canonical[key]))
+            rolling[target.format(split=split)] = sum(values) / len(values)
+    return rolling
 
 
 def canonical_train_metrics(payload: Mapping[str, Any]) -> dict[str, Any]:

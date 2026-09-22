@@ -11,6 +11,7 @@ from cospro.tracking import (
     canonical_train_metrics,
     define_wandb_metrics,
     epoch_payload,
+    rolling_probe_metrics,
 )
 from cospro.training import EpochReport, WandbLogger
 
@@ -42,12 +43,24 @@ class MetricContractTests(unittest.TestCase):
     def test_probe_keys_follow_the_evaluation_split(self):
         canonical = canonical_probe_metrics(PROBE_METRICS, split="test")
         self.assertEqual(canonical["probe/test/wga"], 42.0)
-        self.assertEqual(canonical["probe/test/wga_avg10"], 41.0)
-        self.assertEqual(canonical["probe/train/wga"], 100.0)
+        # The rolling means and the flat train-split series are not canonical probe keys.
+        self.assertNotIn("probe/test/wga_avg10", canonical)
+        self.assertFalse(any(key.startswith("probe/train/") for key in canonical))
         self.assertEqual(canonical["probe/spurious/wga"], 99.0)
         # Empty groups stay out of the per-group series.
         self.assertEqual(canonical["probe/test/group_acc/1"], 20.0)
         self.assertNotIn("probe/test/group_acc/2", canonical)
+
+    def test_rolling_means_span_the_last_ten_probe_evaluations(self):
+        run = FakeWandbRun()
+        for wga in range(1, 13):
+            rolling = rolling_probe_metrics(run, {"probe/val/wga": float(wga)}, split="val")
+        # Evaluations 3..12 are in the window.
+        self.assertEqual(rolling["probe/val/wga_avg10"], 7.5)
+        self.assertNotIn("probe/val/avg_acc_avg10", rolling)
+        # Another run starts its own window.
+        self.assertEqual(rolling_probe_metrics(FakeWandbRun(), {"probe/val/wga": 1.0}, split="val"),
+                         {"probe/val/wga_avg10": 1.0})
 
     def test_method_diagnostics_move_under_one_prefix(self):
         canonical = canonical_train_metrics({

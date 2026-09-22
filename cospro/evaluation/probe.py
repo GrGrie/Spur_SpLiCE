@@ -25,7 +25,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import TensorDataset
 
-from cospro.tracking import canonical_probe_metrics, define_wandb_metrics
+from cospro.tracking import UNCHARTED_KEYS, canonical_probe_metrics, define_wandb_metrics, rolling_probe_metrics
 from cospro.data.registry import build_probe_loaders
 from cospro.metrics import compute_group_metrics, entropy_effective_rank
 from cospro.models.resnet import LinearClassifier, build_resnet_encoder
@@ -664,10 +664,13 @@ def log_probe_result(result: ProbeResult, options: ProbeOptions, *, run, ssl_epo
         return
     metrics = result.metrics
     define_wandb_metrics(run, split=options.eval_split)
+    canonical = canonical_probe_metrics(metrics, split=options.eval_split)
     run.log(
         {
-            **{key: value for key, value in metrics.items() if not isinstance(value, list)},
-            **canonical_probe_metrics(metrics, split=options.eval_split),
+            **{key: value for key, value in metrics.items()
+               if not isinstance(value, list) and key not in UNCHARTED_KEYS},
+            **canonical,
+            **rolling_probe_metrics(run, canonical, split=options.eval_split),
         },
         step=ssl_epoch,
     )
