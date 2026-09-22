@@ -173,7 +173,7 @@ class TrackingOptions:
         True, style="toggle",
         help="Log the run to Weights & Biases (default). --no-use_wandb disables it for local checks and tests.",
     )
-    wandb_name: str = option("Spur_SpLiCE")
+    wandb_name: str = option("CoSpRo", help="W&B project; every run lands in wandb.ai/<entity>/CoSpRo unless overridden.")
     wandb_run_name: str = option(
         "", help="Optional concise W&B display name. Checkpoint directories retain the full reproducibility name.",
     )
