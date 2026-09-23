@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=celeba-cospro-pipeline
+#SBATCH --job-name=cospro-pipeline
 #SBATCH --partition=informatik-mind
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=40G
 #SBATCH --time=3-12:00:00
-#SBATCH --output=outputs/SLURM/celeba-cospro-%j.out
-#SBATCH --error=outputs/SLURM/celeba-cospro-%j.err
+#SBATCH --output=outputs/SLURM/cospro-pipeline-%j.out
+#SBATCH --error=outputs/SLURM/cospro-pipeline-%j.err
 
 # Full CoSpRo pipeline: SpLiCE cache -> concept groups -> teacher graph -> student -> results.
 #
