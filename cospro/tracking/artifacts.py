@@ -139,7 +139,9 @@ def binary_destination(local_path: str | Path, payload_bytes: int, *, kind: str,
 def atomic_write_json(path: str | Path, payload: Any) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    # The temporary name carries this process, so concurrent array tasks writing one shared file
+    # each rename their own file instead of the one a sibling is about to rename.
+    temporary = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     temporary.replace(path)
     return path

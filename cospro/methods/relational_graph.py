@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Iterator, Sequence
 
@@ -272,7 +273,9 @@ def save_cospro_concept_report(graph: dict, graph_path: str | Path) -> Path:
     report = build_cospro_concept_report(graph)
     source_path = Path(graph_path)
     output_path = source_path.with_name(f"{source_path.stem}.concepts.json")
-    temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    # Several runs of one study share the teacher graph and write this report beside it, so the
+    # temporary name carries this process; every writer renames its own file with the same content.
+    temporary_path = output_path.with_suffix(f"{output_path.suffix}.{os.getpid()}.tmp")
     temporary_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     temporary_path.replace(output_path)
     return output_path
