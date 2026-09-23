@@ -67,6 +67,10 @@ def _latest_records(
     return records
 
 
+#: Periodic probes averaged into the headline numbers, counted back from the end of training.
+PROBE_WINDOW = 10
+
+
 def _metric(record: dict[str, Any], names: tuple[str, ...]) -> float | None:
     metrics = record.get("final_metrics", {})
     for name in names:
@@ -76,10 +80,44 @@ def _metric(record: dict[str, Any], names: tuple[str, ...]) -> float | None:
     return None
 
 
+def probe_history(record: dict[str, Any], names: tuple[str, ...]) -> list[float]:
+    """One value per periodic probe, ordered by SSL epoch.
+
+    The run record logs a probe either as a ``linear_probe_final`` event holding the whole result
+    payload, or, in older records, as one ``linear_probe`` event per probe. ``final_metrics`` holds
+    the last probe only, and its "Average over last 10" keys average the probe solver's own final
+    steps, which have converged; this history is what a mean over the last probes of the run needs.
+    """
+
+    events: dict[int, float] = {}
+    for event in record.get("metrics", []):
+        if event.get("stage") == "linear_probe_final":
+            values = event.get("values", {}).get("metrics", {})
+        elif event.get("stage") == "linear_probe":
+            values = event.get("values", {})
+        else:
+            continue
+        for name in names:
+            value = values.get(name)
+            if isinstance(value, (int, float)):
+                events[int(event["step"])] = float(value)
+                break
+    return [value for _, value in sorted(events.items())]
+
+
+def _mean_last_probes(record: dict[str, Any], names: tuple[str, ...]) -> float | None:
+    """Mean of the final probes of one run, or the last probe when the run has only one."""
+
+    history = probe_history(record, names)
+    return mean(history[-PROBE_WINDOW:]) if history else None
+
+
 def _summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
     by_arm: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         by_arm[str(record["identity"]["arm"])].append(record)
+    average_names = ("Last linear test acc", "Last linear val acc")
+    worst_group_names = ("Last linear test worst-group acc", "Last linear val worst-group acc")
     summary = {}
     for arm, arm_records in sorted(by_arm.items()):
         values = {
@@ -91,6 +129,14 @@ def _summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "Average over last 10 linear test worst-group acc", "Linear test worst-group acc",
                 "Average over last 10 linear val worst-group acc", "Linear val worst-group acc",
             ))) is not None],
+            # The same two metrics averaged over the last PROBE_WINDOW probes of each run, which is
+            # what a periodic study reports; a final-only run contributes its single probe.
+            f"average_accuracy_over_last_{PROBE_WINDOW}_probes": [
+                value for record in arm_records if (value := _mean_last_probes(record, average_names)) is not None
+            ],
+            f"worst_group_accuracy_over_last_{PROBE_WINDOW}_probes": [
+                value for record in arm_records if (value := _mean_last_probes(record, worst_group_names)) is not None
+            ],
         }
         summary[arm] = {
             name: {"count": len(items), "mean": mean(items), "sd": stdev(items) if len(items) > 1 else 0.0}

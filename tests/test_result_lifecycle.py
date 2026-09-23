@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.maintenance.archive_legacy import archive_legacy
-from cospro.cli.collect_results import collect
+from cospro.cli.collect_results import _summaries, collect, probe_history
 from tools.maintenance.migrate_outputs import apply_migration, discover_result_root, migration_plan
 from cospro.tracking.artifacts import BINARY_SIZE_THRESHOLD
 from cospro.tracking.run_recording import RunRecorder
@@ -87,6 +87,28 @@ class ResultLifecycleTests(unittest.TestCase):
             self.assertEqual(payload["status"], "partial")
             self.assertEqual(payload["matrix"]["missing"], [{"seed": 2, "arm": "arm"}])
             self.assertTrue(output.is_file())
+
+    def test_summary_averages_the_last_probes_of_each_run(self):
+        def event(step, value, legacy=False):
+            metrics = {"Last linear val worst-group acc": value, "Last linear val acc": value + 5}
+            if legacy:
+                return {"stage": "linear_probe", "step": step, "values": metrics}
+            return {"stage": "linear_probe_final", "step": step, "values": {"metrics": metrics}}
+
+        # Twelve probes: the mean over the last ten is 40 + (2 + ... + 11) / 10 = 46.5.
+        current = {"identity": {"arm": "cospro"}, "final_metrics": {"Linear val worst-group acc": 51.0},
+                   "metrics": [event(25 * (index + 1), 40.0 + index) for index in reversed(range(12))]}
+        legacy = {"identity": {"arm": "cospro"}, "final_metrics": {"Linear val worst-group acc": 51.0},
+                  "metrics": [event(25 * (index + 1), 40.0 + index, legacy=True) for index in range(12)]}
+        summary = _summaries([current, legacy])["cospro"]
+        window = summary["worst_group_accuracy_over_last_10_probes"]
+        self.assertEqual(window["count"], 2)
+        self.assertAlmostEqual(window["mean"], 46.5)
+        self.assertAlmostEqual(summary["average_accuracy_over_last_10_probes"]["mean"], 51.5)
+        self.assertEqual(probe_history(current, ("Last linear val worst-group acc",))[:2], [40.0, 41.0])
+        # A final-only run contributes its single probe.
+        single = {"identity": {"arm": "simclr"}, "final_metrics": {}, "metrics": [event(500, 60.0)]}
+        self.assertAlmostEqual(_summaries([single])["simclr"]["worst_group_accuracy_over_last_10_probes"]["mean"], 60.0)
 
     def test_migration_discovers_direct_and_nested_roots(self):
         with tempfile.TemporaryDirectory() as directory:
