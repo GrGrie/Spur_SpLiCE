@@ -70,6 +70,11 @@ class ResolutionFixture:
         self.graphs.mkdir(parents=True)
         for name in GRAPHS:
             shutil.copyfile(PROJECT_ROOT / "outputs" / "shared" / "waterbirds" / "graphs" / name, self.graphs / name)
+        # The MetaShift study names a graph this repository does not carry yet. Resolution reads its
+        # bytes for the fingerprint only, so a copy of a real graph stands in for it.
+        metashift_graphs = self.outputs / "shared" / "metashift" / "graphs"
+        metashift_graphs.mkdir(parents=True)
+        shutil.copyfile(self.graphs / "crp_graph.json", metashift_graphs / "cospro_graph.json")
         bank = self.scratch / TARGET_BANK
         bank.parent.mkdir(parents=True)
         torch.save(synthetic_target_bank([f"waterbirds:{index}" for index in range(8)]), bank)

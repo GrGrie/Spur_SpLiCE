@@ -50,7 +50,8 @@ class FakeSplitDataset:
 
 class RegistryTests(unittest.TestCase):
     def test_every_spelling_resolves_to_the_canonical_name(self):
-        self.assertEqual(dataset_names(), ["celeba", "spur_cifar10", "waterbirds"])
+        self.assertEqual(dataset_names(), ["celeba", "metashift", "spur_cifar10", "waterbirds"])
+        self.assertEqual(canonical_dataset_name("MetaShiftCatsDogs"), "metashift")
         for spelling in ("CelebA", "celebA", "CELEBA", " celeba "):
             self.assertEqual(canonical_dataset_name(spelling), "celeba")
         self.assertEqual(canonical_dataset_name("spur-cifar10"), "spur_cifar10")
@@ -69,7 +70,7 @@ class RegistryTests(unittest.TestCase):
                 aliases = ("waterbirds",)
 
         # A rejected registration leaves no half-registered spelling behind.
-        self.assertEqual(dataset_names(), ["celeba", "spur_cifar10", "waterbirds"])
+        self.assertEqual(dataset_names(), ["celeba", "metashift", "spur_cifar10", "waterbirds"])
         with self.assertRaises(ValueError):
             canonical_dataset_name("impostor")
 

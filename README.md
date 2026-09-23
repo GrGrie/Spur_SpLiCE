@@ -60,6 +60,11 @@ the paper's. The official CelebA files sit on Google Drive, which needs the `gdo
 into one directory and add `--celeba-archive-dir DIR`. On the cluster,
 `sbatch scripts/download_datasets.sbatch` runs the same command for `DATA_FOLDER`.
 
+MetaShift Cats and Dogs is copied into the data folder by hand, as one directory holding the
+released tree `{train,test}/{cat,dog}/<class>(<indoor|outdoor>)/*.jpg`. Training images carry the
+88% context correlation of the release; the balanced released test images split per group into the
+validation and test halves the adapter reports.
+
 ## Run the canonical experiment
 
 On the cluster, set `DATA_FOLDER` if it differs from the default. The submission

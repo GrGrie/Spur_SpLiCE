@@ -20,6 +20,7 @@ from cospro.data.base import (  # noqa: F401  (re-exported)
     build_probe_loaders,
 )
 from cospro.data.celeba import CelebADataset  # noqa: F401  (registers celeba)
+from cospro.data.metashift import MetaShiftDataset  # noqa: F401  (registers metashift)
 from cospro.data.spur_cifar10 import SpurCIFAR10Dataset  # noqa: F401
 from cospro.data.waterbirds import WaterbirdsDataset  # noqa: F401
 
