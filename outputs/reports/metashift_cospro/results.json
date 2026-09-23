@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-23T12:19:50.509879+00:00",
+  "generated_at": "2026-09-23T16:11:38.165178+00:00",
   "manifest": {
     "arms": {
       "cospro": {
@@ -74,7 +74,40 @@
   "matrix": {
     "expected": 8,
     "failed": [],
-    "incomplete": [],
+    "incomplete": [
+      {
+        "arm": "cospro",
+        "attestation_errors": [
+          "size:project://outputs/shared/metashift/graphs/cospro_graph.json"
+        ],
+        "seed": 1,
+        "status": "complete"
+      },
+      {
+        "arm": "cospro",
+        "attestation_errors": [
+          "size:project://outputs/shared/metashift/graphs/cospro_graph.json"
+        ],
+        "seed": 2,
+        "status": "complete"
+      },
+      {
+        "arm": "cospro",
+        "attestation_errors": [
+          "size:project://outputs/shared/metashift/graphs/cospro_graph.json"
+        ],
+        "seed": 3,
+        "status": "complete"
+      },
+      {
+        "arm": "cospro",
+        "attestation_errors": [
+          "size:project://outputs/shared/metashift/graphs/cospro_graph.json"
+        ],
+        "seed": 4,
+        "status": "complete"
+      }
+    ],
     "missing": [],
     "successful": [
       {
@@ -82,15 +115,7 @@
         "seed": 1
       },
       {
-        "arm": "cospro",
-        "seed": 1
-      },
-      {
         "arm": "simclr",
-        "seed": 2
-      },
-      {
-        "arm": "cospro",
         "seed": 2
       },
       {
@@ -98,15 +123,7 @@
         "seed": 3
       },
       {
-        "arm": "cospro",
-        "seed": 3
-      },
-      {
         "arm": "simclr",
-        "seed": 4
-      },
-      {
-        "arm": "cospro",
         "seed": 4
       }
     ]
@@ -129046,7 +129063,7 @@
     }
   ],
   "schema": "study-results-v1",
-  "status": "complete",
+  "status": "partial",
   "study": "metashift_cospro",
   "summary": {
     "cospro": {
@@ -129055,10 +129072,20 @@
         "mean": 54.94791567325592,
         "sd": 1.3996966221531606
       },
+      "average_accuracy_over_last_10_probes": {
+        "count": 4,
+        "mean": 54.331597089767456,
+        "sd": 1.1376934866398571
+      },
       "worst_group_accuracy": {
         "count": 4,
         "mean": 43.0555559694767,
         "sd": 3.402069492757206
+      },
+      "worst_group_accuracy_over_last_10_probes": {
+        "count": 4,
+        "mean": 43.09027776122093,
+        "sd": 3.289399466466544
       }
     },
     "simclr": {
@@ -129067,10 +129094,20 @@
         "mean": 54.51388880610466,
         "sd": 4.9755057240227245
       },
+      "average_accuracy_over_last_10_probes": {
+        "count": 4,
+        "mean": 55.05208306014538,
+        "sd": 3.9901358871563937
+      },
       "worst_group_accuracy": {
         "count": 4,
         "mean": 44.09722238779068,
         "sd": 9.513297824812193
+      },
+      "worst_group_accuracy_over_last_10_probes": {
+        "count": 4,
+        "mean": 45.69444462656975,
+        "sd": 6.95739554711385
       }
     }
   }
