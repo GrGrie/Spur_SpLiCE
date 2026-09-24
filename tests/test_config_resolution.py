@@ -27,7 +27,7 @@ from golden_support import assert_close_tree, compare_or_update, synthetic_targe
 from cospro.cli import run_cospro_pipeline
 from cospro.tracking.artifacts import PROJECT_ROOT
 
-GRAPHS = ("crp_graph.json", "raw_clip_graph.json", "semantic_splice_graph.json")
+GRAPHS = ("crp_graph.json", "cospro_laion_graph.json", "raw_clip_graph.json", "semantic_splice_graph.json")
 METASHIFT_GRAPHS = ("cospro_graph.json", "cospro_laion_graph.json", "raw_clip_graph.json")
 TARGET_BANK = "legacy_archives/Spur_SpLiCE/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt"
 VOLATILE = {"runtime_versions", "storage_name", "save_folder"}

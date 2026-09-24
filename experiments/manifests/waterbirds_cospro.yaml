@@ -5,7 +5,7 @@
 # Keys are spur_splice.py options without the leading dashes.
 
 name: waterbirds_cospro
-description: Canonical five-arm CoSpRo comparison.
+description: Canonical CoSpRo comparison, with the LAION-dictionary graph beside the Open Images one.
 seeds: [1, 2, 3, 4]
 flags: [use_wandb, keep_checkpoints]
 common:
@@ -70,3 +70,8 @@ arms:
       splice_mode: cospro_relational
       splice_weight: 0.5
       cospro_teacher_graph: '{artifacts}/shared/waterbirds/graphs/crp_graph.json'
+  cospro_laion:
+    args:
+      splice_mode: cospro_relational
+      splice_weight: 0.5
+      cospro_teacher_graph: '{artifacts}/shared/waterbirds/graphs/cospro_laion_graph.json'
