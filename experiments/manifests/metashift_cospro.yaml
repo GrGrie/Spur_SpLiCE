@@ -4,13 +4,15 @@
 # bare switches and `locked_test` is the predeclared held-out evaluation protocol.
 # Keys are spur_splice.py options without the leading dashes.
 #
-# The cospro arm reads the teacher graph at the path below. Build it with
-# scripts/run_cospro_pipeline.sh --dataset metashift and copy the resulting
-# teacher_graph.json to outputs/shared/metashift/graphs/cospro_graph.json, the way
-# the Waterbirds study keeps crp_graph.json beside its sweep.
+# The graph arms read the teacher graphs in outputs/shared/metashift/graphs:
+#   cospro_graph.json        Open Images V7 concepts, the twelve best audited groups
+#   cospro_laion_graph.json  the same audit over the 10k most frequent LAION words
+#   raw_clip_graph.json      the raw-CLIP control matched to cospro_graph.json
+# Build a graph with scripts/run_cospro_pipeline.sh --dataset metashift and copy its
+# teacher_graph.json here, the way the Waterbirds study keeps crp_graph.json beside its sweep.
 
 name: metashift_cospro
-description: MetaShift Cats and Dogs, SimCLR against CoSpRo on ten student seeds.
+description: MetaShift Cats and Dogs, SimCLR, CoSpRo on two concept dictionaries and the raw-CLIP control, ten student seeds.
 seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 flags: [use_wandb, keep_checkpoints]
 common:
@@ -60,3 +62,13 @@ arms:
       splice_mode: cospro_relational
       splice_weight: 0.5
       cospro_teacher_graph: '{artifacts}/shared/metashift/graphs/cospro_graph.json'
+  raw_clip_kl:
+    args:
+      splice_mode: cospro_relational
+      splice_weight: 0.5
+      cospro_teacher_graph: '{artifacts}/shared/metashift/graphs/raw_clip_graph.json'
+  cospro_laion:
+    args:
+      splice_mode: cospro_relational
+      splice_weight: 0.5
+      cospro_teacher_graph: '{artifacts}/shared/metashift/graphs/cospro_laion_graph.json'
