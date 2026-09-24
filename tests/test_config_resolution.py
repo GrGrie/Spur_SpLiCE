@@ -29,6 +29,7 @@ from cospro.tracking.artifacts import PROJECT_ROOT
 
 GRAPHS = ("crp_graph.json", "cospro_laion_graph.json", "raw_clip_graph.json", "semantic_splice_graph.json")
 METASHIFT_GRAPHS = ("cospro_graph.json", "cospro_laion_graph.json", "raw_clip_graph.json")
+CIFAR_GRAPHS = ("cospro_laion_graph.json",)
 TARGET_BANK = "legacy_archives/Spur_SpLiCE/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt"
 VOLATILE = {"runtime_versions", "storage_name", "save_folder"}
 STANDALONE = {
@@ -73,10 +74,11 @@ class ResolutionFixture:
             shutil.copyfile(PROJECT_ROOT / "outputs" / "shared" / "waterbirds" / "graphs" / name, self.graphs / name)
         # Resolution reads a teacher graph's bytes for the fingerprint only, so one real graph
         # stands in for every graph the MetaShift study names.
-        metashift_graphs = self.outputs / "shared" / "metashift" / "graphs"
-        metashift_graphs.mkdir(parents=True)
-        for name in METASHIFT_GRAPHS:
-            shutil.copyfile(self.graphs / "crp_graph.json", metashift_graphs / name)
+        for dataset, names in (("metashift", METASHIFT_GRAPHS), ("spur_cifar10", CIFAR_GRAPHS)):
+            directory = self.outputs / "shared" / dataset / "graphs"
+            directory.mkdir(parents=True)
+            for name in names:
+                shutil.copyfile(self.graphs / "crp_graph.json", directory / name)
         bank = self.scratch / TARGET_BANK
         bank.parent.mkdir(parents=True)
         torch.save(synthetic_target_bank([f"waterbirds:{index}" for index in range(8)]), bank)
