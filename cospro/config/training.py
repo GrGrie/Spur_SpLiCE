@@ -237,6 +237,17 @@ class LaSSLOptions:
     la_ssl_update_freq: int = option(2, parse=int)
 
 
+@dataclass(frozen=True)
+class LateTVGOptions:
+    latetvg_prune_rate: float = option(
+        0.0, parse=float,
+        help="LateTVG: fraction of smallest-magnitude weights pruned in the second view's encoder; 0 disables it.",
+    )
+    latetvg_layers: int = option(
+        5, parse=int, help="LateTVG: number of final encoder convolutions the magnitude pruning covers.",
+    )
+
+
 # (section, argparse group title) in --help order.
 TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (LoggingOptions, "logging"),
@@ -253,6 +264,7 @@ TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (CoSpRoOptions, "CoSpRo relational distillation"),
     (ConceptTransferOptions, "frozen concept transfer"),
     (LaSSLOptions, "LA-SSL"),
+    (LateTVGOptions, "LateTVG late-layer pruned view"),
 )
 
 # Standalone linear-probe option -> trainer ProbeOptions field it shares its default with.
@@ -390,6 +402,11 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
              "CoSpRo decay start/end must both be zero or both be set.")
     _require(not args.cospro_decay_end_epoch or args.cospro_decay_end_epoch > args.cospro_decay_start_epoch,
              "--cospro_decay_end_epoch must be greater than --cospro_decay_start_epoch.")
+    _require(0 <= args.latetvg_prune_rate < 1, "--latetvg_prune_rate must lie in [0, 1).")
+    _require(args.latetvg_layers >= 1, "--latetvg_layers must be positive.")
+    _require(not args.latetvg_prune_rate or args.simclr_weight > 0,
+             "LateTVG builds its pruned view inside the SimCLR objective, so --simclr_weight must be positive.")
+    _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
     _require(0 < args.ssl_crop_min <= 1, "--ssl-crop-min must be in the interval (0, 1].")
     incompatible_model = dataset.model_error(args.model)
     _require(incompatible_model is None, incompatible_model or "")
@@ -442,6 +459,7 @@ class TrainingConfig:
     cospro: CoSpRoOptions
     concept_transfer: ConceptTransferOptions
     la_ssl: LaSSLOptions
+    latetvg: LateTVGOptions
 
     @classmethod
     def from_namespace(cls, namespace: argparse.Namespace) -> "TrainingConfig":

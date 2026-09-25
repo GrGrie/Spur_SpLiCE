@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from cospro.training.contrastive import SimCLRLoss
 from cospro.models.simclr import SimCLRModel
+from cospro.training.late_pruning import LatePruning
 from cospro.training.optim import warmup_learning_rate
 
 
@@ -35,14 +36,20 @@ def simclr_forward_loss(
     method=None,
     sample_indices=None,
     simclr_weight: float = 1.0,
+    late_pruning: LatePruning | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int]:
-    """SimCLR loss plus whatever the training method adds for this batch."""
+    """SimCLR loss plus whatever the training method adds for this batch.
+
+    With ``late_pruning`` the second view passes through the LateTVG-pruned encoder.
+    """
 
     if simclr_weight < 0:
         raise ValueError("simclr_weight must be non-negative.")
     bsz = image[0].size(0)
-    images = torch.cat([image[0], image[1]], dim=0)
-    embeddings = model.encoder(images)
+    if late_pruning is None:
+        embeddings = model.encoder(torch.cat([image[0], image[1]], dim=0))
+    else:
+        embeddings = torch.cat([model.encoder(image[0]), late_pruning(model.encoder, image[1])], dim=0)
     if simclr_weight > 0:
         projections = F.normalize(model.head(embeddings), dim=1)
         f1, f2 = torch.split(projections, [bsz, bsz], dim=0)
@@ -86,6 +93,7 @@ def train_one_epoch(
     # One meter per diagnostic the method reports, created when the method first reports it.
     method_diagnostics: dict[str, AverageMeter] = {}
     needs_indices = method is not None and method.needs_sample_indices
+    late_pruning = LatePruning.from_args(args)
     if method is not None:
         method.set_epoch(epoch)
 
@@ -113,6 +121,7 @@ def train_one_epoch(
                 method=method,
                 sample_indices=sample_indices,
                 simclr_weight=getattr(args, "simclr_weight", 1.0),
+                late_pruning=late_pruning,
             )
         losses.update(loss.item(), bsz)
         simclr_losses.update(parts["simclr"].item(), bsz)
@@ -156,6 +165,8 @@ def train_one_epoch(
     }
     # Historical metric names: every method diagnostic is reported under relational_<name>.
     metrics.update({f"relational_{name}": meter.avg for name, meter in method_diagnostics.items() if meter.count})
+    if late_pruning is not None:
+        metrics["latetvg_kept_fraction"] = late_pruning.last_kept_fraction
     return metrics
 
 

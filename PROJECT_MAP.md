@@ -30,6 +30,7 @@ training images
 | Neighbour search, audit, selection, teacher graph | `cospro/pipeline/`, `cospro/pipeline/graph_io.py` |
 | Complete cache-to-results pipeline | `scripts/run_cospro_pipeline.sh`, `cospro/cli/run_cospro_pipeline.py` |
 | Graph sampler and relational KL | `cospro/methods/relational_graph.py` |
+| LateTVG pruned second view (combines with any method) | `cospro/training/late_pruning.py`, `experiments/manifests/waterbirds_latetvg.yaml` |
 | Typed training configuration, presets, sweeps | `cospro/config/` |
 | Training methods behind one interface | `cospro/methods/` |
 | SSL training: epoch loop, callbacks, storage policy | `spur_splice.py`, `cospro/training/` |

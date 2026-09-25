@@ -122,6 +122,8 @@ def training_config(args: argparse.Namespace) -> TrainingConfig:
 def format_wandb_run_name(args: argparse.Namespace) -> str:
     prefix = f"{args.dataset}_s{args.seed:g}"
     suffix = f"_e{args.epochs}"
+    if args.latetvg_prune_rate:
+        suffix = f"_LateTVG_p{args.latetvg_prune_rate:g}_l{args.latetvg_layers}{suffix}"
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         return f"{prefix}_CoSpRo_w{args.splice_weight:g}_t{args.cospro_temperature:g}{suffix}"
     return f"{prefix}_SimCLR{suffix}"
@@ -133,6 +135,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "cospro-relational" if args.splice_mode == "cospro_relational" else "crp-v2-relational"
     else:
         experiment = "la-ssl" if getattr(args, "la_ssl", False) else ("concept-transfer" if args.splice_mode == "frozen_concept_distill" else "base")
+    if args.latetvg_prune_rate:
+        experiment = f"{experiment}-latetvg"
 
     excluded_from_fingerprint = {
         "checkpoint_dir",
@@ -159,6 +163,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         key: value
         for key, value in vars(args).items()
         if key not in excluded_from_fingerprint
+        # Disabled LateTVG leaves the storage names of runs that predate it unchanged.
+        and not (key.startswith("latetvg_") and not args.latetvg_prune_rate)
     })
     fingerprint = hashlib.sha256(
         json.dumps(fingerprint_payload, sort_keys=True, default=str).encode("utf-8")
@@ -180,6 +186,8 @@ def format_run_name(args: argparse.Namespace) -> str:
                        f"start{args.cospro_start_epoch}_warm{args.cospro_warmup_epochs}")
     else:
         splice_name = "nosplice"
+    if args.latetvg_prune_rate:
+        splice_name = f"{splice_name}_latetvg_p{args.latetvg_prune_rate:g}_l{args.latetvg_layers}"
     run_name = (
         f"SimCLR_{args.dataset}_{args.optimizer}_{args.model}_{args.head}_{splice_name}_"
         f"seed{args.seed:g}_lr{args.learning_rate:g}_bs{args.batch_size}_temp{args.temp:g}_"

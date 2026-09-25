@@ -1,0 +1,79 @@
+# Experiment manifest: one study as a matrix of seeds x arms.
+# experiments.runner expands every (seed, arm) into one spur_splice.py command:
+# `common` holds shared arguments, each arm adds or overrides `args`, `flags` become
+# bare switches and `locked_test` is the predeclared held-out evaluation protocol.
+# Keys are spur_splice.py options without the leading dashes.
+#
+# LateTVG (Hamidieh et al., ICLR 2024) passes the second SimCLR view through an encoder whose last
+# `latetvg_layers` convolutions lose the `latetvg_prune_rate` smallest-magnitude weights. This is the
+# 12-run selection stage: prune rates 0.5, 0.7 and 0.9 over all five layer4 convolutions, for
+# LateTVG alone and on top of CoSpRo, on seeds 1 and 2 with periodic validation probes. The matched
+# references are the simclr and splice_crp_kl arms of paper_completion_2026_09_08_core, trained under
+# this protocol on the same crp_graph edges. The configuration with the best validation WGA goes on to
+# a locked-test manifest.
+
+name: waterbirds_latetvg
+description: LateTVG and CoSpRo+LateTVG prune-rate selection on Waterbirds validation.
+seeds: [1, 2]
+flags: [use_wandb, keep_checkpoints]
+common:
+  dataset: waterbirds
+  data_folder: ${DATA_FOLDER}
+  model: resnet18_large
+  epochs: 500
+  batch_size: 128
+  num_workers: 4
+  learning_rate: 0.01
+  optimizer: SGD
+  temp: 0.05
+  weight_decay: 0.0001
+  momentum: 0.9
+  ssl_crop_min: 0.2
+  cospro_temperature: 0.25
+  cospro_start_epoch: 10
+  cospro_warmup_epochs: 10
+  linear_probe_solver: logistic
+  linear_probe_l2: 0.001
+  linear_probe_tolerance: 1.0e-06
+  linear_probe_max_epochs: 200
+  train_set_linear_layer: ds_train
+  linear_eval_split: val
+  linear_probe_mode: periodic
+  linear_probe_freq: 25
+  linear_spurious_probe: true
+  delete_checkpoints_after_training: true
+  retain_probe_artifacts_every: 0
+  wandb_name: CoSpRo
+  wandb_group: waterbirds_latetvg
+  wandb_tags: baseline,waterbirds,latetvg
+locked_test:
+  description: 'Predeclared held-out evaluation: one group-balanced logistic probe at SSL epoch 500.'
+  flags: [final_test]
+  args:
+    linear_eval_split: test
+    linear_probe_mode: final
+    linear_probe_freq: 0
+arms:
+  latetvg:
+    args:
+      splice_mode: none
+      splice_weight: 0
+      latetvg_prune_rate: 0.7
+      latetvg_layers: 5
+  cospro_latetvg:
+    args:
+      splice_mode: cospro_relational
+      splice_weight: 0.5
+      cospro_teacher_graph: '{artifacts}/shared/waterbirds/graphs/crp_graph.json'
+      latetvg_prune_rate: 0.7
+      latetvg_layers: 5
+# The base arms hold rate 0.7; the sweeps add rates 0.5 and 0.9.
+sweeps:
+  latetvg:
+    base: latetvg
+    grid:
+      latetvg_prune_rate: [0.5, 0.9]
+  cospro_latetvg:
+    base: cospro_latetvg
+    grid:
+      latetvg_prune_rate: [0.5, 0.9]
