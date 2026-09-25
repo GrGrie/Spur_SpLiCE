@@ -95,24 +95,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Share of the candidates the concept_type_gate drops, the most object-like first.",
     )
     parser.add_argument(
+        "--output", type=Path,
+        help="Write the graph here instead of beside its concept groups; one artifact only.",
+    )
+    parser.add_argument(
         "--no-resume", action="store_true",
         help="Recompute and atomically replace existing per-group checkpoints.",
     )
     return parser.parse_args(argv)
 
 
-def concept_type_selection(args: argparse.Namespace):
-    """The concept-type gate when scores are given, otherwise the default rule."""
+def concept_type_selection(args: argparse.Namespace, artifact_path: Path):
+    """The concept-type gate when scores are given, otherwise the default rule.
+
+    Scores address groups by id, so they only mean anything for the artifact they were computed
+    from. Another grouping of the same dataset renumbers the groups, which would gate the wrong
+    concepts, so the artifact's digest has to match the one the scores recorded.
+    """
 
     if args.concept_type_scores is None:
         return None
     payload = json.loads(args.concept_type_scores.read_text(encoding="utf-8"))
+    expected = payload.get("concept_groups_sha256")
+    actual = _sha256(artifact_path)
+    if expected is None:
+        raise ValueError(
+            f"{args.concept_type_scores} predates the digest check; recompute it with "
+            "cospro.cli.score_concept_types for this concept-group artifact."
+        )
+    if expected != actual:
+        raise ValueError(
+            f"The concept-type scores were computed from {payload.get('concept_groups')} "
+            f"(sha256 {expected[:12]}), not from {artifact_path} (sha256 {actual[:12]}). "
+            "Score the artifact this graph is built from."
+        )
     return ConceptTypeGate(payload["scores"], quantile=args.object_quantile)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    selection = concept_type_selection(args)
+    if args.output is not None and args.concept_groups.is_dir():
+        raise ValueError("--output writes one graph, so pass a single concept_groups.json.")
     config_values = json.loads(args.config) if args.config else {}
     unknown = set(config_values).difference(CoSpRoAuditConfig.__dataclass_fields__)
     if unknown:
@@ -155,10 +178,11 @@ def main(argv: list[str] | None = None) -> None:
             device=args.device,
             checkpoint_dir=checkpoint_directory,
             resume=not args.no_resume,
-            selection=selection,
+            selection=concept_type_selection(args, artifact_path),
         )
-        json_path = save_graph_json(graph, output_directory / "teacher_graph.json")
-        html_path = render_teacher_graph_report(graph, output_directory / "teacher_graph.html")
+        destination = args.output if args.output is not None else output_directory / "teacher_graph.json"
+        json_path = save_graph_json(graph, destination)
+        html_path = render_teacher_graph_report(graph, destination.with_suffix(".html"))
         print(f"[INFO] Wrote {json_path}", flush=True)
         print(f"[INFO] Wrote {html_path}", flush=True)
         print(f"[INFO] Group checkpoints: {checkpoint_directory}", flush=True)

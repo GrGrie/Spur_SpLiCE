@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 
 from cospro.pipeline.concept_type import CONTEXT_PROMPTS, OBJECT_PROMPTS, group_scores
-from cospro.tracking.artifacts import atomic_write_json
+from cospro.tracking.artifacts import atomic_write_json, sha256_file
 
 
 def load_text_encoder(model: str, pretrained: str, device: str):
@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> None:
     atomic_write_json(args.output, {
         "schema": "concept-type-scores-v1",
         "concept_groups": str(args.concept_groups),
+        "concept_groups_sha256": sha256_file(args.concept_groups),
         "splice_model": args.splice_model,
         "splice_pretrained": args.splice_pretrained,
         "context_prompts": list(CONTEXT_PROMPTS),
