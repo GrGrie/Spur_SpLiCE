@@ -10,6 +10,7 @@ from pathlib import Path
 
 import torch
 
+from cospro.pipeline.selection import ConceptTypeGate
 from cospro.pipeline import (
     GROUPING_CONFIG_FIELDS,
     CoSpRoAuditConfig,
@@ -86,14 +87,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Checkpoint root. With a sweep, each audit gets an identity-named child directory.",
     )
     parser.add_argument(
+        "--concept-type-scores", type=Path,
+        help="Scores from cospro.cli.score_concept_types; selects the concept_type_gate rule.",
+    )
+    parser.add_argument(
+        "--object-quantile", type=float, default=0.25,
+        help="Share of the candidates the concept_type_gate drops, the most object-like first.",
+    )
+    parser.add_argument(
         "--no-resume", action="store_true",
         help="Recompute and atomically replace existing per-group checkpoints.",
     )
     return parser.parse_args(argv)
 
 
+def concept_type_selection(args: argparse.Namespace):
+    """The concept-type gate when scores are given, otherwise the default rule."""
+
+    if args.concept_type_scores is None:
+        return None
+    payload = json.loads(args.concept_type_scores.read_text(encoding="utf-8"))
+    return ConceptTypeGate(payload["scores"], quantile=args.object_quantile)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    selection = concept_type_selection(args)
     config_values = json.loads(args.config) if args.config else {}
     unknown = set(config_values).difference(CoSpRoAuditConfig.__dataclass_fields__)
     if unknown:
@@ -136,6 +155,7 @@ def main(argv: list[str] | None = None) -> None:
             device=args.device,
             checkpoint_dir=checkpoint_directory,
             resume=not args.no_resume,
+            selection=selection,
         )
         json_path = save_graph_json(graph, output_directory / "teacher_graph.json")
         html_path = render_teacher_graph_report(graph, output_directory / "teacher_graph.html")

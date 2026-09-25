@@ -82,6 +82,48 @@ class NullQuantilePass(SelectionRule):
         return list(ordered[: config.max_selected_groups] if config.max_selected_groups else ordered)
 
 
+@register_rule
+class ConceptTypeGate(NullQuantilePass):
+    """The null rule, minus the candidates whose concepts name the object rather than its context.
+
+    ``scores`` maps a group id to its ``cospro.pipeline.concept_type`` context preference, read
+    from the dictionary's own text encoder. The cut is a quantile of this dataset's candidates
+    rather than an absolute number, because the scale of the scores depends on the vocabulary: one
+    dimensionless setting therefore carries across datasets and dictionaries.
+    """
+
+    name = "concept_type_gate"
+
+    def __init__(self, scores: Mapping[str, float] | None = None, quantile: float = 0.25) -> None:
+        if not 0 <= quantile < 1:
+            raise ValueError(f"The object quantile must lie in [0, 1); got {quantile}.")
+        self.scores = {str(key): float(value) for key, value in (scores or {}).items()}
+        self.quantile = float(quantile)
+        self._threshold: float | None = None
+
+    def preference(self, group_id: int) -> float:
+        """A group without a score is treated as the most object-like, so it never survives."""
+
+        return self.scores.get(str(group_id), float("-inf"))
+
+    def retain(self, candidates: Sequence[Candidate], groups: Sequence[dict], config) -> list[Candidate]:
+        if not self.scores:
+            raise ValueError("The concept_type_gate rule needs per-group concept-type scores.")
+        values = sorted(self.preference(groups[index]["group_id"]) for index, _ in candidates)
+        cut = int(self.quantile * len(values))
+        self._threshold = values[cut] if 0 < cut < len(values) else float("-inf")
+        survivors = [item for item in candidates if self.preference(groups[item[0]]["group_id"]) >= self._threshold]
+        return super().retain(survivors, groups, config)
+
+    def provenance(self, config) -> dict[str, Any]:
+        return {
+            **super().provenance(config),
+            "object_quantile": self.quantile,
+            "context_preference_threshold": self._threshold,
+            "scored_groups": len(self.scores),
+        }
+
+
 DEFAULT_SELECTION_RULE = "null_quantile"
 
 

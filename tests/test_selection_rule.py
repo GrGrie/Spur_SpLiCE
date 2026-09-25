@@ -14,8 +14,10 @@ import torch
 from golden_support import synthetic_splice_cache, train_sample_ids
 
 from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups, build_teacher_graph
+from cospro.pipeline.concept_type import group_scores
 from cospro.pipeline.selection import (
     SELECTION_RULES,
+    ConceptTypeGate,
     NullQuantilePass,
     SelectionRule,
     selection_rule,
@@ -59,9 +61,65 @@ class KeepTheFirstAccepted(SelectionRule):
         return sorted(candidates, key=lambda item: item[0])[:1]
 
 
+class FakeTextEncoder:
+    """A text tower whose embedding of a word is fixed by a table, for the concept-type gate."""
+
+    def __init__(self, table):
+        self.table = table
+        self.parameters = lambda: iter([torch.zeros(1)])
+
+    def encode_text(self, tokens):
+        return torch.stack([self.table[int(index)] for index in tokens])
+
+
+def fake_tokenizer(table):
+    words = list(table)
+    return lambda texts: torch.tensor([[words.index(next(w for w in words if w in text))] for text in texts])
+
+
+class ConceptTypeGateTests(unittest.TestCase):
+    def setUp(self):
+        # Two directions: the first is "context", the second is "object".
+        self.table = {"a place or scene": torch.tensor([1.0, 0.0]), "the background of a photo": torch.tensor([1.0, 0.0]),
+                      "furniture or a room": torch.tensor([1.0, 0.0]), "an outdoor landscape": torch.tensor([1.0, 0.0]),
+                      "weather or time of day": torch.tensor([1.0, 0.0]), "a photo of an animal": torch.tensor([0.0, 1.0]),
+                      "a kind of animal": torch.tensor([0.0, 1.0]), "a photo of a person": torch.tensor([0.0, 1.0]),
+                      "an object in the foreground": torch.tensor([0.0, 1.0]),
+                      "couch": torch.tensor([1.0, 0.0]), "cats": torch.tensor([0.0, 1.0])}
+        encoder = FakeTextEncoder({index: value for index, value in enumerate(self.table.values())})
+        self.scores = group_scores([{"group_id": 0, "concepts": ["couch"]}, {"group_id": 1, "concepts": ["cats"]}],
+                                   encoder, fake_tokenizer(self.table))
+
+    def test_words_that_name_an_object_score_below_words_that_name_context(self):
+        self.assertGreater(self.scores["0"], self.scores["1"])
+
+    def test_the_gate_drops_the_most_object_like_quantile_then_ranks_as_the_default(self):
+        groups = [{"group_id": 0, "null_excess_score": 1.0, "score": 1.0}, {"group_id": 1, "null_excess_score": 2.0, "score": 2.0}]
+        candidates = [(0, {}), (1, {})]
+        config = CoSpRoAuditConfig(max_selected_groups=0)
+        kept = ConceptTypeGate(self.scores, quantile=0.5).retain(candidates, groups, config)
+        self.assertEqual([index for index, _ in kept], [0], "the object-like group loses despite its higher score")
+        kept = ConceptTypeGate(self.scores, quantile=0.0).retain(candidates, groups, config)
+        self.assertEqual([index for index, _ in kept], [1, 0], "quantile zero keeps every candidate")
+
+    def test_the_gate_records_what_it_cut_and_refuses_to_run_blind(self):
+        config = CoSpRoAuditConfig()
+        rule = ConceptTypeGate(self.scores, quantile=0.5)
+        rule.retain([(0, {}), (1, {})], [{"group_id": 0, "null_excess_score": 1.0, "score": 1.0},
+                                         {"group_id": 1, "null_excess_score": 2.0, "score": 2.0}], config)
+        provenance = rule.provenance(config)
+        self.assertEqual(provenance["rule"], "concept_type_gate")
+        self.assertEqual(provenance["object_quantile"], 0.5)
+        self.assertEqual(provenance["scored_groups"], 2)
+        with self.assertRaisesRegex(ValueError, "needs per-group concept-type scores"):
+            ConceptTypeGate().retain([(0, {})], [{"group_id": 0}], config)
+        with self.assertRaisesRegex(ValueError, "quantile must lie"):
+            ConceptTypeGate(self.scores, quantile=1.0)
+
+
 class SelectionRuleRegistryTests(unittest.TestCase):
     def test_the_default_rule_is_the_paper_protocol(self):
-        self.assertEqual(sorted(SELECTION_RULES), ["null_quantile"])
+        self.assertEqual(sorted(SELECTION_RULES), ["concept_type_gate", "null_quantile"])
         self.assertIsInstance(selection_rule(), NullQuantilePass)
         self.assertIsInstance(selection_rule("null_quantile"), NullQuantilePass)
         rule = RejectEverything()
