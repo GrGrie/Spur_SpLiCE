@@ -27,11 +27,15 @@ from golden_support import assert_close_tree, compare_or_update, synthetic_targe
 from cospro.cli import run_cospro_pipeline
 from cospro.tracking.artifacts import PROJECT_ROOT
 
-GRAPHS = ("crp_graph.json", "cospro_laion_graph.json", "cospro_laion_gated_graph.json", "raw_clip_graph.json",
-          "semantic_splice_graph.json")
-METASHIFT_GRAPHS = ("cospro_graph.json", "cospro_laion_graph.json", "cospro_laion_gated_graph.json",
-                    "raw_clip_graph.json")
-CIFAR_GRAPHS = ("cospro_laion_graph.json",)
+#: Waterbirds graphs this repository carries, copied into the fixture as they are.
+GRAPHS = ("crp_graph.json", "cospro_laion_graph.json", "raw_clip_graph.json", "semantic_splice_graph.json")
+#: Graphs a manifest names that the cluster still has to build. Resolution reads a graph's bytes
+#: for its fingerprint only, so a copy of a real graph stands in for each of them.
+STAND_IN_GRAPHS = {
+    "waterbirds": ("cospro_laion_gated_graph.json",),
+    "metashift": ("cospro_graph.json", "cospro_laion_graph.json", "cospro_laion_gated_graph.json", "raw_clip_graph.json"),
+    "spur_cifar10": ("cospro_laion_graph.json",),
+}
 TARGET_BANK = "legacy_archives/Spur_SpLiCE/next_actions_after_transfer_2026-09-07/direct_transfer/targets_v1.pt"
 VOLATILE = {"runtime_versions", "storage_name", "save_folder"}
 STANDALONE = {
@@ -74,11 +78,9 @@ class ResolutionFixture:
         self.graphs.mkdir(parents=True)
         for name in GRAPHS:
             shutil.copyfile(PROJECT_ROOT / "outputs" / "shared" / "waterbirds" / "graphs" / name, self.graphs / name)
-        # Resolution reads a teacher graph's bytes for the fingerprint only, so one real graph
-        # stands in for every graph the MetaShift study names.
-        for dataset, names in (("metashift", METASHIFT_GRAPHS), ("spur_cifar10", CIFAR_GRAPHS)):
+        for dataset, names in STAND_IN_GRAPHS.items():
             directory = self.outputs / "shared" / dataset / "graphs"
-            directory.mkdir(parents=True)
+            directory.mkdir(parents=True, exist_ok=True)
             for name in names:
                 shutil.copyfile(self.graphs / "crp_graph.json", directory / name)
         bank = self.scratch / TARGET_BANK
