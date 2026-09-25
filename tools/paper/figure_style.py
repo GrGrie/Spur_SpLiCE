@@ -20,9 +20,17 @@ COLORS = {
     "Semantic SpLiCE graph": "#eda100",
     "Direct SpLiCE reconstruction": "#e87ba4",
 }
+#: Categorical slots in a fixed order, for methods the dictionary above does not name.
+PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7")
 INK = "#333333"
 MUTED = "#8a8f98"
 GRID = "#ececec"
+
+
+def color_for(name: str, index: int) -> str:
+    """The colour of a method: its own if it has one, otherwise the next categorical slot."""
+
+    return COLORS.get(name, PALETTE[index % len(PALETTE)])
 
 
 def use_paper_style() -> None:
