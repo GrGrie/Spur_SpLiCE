@@ -1,0 +1,66 @@
+{
+  "arms": {
+    "cospro": {
+      "args": {}
+    }
+  },
+  "common": {
+    "amp": true,
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_keep_count": 2,
+    "cospro_decay_end_epoch": 0,
+    "cospro_decay_start_epoch": 0,
+    "cospro_start_epoch": 10,
+    "cospro_teacher_graph": "/home/xar68reb/Spur_SpLiCE/outputs/shared/spur_cifar10/graphs/concept_groups/text_0p82_coactivation_0p35/teacher_graphs/audit_seed_0_nullq_0p95_trials_16_d0688d0a/teacher_graph.json",
+    "cospro_temperature": 0.25,
+    "cospro_warmup_epochs": 10,
+    "cudnn_enabled": true,
+    "data_folder": "/home/xar68reb/Datasets",
+    "dataset": "spur_cifar10",
+    "delete_checkpoints_after_training": true,
+    "device": "cuda",
+    "entity": "gsgrechkin-rptu",
+    "epochs": 500,
+    "feat_dim": 128,
+    "head": "mlp",
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "lr_decay_epochs": "auto",
+    "lr_decay_rate": 0.1,
+    "model": "resnet18",
+    "momentum": 0.9,
+    "num_workers": 4,
+    "optimizer": "SGD",
+    "print_freq": 10,
+    "rank_eval_freq": 100,
+    "save_freq": 50,
+    "simclr_weight": 1.0,
+    "splice_mode": "cospro_relational",
+    "splice_weight": 0.5,
+    "ssl_crop_min": 0.2,
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "wandb_group": "spur_cifar10_cospro_pipeline",
+    "wandb_name": "CoSpRo",
+    "wandb_tags": "spur_cifar10,cospro,full-pipeline",
+    "weight_decay": 0.0001
+  },
+  "description": "Full spur_cifar10 CoSpRo pipeline student run.",
+  "flags": [
+    "keep_checkpoints",
+    "use_wandb"
+  ],
+  "name": "spur_cifar10_cospro_pipeline",
+  "seeds": [
+    1
+  ]
+}

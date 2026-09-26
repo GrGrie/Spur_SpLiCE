@@ -1,0 +1,270 @@
+{
+  "artifacts": [],
+  "cleanup": {},
+  "config": {
+    "amp": true,
+    "arm": "latetvg__latetvg_prune_rate-0.5",
+    "artifact_dir": "project://outputs/seeds/waterbirds_latetvg/seed_01/latetvg__latetvg_prune_rate-0.5/primary/training",
+    "attempt_id": "primary",
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_dir": "project://outputs/seeds/waterbirds_latetvg/seed_01/latetvg__latetvg_prune_rate-0.5/primary/training",
+    "checkpoint_keep_count": 2,
+    "concept_transfer_alpha_max": 0.1,
+    "concept_transfer_start_epoch": 10,
+    "concept_transfer_target_kind": "reconstruction",
+    "concept_transfer_targets": "",
+    "concept_transfer_warmup_epochs": 10,
+    "cosine": false,
+    "cospro_decay_end_epoch": 0,
+    "cospro_decay_start_epoch": 0,
+    "cospro_graph_fingerprint": null,
+    "cospro_start_epoch": 10,
+    "cospro_teacher_graph": "",
+    "cospro_temperature": 0.25,
+    "cospro_warmup_epochs": 10,
+    "cudnn_benchmark": false,
+    "cudnn_enabled": true,
+    "data_folder": "external://home/xar68reb/Datasets",
+    "dataset": "waterbirds",
+    "dataset_identity": {
+      "linear_eval_split": "val",
+      "linear_train_split": "ds_train",
+      "name": "waterbirds",
+      "ssl_training_examples": 4795
+    },
+    "delete_checkpoints_after_training": true,
+    "delete_epoch_checkpoints_after_training": false,
+    "device": "cuda",
+    "entity": "gsgrechkin-rptu",
+    "epochs": 500,
+    "feat_dim": 128,
+    "final_test": false,
+    "head": "mlp",
+    "keep_checkpoints": true,
+    "la_ssl": false,
+    "la_ssl_eta": 0.1,
+    "la_ssl_gamma": 10.0,
+    "la_ssl_quantile": 0.1,
+    "la_ssl_update_freq": 2,
+    "la_ssl_warmup_epochs": 10,
+    "latetvg_layers": 5,
+    "latetvg_prune_rate": 0.5,
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_learning_rate": 1.0,
+    "linear_lr_decay_epochs": [
+      60,
+      75,
+      90
+    ],
+    "linear_lr_decay_rate": 0.2,
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "linear_weight_decay": 0.0,
+    "lr_decay_epochs": [
+      350,
+      400,
+      450
+    ],
+    "lr_decay_rate": 0.1,
+    "manifest_path": "project://experiments/manifests/waterbirds_latetvg.yaml",
+    "model": "resnet18_large",
+    "model_name": "SimCLR_waterbirds_SGD_resnet18_large_mlp_nosplice_latetvg_p0.5_l5_seed1_lr0.01_bs128_temp0.05_amp1_cl1_cudnn1_bench0",
+    "momentum": 0.9,
+    "n_cls": 2,
+    "num_workers": 4,
+    "optimizer": "SGD",
+    "print_freq": 10,
+    "rank_eval_freq": 100,
+    "resume": "",
+    "retain_probe_artifacts_every": 0,
+    "run_record": "project://outputs/seeds/waterbirds_latetvg/seed_01/latetvg__latetvg_prune_rate-0.5/primary/run.json",
+    "runtime_versions": {
+      "cuda": "11.8",
+      "cudnn": "91001",
+      "numpy": "2.2.6",
+      "open-clip-torch": "3.3.0",
+      "platform": "Linux-5.14.0-687.49.1.el9_8.x86_64-x86_64-with-glibc2.34",
+      "python": "3.10.20",
+      "scikit-learn": "1.7.2",
+      "scipy": "1.15.3",
+      "torch": "2.5.1+cu118",
+      "torchvision": "0.20.1+cu118",
+      "wandb": "0.26.0"
+    },
+    "save_folder": "project://outputs/seeds/waterbirds_latetvg/seed_01/latetvg__latetvg_prune_rate-0.5/primary/training/waterbirds_s1_base-latetvg_e500_6d90eafabf",
+    "save_freq": 50,
+    "seed": 1,
+    "simclr_weight": 1.0,
+    "splice_mode": "none",
+    "splice_weight": 0.0,
+    "ssl_crop_min": 0.2,
+    "storage_name": "waterbirds_s1_base-latetvg_e500_6d90eafabf",
+    "study": "waterbirds_latetvg",
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "use_splice": false,
+    "use_wandb": true,
+    "wandb_group": "waterbirds_latetvg",
+    "wandb_name": "CoSpRo",
+    "wandb_run_name": "waterbirds_s1_SimCLR_LateTVG_p0.5_l5_e500",
+    "wandb_tags": "baseline,waterbirds,latetvg",
+    "warm": false,
+    "warm_epochs": 0,
+    "warmup_from": 0.0,
+    "warmup_to": 0.01,
+    "weight_decay": 0.0001
+  },
+  "error": {
+    "message": "kthvalue CUDA does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True)'. You can turn off determinism just for this operation, or you can use the 'warn_only=True' option, if that's acceptable for your application. You can also file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation.",
+    "type": "RuntimeError"
+  },
+  "identity": {
+    "arm": "latetvg__latetvg_prune_rate-0.5",
+    "attempt_id": "primary",
+    "seed": 1,
+    "study": "waterbirds_latetvg"
+  },
+  "manifest": {
+    "definition": {
+      "arms": {
+        "cospro_latetvg": {
+          "args": {
+            "cospro_teacher_graph": "project://{artifacts}/shared/waterbirds/graphs/crp_graph.json",
+            "latetvg_layers": 5,
+            "latetvg_prune_rate": 0.7,
+            "splice_mode": "cospro_relational",
+            "splice_weight": 0.5
+          }
+        },
+        "latetvg": {
+          "args": {
+            "latetvg_layers": 5,
+            "latetvg_prune_rate": 0.7,
+            "splice_mode": "none",
+            "splice_weight": 0
+          }
+        }
+      },
+      "common": {
+        "batch_size": 128,
+        "cospro_start_epoch": 10,
+        "cospro_temperature": 0.25,
+        "cospro_warmup_epochs": 10,
+        "data_folder": "${DATA_FOLDER}",
+        "dataset": "waterbirds",
+        "delete_checkpoints_after_training": true,
+        "epochs": 500,
+        "learning_rate": 0.01,
+        "linear_eval_split": "val",
+        "linear_probe_freq": 25,
+        "linear_probe_l2": 0.001,
+        "linear_probe_max_epochs": 200,
+        "linear_probe_mode": "periodic",
+        "linear_probe_solver": "logistic",
+        "linear_probe_tolerance": 1e-06,
+        "linear_spurious_probe": true,
+        "model": "resnet18_large",
+        "momentum": 0.9,
+        "num_workers": 4,
+        "optimizer": "SGD",
+        "retain_probe_artifacts_every": 0,
+        "ssl_crop_min": 0.2,
+        "temp": 0.05,
+        "train_set_linear_layer": "ds_train",
+        "wandb_group": "waterbirds_latetvg",
+        "wandb_name": "CoSpRo",
+        "wandb_tags": "baseline,waterbirds,latetvg",
+        "weight_decay": 0.0001
+      },
+      "description": "LateTVG and CoSpRo+LateTVG prune-rate selection on Waterbirds validation.",
+      "flags": [
+        "use_wandb",
+        "keep_checkpoints"
+      ],
+      "locked_test": {
+        "args": {
+          "linear_eval_split": "test",
+          "linear_probe_freq": 0,
+          "linear_probe_mode": "final"
+        },
+        "description": "Predeclared held-out evaluation: one group-balanced logistic probe at SSL epoch 500.",
+        "flags": [
+          "final_test"
+        ]
+      },
+      "name": "waterbirds_latetvg",
+      "seeds": [
+        1,
+        2
+      ],
+      "sweeps": {
+        "cospro_latetvg": {
+          "base": "cospro_latetvg",
+          "grid": {
+            "latetvg_prune_rate": [
+              0.5,
+              0.9
+            ]
+          }
+        },
+        "latetvg": {
+          "base": "latetvg",
+          "grid": {
+            "latetvg_prune_rate": [
+              0.5,
+              0.9
+            ]
+          }
+        }
+      }
+    },
+    "sha256": "1278dab42dc545090987c86e4f82a1ce3e472f70010c0e8341c8f72541ac1ec1"
+  },
+  "metrics": [],
+  "runtime": {
+    "cuda": "11.8",
+    "cudnn": "91001",
+    "hostname": "dgx003",
+    "numpy": "2.2.6",
+    "open-clip-torch": "3.3.0",
+    "platform": "Linux-5.14.0-687.49.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.20",
+    "scikit-learn": "1.7.2",
+    "scipy": "1.15.3",
+    "torch": "2.5.1+cu118",
+    "torchvision": "0.20.1+cu118",
+    "wandb": "0.26.0"
+  },
+  "schema": "run-record-v1",
+  "slurm": {
+    "SLURM_ARRAY_JOB_ID": "23971661",
+    "SLURM_ARRAY_TASK_ID": "2",
+    "SLURM_JOB_ID": "23971665"
+  },
+  "source": {
+    "commit": "fc8f062383f1b4322c6d0d1a99e16148b6e7f515",
+    "dirty": true,
+    "dirty_digest": "77bc52f1fedbf5610b1a636c18ecd1b65e027c2548225499f5538773c20d01ca"
+  },
+  "status": "failed",
+  "timestamps": {
+    "finished_at": "2026-09-25T22:22:24.494829+00:00",
+    "started_at": "2026-09-25T22:22:06.805500+00:00",
+    "updated_at": "2026-09-25T22:22:24.494857+00:00"
+  },
+  "wandb": {
+    "entity": "gsgrechkin-rptu",
+    "id": "5s5hf7an",
+    "name": "waterbirds_s1_SimCLR_LateTVG_p0.5_l5_e500",
+    "project": "CoSpRo",
+    "url": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/5s5hf7an"
+  }
+}
