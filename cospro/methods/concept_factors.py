@@ -184,6 +184,7 @@ class ConceptFactors(TrainingMethod):
                 min_frequency=options.factor_min_frequency,
                 max_frequency=options.factor_max_frequency,
                 max_count=options.factor_max_count,
+                merge_similarity=options.factor_merge_similarity,
                 condition_pairs=options.factor_condition_pairs,
                 min_correlation=options.factor_min_correlation,
                 max_text_similarity=options.factor_max_text_similarity,

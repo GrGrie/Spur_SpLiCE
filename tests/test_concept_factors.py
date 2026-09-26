@@ -15,7 +15,10 @@ import torch
 from golden_support import synthetic_splice_cache, train_sample_ids, write_waterbirds_fixture
 from test_golden_training import COMMON_ARGS, GRAPH_CONFIG
 from cospro.methods.concept_factors import ConceptConditionedBatchSampler, FactorDistillationRegularizer
-from cospro.pipeline import build_concept_groups
+from cospro.cli import sweep_concept_factors
+from cospro.cli.cache_splice_dataset import cache_config_name
+from cospro.diagnostics.factor_validity import conditional_uncertainty, diagnose_factors
+from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups
 from cospro.pipeline.concept_factors import (
     FactorConfig,
     build_concept_factors,
@@ -23,6 +26,9 @@ from cospro.pipeline.concept_factors import (
     rows_for_subset,
 )
 from cospro.tracking.artifacts import PROJECT_ROOT
+from unittest.mock import patch
+import argparse
+import numpy as np
 from cospro.tracking.metrics import canonical_train_metrics
 from tests.test_storage_identity import storage_name
 
@@ -72,6 +78,69 @@ class FactorDiscoveryTests(unittest.TestCase):
         self.assertEqual(rows.tolist(), [1, 0])
         with self.assertRaises(ValueError):
             rows_for_subset(["waterbirds:4"], "waterbirds", [5])
+
+
+class RedundancyMergeTests(unittest.TestCase):
+    def test_synonym_groups_merge_by_image_similarity_and_the_pair_survives(self):
+        cache, _ = synthetic_inputs()
+        # A strict text threshold leaves the three water synonyms in separate groups.
+        split = build_concept_groups(cache, CoSpRoAuditConfig(text_similarity_threshold=0.999, coactivation_threshold=0.35))
+        self.assertGreater(len(split["groups"]), 5)
+        unmerged = build_concept_factors(cache, split, FactorConfig(min_correlation=0.3))
+        merged = build_concept_factors(cache, split, FactorConfig(min_correlation=0.3, merge_similarity=0.9))
+        self.assertLess(len(merged["factors"]), len(unmerged["factors"]))
+        names = [" / ".join(sorted(factor["concepts"])) for factor in merged["factors"]]
+        self.assertIn("lake / ocean / water", names)
+        pairs = {tuple(sorted(pair["concepts"])) for pair in factor_report(merged)["pairs"]}
+        self.assertTrue(any("gull" in " ".join(pair) and "water" in " ".join(pair) for pair in pairs))
+
+
+class FactorValidityTests(unittest.TestCase):
+    def test_class_and_attribute_factors_are_told_apart_under_correlation(self):
+        rng = np.random.default_rng(0)
+        y = rng.integers(0, 2, 4000)
+        a = np.where(rng.random(4000) < 0.9, y, 1 - y)
+        active = np.stack([(y == 1) & (rng.random(4000) < 0.9), (a == 1) & (rng.random(4000) < 0.9),
+                           rng.random(4000) < 0.3], axis=1)
+        pairs = [{"factors": [0, 1], "phi": 0.7}, {"factors": [0, 2], "phi": 0.1}]
+        diagnosis = diagnose_factors(active, pairs, ["bird", "water", "noise"], y, a)
+        self.assertEqual([factor["type"] for factor in diagnosis["factors"]], ["class", "attribute", "neither"])
+        self.assertEqual([pair["verdict"] for pair in diagnosis["pairs"]], ["cross", "noise"])
+        self.assertEqual(diagnosis["summary"]["pair_precision"], 0.5)
+
+    def test_a_single_column_gives_a_scalar(self):
+        y = np.array([0, 0, 1, 1]); a = np.array([0, 1, 0, 1])
+        self.assertAlmostEqual(float(conditional_uncertainty(np.array([0, 0, 1, 1], bool), y, a)), 1.0)
+
+
+class SweepTests(unittest.TestCase):
+    def test_the_sweep_writes_groups_factor_sets_and_a_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_waterbirds_fixture(root / "datasets")
+            cache, _ = synthetic_inputs()
+            name = cache_config_name(argparse.Namespace(
+                dataset="waterbirds", splice_model=sweep_concept_factors.SPLICE_MODEL,
+                splice_pretrained=sweep_concept_factors.SPLICE_PRETRAINED, splice_vocab="laion",
+                splice_vocab_size=10000, splice_l1_penalty=0.25, splice_vocab_file=None, splice_vocab_order=None,
+            ))
+            cache_path = root / "features" / "waterbirds" / "splice_dataset_cache" / name / "splice_dataset_cache.pt"
+            cache_path.parent.mkdir(parents=True)
+            torch.save(cache, cache_path)
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root / "outputs")}):
+                summary = sweep_concept_factors.main([
+                    "--data-folder", str(root / "datasets"), "--datasets", "waterbirds", "--vocabs", "laion",
+                    "--feature-root", str(root / "features"), "--text-thresholds", "0.80",
+                    "--coactivation-thresholds", "0.30", "--merge-similarities", "0", "0.9",
+                ])
+            rows = json.loads((summary.parent / "summary.json").read_text(encoding="utf-8"))["rows"]
+            self.assertEqual(len(rows), 2)
+            self.assertTrue(all(row["attribute_factors"] >= 1 for row in rows))
+            folder = root / "outputs" / "shared" / "waterbirds" / "factor_sweep" / "laion" / "text_0p80_coactivation_0p30"
+            self.assertTrue((folder / "groups.json").is_file())
+            record = json.loads((folder / "factors_merge_0p00.json").read_text(encoding="utf-8"))
+            # Both planted pairs join a class factor to an attribute factor; weaker pairs follow them.
+            self.assertEqual([pair["verdict"] for pair in record["pairs"][:2]], ["cross", "cross"])
 
 
 class ConditionedSamplerTests(unittest.TestCase):

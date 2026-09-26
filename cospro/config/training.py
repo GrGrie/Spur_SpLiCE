@@ -259,7 +259,13 @@ class ConceptFactorOptions:
     )
     factor_min_frequency: float = option(0.02, parse=float, help="Least fraction of images a factor must appear in.")
     factor_max_frequency: float = option(0.9, parse=float, help="Largest fraction of images a factor may appear in.")
-    factor_max_count: int = option(64, parse=int, help="Most factors kept, the most balanced first.")
+    factor_max_count: int = option(
+        0, parse=int, help="Most concept groups kept, the most balanced first; 0 keeps every group in the band.",
+    )
+    factor_merge_similarity: float = option(
+        0.0, parse=float,
+        help="Merge groups whose directions correlate at least this much across the images; 0 disables it.",
+    )
     factor_condition_pairs: int = option(8, parse=int, help="Entangled factor pairs whose factors condition batches.")
     factor_min_correlation: float = option(
         0.2, parse=float, help="Least presence correlation (phi) for two factors to form an entangled pair.",
@@ -449,8 +455,10 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         _require(args.factor_distill_weight >= 0, "--factor_distill_weight must be non-negative.")
         _require(0 <= args.factor_min_frequency < args.factor_max_frequency <= 1,
                  "Factor frequencies need 0 <= --factor_min_frequency < --factor_max_frequency <= 1.")
-        _require(args.factor_max_count >= 2 and args.factor_condition_pairs >= 1,
-                 "--factor_max_count must be at least 2 and --factor_condition_pairs at least 1.")
+        _require(args.factor_max_count == 0 or args.factor_max_count >= 2,
+                 "--factor_max_count must be 0 (all groups) or at least 2.")
+        _require(args.factor_condition_pairs >= 1, "--factor_condition_pairs must be at least 1.")
+        _require(0 <= args.factor_merge_similarity <= 1, "--factor_merge_similarity must lie in [0, 1].")
         _require(args.factor_whitening_eps > 0, "--factor_whitening_eps must be positive.")
         _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,
                  "--factor_start_epoch and --factor_warmup_epochs must be non-negative.")

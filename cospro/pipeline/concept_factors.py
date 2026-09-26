@@ -1,8 +1,11 @@
 """Concept factors: the dataset-level structure of the frozen SpLiCE codes, read without labels.
 
-A factor is one concept group of the grouping stage; its activation on an image is the summed
-SpLiCE code of the group's concepts. Two properties of the factors drive the concept-factor methods:
+A factor starts as one concept group of the grouping stage; its activation on an image is the summed
+SpLiCE code of the group's concepts. Three steps turn groups into what the concept-factor methods use:
 
+* Redundancy merging. Two groups whose concept directions rise and fall together across the
+  dataset's CLIP image embeddings describe the same visual content, whatever their words: breeds of
+  one cat, "delta" and "aircraft". Groups above ``merge_similarity`` join one factor.
 * Entangled pairs. Two factors whose presence is strongly correlated across the training images,
   such as a class concept and the context it usually appears in, form a pair. Neither side is
   labelled spurious: the student is asked to keep both factors apart and the balanced linear probe
@@ -28,7 +31,7 @@ import torch.nn.functional as F
 
 from cospro.tracking.artifacts import scratch_root, shared
 
-CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v1"
+CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v2"
 TARGET_KINDS = ("whitened", "standardized")
 
 
@@ -38,7 +41,8 @@ class FactorConfig:
 
     min_frequency: float = 0.02
     max_frequency: float = 0.9
-    max_count: int = 64
+    max_count: int = 0
+    merge_similarity: float = 0.0
     condition_pairs: int = 8
     min_correlation: float = 0.2
     max_text_similarity: float = 0.75
@@ -47,8 +51,10 @@ class FactorConfig:
     def __post_init__(self) -> None:
         if not 0 <= self.min_frequency < self.max_frequency <= 1:
             raise ValueError("Factor frequencies need 0 <= min < max <= 1.")
-        if self.max_count < 2 or self.condition_pairs < 1:
-            raise ValueError("Concept factors need at least two factors and one pair.")
+        if self.max_count == 1 or self.max_count < 0 or self.condition_pairs < 1:
+            raise ValueError("Concept factors need max_count 0 (all) or at least 2, and at least one pair.")
+        if not 0 <= self.merge_similarity <= 1:
+            raise ValueError("The merge similarity lies in [0, 1]; 0 disables merging.")
         if not -1 <= self.min_correlation <= 1 or not -1 <= self.max_text_similarity <= 1:
             raise ValueError("Correlation and text-similarity bounds lie in [-1, 1].")
         if self.whitening_eps <= 0:
@@ -70,14 +76,56 @@ def group_directions(dictionary: torch.Tensor, groups: list[dict]) -> torch.Tens
 
 
 def select_factors(active: torch.Tensor, config: FactorConfig) -> list[int]:
-    """Columns within the frequency band, the most balanced first, at most ``max_count``."""
+    """Columns within the frequency band; with ``max_count`` only that many, the most balanced first."""
 
     frequency = active.float().mean(dim=0)
     band = (frequency >= config.min_frequency) & (frequency <= config.max_frequency)
     candidates = torch.nonzero(band).view(-1).tolist()
-    balance = (frequency * (1 - frequency)).tolist()
-    candidates.sort(key=lambda column: (-balance[column], column))
-    return sorted(candidates[: config.max_count])
+    if config.max_count:
+        balance = (frequency * (1 - frequency)).tolist()
+        candidates.sort(key=lambda column: (-balance[column], column))
+        candidates = candidates[: config.max_count]
+    return sorted(candidates)
+
+
+def image_similarity(directions: torch.Tensor, cache: dict) -> torch.Tensor:
+    """Correlation, across the dataset's images, of their alignment with each pair of directions.
+
+    With centered image embeddings E, the alignment with direction d is E d, and the correlation of
+    E d_A with E d_B is d_A' S d_B normalized by the two variances, where S is the image covariance.
+    Two directions correlate when the images that match one also match the other, which is what
+    two names for the same visual content do.
+    """
+
+    embeddings = F.normalize(torch.as_tensor(cache["clip_embeddings"]).float(), dim=1)
+    centered = embeddings - torch.as_tensor(cache["image_mean"]).float().view(1, -1)
+    centered = centered - centered.mean(dim=0)
+    covariance = centered.T @ centered / centered.shape[0]
+    cross = directions.float() @ covariance @ directions.float().T
+    scale = cross.diagonal().clamp_min(1e-12).sqrt()
+    return cross / scale[:, None] / scale[None, :]
+
+
+def merge_redundant(similarity: torch.Tensor, threshold: float) -> list[list[int]]:
+    """Connected components of the columns whose image similarity reaches ``threshold``."""
+
+    count = similarity.shape[0]
+    parent = list(range(count))
+
+    def find(value: int) -> int:
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+
+    if threshold > 0:
+        rows, columns = torch.where(torch.triu(similarity >= threshold, diagonal=1))
+        for row, column in zip(rows.tolist(), columns.tolist()):
+            parent[find(row)] = find(column)
+    components: dict[int, list[int]] = {}
+    for column in range(count):
+        components.setdefault(find(column), []).append(column)
+    return sorted(components.values(), key=lambda members: members[0])
 
 
 def presence_correlation(active: torch.Tensor) -> torch.Tensor:
@@ -143,23 +191,36 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
     columns = select_factors(all_activations > 0, config)
     if len(columns) < 2:
         raise ValueError("Fewer than two concept groups fall inside the factor frequency band.")
-    activations = all_activations[:, columns]
+    selected = [groups[column] for column in columns]
+    group_values = all_activations[:, columns]
+    dictionary = torch.as_tensor(cache["dictionary"])
+    components = merge_redundant(
+        image_similarity(group_directions(dictionary, selected), cache), config.merge_similarity,
+    )
+    if len(components) < 2:
+        raise ValueError("Redundancy merging left fewer than two factors; raise --factor_merge_similarity.")
+    activations = torch.stack([group_values[:, members].sum(dim=1) for members in components], dim=1)
     active = activations > 0
-    directions = group_directions(torch.as_tensor(cache["dictionary"]), [groups[column] for column in columns])
+    directions = F.normalize(torch.stack([
+        group_directions(dictionary, [selected[member] for member in members]).mean(dim=0)
+        for members in components
+    ]), dim=1)
     pairs = entangled_pairs(active, directions, config)
-    factors = [
-        {
+    factors = []
+    for position, members in enumerate(components):
+        # Members in decreasing frequency, so the name of a factor leads with its commonest concept.
+        members = sorted(members, key=lambda member: (-float((group_values[:, member] > 0).float().mean()), member))
+        factors.append({
             "factor": position,
-            "group_id": int(groups[column]["group_id"]),
-            "concepts": [str(concept) for concept in groups[column]["concepts"]],
+            "group_ids": [int(selected[member]["group_id"]) for member in members],
+            "concepts": [str(concept) for member in members for concept in selected[member]["concepts"]],
             "frequency": float(active[:, position].float().mean()),
-        }
-        for position, column in enumerate(columns)
-    ]
+        })
     return {
         "artifact": CONCEPT_FACTORS_ARTIFACT,
         "config": asdict(config),
         "sample_ids": sample_ids,
+        "group_count": len(columns),
         "factors": factors,
         "pairs": pairs,
         "condition_factors": sorted({factor for pair in pairs for factor in pair["factors"]}),
@@ -171,14 +232,20 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
     }
 
 
+def factor_name(factor: dict) -> str:
+    concepts = factor["concepts"]
+    return " / ".join(concepts[:3]) + (f" (+{len(concepts) - 3})" if len(concepts) > 3 else "")
+
+
 def factor_report(factors: dict[str, Any]) -> dict[str, Any]:
     """The JSON-safe summary of a factor set: which concepts, which pairs."""
 
-    names = [" / ".join(factor["concepts"][:3]) for factor in factors["factors"]]
+    names = [factor_name(factor) for factor in factors["factors"]]
     return {
         "artifact": factors["artifact"],
         "config": factors["config"],
         "sample_count": len(factors["sample_ids"]),
+        "group_count": factors["group_count"],
         "factors": factors["factors"],
         "pairs": [
             {**pair, "concepts": [names[pair["factors"][0]], names[pair["factors"][1]]]}
@@ -189,7 +256,10 @@ def factor_report(factors: dict[str, Any]) -> dict[str, Any]:
 
 
 def format_factor_report(report: dict[str, Any]) -> str:
-    lines = [f"{len(report['factors'])} concept factors over {report['sample_count']} training images."]
+    lines = [
+        f"{len(report['factors'])} concept factors from {report['group_count']} concept groups "
+        f"over {report['sample_count']} training images."
+    ]
     lines.append("Entangled pairs (phi, text similarity):")
     for pair in report["pairs"]:
         first, second = pair["concepts"]

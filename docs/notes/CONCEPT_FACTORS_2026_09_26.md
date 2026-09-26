@@ -57,7 +57,8 @@ so this is 1 minus the MSE).
 | `--factor_distill_weight` | 0 | F2 loss weight; 0 disables F2 |
 | `--factor_targets` | whitened | F2 targets, `whitened` or `standardized` |
 | `--factor_min_frequency`, `--factor_max_frequency` | 0.02, 0.9 | frequency band of a factor |
-| `--factor_max_count` | 64 | most factors, the most balanced first |
+| `--factor_max_count` | 0 | most concept groups, the most balanced first; 0 keeps all in the band |
+| `--factor_merge_similarity` | 0 | merge groups whose image alignment correlates this much; 0 disables |
 | `--factor_condition_pairs` | 8 | entangled pairs whose factors condition batches |
 | `--factor_min_correlation` | 0.2 | least phi of a pair |
 | `--factor_max_text_similarity` | 0.75 | largest text similarity of a pair |
@@ -85,6 +86,55 @@ and the report shows whether CLIP names that colour at all.
 
 Arms per dataset, seeds 1 and 2, all through `scripts/run_training.sbatch --preset matched`:
 SimCLR, F1, F2, F2 with standardized targets and F1+F2. That is 10 runs per dataset.
+
+## Revision after the first inspection (2026-09-26)
+
+The first factor reports showed two failures. Taking the 64 most frequent groups dropped the scene
+concepts of MetaShift (Bed, Couch, Lawn, Window) and most line colours of Spur-CIFAR10 (magenta, lime,
+teal, violet). Ranking pairs by phi then filled the top eight with two names for one visual content:
+cat breeds, lorry and truck, delta and aircraft. Co-occurrence alone cannot tell a synonym from a
+correlated but distinct concept, and text similarity misses brands and polysemy.
+
+The revision keeps every group in the frequency band (`--factor_max_count 0`) and adds redundancy
+merging (`--factor_merge_similarity m`): two groups join one factor when the dataset's images align
+with their directions together, that is when the correlation of `E d_A` and `E d_B` over the centered
+CLIP image embeddings `E` reaches `m`. Entangled pairs are then searched between the merged factors.
+
+## Evaluating a factor set
+
+`cospro.diagnostics.factor_validity` types every factor against the hidden labels, for evaluation
+only. Because `y` and `a` are correlated in the training images, it scores conditional information:
+`u_attribute = I(F; a | y) / H(F)` and `u_class = I(F; y | a) / H(F)`. A factor is `attribute` or
+`class` when its score reaches 0.05 and doubles the other one. A pair is `cross` when it joins a class
+factor to an attribute factor, and pair precision is the share of cross pairs. Two numbers matter:
+
+* **pair precision** decides whether F1 conditions on the right factors;
+* **attribute signal**, the largest `u_attribute`, and the number of attribute factors decide whether
+  F2 has the spurious attribute among its targets at all.
+
+```bash
+sbatch scripts/inspect_concept_factors.sbatch --dataset metashift --diagnose --merge-similarity 0.8
+```
+
+Reading a report by eye: a good pair names two different parts of the image (animal and background,
+object and line colour); a bad pair names one part twice (breeds, brands, synonyms, or two words that
+each already fuse object and context such as "Disc dog" and "Lure coursing").
+
+Settings are chosen on MetaShift and Spur-CIFAR10 with this diagnostic and then frozen; Waterbirds and
+CelebA stay untouched for the final evaluation, so the label-free claim holds for them.
+
+## Grouping and merging sweep
+
+```bash
+sbatch scripts/sweep_concept_factors.sbatch
+```
+
+For MetaShift and Spur-CIFAR10 under the LAION (10k) and Open Images dictionaries it builds the missing
+SpLiCE caches, groups the concepts at text similarity 0.60 to 0.90 in steps of 0.05 and co-activation
+0.20, 0.30 and 0.40, builds factors at merge thresholds off, 0.70, 0.80 and 0.90 and scores each set.
+The cache does not depend on the grouping thresholds; only the groups do. The summary lands in
+`outputs/reports/concept_factor_sweep/summary.md`, the groups and factor sets under
+`outputs/shared/<dataset>/factor_sweep/`.
 
 ## References
 
