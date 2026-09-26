@@ -24,7 +24,7 @@ from cospro.pipeline import (
 from cospro.pipeline.reporting import render_concept_groups_report
 
 
-DEFAULT_TEXT_THRESHOLDS = (0.70, 0.75, 0.82, 0.85, 0.90)
+DEFAULT_TEXT_THRESHOLDS = (0.70, 0.75, 0.80, 0.85, 0.90)
 DEFAULT_COACTIVATION_THRESHOLDS = (0.15, 0.20, 0.25, 0.30, 0.35, 0.40)
 
 

@@ -23,8 +23,11 @@ GROUPING_CONFIG_FIELDS = (
 class CoSpRoAuditConfig:
     min_concept_frequency: float = 0.01
     max_concept_frequency: float = 0.95
-    text_similarity_threshold: float = 0.82
-    coactivation_threshold: float = 0.35
+    # The concept-factor sweep of 2026-09-26 found groups, factors and their post-hoc validity
+    # unchanged over text similarity 0.60-0.90 and co-activation 0.20-0.40 on MetaShift and
+    # Spur-CIFAR10. The published Waterbirds graphs were built at 0.82 and 0.35.
+    text_similarity_threshold: float = 0.80
+    coactivation_threshold: float = 0.30
     min_group_size: int = 1
     max_selected_groups: int = 0
     projected_neighbors: int = 20

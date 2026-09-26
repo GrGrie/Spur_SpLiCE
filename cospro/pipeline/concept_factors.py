@@ -269,8 +269,21 @@ def format_factor_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def default_grouping_directory() -> str:
+    """Directory name the grouping stage gives the default thresholds, e.g. ``text_0p8_coactivation_0p3``."""
+
+    from cospro.pipeline.config import CoSpRoAuditConfig
+
+    defaults = CoSpRoAuditConfig()
+
+    def name(value: float) -> str:
+        return f"{value:.12g}".replace("-", "neg").replace(".", "p")
+
+    return f"text_{name(defaults.text_similarity_threshold)}_coactivation_{name(defaults.coactivation_threshold)}"
+
+
 def resolve_concept_groups(dataset: str, explicit: str = "") -> Path:
-    """The explicit concept-groups file, or the single one the grouping stage stored for ``dataset``."""
+    """The explicit concept-groups file, else the one at the default thresholds, else the only one."""
 
     if explicit:
         path = Path(explicit)
@@ -278,10 +291,13 @@ def resolve_concept_groups(dataset: str, explicit: str = "") -> Path:
             raise FileNotFoundError(f"Concept groups not found: {path}")
         return path
     root = shared(dataset, "graphs", "concept_groups")
+    preferred = root / default_grouping_directory() / "concept_groups.json"
+    if preferred.is_file():
+        return preferred
     candidates = sorted(root.glob("*/concept_groups.json"))
     if len(candidates) != 1:
         raise FileNotFoundError(
-            f"Expected exactly one concept_groups.json under {root}, found {len(candidates)}; "
+            f"Expected {preferred} or exactly one concept_groups.json under {root}, found {len(candidates)}; "
             "pass --factor_concept_groups PATH."
         )
     return candidates[0]

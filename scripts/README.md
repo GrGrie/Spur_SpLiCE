@@ -171,10 +171,10 @@ bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cach
   --output-root outputs/shared/waterbirds/graphs/concept_groups \
   --data-folder /path/to/datasets
 
-# Reproduce the canonical grouping parameters only.
+# The default grouping parameters only. The published Waterbirds graphs used 0.82 and 0.35.
 bash scripts/generate_cospro_concept_groups.sh /scratch/path/splice_dataset_cache.pt \
-  --output-root outputs/shared/waterbirds/graphs/concept_groups_canonical \
-  --text-similarity-threshold 0.82 --coactivation-threshold 0.35
+  --output-root outputs/shared/waterbirds/graphs/concept_groups \
+  --text-similarity-threshold 0.80 --coactivation-threshold 0.30
 
 # The second argument may be one JSON file or the whole sweep directory.
 bash scripts/build_cospro_teacher_graphs.sh /scratch/path/splice_dataset_cache.pt \

@@ -251,8 +251,8 @@ class LateTVGOptions:
 @dataclass(frozen=True)
 class ConceptFactorOptions:
     factor_concept_groups: str = option(
-        "", help="Concept groups defining the factors; default: the single concept_groups.json under "
-        "outputs/shared/<dataset>/graphs/concept_groups/.",
+        "", help="Concept groups defining the factors; default: outputs/shared/<dataset>/graphs/concept_groups/"
+        "<default thresholds>/concept_groups.json, else the only concept_groups.json there.",
     )
     factor_splice_cache: str = option(
         "", help="SpLiCE dataset cache of those groups; default: found under <scratch>/features/Spur_SpLiCE/<dataset>/.",
