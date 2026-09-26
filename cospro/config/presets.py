@@ -20,6 +20,14 @@ PRESETS: dict[str, dict[str, Any]] = {
         "splice_weight": 0.5,
         "cospro_temperature": 0.25,
     },
+    # The shared SSL protocol of the paper runs without a method attached: batch 128, four loader
+    # workers within the five-CPU job and the SimCLR temperature 0.05. Standalone baselines and
+    # concept-factor runs start from it.
+    "matched": {
+        "batch_size": 128,
+        "num_workers": 4,
+        "temp": 0.05,
+    },
 }
 
 

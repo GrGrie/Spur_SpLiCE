@@ -70,6 +70,7 @@ from cospro.methods.concept_targets import load_target_artifact
 METHOD_INPUT_ARTIFACT_KINDS = {
     "cospro_relational": "teacher_graph",
     "frozen_concept_distill": "frozen_transfer_targets",
+    "concept_factors": "concept_groups",
 }
 
 
@@ -126,6 +127,10 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         suffix = f"_LateTVG_p{args.latetvg_prune_rate:g}_l{args.latetvg_layers}{suffix}"
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         return f"{prefix}_CoSpRo_w{args.splice_weight:g}_t{args.cospro_temperature:g}{suffix}"
+    if args.splice_mode == "concept_factors":
+        targets = "" if args.factor_targets == "whitened" else "_std"
+        return (f"{prefix}_Factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}"
+                f"{targets}{suffix}")
     return f"{prefix}_SimCLR{suffix}"
 
 
@@ -135,6 +140,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "cospro-relational" if args.splice_mode == "cospro_relational" else "crp-v2-relational"
     else:
         experiment = "la-ssl" if getattr(args, "la_ssl", False) else ("concept-transfer" if args.splice_mode == "frozen_concept_distill" else "base")
+        if args.splice_mode == "concept_factors":
+            experiment = "concept-factors"
     if args.latetvg_prune_rate:
         experiment = f"{experiment}-latetvg"
 
@@ -163,8 +170,9 @@ def format_storage_name(args: argparse.Namespace) -> str:
         key: value
         for key, value in vars(args).items()
         if key not in excluded_from_fingerprint
-        # Disabled LateTVG leaves the storage names of runs that predate it unchanged.
+        # Disabled LateTVG and concept-factor options leave the storage names of earlier runs unchanged.
         and not (key.startswith("latetvg_") and not args.latetvg_prune_rate)
+        and not (key.startswith("factor_") and args.splice_mode != "concept_factors")
     })
     fingerprint = hashlib.sha256(
         json.dumps(fingerprint_payload, sort_keys=True, default=str).encode("utf-8")
@@ -184,6 +192,9 @@ def format_run_name(args: argparse.Namespace) -> str:
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         splice_name = (f"cospro_relational_w{args.splice_weight:g}_t{args.cospro_temperature:g}_"
                        f"start{args.cospro_start_epoch}_warm{args.cospro_warmup_epochs}")
+    elif args.splice_mode == "concept_factors":
+        splice_name = (f"factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}_"
+                       f"{args.factor_targets}")
     else:
         splice_name = "nosplice"
     if args.latetvg_prune_rate:
@@ -375,6 +386,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device) -> Trai
         head=args.head,
         feat_dim=args.feat_dim,
         clip_distillation_dim=method.clip_distillation_dim,
+        factor_dim=method.factor_head_dim,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)

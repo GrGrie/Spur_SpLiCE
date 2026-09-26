@@ -45,6 +45,8 @@ class TrainingMethod:
     requires_la_ssl: ClassVar[bool] = False
     needs_sample_indices: ClassVar[bool] = False
     clip_distillation_dim: ClassVar[int | None] = None
+    #: Output size of a linear head on the backbone, known once ``wrap_loader`` has run.
+    factor_head_dim: int | None = None
 
     def wrap_loader(self, loader, context: LoaderContext):
         return loader

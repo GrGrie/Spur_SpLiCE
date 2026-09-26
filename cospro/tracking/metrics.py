@@ -97,7 +97,8 @@ def epoch_payload(
     })
     payload.update({
         f"SSL {key}": value for key, value in train_metrics.items()
-        if key.startswith(("la_ssl_", "latetvg_")) or key in {"relational_valid_fraction", "relational_cosine_loss"}
+        if key.startswith(("la_ssl_", "latetvg_", "relational_factor_"))
+        or key in {"relational_valid_fraction", "relational_cosine_loss"}
     })
     return payload
 

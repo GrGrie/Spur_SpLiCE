@@ -16,6 +16,7 @@ from cospro.methods.base import (
     method_for,
     register_method,
 )
+from cospro.methods.concept_factors import ConceptFactors
 from cospro.methods.concept_transfer import FrozenConceptDistill
 from cospro.methods.la_ssl import LaSSL
 from cospro.methods.relational import CoSpRoRelational
@@ -37,6 +38,6 @@ def build_method(config: TrainingConfig, **resolved) -> TrainingMethod:
 
 __all__ = [
     "METHOD_REGISTRY", "LoaderContext", "LossTerms", "TrainingMethod", "register_method",
-    "CoSpRoRelational", "FrozenConceptDistill", "LaSSL", "SimCLROnly", "build_method", "method_class",
+    "ConceptFactors", "CoSpRoRelational", "FrozenConceptDistill", "LaSSL", "SimCLROnly", "build_method", "method_class",
     "method_for",
 ]

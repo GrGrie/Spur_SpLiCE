@@ -16,6 +16,7 @@ class SimCLRModel(nn.Module):
         head: str = "mlp",
         feat_dim: int = 128,
         clip_distillation_dim: int | None = None,
+        factor_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.encoder, dim_in = build_resnet_encoder(name)
@@ -39,6 +40,9 @@ class SimCLRModel(nn.Module):
                 nn.ReLU(inplace=True),
                 nn.Linear(dim_in, clip_distillation_dim),
             )
+
+        # A linear head, so the factors must be linearly readable from the backbone like the probe's.
+        self.factor_head = None if factor_dim is None else nn.Linear(dim_in, factor_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.encoder(x)

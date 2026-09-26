@@ -27,7 +27,7 @@ from cospro.compat import LEGACY_RELATIONAL_MODE
 from cospro.config.settings import wandb_entity
 
 RELATIONAL_GRAPH_MODES = frozenset({"cospro_relational", LEGACY_RELATIONAL_MODE})
-TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill")
+TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill", "concept_factors")
 LINEAR_TRAIN_SPLITS = ("train", "ds_train", "us_train", "balanced_train", "val")
 DEFAULT_PERIODIC_PROBE_FREQ = 25
 
@@ -248,6 +248,40 @@ class LateTVGOptions:
     )
 
 
+@dataclass(frozen=True)
+class ConceptFactorOptions:
+    factor_concept_groups: str = option(
+        "", help="Concept groups defining the factors; default: the single concept_groups.json under "
+        "outputs/shared/<dataset>/graphs/concept_groups/.",
+    )
+    factor_splice_cache: str = option(
+        "", help="SpLiCE dataset cache of those groups; default: found under <scratch>/features/Spur_SpLiCE/<dataset>/.",
+    )
+    factor_min_frequency: float = option(0.02, parse=float, help="Least fraction of images a factor must appear in.")
+    factor_max_frequency: float = option(0.9, parse=float, help="Largest fraction of images a factor may appear in.")
+    factor_max_count: int = option(64, parse=int, help="Most factors kept, the most balanced first.")
+    factor_condition_pairs: int = option(8, parse=int, help="Entangled factor pairs whose factors condition batches.")
+    factor_min_correlation: float = option(
+        0.2, parse=float, help="Least presence correlation (phi) for two factors to form an entangled pair.",
+    )
+    factor_max_text_similarity: float = option(
+        0.75, parse=float, help="Largest text similarity of a pair; higher pairs are near-synonyms.",
+    )
+    factor_condition_fraction: float = option(
+        0.0, parse=float, help="F1: fraction of batches drawn from the images that show one factor; 0 disables F1.",
+    )
+    factor_distill_weight: float = option(
+        0.0, parse=float, help="F2: weight of the linear factor-distillation loss; 0 disables F2.",
+    )
+    factor_targets: str = option(
+        "whitened", choices=("whitened", "standardized"),
+        help="F2 targets: ZCA-whitened factors (decorrelated) or standardized factors (ablation).",
+    )
+    factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
+    factor_start_epoch: int = option(10, parse=int, help="Pure-SimCLR epochs before F2 starts.")
+    factor_warmup_epochs: int = option(10, parse=int, help="Linear warm-up of the F2 weight; 0 disables it.")
+
+
 # (section, argparse group title) in --help order.
 TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (LoggingOptions, "logging"),
@@ -265,6 +299,7 @@ TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (ConceptTransferOptions, "frozen concept transfer"),
     (LaSSLOptions, "LA-SSL"),
     (LateTVGOptions, "LateTVG late-layer pruned view"),
+    (ConceptFactorOptions, "concept factors (F1 conditioned batches, F2 factor distillation)"),
 )
 
 # Standalone linear-probe option -> trainer ProbeOptions field it shares its default with.
@@ -407,6 +442,18 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
     _require(not args.latetvg_prune_rate or args.simclr_weight > 0,
              "LateTVG builds its pruned view inside the SimCLR objective, so --simclr_weight must be positive.")
     _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
+    if args.splice_mode == "concept_factors":
+        _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0,
+                 "concept_factors needs --factor_condition_fraction or --factor_distill_weight above 0.")
+        _require(0 <= args.factor_condition_fraction <= 1, "--factor_condition_fraction must lie in [0, 1].")
+        _require(args.factor_distill_weight >= 0, "--factor_distill_weight must be non-negative.")
+        _require(0 <= args.factor_min_frequency < args.factor_max_frequency <= 1,
+                 "Factor frequencies need 0 <= --factor_min_frequency < --factor_max_frequency <= 1.")
+        _require(args.factor_max_count >= 2 and args.factor_condition_pairs >= 1,
+                 "--factor_max_count must be at least 2 and --factor_condition_pairs at least 1.")
+        _require(args.factor_whitening_eps > 0, "--factor_whitening_eps must be positive.")
+        _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,
+                 "--factor_start_epoch and --factor_warmup_epochs must be non-negative.")
     _require(0 < args.ssl_crop_min <= 1, "--ssl-crop-min must be in the interval (0, 1].")
     incompatible_model = dataset.model_error(args.model)
     _require(incompatible_model is None, incompatible_model or "")
@@ -460,6 +507,7 @@ class TrainingConfig:
     concept_transfer: ConceptTransferOptions
     la_ssl: LaSSLOptions
     latetvg: LateTVGOptions
+    concept_factors: ConceptFactorOptions
 
     @classmethod
     def from_namespace(cls, namespace: argparse.Namespace) -> "TrainingConfig":
