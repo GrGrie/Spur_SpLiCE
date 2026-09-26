@@ -35,6 +35,20 @@ class LatePruningTests(unittest.TestCase):
         self.assertEqual(list(masks), ["layer4.0.shortcut.0.weight", "layer4.1.conv1.weight", "layer4.1.conv2.weight"])
         self.assertAlmostEqual(pruning.last_kept_fraction, 0.3, places=3)
 
+    def test_threshold_avoids_kthvalue_which_older_cuda_torch_rejects_in_deterministic_mode(self):
+        with patch("torch.kthvalue", side_effect=RuntimeError("kthvalue CUDA is nondeterministic")):
+            LatePruning(0.7, 3).masks(self.model.encoder)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs CUDA")
+    def test_pruned_view_runs_on_cuda_in_deterministic_mode(self):
+        previous = torch.are_deterministic_algorithms_enabled()
+        torch.use_deterministic_algorithms(True, warn_only=False)
+        try:
+            encoder = self.model.encoder.cuda()
+            LatePruning(0.7, 5)(encoder, torch.randn(2, 3, 32, 32, device="cuda")).sum().backward()
+        finally:
+            torch.use_deterministic_algorithms(previous)
+
     def test_pruned_view_trains_only_the_kept_weights_and_leaves_the_encoder_intact(self):
         pruning = LatePruning(0.9, 2)
         weight = self.model.encoder.layer4[1].conv2.weight

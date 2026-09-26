@@ -97,7 +97,7 @@ def epoch_payload(
     })
     payload.update({
         f"SSL {key}": value for key, value in train_metrics.items()
-        if key.startswith("la_ssl_") or key in {"relational_valid_fraction", "relational_cosine_loss"}
+        if key.startswith(("la_ssl_", "latetvg_")) or key in {"relational_valid_fraction", "relational_cosine_loss"}
     })
     return payload
 
@@ -147,7 +147,7 @@ def canonical_train_metrics(payload: Mapping[str, Any]) -> dict[str, Any]:
         name = key[len(_METHOD_PREFIX):]
         canonical[f"method/{_METHOD_DIAGNOSTIC_NAMES.get(name, name.replace(' ', '_'))}"] = value
     for key, value in payload.items():
-        if key.startswith("SSL relational_") or key.startswith("SSL la_ssl_"):
+        if key.startswith(("SSL relational_", "SSL la_ssl_", "SSL latetvg_")):
             canonical[f"method/{key.removeprefix('SSL ').removeprefix('relational_')}"] = value
     return canonical
 

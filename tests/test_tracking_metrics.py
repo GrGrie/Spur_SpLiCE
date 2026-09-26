@@ -69,12 +69,14 @@ class MetricContractTests(unittest.TestCase):
             "SSL relational scheduled weight": 0.5,
             "SSL relational_cosine_loss": 0.75,
             "SSL la_ssl_upsampled_fraction": 0.3,
+            "SSL latetvg_kept_fraction": 0.3,
         })
         self.assertEqual(canonical["train/loss/total"], 1.0)
         self.assertEqual(canonical["train/loss/method"], 0.25)
         self.assertEqual(canonical["method/scheduled_weight"], 0.5)
         self.assertEqual(canonical["method/cosine_loss"], 0.75)
         self.assertEqual(canonical["method/la_ssl_upsampled_fraction"], 0.3)
+        self.assertEqual(canonical["method/latetvg_kept_fraction"], 0.3)
 
     def test_worst_group_accuracy_is_the_run_summary(self):
         run = FakeWandbRun()
@@ -102,11 +104,13 @@ class MetricContractTests(unittest.TestCase):
     def test_epoch_payload_carries_the_method_diagnostics_it_receives(self):
         payload = epoch_payload(
             {"loss": 1.0, "simclr_loss": 0.9, "decor_loss": 0.0, "entropy_loss": 0.0, "splice_loss": 0.1,
-             "la_ssl_upsampled_fraction": 0.3, "relational_cosine_loss": 0.2, "relational_unweighted_kl": 0.4},
+             "la_ssl_upsampled_fraction": 0.3, "relational_cosine_loss": 0.2, "relational_unweighted_kl": 0.4,
+             "latetvg_kept_fraction": 0.3},
             learning_rate=0.5,
         )
         self.assertEqual(payload["SSL learning rate"], 0.5)
         self.assertEqual(payload["SSL la_ssl_upsampled_fraction"], 0.3)
+        self.assertEqual(payload["SSL latetvg_kept_fraction"], 0.3)
         self.assertEqual(payload["SSL relational_cosine_loss"], 0.2)
         self.assertEqual(payload["SSL relational unweighted KL"], 0.4)
         # A method that reports nothing still logs the relational series as zero.

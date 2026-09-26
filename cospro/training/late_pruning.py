@@ -50,7 +50,9 @@ class LatePruning:
         with torch.no_grad():
             magnitudes = torch.cat([parameters[name].detach().abs().flatten().float() for name in names])
             pruned = int(self.prune_rate * magnitudes.numel())
-            threshold = torch.kthvalue(magnitudes, pruned).values if pruned else magnitudes.min() - 1
+            # Sorting keeps the threshold deterministic on CUDA, where older torch lacks a
+            # deterministic kthvalue and training runs with torch.use_deterministic_algorithms(True).
+            threshold = torch.sort(magnitudes).values[pruned - 1] if pruned else magnitudes.min() - 1
             masks = {name: parameters[name].detach().abs() > threshold for name in names}
             kept = sum(int(mask.sum()) for mask in masks.values())
         self.last_kept_fraction = kept / magnitudes.numel()
