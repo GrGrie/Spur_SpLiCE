@@ -47,6 +47,8 @@ class TrainingMethod:
     clip_distillation_dim: ClassVar[int | None] = None
     #: Output size of a linear head on the backbone, known once ``wrap_loader`` has run.
     factor_head_dim: int | None = None
+    #: (blocks, block size) of the concept-block heads, known once ``wrap_loader`` has run.
+    factor_block_shape: tuple[int, int] | None = None
 
     def wrap_loader(self, loader, context: LoaderContext):
         return loader

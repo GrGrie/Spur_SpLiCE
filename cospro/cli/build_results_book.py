@@ -30,7 +30,7 @@ METHOD_TITLES = {
     "latetvg": "LateTVG",
     "cospro_latetvg": "CoSpRo + LateTVG",
     "la_ssl": "LA-SSL",
-    "concept_factors": "Concept factors (F1 conditioned batches, F2 factor distillation)",
+    "concept_factors": "Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)",
     "concept_transfer": "Frozen concept transfer (direct distillation of CLIP/SpLiCE targets)",
 }
 
@@ -124,7 +124,11 @@ METHOD_COLUMNS: dict[str, list[Column]] = {
         ("targets", lambda c: c.get("factor_targets")),
         ("merge", lambda c: c.get("factor_merge_similarity")),
         ("min freq", lambda c: c.get("factor_min_frequency")),
-        ("F2 start", lambda c: c.get("factor_start_epoch")),
+        ("F2 weighting", lambda c: c.get("factor_sample_weighting")),
+        ("F3 weight", lambda c: c.get("factor_block_weight")),
+        ("F3 context", lambda c: c.get("factor_block_context_weight") if c.get("factor_block_weight") else None),
+        ("F3 presence", lambda c: c.get("factor_block_presence") if c.get("factor_block_weight") else None),
+        ("start", lambda c: c.get("factor_start_epoch")),
         ("groups", groups_name),
         ("factors", lambda c: c.get("concept_factor_count")),
     ],

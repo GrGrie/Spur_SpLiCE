@@ -285,9 +285,24 @@ class ConceptFactorOptions:
         "control 'shuffled' (standardized targets of other images).",
     )
     factor_sample_weighting: str = option(
-        "none", choices=("none", "atypicality"),
-        help="F2 per-image loss weights: none, or atypicality (images whose concepts break the dataset's "
-        "correlations weigh more; label-free).",
+        "none", choices=("none", "atypicality", "balanced"),
+        help="F2 per-image loss weights: none; atypicality (images whose concepts break the dataset's "
+        "correlations weigh more); balanced (weights under which the factors' presences are uncorrelated). "
+        "Both are label-free.",
+    )
+    factor_block_weight: float = option(
+        0.0, parse=float, help="F3: weight of the concept-block contrastive loss; 0 disables F3.",
+    )
+    factor_block_count: int = option(32, parse=int, help="F3: number of factors with a block, the most balanced first.")
+    factor_block_dim: int = option(16, parse=int, help="F3: size of each block.")
+    factor_block_temperature: float = option(0.1, parse=float, help="F3: temperature of the block contrast.")
+    factor_block_context_weight: float = option(
+        1.0, parse=float,
+        help="F3: extra weight of positive pairs whose other factors differ; 0 weighs all positives alike.",
+    )
+    factor_block_presence: str = option(
+        "real", choices=("real", "shuffled"),
+        help="F3: the images' own concept sets, or the control 'shuffled' (the concept sets of other images).",
     )
     factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
     factor_start_epoch: int = option(10, parse=int, help="Pure-SimCLR epochs before F2 starts.")
@@ -455,8 +470,13 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
              "LateTVG builds its pruned view inside the SimCLR objective, so --simclr_weight must be positive.")
     _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
     if args.splice_mode == "concept_factors":
-        _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0,
-                 "concept_factors needs --factor_condition_fraction or --factor_distill_weight above 0.")
+        _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0,
+                 "concept_factors needs --factor_condition_fraction, --factor_distill_weight or "
+                 "--factor_block_weight above 0.")
+        _require(args.factor_block_weight >= 0 and args.factor_block_context_weight >= 0,
+                 "--factor_block_weight and --factor_block_context_weight must be non-negative.")
+        _require(args.factor_block_count >= 1 and args.factor_block_dim >= 1 and args.factor_block_temperature > 0,
+                 "Concept blocks need a positive count, size and temperature.")
         _require(0 <= args.factor_condition_fraction <= 1, "--factor_condition_fraction must lie in [0, 1].")
         _require(args.factor_distill_weight >= 0, "--factor_distill_weight must be non-negative.")
         _require(0 <= args.factor_min_frequency < args.factor_max_frequency <= 1,

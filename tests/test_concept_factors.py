@@ -14,7 +14,11 @@ import torch
 
 from golden_support import synthetic_splice_cache, train_sample_ids, write_waterbirds_fixture
 from test_golden_training import COMMON_ARGS, GRAPH_CONFIG
-from cospro.methods.concept_factors import ConceptConditionedBatchSampler, FactorDistillationRegularizer
+from cospro.methods.concept_factors import (
+    ConceptBlockContrast,
+    ConceptConditionedBatchSampler,
+    FactorDistillationRegularizer,
+)
 from cospro.cli import sweep_concept_factors
 from cospro.cli.cache_splice_dataset import cache_config_name
 from cospro.diagnostics.factor_validity import conditional_uncertainty, diagnose_factors
@@ -141,6 +145,56 @@ class AtypicalityTests(unittest.TestCase):
         self.assertAlmostEqual(float(plain(predictions, torch.tensor([0, 1]))), 0.5)
         self.assertAlmostEqual(float(weighted(predictions, torch.tensor([0, 1]))), 1.5)
         self.assertAlmostEqual(weighted.last_diagnostics["factor_mse"], 0.5)
+
+
+class BalancingWeightTests(unittest.TestCase):
+    def test_weights_decorrelate_the_factors_and_favour_the_minority_groups(self):
+        from cospro.diagnostics.factor_validity import weight_by_group
+        from cospro.pipeline.concept_factors import balancing_weights
+
+        cache, groups = synthetic_inputs()
+        factors = build_concept_factors(cache, groups, FactorConfig())
+        weights, diagnostics = balancing_weights(factors["active"])
+        self.assertAlmostEqual(float(weights.mean()), 1.0, places=5)
+        self.assertLess(diagnostics["mean_abs_correlation_after"], 0.7 * diagnostics["mean_abs_correlation_before"])
+        _, y, place = train_sample_ids()
+        self.assertGreater(weight_by_group(weights.numpy(), y, place)["minority_to_majority_ratio"], 2.0)
+
+
+class ConceptBlockTests(unittest.TestCase):
+    # Factors: cat, dog, sofa, street. Images: cat+sofa, cat+street, dog+sofa, dog+street.
+    PRESENCE = torch.tensor([[1, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 0], [0, 1, 0, 1]], dtype=torch.bool)
+
+    def blocks(self, context_weight=1.0):
+        blocks = ConceptBlockContrast(self.PRESENCE, 1.0, 0.1, context_weight, 0, 0)
+        blocks.set_epoch(1)
+        return blocks
+
+    def test_a_pair_is_positive_only_in_the_blocks_of_the_concepts_it_shares(self):
+        weights = self.blocks().pair_weights(torch.cat([self.PRESENCE, self.PRESENCE]))
+        cat, street = 0, 3
+        cat_sofa, cat_street, dog_street = 0, 1, 3
+        self.assertGreater(float(weights[cat, cat_sofa, cat_street]), 0.0)
+        self.assertEqual(float(weights[cat, cat_street, dog_street]), 0.0)
+        self.assertGreater(float(weights[street, cat_street, dog_street]), 0.0)
+        # The other view of the same image is a positive with the base weight; cross-context pairs weigh more.
+        self.assertAlmostEqual(float(weights[cat, cat_sofa, cat_sofa + 4]), 1.0)
+        self.assertGreater(float(weights[cat, cat_sofa, cat_street]), 1.0)
+
+    def test_separate_concept_directions_beat_one_fused_direction(self):
+        # Fused: one axis "cat + indoor" shared by every block. Decoupled: each block reads its own concept.
+        cat = torch.tensor([1.0, 1.0, -1.0, -1.0])
+        sofa = torch.tensor([1.0, -1.0, 1.0, -1.0])
+        fused_axis = (cat + sofa) / 2
+        fused = torch.stack([fused_axis, -fused_axis, fused_axis, -fused_axis], dim=1)
+        decoupled = torch.stack([cat, -cat, sofa, -sofa], dim=1)
+
+        def loss(values):
+            embedded = torch.stack([values, torch.ones_like(values)], dim=-1)
+            embedded = torch.cat([embedded, embedded])
+            return float(self.blocks()(embedded, torch.arange(4)))
+
+        self.assertLess(loss(decoupled), loss(fused))
 
 
 class ResultsBookTests(unittest.TestCase):
@@ -308,6 +362,7 @@ class ConceptFactorTrainingTests(unittest.TestCase):
                 "--factor_concept_groups", str(root / "groups.json"), "--factor_splice_cache", str(root / "cache.pt"),
                 "--factor_min_correlation", "0.3", "--factor_condition_fraction", "0.5",
                 "--factor_distill_weight", "1.0", "--factor_start_epoch", "0", "--factor_warmup_epochs", "0",
+                "--factor_sample_weighting", "balanced", "--factor_block_weight", "1.0", "--factor_block_count", "4",
             ]
             result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout[-3000:] + result.stderr[-5000:])
@@ -320,6 +375,8 @@ class ConceptFactorTrainingTests(unittest.TestCase):
             canonical = canonical_train_metrics(ssl[-1])
             self.assertIn("method/factor_mse", canonical)
             self.assertIn("method/factor_conditioned_batch_fraction", canonical)
+            self.assertIn("method/factor_block_loss", canonical)
+            self.assertIn("Concept blocks (real presence)", result.stdout)
 
 
 class ConceptFactorOptionTests(unittest.TestCase):

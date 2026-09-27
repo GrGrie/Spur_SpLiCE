@@ -129,8 +129,10 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         return f"{prefix}_CoSpRo_w{args.splice_weight:g}_t{args.cospro_temperature:g}{suffix}"
     if args.splice_mode == "concept_factors":
         targets = {"whitened": "", "standardized": "_std"}.get(args.factor_targets, f"_{args.factor_targets}")
+        blocks = f"_b{args.factor_block_weight:g}" if args.factor_block_weight else ""
+        weighting = "" if args.factor_sample_weighting == "none" else f"_{args.factor_sample_weighting}"
         return (f"{prefix}_Factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}"
-                f"{targets}{suffix}")
+                f"{targets}{weighting}{blocks}{suffix}")
     return f"{prefix}_SimCLR{suffix}"
 
 
@@ -194,7 +196,7 @@ def format_run_name(args: argparse.Namespace) -> str:
                        f"start{args.cospro_start_epoch}_warm{args.cospro_warmup_epochs}")
     elif args.splice_mode == "concept_factors":
         splice_name = (f"factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}_"
-                       f"{args.factor_targets}")
+                       f"{args.factor_targets}_b{args.factor_block_weight:g}")
     else:
         splice_name = "nosplice"
     if args.latetvg_prune_rate:
@@ -387,6 +389,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device) -> Trai
         feat_dim=args.feat_dim,
         clip_distillation_dim=method.clip_distillation_dim,
         factor_dim=method.factor_head_dim,
+        block_shape=method.factor_block_shape,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)

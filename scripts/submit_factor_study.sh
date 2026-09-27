@@ -22,7 +22,14 @@
 #   f2_white_w3, f2_white_w10 whitened targets, which weight 1 never learned
 #   f2_w3_atyp                standardized targets, images weighted by concept atypicality
 #   f2_white_w3_atyp          whitened targets and atypicality weights
-# Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3 and f2_w3_atyp.
+# Third round, making the co-occurrence shortcut useless or wrong:
+#   f2_w3_balanced            F2 weight 3 with weights under which the factors are uncorrelated
+#   cbc                       F3 concept blocks (weight 1, cross-context pairs weigh more)
+#   cbc_plain                 control: all positive pairs weigh alike
+#   cbc_shuffled              control: each image carries the concept set of another image
+#   cbc_f2_balanced           F3 together with f2_w3_balanced
+# Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
+# f2_w3_balanced and cbc.
 set -euo pipefail
 
 DATASET="${1:?Usage: $0 metashift|spur_cifar10 [SEED ...]}"
@@ -40,6 +47,7 @@ STUDY="factors_${DATASET}"
 COMMON=(--preset matched --dataset "${DATASET}" --study "${STUDY}" --wandb_group "${STUDY}")
 F2=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9)
 F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9)
+CBC=(--splice_mode concept_factors --factor_block_weight 1.0 --factor_merge_similarity 0.9)
 # ARMS in the environment selects arms by name; the table below then reuses the name.
 SELECTED_ARMS="${ARMS:-}"
 unset ARMS
@@ -66,6 +74,11 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [f2_white_w10]="--splice_mode concept_factors --factor_distill_weight 10.0 --factor_merge_similarity 0.9 --factor_targets whitened"
     [f2_w3_atyp]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting atypicality"
     [f2_white_w3_atyp]="${F2W3[*]} --factor_targets whitened --factor_sample_weighting atypicality"
+    [f2_w3_balanced]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting balanced"
+    [cbc]="${CBC[*]}"
+    [cbc_plain]="${CBC[*]} --factor_block_context_weight 0"
+    [cbc_shuffled]="${CBC[*]} --factor_block_presence shuffled"
+    [cbc_f2_balanced]="${CBC[*]} --factor_distill_weight 3.0 --factor_targets standardized --factor_sample_weighting balanced"
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
@@ -74,6 +87,8 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
     [f2_w3]="${F2W3[*]} --factor_targets standardized"
     [f2_w3_atyp]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting atypicality"
+    [f2_w3_balanced]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting balanced"
+    [cbc]="${CBC[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift or spur_cifar10." >&2

@@ -169,9 +169,13 @@ def format_diagnosis(diagnosis: dict[str, Any]) -> str:
     ]
     for pair in diagnosis["pairs"]:
         lines.append(f"    {pair['verdict']:>16}  {pair['phi']:.3f}  {pair['concepts'][0]}  <->  {pair['concepts'][1]}")
-    weighting = diagnosis.get("atypicality_by_group")
-    if weighting:
-        lines.append(f"  atypicality weight, minority / majority groups: {weighting['minority_to_majority_ratio']}")
+    for key, title in (("atypicality_by_group", "atypicality"), ("balanced_by_group", "balanced")):
+        weighting = diagnosis.get(key)
+        if not weighting:
+            continue
+        lines.append(f"  {title} weight, minority / majority groups: {weighting['minority_to_majority_ratio']}")
+        if weighting.get("balancing"):
+            lines.append(f"    {weighting['balancing']}")
         for group in weighting["groups"]:
             lines.append(f"    y={group['y']} a={group['a']}  n={group['count']}  mean weight {group['mean_weight']:.2f}")
     lines.append("  strongest attribute factors (u_attribute, u_class):")

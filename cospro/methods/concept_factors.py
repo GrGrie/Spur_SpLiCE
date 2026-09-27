@@ -1,6 +1,6 @@
 """Concept-factor training: keep entangled concept factors apart in the student, without labels.
 
-Two mechanisms share one set of factors (``cospro.pipeline.concept_factors``):
+Three mechanisms share one set of factors (``cospro.pipeline.concept_factors``):
 
 * F1, concept-conditioned batches. A fraction of the batches holds only images that show one factor
   of an entangled pair. Inside such a batch that factor tells no image from another, so the
@@ -9,7 +9,15 @@ Two mechanisms share one set of factors (``cospro.pipeline.concept_factors``):
   factor in place of an annotated attribute.
 * F2, decorrelated factor distillation. A linear head on the backbone predicts the whitened factor
   activations. Whitening turns each factor into its part the other factors leave unexplained, so
-  the backbone must encode correlated factors along separate linear directions.
+  the backbone must encode correlated factors along separate linear directions. Per-image weights can
+  make the factors independent in the weighted data (``balanced``), so the co-occurrence of two
+  concepts stops paying off in the regression.
+* F3, concept blocks. One small head per factor maps the backbone into its own block, and a supervised
+  contrastive loss inside block k pulls together the images that show factor k and pushes away the
+  images without it. Pairs that share k but differ most in their other factors weigh most, so a
+  direction that fuses k with its usual context gives the wrong answer on exactly those pairs: the
+  backbone needs a direction for k that holds across contexts. Every factor has a block, so no factor
+  is declared spurious.
 
 Every image still occurs exactly once per epoch, so the optimizer-step budget matches SimCLR.
 """
@@ -27,7 +35,11 @@ from torch.utils.data import DataLoader, Sampler
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
 from cospro.pipeline.concept_factors import (
+    SHUFFLE_SEED,
     FactorConfig,
+    balancing_weights,
+    block_factor_columns,
+    factor_name,
     expected_condition_pool,
     factor_report,
     format_factor_report,
@@ -98,6 +110,70 @@ class ConceptConditionedBatchSampler(Sampler[list[int]]):
         self.last_conditioned_fraction = conditioned / max(batches, 1)
 
 
+class ConceptBlockContrast:
+    """Supervised contrastive loss per factor block, with pairs weighted by how much their contexts differ."""
+
+    def __init__(self, presence: torch.Tensor, weight: float, temperature: float, context_weight: float,
+                 start_epoch: int, warmup_epochs: int) -> None:
+        if weight < 0 or temperature <= 0 or context_weight < 0 or start_epoch < 0 or warmup_epochs < 0:
+            raise ValueError("Concept-block settings must be non-negative and the temperature positive.")
+        self.presence = torch.as_tensor(presence, dtype=torch.bool).cpu()
+        self.weight = float(weight)
+        self.temperature = float(temperature)
+        self.context_weight = float(context_weight)
+        self.start_epoch = int(start_epoch)
+        self.warmup_epochs = int(warmup_epochs)
+        self.epoch = 0
+        self.last_diagnostics: dict[str, float] = {}
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    @property
+    def scheduled_weight(self) -> float:
+        if self.epoch <= self.start_epoch:
+            return 0.0
+        if self.warmup_epochs == 0:
+            return self.weight
+        return self.weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
+
+    def pair_weights(self, presence: torch.Tensor) -> torch.Tensor:
+        """Weight of every positive pair of every block: 1 plus the scaled difference of the whole factor sets."""
+
+        present = presence.float()
+        difference = torch.cdist(present, present, p=1) / present.shape[1]
+        off_diagonal = ~torch.eye(len(present), dtype=torch.bool, device=present.device)
+        scale = difference[off_diagonal].mean().clamp_min(1e-6)
+        context = 1.0 + self.context_weight * difference / scale
+        shared = present.T[:, :, None] * present.T[:, None, :]
+        return shared * context[None] * off_diagonal[None]
+
+    def __call__(self, blocks: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+        rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
+        presence = self.presence.index_select(0, rows).to(blocks.device)
+        presence = torch.cat([presence, presence], dim=0)
+        if blocks.ndim != 3 or blocks.shape[:2] != presence.shape:
+            raise ValueError("Concept blocks expect [2 * batch, blocks, dim] with one presence row per view.")
+        embedded = torch.nn.functional.normalize(blocks.float(), dim=-1)
+        logits = torch.einsum("ikd,jkd->kij", embedded, embedded) / self.temperature
+        diagonal = torch.eye(logits.shape[1], dtype=torch.bool, device=logits.device)
+        log_probability = torch.log_softmax(logits.masked_fill(diagonal[None], float("-inf")), dim=2)
+        log_probability = log_probability.masked_fill(diagonal[None], 0.0)
+        weights = self.pair_weights(presence)
+        total = weights.sum(dim=2)
+        anchors = total > 0
+        per_anchor = -(weights * log_probability).sum(dim=2) / total.clamp_min(1e-12)
+        loss = per_anchor[anchors].mean() if anchors.any() else blocks.sum() * 0.0
+        self.last_diagnostics = {
+            "factor_block_scheduled_weight": self.scheduled_weight,
+            "factor_block_loss": float(loss.detach()),
+            "factor_block_anchor_fraction": float(anchors.float().mean()),
+            "factor_block_positives_per_anchor": float((weights > 0).sum(dim=2)[anchors].float().mean())
+            if anchors.any() else 0.0,
+        }
+        return self.scheduled_weight * loss
+
+
 class FactorDistillationRegularizer:
     """Scheduled mean squared error between a linear head and the per-image factor targets."""
 
@@ -164,6 +240,12 @@ class ConceptFactors(TrainingMethod):
         distill_weight: float = 0.0,
         target_kind: str = "whitened",
         sample_weighting: str = "none",
+        block_weight: float = 0.0,
+        block_count: int = 32,
+        block_dim: int = 16,
+        block_temperature: float = 0.1,
+        block_context_weight: float = 1.0,
+        block_presence: str = "real",
         start_epoch: int = 0,
         warmup_epochs: int = 0,
     ) -> None:
@@ -175,8 +257,17 @@ class ConceptFactors(TrainingMethod):
         self.distill_weight = float(distill_weight)
         self.target_kind = target_kind
         self.sample_weighting = sample_weighting
+        self.block_settings = {
+            "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
+            "temperature": float(block_temperature), "context_weight": float(block_context_weight),
+            "presence": block_presence,
+        }
         self.schedule = (int(start_epoch), int(warmup_epochs))
         self.factor_head_dim: int | None = None
+        self.factor_block_shape: tuple[int, int] | None = None
+        self.blocks: ConceptBlockContrast | None = None
+        self.block_names: list[str] = []
+        self.balancing: dict[str, float] = {}
         self.sampler: ConceptConditionedBatchSampler | None = None
         self.regularizer: FactorDistillationRegularizer | None = None
         self.report: dict[str, Any] = {}
@@ -203,6 +294,12 @@ class ConceptFactors(TrainingMethod):
             distill_weight=options.factor_distill_weight,
             target_kind=options.factor_targets,
             sample_weighting=options.factor_sample_weighting,
+            block_weight=options.factor_block_weight,
+            block_count=options.factor_block_count,
+            block_dim=options.factor_block_dim,
+            block_temperature=options.factor_block_temperature,
+            block_context_weight=options.factor_block_context_weight,
+            block_presence=options.factor_block_presence,
             start_epoch=options.factor_start_epoch,
             warmup_epochs=options.factor_warmup_epochs,
         )
@@ -226,10 +323,28 @@ class ConceptFactors(TrainingMethod):
             sample_weights = None
             if self.sample_weighting == "atypicality":
                 sample_weights = factors["atypicality_weights"].index_select(0, rows)
+            elif self.sample_weighting == "balanced":
+                weights, self.balancing = balancing_weights(factors["active"])
+                sample_weights = weights.index_select(0, rows)
+                print(f"[INFO] Balancing weights: {self.balancing}", flush=True)
             self.regularizer = FactorDistillationRegularizer(
                 targets, self.distill_weight, *self.schedule, sample_weights=sample_weights,
             )
             self.factor_head_dim = int(targets.shape[1])
+        settings = self.block_settings
+        if settings["weight"] > 0:
+            columns = block_factor_columns(factors["active"], settings["count"])
+            presence = factors["active"][:, columns]
+            if settings["presence"] == "shuffled":
+                # Control: each image carries the concept set of another image.
+                presence = presence[torch.randperm(len(presence), generator=torch.Generator().manual_seed(SHUFFLE_SEED))]
+            self.blocks = ConceptBlockContrast(
+                presence.index_select(0, rows), settings["weight"], settings["temperature"],
+                settings["context_weight"], *self.schedule,
+            )
+            self.factor_block_shape = (len(columns), settings["dim"])
+            self.block_names = [factor_name(factors["factors"][column]) for column in columns]
+            print(f"[INFO] Concept blocks ({settings['presence']} presence): {self.block_names}", flush=True)
         active = factors["active"].index_select(0, rows)[:, factors["condition_factors"]]
         self.sampler = ConceptConditionedBatchSampler(
             active, context.batch_size, self.condition_fraction, loader.generator,
@@ -246,19 +361,30 @@ class ConceptFactors(TrainingMethod):
         )
 
     def set_epoch(self, epoch: int) -> None:
-        if self.regularizer is not None:
-            self.regularizer.set_epoch(epoch)
+        for part in (self.regularizer, self.blocks):
+            if part is not None:
+                part.set_epoch(epoch)
 
     def extra_loss(self, *, model, embeddings, sample_indices) -> LossTerms | None:
-        if self.regularizer is None:
+        if self.regularizer is None and self.blocks is None:
             return None
-        if sample_indices is None or getattr(model, "factor_head", None) is None:
-            raise ValueError("Factor distillation requires sample indices and the model's factor head.")
-        value = self.regularizer(model.factor_head(embeddings), sample_indices)
+        if sample_indices is None:
+            raise ValueError("Concept-factor losses require sample indices.")
+        value = embeddings.sum() * 0.0
+        if self.regularizer is not None:
+            if getattr(model, "factor_head", None) is None:
+                raise ValueError("Factor distillation requires the model's factor head.")
+            value = value + self.regularizer(model.factor_head(embeddings), sample_indices)
+        if self.blocks is not None:
+            if getattr(model, "factor_blocks", None) is None:
+                raise ValueError("Concept blocks require the model's block heads.")
+            count, dim = self.factor_block_shape
+            value = value + self.blocks(model.factor_blocks(embeddings).view(-1, count, dim), sample_indices)
         return LossTerms(value=value, diagnostics=self.diagnostics())
 
     def diagnostics(self) -> Mapping[str, float]:
         values = dict(getattr(self.regularizer, "last_diagnostics", {}))
+        values.update(getattr(self.blocks, "last_diagnostics", {}))
         if self.sampler is not None:
             values["factor_conditioned_batch_fraction"] = self.sampler.last_conditioned_fraction
         return values
@@ -273,6 +399,8 @@ class ConceptFactors(TrainingMethod):
             "concept_factor_pairs": [
                 {"concepts": pair["concepts"], "phi": round(pair["phi"], 4)} for pair in self.report["pairs"]
             ],
+            "concept_block_factors": self.block_names,
+            "concept_factor_balancing": self.balancing,
         }
 
     def input_artifacts(self) -> list[Path]:

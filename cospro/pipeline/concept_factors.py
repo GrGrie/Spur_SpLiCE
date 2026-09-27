@@ -190,6 +190,57 @@ def atypicality_weights(white: torch.Tensor, cap: float = 10.0) -> torch.Tensor:
     return weights / weights.mean()
 
 
+def balancing_weights(active: torch.Tensor, *, steps: int = 300, learning_rate: float = 0.05,
+                      entropy: float = 0.05, cap: float = 20.0) -> tuple[torch.Tensor, dict[str, float]]:
+    """Per-image weights, mean 1, under which the factors' presences are as uncorrelated as possible.
+
+    Minimizes the mean squared off-diagonal correlation of the weighted presence indicators plus
+    ``entropy`` times the mean of w log w, which keeps the weights close to uniform. Under such weights
+    a concept that usually comes with another one no longer predicts it, so a loss that relies on the
+    co-occurrence gains nothing from it. This is sample reweighting for independence, as in stable
+    learning, applied to the concept presences; no label enters.
+    """
+
+    values = active.float()
+    values = (values - values.mean(dim=0)) / values.std(dim=0).clamp_min(1e-6)
+    count, width = values.shape
+
+    def correlation(weights: torch.Tensor) -> torch.Tensor:
+        centered = values - (weights[:, None] * values).mean(dim=0)
+        covariance = (centered * weights[:, None]).T @ centered / count
+        scale = covariance.diagonal().clamp_min(1e-8).sqrt()
+        return covariance / scale[:, None] / scale[None, :]
+
+    off_diagonal = ~torch.eye(width, dtype=torch.bool)
+    logits = torch.zeros(count, requires_grad=True)
+    optimizer = torch.optim.Adam([logits], lr=learning_rate)
+    for _ in range(steps):
+        weights = torch.softmax(logits, dim=0) * count
+        loss = correlation(weights)[off_diagonal].pow(2).mean() + entropy * (weights * weights.log()).mean()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    with torch.no_grad():
+        weights = (torch.softmax(logits, dim=0) * count).clamp(max=cap)
+        weights = weights / weights.mean()
+        diagnostics = {
+            "mean_abs_correlation_before": float(correlation(torch.ones(count))[off_diagonal].abs().mean()),
+            "mean_abs_correlation_after": float(correlation(weights)[off_diagonal].abs().mean()),
+            "effective_sample_fraction": float(weights.sum() ** 2 / weights.pow(2).sum() / count),
+            "max_weight": float(weights.max()),
+        }
+    return weights.detach(), diagnostics
+
+
+def block_factor_columns(active: torch.Tensor, count: int) -> list[int]:
+    """The ``count`` factors whose presence is most balanced, which give a block both positives and negatives."""
+
+    frequency = active.float().mean(dim=0)
+    balance = (frequency * (1 - frequency)).tolist()
+    ranked = sorted(range(len(balance)), key=lambda column: (-balance[column], column))
+    return sorted(ranked[:count])
+
+
 def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfig) -> dict[str, Any]:
     """Factors, entangled pairs and both target kinds for every cached training image."""
 

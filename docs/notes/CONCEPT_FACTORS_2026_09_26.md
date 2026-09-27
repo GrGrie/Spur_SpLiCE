@@ -200,6 +200,43 @@ ARMS="f2_shuffled_w3 f2_white_w3 f2_white_w10 f2_w3_atyp f2_white_w3_atyp" bash 
 ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4
 ```
 
+## MetaShift round 2 and the third round
+
+Round 2 (seeds 1 to 4 for the new arms) left the minority groups (cat outdoors, dog indoors) at 47 to
+54 percent in every arm, SimCLR included. F2 raised only the majority groups: whitened targets and
+atypicality weights narrowed the gap between them by lowering the majority gain. The regression on
+the factors learns through the co-occurrence itself: in 88 percent of the training images the indoor
+features predict the cat factors, so the student keeps one fused "cat and indoor" direction.
+
+The third round makes that shortcut useless or wrong.
+
+* **F2 with balancing weights** (`--factor_sample_weighting balanced`). Per-image weights, mean 1,
+  minimize the mean squared correlation between the factors' presences plus an entropy term that
+  keeps them near uniform. Under these weights the cat factors are no longer predictable from the
+  indoor factors, so relying on the co-occurrence gains the regression nothing. This is sample
+  reweighting for independence as in stable learning (Zhang et al., 2021), applied to concept
+  presences.
+* **F3, concept blocks** (`--factor_block_weight`). One linear block per factor on the backbone, for
+  the 32 most balanced factors. Inside block k a supervised contrastive loss treats images that both
+  show factor k as positives and every other image as a negative; a positive pair weighs
+  `1 + context_weight * d / mean(d)`, where `d` is how much the two images' full factor sets differ.
+  "Cat and sofa" with "cat and street" is a strong positive of the cat block and a negative of the
+  sofa and street blocks; "cat and street" with "dog and street" is a positive of the street block
+  only. A single fused "cat and indoor" direction places "cat and street" level with "dog and sofa",
+  so the cat block cannot separate them: the backbone has to hold a cat direction that survives the
+  context, and symmetrically a sofa direction that survives the animal. No factor is declared
+  spurious. Pairs that share a factor and differ elsewhere identify that factor (Locatello et al.,
+  2020; Yao et al., 2024); the SpLiCE concepts supply such pairs without labels.
+
+Controls: `cbc_plain` (all positive pairs weigh alike) isolates the cross-context weighting and
+`cbc_shuffled` (every image carries another image's concept set) isolates the concept content.
+`inspect_concept_factors --diagnose` reports how the atypicality and balancing weights split between
+minority and majority groups.
+
+```bash
+ARMS="f2_w3_balanced cbc cbc_plain cbc_shuffled cbc_f2_balanced" bash scripts/submit_factor_study.sh metashift 1 2 3 4
+```
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
@@ -215,5 +252,11 @@ every run.
   https://arxiv.org/abs/2011.02803
 * Tsai et al., Conditional Contrastive Learning for Improving Fairness in Self-Supervised Learning,
   2021. https://arxiv.org/abs/2106.02866
+* Zhang et al., Deep Stable Learning for Out-of-Distribution Generalization, CVPR 2021.
+  https://arxiv.org/abs/2104.07876
+* Locatello et al., Weakly-Supervised Disentanglement Without Compromises, ICML 2020.
+  https://arxiv.org/abs/2002.02886
+* Yao et al., Multi-View Causal Representation Learning with Partial Observability, ICLR 2024.
+  https://arxiv.org/abs/2311.04056
 * Yang et al., Identifying Spurious Biases Early in Training through the Lens of Simplicity Bias,
   AISTATS 2024. https://arxiv.org/abs/2305.18761

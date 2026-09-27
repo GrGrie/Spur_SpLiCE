@@ -5,7 +5,7 @@ One page per dataset and method, built from every run record by `python -m cospr
 | dataset | method | studies | runs | best arm (≥ 2 seeds) | val WGA | val acc |
 |---|---|---|---|---|---|---|
 | celeba | [CoSpRo (teacher graph: sampler and relational KL)](celeba/cospro.md) | 1 | 1 |  | | |
-| metashift | [Concept factors (F1 conditioned batches, F2 factor distillation)](metashift/concept_factors.md) | 1 | 38 | factors_metashift / f2_w3 | 51.4 ± 1.5 | 63.1 ± 2.0 |
+| metashift | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](metashift/concept_factors.md) | 1 | 38 | factors_metashift / f2_w3 | 51.4 ± 1.5 | 63.1 ± 2.0 |
 | metashift | [CoSpRo (teacher graph: sampler and relational KL)](metashift/cospro.md) | 2 | 44 | metashift_cospro / cospro_laion | 47.7 ± 4.3 | 55.5 ± 2.5 |
 | metashift | [SimCLR](metashift/simclr.md) | 2 | 22 | factors_metashift / simclr_lt | 51.4 ± 1.5 | 55.3 ± 0.1 |
 | spur_cifar10 | [CoSpRo (teacher graph: sampler and relational KL)](spur_cifar10/cospro.md) | 1 | 1 |  | | |

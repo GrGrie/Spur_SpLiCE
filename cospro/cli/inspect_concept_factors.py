@@ -23,6 +23,7 @@ from cospro.diagnostics.factor_validity import diagnose_factors, format_diagnosi
 from cospro.diagnostics.labels import load_labels
 from cospro.pipeline.concept_factors import (
     FactorConfig,
+    balancing_weights,
     factor_name,
     factor_report,
     format_factor_report,
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> Path:
         names = [factor_name(factor) for factor in factors["factors"]]
         report["validity"] = diagnose_factors(factors["active"].numpy(), factors["pairs"], names, y, a)
         report["validity"]["atypicality_by_group"] = weight_by_group(factors["atypicality_weights"].numpy(), y, a)
+        weights, balancing = balancing_weights(factors["active"])
+        report["validity"]["balanced_by_group"] = {**weight_by_group(weights.numpy(), y, a), "balancing": balancing}
     output = args.output or shared(args.dataset, "factors", "concept_factors_report.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(output, report)
