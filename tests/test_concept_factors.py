@@ -120,6 +120,61 @@ class StudySummaryTests(unittest.TestCase):
             self.assertIn("| f2_std | 1,2 |", markdown.read_text(encoding="utf-8"))
 
 
+class AtypicalityTests(unittest.TestCase):
+    def test_label_free_weights_favour_the_minority_groups(self):
+        from cospro.diagnostics.factor_validity import weight_by_group
+
+        cache, groups = synthetic_inputs()
+        factors = build_concept_factors(cache, groups, FactorConfig())
+        weights = factors["atypicality_weights"]
+        self.assertAlmostEqual(float(weights.mean()), 1.0, places=5)
+        _, y, place = train_sample_ids()
+        self.assertGreater(weight_by_group(weights.numpy(), y, place)["minority_to_majority_ratio"], 1.5)
+
+    def test_weighted_loss_counts_heavy_images_more(self):
+        targets = torch.zeros(2, 1)
+        predictions = torch.tensor([[1.0], [0.0], [1.0], [0.0]])
+        plain = FactorDistillationRegularizer(targets, 1.0, 0, 0)
+        weighted = FactorDistillationRegularizer(targets, 1.0, 0, 0, sample_weights=torch.tensor([3.0, 1.0]))
+        for regularizer in (plain, weighted):
+            regularizer.set_epoch(1)
+        self.assertAlmostEqual(float(plain(predictions, torch.tensor([0, 1]))), 0.5)
+        self.assertAlmostEqual(float(weighted(predictions, torch.tensor([0, 1]))), 1.5)
+        self.assertAlmostEqual(weighted.last_diagnostics["factor_mse"], 0.5)
+
+
+class ResultsBookTests(unittest.TestCase):
+    def test_one_page_per_dataset_and_method_with_a_simclr_reference(self):
+        from cospro.cli import build_results_book
+
+        def record(seed, mode, wga, **config):
+            probes = [{"stage": "linear_probe", "values": {"ssl_epoch": epoch, "eval_worst_group_accuracy": wga,
+                                                        "eval_accuracy": 60.0}} for epoch in (25, 50)]
+            return {"status": "complete", "config": {"seed": seed, "dataset": "metashift", "splice_mode": mode,
+                                                     "epochs": 500, **config},
+                    "final_metrics": {"Last linear val worst-group acc": wga}, "metrics": probes}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = {("factors", "simclr", 1): record(1, "none", 40.0), ("factors", "simclr", 2): record(2, "none", 42.0),
+                    ("factors", "f2", 1): record(1, "concept_factors", 50.0, factor_distill_weight=3.0),
+                    ("factors", "f2", 2): record(2, "concept_factors", 52.0, factor_distill_weight=3.0),
+                    ("old", "cospro", 1): record(1, "crp_relational", 45.0, crp_teacher_graph="graphs/crp_graph.json")}
+            for (study, arm, seed), payload in runs.items():
+                path = root / "seeds" / study / f"seed_{seed:02d}" / arm / "1" / "run.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(payload), encoding="utf-8")
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root)}):
+                index = build_results_book.main([])
+            book = index.parent
+            factors_page = (book / "metashift" / "concept_factors.md").read_text(encoding="utf-8")
+            self.assertIn("| factors | f2 |", factors_page)
+            self.assertIn("51.0 ± 1.4", factors_page)
+            self.assertIn("SimCLR reference", factors_page)
+            self.assertIn("crp_graph", (book / "metashift" / "cospro.md").read_text(encoding="utf-8"))
+            self.assertIn("factors / f2", index.read_text(encoding="utf-8"))
+
+
 class RedundancyMergeTests(unittest.TestCase):
     def test_synonym_groups_merge_by_image_similarity_and_the_pair_survives(self):
         cache, _ = synthetic_inputs()

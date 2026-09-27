@@ -166,6 +166,47 @@ Each run records itself under `outputs/seeds/factors_<dataset>/seed_<NN>/<arm>/<
 `outputs/reports/factors_<dataset>/summary.md`, whose headline column averages the last four
 validation probes.
 
+## MetaShift round 1 (2026-09-27) and round 2
+
+Validation, seeds 1 and 2, mean of the last four probes (the full table is
+`outputs/reports/results/metashift/concept_factors.md`):
+
+| arm | val WGA | val acc | factor expl. var. |
+|---|---|---|---|
+| simclr | 47.7 ± 4.2 | 55.8 | |
+| f2_std (weight 1) | 43.2 ± 1.2 | 58.2 | 0.12 |
+| f2_shuffled (control) | 42.2 ± 4.7 | 51.0 | 0.06 |
+| f2_w3 | 51.4 ± 1.5 | 63.1 | 0.41 |
+| f2_w10 | 47.0 ± 7.1 | 59.7 | 0.85 |
+| f2_coarse (7 factors) | 43.4 ± 2.5 | 60.6 | 0.89 |
+
+Three readings. First, concept content matters: every F2 arm with real targets raises average
+accuracy over SimCLR (58 to 63 against 55.8) and the shuffled control lowers it (51.0). Second, WGA on
+MetaShift is too noisy for two seeds: SimCLR over ten seeds of `metashift_cospro` scores 44.6 ± 6.9.
+Third, the gain goes to the majority groups. Standardized targets reproduce the dataset's
+correlations, and several Open Images concepts fuse class and context ("Cat bed", "Dog walking"), so
+F2 teaches the student both together; the minority groups stay near 45 to 55 while cat-indoor and
+dog-outdoor climb to 70 to 80.
+
+Round 2 therefore tests the two ways of pointing F2 at the minority images without labels, at weight 3
+where the targets are learned: whitened targets, which weight 1 never learned (explained variance
+0.09), and atypicality weights, which scale each image's F2 loss by how far its concepts break the
+dataset's correlations (`--factor_sample_weighting atypicality`; on the synthetic fixture the minority
+groups receive 2.1 times the majority weight). `inspect_concept_factors --diagnose` reports the same
+ratio on real data.
+
+```bash
+ARMS="f2_shuffled_w3 f2_white_w3 f2_white_w10 f2_w3_atyp f2_white_w3_atyp" bash scripts/submit_factor_study.sh metashift 1 2 3 4
+ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4
+```
+
+## Results book
+
+`python -m cospro.cli.build_results_book` writes one page per dataset and method under
+`outputs/reports/results/`, with the hyperparameters that tell the arms apart, the seeds and the
+validation results, and the dataset's SimCLR arms as reference. `run_training.sbatch` rebuilds it after
+every run.
+
 ## References
 
 * Kirichenko et al., Last Layer Re-Training is Sufficient for Robustness to Spurious Correlations,

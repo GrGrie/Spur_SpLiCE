@@ -19,7 +19,7 @@ from pathlib import Path
 from cospro.config.training import ConceptFactorOptions
 from cospro.config.options import section_defaults
 from cospro.data.registry import canonical_dataset_name, dataset_names
-from cospro.diagnostics.factor_validity import diagnose_factors, format_diagnosis
+from cospro.diagnostics.factor_validity import diagnose_factors, format_diagnosis, weight_by_group
 from cospro.diagnostics.labels import load_labels
 from cospro.pipeline.concept_factors import (
     FactorConfig,
@@ -75,6 +75,7 @@ def main(argv: list[str] | None = None) -> Path:
         y, a = load_labels(args.dataset, args.data_folder).for_ids(factors["sample_ids"])
         names = [factor_name(factor) for factor in factors["factors"]]
         report["validity"] = diagnose_factors(factors["active"].numpy(), factors["pairs"], names, y, a)
+        report["validity"]["atypicality_by_group"] = weight_by_group(factors["atypicality_weights"].numpy(), y, a)
     output = args.output or shared(args.dataset, "factors", "concept_factors_report.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(output, report)

@@ -131,6 +131,33 @@ def diagnose_factors(active: np.ndarray, pairs: list[dict], names: list[str], y:
     }
 
 
+def weight_by_group(weights: np.ndarray, y: np.ndarray, a: np.ndarray) -> dict[str, Any]:
+    """Mean per-image weight of every (y, a) group, and the minority-to-majority ratio.
+
+    Minority groups are those smaller than the average group. A ratio above 1 means the label-free
+    weights land on the images that break the spurious correlation.
+    """
+
+    weights, y, a = np.asarray(weights, dtype=float), np.asarray(y), np.asarray(a)
+    groups = []
+    for label in np.unique(y):
+        for attribute in np.unique(a):
+            chosen = (y == label) & (a == attribute)
+            if chosen.any():
+                groups.append({"y": int(label), "a": int(attribute), "count": int(chosen.sum()),
+                               "mean_weight": round(float(weights[chosen].mean()), 4)})
+    average = np.mean([group["count"] for group in groups])
+    minority = [group for group in groups if group["count"] < average]
+    majority = [group for group in groups if group["count"] >= average]
+
+    def pooled(members: list[dict]) -> float:
+        total = sum(member["count"] for member in members)
+        return sum(member["mean_weight"] * member["count"] for member in members) / max(total, 1)
+
+    ratio = pooled(minority) / pooled(majority) if minority and majority else None
+    return {"groups": groups, "minority_to_majority_ratio": None if ratio is None else round(ratio, 4)}
+
+
 def format_diagnosis(diagnosis: dict[str, Any]) -> str:
     summary = diagnosis["summary"]
     precision = summary["pair_precision"]
@@ -142,6 +169,11 @@ def format_diagnosis(diagnosis: dict[str, Any]) -> str:
     ]
     for pair in diagnosis["pairs"]:
         lines.append(f"    {pair['verdict']:>16}  {pair['phi']:.3f}  {pair['concepts'][0]}  <->  {pair['concepts'][1]}")
+    weighting = diagnosis.get("atypicality_by_group")
+    if weighting:
+        lines.append(f"  atypicality weight, minority / majority groups: {weighting['minority_to_majority_ratio']}")
+        for group in weighting["groups"]:
+            lines.append(f"    y={group['y']} a={group['a']}  n={group['count']}  mean weight {group['mean_weight']:.2f}")
     lines.append("  strongest attribute factors (u_attribute, u_class):")
     for factor in summary["top_attribute_factors"]:
         lines.append(f"    {factor['u_attribute']:.3f}  {factor['u_class']:.3f}  {factor['name']}")

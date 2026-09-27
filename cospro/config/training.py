@@ -284,6 +284,11 @@ class ConceptFactorOptions:
         help="F2 targets: ZCA-whitened factors, standardized factors, standardized presence indicators, or the "
         "control 'shuffled' (standardized targets of other images).",
     )
+    factor_sample_weighting: str = option(
+        "none", choices=("none", "atypicality"),
+        help="F2 per-image loss weights: none, or atypicality (images whose concepts break the dataset's "
+        "correlations weigh more; label-free).",
+    )
     factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
     factor_start_epoch: int = option(10, parse=int, help="Pure-SimCLR epochs before F2 starts.")
     factor_warmup_epochs: int = option(10, parse=int, help="Linear warm-up of the F2 weight; 0 disables it.")

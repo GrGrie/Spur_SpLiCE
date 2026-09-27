@@ -5,8 +5,9 @@
 #
 #   bash scripts/submit_factor_study.sh metashift [SEED ...]      (default seeds: 1 2)
 #   bash scripts/submit_factor_study.sh spur_cifar10 [SEED ...]
+#   ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4   (only these arms)
 #
-# MetaShift, study factors_metashift, 11 arms. Each F2 arm changes one thing from f2_std:
+# MetaShift, study factors_metashift. Each F2 arm changes one thing from f2_std:
 #   simclr, f2_std            baseline and F2 (weight 1, merge 0.9, standardized targets)
 #   f2_shuffled               control: targets of other images
 #   f2_w3, f2_w10             loss weight 3 and 10
@@ -16,7 +17,12 @@
 #   f2_start0                 F2 from the first epoch, without warm-up
 #   simclr_lt, f2_std_lt      the SSL hyperparameters LateTVG used on MetaShift
 #                             (learning rate 0.05, batch 256, weight decay 1e-3)
-# Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std and f2_shuffled.
+# Second round, around the best first-round arm f2_w3 (weight 3):
+#   f2_shuffled_w3            the control at weight 3
+#   f2_white_w3, f2_white_w10 whitened targets, which weight 1 never learned
+#   f2_w3_atyp                standardized targets, images weighted by concept atypicality
+#   f2_white_w3_atyp          whitened targets and atypicality weights
+# Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3 and f2_w3_atyp.
 set -euo pipefail
 
 DATASET="${1:?Usage: $0 metashift|spur_cifar10 [SEED ...]}"
@@ -33,6 +39,10 @@ source scripts/load_splice_cluster_env.sh
 STUDY="factors_${DATASET}"
 COMMON=(--preset matched --dataset "${DATASET}" --study "${STUDY}" --wandb_group "${STUDY}")
 F2=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9)
+F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9)
+# ARMS in the environment selects arms by name; the table below then reuses the name.
+SELECTED_ARMS="${ARMS:-}"
+unset ARMS
 declare -A ARMS
 if [[ "${DATASET}" == "metashift" ]]; then
   CACHE_ROOT="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/metashift/splice_dataset_cache"
@@ -51,21 +61,41 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [f2_start0]="${F2[*]} --factor_targets standardized --factor_start_epoch 0 --factor_warmup_epochs 0"
     [simclr_lt]="--splice_mode none ${LT[*]}"
     [f2_std_lt]="${F2[*]} --factor_targets standardized ${LT[*]}"
+    [f2_shuffled_w3]="${F2W3[*]} --factor_targets shuffled"
+    [f2_white_w3]="${F2W3[*]} --factor_targets whitened"
+    [f2_white_w10]="--splice_mode concept_factors --factor_distill_weight 10.0 --factor_merge_similarity 0.9 --factor_targets whitened"
+    [f2_w3_atyp]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting atypicality"
+    [f2_white_w3_atyp]="${F2W3[*]} --factor_targets whitened --factor_sample_weighting atypicality"
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
+    [f2_w3]="${F2W3[*]} --factor_targets standardized"
+    [f2_w3_atyp]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting atypicality"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift or spur_cifar10." >&2
   exit 2
 fi
 
+SELECTED=()
+if [[ -n "${SELECTED_ARMS}" ]]; then
+  for arm in ${SELECTED_ARMS}; do
+    if [[ -z "${ARMS[${arm}]+set}" ]]; then
+      echo "Unknown arm ${arm} for ${DATASET}; known: $(printf '%s ' "${!ARMS[@]}")" >&2
+      exit 2
+    fi
+    SELECTED+=("${arm}")
+  done
+else
+  mapfile -t SELECTED < <(printf '%s\n' "${!ARMS[@]}" | sort)
+fi
+
 # The LAION arm needs LAION concept groups at the default thresholds; build them first when missing.
 GROUP_DEPENDENCY=()
-if [[ -n "${LAION_GROUPS:-}" && ! -f "${LAION_GROUPS}" ]]; then
+if [[ " ${SELECTED[*]} " == *" f2_laion "* && -n "${LAION_GROUPS:-}" && ! -f "${LAION_GROUPS}" ]]; then
   GROUP_JOB=$(sbatch --parsable scripts/generate_cospro_concept_groups.sh "${LAION_CACHE}" \
     --output-root outputs/shared/metashift/graphs/concept_groups_laion \
     --text-similarity-threshold 0.80 --coactivation-threshold 0.30 --no-embed-images)
@@ -73,7 +103,7 @@ if [[ -n "${LAION_GROUPS:-}" && ! -f "${LAION_GROUPS}" ]]; then
   echo "laion_groups_job=${GROUP_JOB%%;*}"
 fi
 
-for arm in $(printf '%s\n' "${!ARMS[@]}" | sort); do
+for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
     dependency=()
     if [[ "${arm}" == "f2_laion" ]]; then

@@ -101,10 +101,12 @@ class ConceptConditionedBatchSampler(Sampler[list[int]]):
 class FactorDistillationRegularizer:
     """Scheduled mean squared error between a linear head and the per-image factor targets."""
 
-    def __init__(self, targets: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int) -> None:
+    def __init__(self, targets: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
+                 sample_weights: torch.Tensor | None = None) -> None:
         if weight < 0 or start_epoch < 0 or warmup_epochs < 0:
             raise ValueError("Factor distillation schedule values must be non-negative.")
         self.targets = torch.as_tensor(targets).detach().float().cpu()
+        self.sample_weights = None if sample_weights is None else torch.as_tensor(sample_weights).float().cpu()
         self.weight = float(weight)
         self.start_epoch = int(start_epoch)
         self.warmup_epochs = int(warmup_epochs)
@@ -128,14 +130,19 @@ class FactorDistillationRegularizer:
         targets = torch.cat([targets, targets], dim=0)
         if predictions.shape != targets.shape:
             raise ValueError("Factor distillation expects two aligned views per batch sample.")
-        mse = (predictions.float() - targets).pow(2).mean()
+        per_image = (predictions.float() - targets).pow(2).mean(dim=1)
+        mse = per_image.mean()
+        loss = mse
+        if self.sample_weights is not None:
+            weights = self.sample_weights.index_select(0, rows).to(predictions.device)
+            loss = (per_image * torch.cat([weights, weights])).mean()
         # Targets have unit variance per factor, so 1 - mse is the explained variance.
         self.last_diagnostics = {
             "factor_scheduled_weight": self.scheduled_weight,
             "factor_mse": float(mse.detach()),
             "factor_explained_variance": 1.0 - float(mse.detach()),
         }
-        return self.scheduled_weight * mse
+        return self.scheduled_weight * loss
 
 
 @register_method
@@ -156,6 +163,7 @@ class ConceptFactors(TrainingMethod):
         condition_fraction: float = 0.0,
         distill_weight: float = 0.0,
         target_kind: str = "whitened",
+        sample_weighting: str = "none",
         start_epoch: int = 0,
         warmup_epochs: int = 0,
     ) -> None:
@@ -166,6 +174,7 @@ class ConceptFactors(TrainingMethod):
         self.condition_fraction = float(condition_fraction)
         self.distill_weight = float(distill_weight)
         self.target_kind = target_kind
+        self.sample_weighting = sample_weighting
         self.schedule = (int(start_epoch), int(warmup_epochs))
         self.factor_head_dim: int | None = None
         self.sampler: ConceptConditionedBatchSampler | None = None
@@ -193,6 +202,7 @@ class ConceptFactors(TrainingMethod):
             condition_fraction=options.factor_condition_fraction,
             distill_weight=options.factor_distill_weight,
             target_kind=options.factor_targets,
+            sample_weighting=options.factor_sample_weighting,
             start_epoch=options.factor_start_epoch,
             warmup_epochs=options.factor_warmup_epochs,
         )
@@ -213,7 +223,12 @@ class ConceptFactors(TrainingMethod):
             raise ValueError("Conditioned batches need at least one entangled factor pair.")
         if self.distill_weight > 0:
             targets = factors["targets"][self.target_kind].index_select(0, rows)
-            self.regularizer = FactorDistillationRegularizer(targets, self.distill_weight, *self.schedule)
+            sample_weights = None
+            if self.sample_weighting == "atypicality":
+                sample_weights = factors["atypicality_weights"].index_select(0, rows)
+            self.regularizer = FactorDistillationRegularizer(
+                targets, self.distill_weight, *self.schedule, sample_weights=sample_weights,
+            )
             self.factor_head_dim = int(targets.shape[1])
         active = factors["active"].index_select(0, rows)[:, factors["condition_factors"]]
         self.sampler = ConceptConditionedBatchSampler(

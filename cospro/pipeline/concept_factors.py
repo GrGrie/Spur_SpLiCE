@@ -176,6 +176,20 @@ def whitened(activations: torch.Tensor, eps: float) -> torch.Tensor:
     return standardized((values @ transform).float())
 
 
+def atypicality_weights(white: torch.Tensor, cap: float = 10.0) -> torch.Tensor:
+    """Per-image weights, mean 1, that grow with how far an image's factors break the dataset's correlations.
+
+    The atypicality of an image is the mean square of its whitened factor values: small for images
+    whose concepts co-occur as usual, large for images that show one concept without the partner it
+    usually comes with. No label enters; ``cospro.diagnostics.factor_validity.weight_by_group``
+    checks post hoc whether the weight lands on the minority groups.
+    """
+
+    atypicality = white.pow(2).mean(dim=1)
+    weights = (atypicality / atypicality.mean().clamp_min(1e-12)).clamp(max=cap)
+    return weights / weights.mean()
+
+
 def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfig) -> dict[str, Any]:
     """Factors, entangled pairs and both target kinds for every cached training image."""
 
@@ -227,6 +241,7 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
         "pairs": pairs,
         "condition_factors": sorted({factor for pair in pairs for factor in pair["factors"]}),
         "active": active,
+        "atypicality_weights": atypicality_weights(whitened(activations, config.whitening_eps)),
         "targets": {
             "whitened": whitened(activations, config.whitening_eps),
             "standardized": standardized(activations),

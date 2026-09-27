@@ -70,7 +70,7 @@ fi
 OUTPUT_ROOT="${SPUR_SPLICE_OUTPUT_ROOT:-${PROJECT_DIR}/outputs}"
 RECORD_ROOT="${OUTPUT_ROOT}/seeds/${STUDY}/${SEED_DIRECTORY}/${ARM}/${RUN_ID}"
 source scripts/announce_results.sh
-announce_results "${RECORD_ROOT}/run.json" "training folder: ${RECORD_ROOT}/training/<storage name>/ (binaries on scratch)" "study summary: ${OUTPUT_ROOT}/reports/${STUDY}/summary.md" "W&B: the run link printed by wandb below"
+announce_results "${RECORD_ROOT}/run.json" "training folder: ${RECORD_ROOT}/training/<storage name>/ (binaries on scratch)" "study summary: ${OUTPUT_ROOT}/reports/${STUDY}/summary.md" "results book: ${OUTPUT_ROOT}/reports/results/README.md" "W&B: the run link printed by wandb below"
 # With a teacher graph and no explicit --splice_mode, train the CoSpRo student: the cospro_student
 # preset (cospro/config/presets.py) sets its values and later options in "$@" override them.
 automatic_graph_args=()
@@ -116,7 +116,8 @@ fi
   --run_record "${RECORD_ROOT}/run.json" \
   "${automatic_graph_args[@]}" \
   "$@"
-# Refresh the study summary with this run; a failed summary never fails the finished training.
+# Refresh the study summary and the results book with this run; neither can fail the finished training.
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
   "${PYTHON_BIN}" -u -m cospro.cli.summarize_study --study "${STUDY}" || echo "[WARNING] Study summary failed." >&2
+  "${PYTHON_BIN}" -u -m cospro.cli.build_results_book || echo "[WARNING] Results book failed." >&2
 fi
