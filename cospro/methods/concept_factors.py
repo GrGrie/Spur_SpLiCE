@@ -12,6 +12,13 @@ Three mechanisms share one set of factors (``cospro.pipeline.concept_factors``):
   the backbone must encode correlated factors along separate linear directions. Per-image weights can
   make the factors independent in the weighted data (``balanced``), so the co-occurrence of two
   concepts stops paying off in the regression.
+* F2 with cross-fitting (``cross_fit``). Instead of a trained head, a ridge regression fitted in closed
+  form on one half of the batch predicts the factors of the other half, and the loss is that held-out
+  error. A feature that only identifies an image, which lets a trained head memorize any per-image
+  target, carries nothing from one half to the other; only concept directions that transfer between
+  images lower the loss. With sample weights in the fit and the loss, a direction that fuses a
+  concept with its usual context mispredicts exactly the heavily weighted images that break the
+  co-occurrence.
 * F3, concept blocks. One small head per factor maps the backbone into its own block, and a supervised
   contrastive loss inside block k pulls together the images that show factor k and pushes away the
   images without it. Pairs that share k but differ most in their other factors weigh most, so a
@@ -174,6 +181,89 @@ class ConceptBlockContrast:
         return self.scheduled_weight * loss
 
 
+def cross_fit_predictions(features: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor,
+                          fit: torch.Tensor, ridge: float) -> torch.Tensor:
+    """Predict the targets of the rows outside ``fit`` with a weighted ridge regression fitted on ``fit``.
+
+    Kernel form: with the fitted rows H, their targets T and weights D, the prediction for rows G is
+    G H' (D H H' + lambda I)^-1 D T, which equals the primal weighted ridge solution and needs only an
+    n-by-n solve for n fitted rows. Features and targets are centred on the weighted mean of the fitted
+    rows, so the regression has an intercept, and lambda scales with the mean squared feature norm.
+    Gradients flow into the features through the solve.
+    """
+
+    held_out = ~fit
+    fitted, other = features[fit], features[held_out]
+    fit_weights = weights[fit] / weights[fit].mean()
+    feature_mean = (fit_weights[:, None] * fitted).mean(dim=0)
+    target_mean = (fit_weights[:, None] * targets[fit]).mean(dim=0)
+    fitted, other = fitted - feature_mean, other - feature_mean
+    kernel = fitted @ fitted.T
+    scale = kernel.diagonal().mean().clamp_min(1e-6)
+    system = fit_weights[:, None] * kernel + ridge * scale * torch.eye(len(fitted), device=features.device)
+    coefficients = torch.linalg.solve(system, fit_weights[:, None] * (targets[fit] - target_mean))
+    return other @ fitted.T @ coefficients + target_mean
+
+
+class CrossFitDistillation:
+    """F2 with cross-fitting: each half of the batch is predicted by a ridge regression fitted on the other."""
+
+    def __init__(self, targets: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
+                 sample_weights: torch.Tensor | None = None, ridge: float = 0.1) -> None:
+        if weight < 0 or start_epoch < 0 or warmup_epochs < 0 or ridge <= 0:
+            raise ValueError("Cross-fitted distillation needs non-negative schedule values and a positive ridge.")
+        self.targets = torch.as_tensor(targets).detach().float().cpu()
+        self.sample_weights = None if sample_weights is None else torch.as_tensor(sample_weights).float().cpu()
+        self.weight = float(weight)
+        self.start_epoch = int(start_epoch)
+        self.warmup_epochs = int(warmup_epochs)
+        self.ridge = float(ridge)
+        self.epoch = 0
+        self.last_diagnostics: dict[str, float] = {}
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    @property
+    def scheduled_weight(self) -> float:
+        if self.epoch <= self.start_epoch:
+            return 0.0
+        if self.warmup_epochs == 0:
+            return self.weight
+        return self.weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
+
+    def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+        rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
+        count = len(rows)
+        if count < 4:
+            self.last_diagnostics = {"factor_scheduled_weight": self.scheduled_weight}
+            return embeddings.sum() * 0.0
+        device = embeddings.device
+        targets = self.targets.index_select(0, rows).to(device)
+        weights = (torch.ones(count) if self.sample_weights is None else self.sample_weights.index_select(0, rows)).to(device)
+        # Both views of an image stay in one half, so no half sees a view of an image it predicts.
+        half = torch.zeros(count, dtype=torch.bool, device=device)
+        half[: count // 2] = True
+        features = embeddings.float()
+        targets, weights, half = torch.cat([targets, targets]), torch.cat([weights, weights]), torch.cat([half, half])
+        loss = embeddings.sum() * 0.0
+        errors = []
+        for fit in (half, ~half):
+            predictions = cross_fit_predictions(features, targets, weights, fit, self.ridge)
+            per_image = (predictions - targets[~fit]).pow(2).mean(dim=1)
+            held_out_weights = weights[~fit] / weights[~fit].mean()
+            loss = loss + (held_out_weights * per_image).mean() / 2
+            errors.append(per_image.detach().mean())
+        mse = float(torch.stack(errors).mean())
+        # Targets have unit variance over the dataset, so this is the held-out explained variance.
+        self.last_diagnostics = {
+            "factor_scheduled_weight": self.scheduled_weight,
+            "factor_heldout_mse": mse,
+            "factor_heldout_explained_variance": 1.0 - mse,
+        }
+        return self.scheduled_weight * loss
+
+
 class FactorDistillationRegularizer:
     """Scheduled mean squared error between a linear head and the per-image factor targets."""
 
@@ -200,7 +290,8 @@ class FactorDistillationRegularizer:
             return self.weight
         return self.weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
 
-    def __call__(self, predictions: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+    def __call__(self, predictions: torch.Tensor, sample_indices: torch.Tensor,
+                 embeddings: torch.Tensor | None = None) -> torch.Tensor:
         rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
         targets = self.targets.index_select(0, rows).to(predictions.device)
         targets = torch.cat([targets, targets], dim=0)
@@ -218,6 +309,16 @@ class FactorDistillationRegularizer:
             "factor_mse": float(mse.detach()),
             "factor_explained_variance": 1.0 - float(mse.detach()),
         }
+        if embeddings is not None and len(rows) >= 4:
+            with torch.no_grad():
+                count = len(rows)
+                half = torch.zeros(count, dtype=torch.bool, device=predictions.device)
+                half[: count // 2] = True
+                half = torch.cat([half, half])
+                predicted = cross_fit_predictions(embeddings.float(), targets, torch.ones_like(half, dtype=torch.float),
+                                                  half, 0.1)
+                heldout = float((predicted - targets[~half]).pow(2).mean())
+            self.last_diagnostics["factor_heldout_explained_variance"] = 1.0 - heldout
         return self.scheduled_weight * loss
 
 
@@ -240,6 +341,8 @@ class ConceptFactors(TrainingMethod):
         distill_weight: float = 0.0,
         target_kind: str = "whitened",
         sample_weighting: str = "none",
+        cross_fit: bool = False,
+        ridge: float = 0.1,
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -257,6 +360,8 @@ class ConceptFactors(TrainingMethod):
         self.distill_weight = float(distill_weight)
         self.target_kind = target_kind
         self.sample_weighting = sample_weighting
+        self.cross_fit = bool(cross_fit)
+        self.ridge = float(ridge)
         self.block_settings = {
             "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
             "temperature": float(block_temperature), "context_weight": float(block_context_weight),
@@ -294,6 +399,8 @@ class ConceptFactors(TrainingMethod):
             distill_weight=options.factor_distill_weight,
             target_kind=options.factor_targets,
             sample_weighting=options.factor_sample_weighting,
+            cross_fit=options.factor_cross_fit,
+            ridge=options.factor_ridge,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -327,10 +434,15 @@ class ConceptFactors(TrainingMethod):
                 weights, self.balancing = balancing_weights(factors["active"])
                 sample_weights = weights.index_select(0, rows)
                 print(f"[INFO] Balancing weights: {self.balancing}", flush=True)
-            self.regularizer = FactorDistillationRegularizer(
-                targets, self.distill_weight, *self.schedule, sample_weights=sample_weights,
-            )
-            self.factor_head_dim = int(targets.shape[1])
+            if self.cross_fit:
+                self.regularizer = CrossFitDistillation(
+                    targets, self.distill_weight, *self.schedule, sample_weights=sample_weights, ridge=self.ridge,
+                )
+            else:
+                self.regularizer = FactorDistillationRegularizer(
+                    targets, self.distill_weight, *self.schedule, sample_weights=sample_weights,
+                )
+                self.factor_head_dim = int(targets.shape[1])
         settings = self.block_settings
         if settings["weight"] > 0:
             columns = block_factor_columns(factors["active"], settings["count"])
@@ -371,10 +483,12 @@ class ConceptFactors(TrainingMethod):
         if sample_indices is None:
             raise ValueError("Concept-factor losses require sample indices.")
         value = embeddings.sum() * 0.0
-        if self.regularizer is not None:
+        if isinstance(self.regularizer, CrossFitDistillation):
+            value = value + self.regularizer(embeddings, sample_indices)
+        elif self.regularizer is not None:
             if getattr(model, "factor_head", None) is None:
                 raise ValueError("Factor distillation requires the model's factor head.")
-            value = value + self.regularizer(model.factor_head(embeddings), sample_indices)
+            value = value + self.regularizer(model.factor_head(embeddings), sample_indices, embeddings.detach())
         if self.blocks is not None:
             if getattr(model, "factor_blocks", None) is None:
                 raise ValueError("Concept blocks require the model's block heads.")

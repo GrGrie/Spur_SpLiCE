@@ -290,6 +290,13 @@ class ConceptFactorOptions:
         "correlations weigh more); balanced (weights under which the factors' presences are uncorrelated). "
         "Both are label-free.",
     )
+    factor_cross_fit: bool = option(
+        False, style="switch",
+        help="F2 with cross-fitting: a closed-form ridge regression fitted on one half of the batch predicts "
+        "the factors of the other half, so per-image memorization cannot lower the loss.",
+    )
+    factor_ridge: float = option(0.1, parse=float, help="Ridge of the cross-fitted regression, relative to the "
+                                 "mean squared feature norm.")
     factor_block_weight: float = option(
         0.0, parse=float, help="F3: weight of the concept-block contrastive loss; 0 disables F3.",
     )
@@ -473,6 +480,9 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0,
                  "concept_factors needs --factor_condition_fraction, --factor_distill_weight or "
                  "--factor_block_weight above 0.")
+        _require(args.factor_ridge > 0, "--factor_ridge must be positive.")
+        _require(not args.factor_cross_fit or args.factor_distill_weight > 0,
+                 "--factor_cross_fit applies to F2 and needs --factor_distill_weight above 0.")
         _require(args.factor_block_weight >= 0 and args.factor_block_context_weight >= 0,
                  "--factor_block_weight and --factor_block_context_weight must be non-negative.")
         _require(args.factor_block_count >= 1 and args.factor_block_dim >= 1 and args.factor_block_temperature > 0,

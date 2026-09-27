@@ -125,6 +125,7 @@ METHOD_COLUMNS: dict[str, list[Column]] = {
         ("merge", lambda c: c.get("factor_merge_similarity")),
         ("min freq", lambda c: c.get("factor_min_frequency")),
         ("F2 weighting", lambda c: c.get("factor_sample_weighting")),
+        ("F2 cross-fit", lambda c: c.get("factor_cross_fit")),
         ("F3 weight", lambda c: c.get("factor_block_weight")),
         ("F3 context", lambda c: c.get("factor_block_context_weight") if c.get("factor_block_weight") else None),
         ("F3 presence", lambda c: c.get("factor_block_presence") if c.get("factor_block_weight") else None),

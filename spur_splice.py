@@ -131,6 +131,7 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         targets = {"whitened": "", "standardized": "_std"}.get(args.factor_targets, f"_{args.factor_targets}")
         blocks = f"_b{args.factor_block_weight:g}" if args.factor_block_weight else ""
         weighting = "" if args.factor_sample_weighting == "none" else f"_{args.factor_sample_weighting}"
+        weighting += "_xfit" if args.factor_cross_fit else ""
         return (f"{prefix}_Factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}"
                 f"{targets}{weighting}{blocks}{suffix}")
     return f"{prefix}_SimCLR{suffix}"

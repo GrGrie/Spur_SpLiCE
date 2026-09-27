@@ -237,6 +237,29 @@ minority and majority groups.
 ARMS="f2_w3_balanced cbc cbc_plain cbc_shuffled cbc_f2_balanced" bash scripts/submit_factor_study.sh metashift 1 2 3 4
 ```
 
+## Third round: memorization, and the cross-fitted F2
+
+The third round lifted no minority group either (47 to 53 percent in every arm, cat outdoors and dog
+indoors). Its controls show why. The shuffled controls fit almost as well as the real targets: F2 at
+weight 3 explains 0.41 of the real factor variance and 0.33 of the shuffled one, and the block loss
+ends at 3.34 with real concepts and 3.37 with shuffled ones. On 1,700 images the student memorizes a
+per-image target through the features SimCLR already learns to tell images apart, so any auxiliary
+loss attached to single images, real or random, is met without learning concepts.
+
+The cross-fitted F2 (`--factor_cross_fit true`) removes that route. Each half of the batch is
+predicted by a ridge regression fitted in closed form on the other half (kernel form, one n-by-n solve,
+differentiable, in the manner of R2D2 and MetaOptNet), and the loss is that held-out error, weighted
+when `--factor_sample_weighting` is set. A feature that identifies one image carries nothing to the
+other half; only concept directions shared across images lower the loss, and with balancing weights a
+direction that fuses a concept with its usual context mispredicts the heavily weighted images that
+break the co-occurrence. Every F2 run now logs `method/factor_heldout_explained_variance`, whose gap to
+the trained-head explained variance measures memorization.
+
+```bash
+ARMS="xfit xfit_balanced xfit_shuffled" bash scripts/submit_factor_study.sh metashift 1 2 3 4
+ARMS="simclr f2_std f2_shuffled xfit xfit_shuffled" bash scripts/submit_factor_study.sh spur_cifar10 1 2
+```
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
@@ -252,6 +275,10 @@ every run.
   https://arxiv.org/abs/2011.02803
 * Tsai et al., Conditional Contrastive Learning for Improving Fairness in Self-Supervised Learning,
   2021. https://arxiv.org/abs/2106.02866
+* Bertinetto et al., Meta-learning with differentiable closed-form solvers (R2D2), ICLR 2019.
+  https://arxiv.org/abs/1805.08136
+* Lee et al., Meta-Learning with Differentiable Convex Optimization (MetaOptNet), CVPR 2019.
+  https://arxiv.org/abs/1904.03758
 * Zhang et al., Deep Stable Learning for Out-of-Distribution Generalization, CVPR 2021.
   https://arxiv.org/abs/2104.07876
 * Locatello et al., Weakly-Supervised Disentanglement Without Compromises, ICML 2020.

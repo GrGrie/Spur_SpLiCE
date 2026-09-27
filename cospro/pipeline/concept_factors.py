@@ -307,8 +307,9 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
 
 
 def factor_name(factor: dict) -> str:
+    # " | " rather than a slash: run records read any string with a slash as a path.
     concepts = factor["concepts"]
-    return " / ".join(concepts[:3]) + (f" (+{len(concepts) - 3})" if len(concepts) > 3 else "")
+    return " | ".join(concepts[:3]) + (f" (+{len(concepts) - 3})" if len(concepts) > 3 else "")
 
 
 def factor_report(factors: dict[str, Any]) -> dict[str, Any]:

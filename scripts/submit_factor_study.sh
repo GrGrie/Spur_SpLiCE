@@ -28,8 +28,13 @@
 #   cbc_plain                 control: all positive pairs weigh alike
 #   cbc_shuffled              control: each image carries the concept set of another image
 #   cbc_f2_balanced           F3 together with f2_w3_balanced
+# Fourth round, cross-fitted F2 (a ridge fitted on one half of the batch predicts the other half, so
+# memorizing images cannot lower the loss):
+#   xfit                      cross-fitted F2, weight 3, standardized targets
+#   xfit_balanced             with balancing weights in the fit and the loss
+#   xfit_shuffled             control: targets of other images, which cross-fitting cannot learn
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
-# f2_w3_balanced and cbc.
+# f2_w3_balanced, cbc, xfit and xfit_shuffled.
 set -euo pipefail
 
 DATASET="${1:?Usage: $0 metashift|spur_cifar10 [SEED ...]}"
@@ -48,6 +53,7 @@ COMMON=(--preset matched --dataset "${DATASET}" --study "${STUDY}" --wandb_group
 F2=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9)
 F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9)
 CBC=(--splice_mode concept_factors --factor_block_weight 1.0 --factor_merge_similarity 0.9)
+XFIT=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9 --factor_cross_fit true)
 # ARMS in the environment selects arms by name; the table below then reuses the name.
 SELECTED_ARMS="${ARMS:-}"
 unset ARMS
@@ -79,6 +85,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [cbc_plain]="${CBC[*]} --factor_block_context_weight 0"
     [cbc_shuffled]="${CBC[*]} --factor_block_presence shuffled"
     [cbc_f2_balanced]="${CBC[*]} --factor_distill_weight 3.0 --factor_targets standardized --factor_sample_weighting balanced"
+    [xfit]="${XFIT[*]} --factor_targets standardized"
+    [xfit_balanced]="${XFIT[*]} --factor_targets standardized --factor_sample_weighting balanced"
+    [xfit_shuffled]="${XFIT[*]} --factor_targets shuffled"
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
@@ -89,6 +98,8 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [f2_w3_atyp]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting atypicality"
     [f2_w3_balanced]="${F2W3[*]} --factor_targets standardized --factor_sample_weighting balanced"
     [cbc]="${CBC[*]}"
+    [xfit]="${XFIT[*]} --factor_targets standardized"
+    [xfit_shuffled]="${XFIT[*]} --factor_targets shuffled"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift or spur_cifar10." >&2

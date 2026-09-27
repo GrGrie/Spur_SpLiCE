@@ -72,6 +72,8 @@ def run_row(path: Path, root: Path) -> dict[str, Any]:
         "val_group_accuracies": final.get("Linear val group accuracies"),
         "spurious_probe_val_wga": final.get("Spurious probe last val worst-group acc"),
         "factor_explained_variance": last_ssl_value(record, "SSL relational_factor_explained_variance"),
+        "factor_heldout_explained_variance": last_ssl_value(
+            record, "SSL relational_factor_heldout_explained_variance"),
         "trajectory": trajectory,
         "wandb": (record.get("wandb") or {}).get("url"),
     }
@@ -101,6 +103,14 @@ def summarize(rows: list[dict]) -> list[dict]:
             "factor_explained_variance": spread(
                 [m["factor_explained_variance"] for m in members if m["factor_explained_variance"] is not None]
             ),
+            "factor_heldout_explained_variance": spread(
+                [m["factor_heldout_explained_variance"] for m in members
+                 if m.get("factor_heldout_explained_variance") is not None]
+            ),
+            "val_group_accuracies": [
+                statistics.mean(values) for values in zip(*[m["val_group_accuracies"] for m in members
+                                                            if m["val_group_accuracies"]])
+            ],
         })
     return summary
 
@@ -114,19 +124,26 @@ def number(value: dict[str, float | None]) -> str:
 def markdown(study: str, summary: list[dict], rows: list[dict]) -> str:
     lines = [f"# {study}", "",
              "Validation probe; `last 4` averages the last four periodic probes. ± is the standard deviation "
-             "over seeds.", ""]
+             "over seeds. `val group acc` lists the mean accuracy of every (class, attribute) group in the "
+             "dataset's group order. `held-out expl. var.` is the factor variance a ridge regression fitted "
+             "on the other half of the batch explains, which memorizing images cannot raise.", ""]
     for dataset in sorted({entry["dataset"] for entry in summary}):
         lines += [f"## {dataset}", "",
-                  "| arm | seeds | val WGA (last 4) | val WGA (last) | val acc (last 4) | factor expl. var. |",
-                  "|---|---|---|---|---|---|"]
+                  "| arm | seeds | val WGA (last 4) | val WGA (last) | val acc (last 4) | val group acc | "
+                  "factor expl. var. | held-out expl. var. |",
+                  "|---|---|---|---|---|---|---|---|"]
         entries = [entry for entry in summary if entry["dataset"] == dataset]
         entries.sort(key=lambda entry: -(entry["val_wga_last4"]["mean"] or 0))
         for entry in entries:
             explained = entry["factor_explained_variance"]["mean"]
             explained_text = "" if explained is None else f"{explained:.2f}"
+            heldout = entry["factor_heldout_explained_variance"]["mean"]
+            heldout_text = "" if heldout is None else f"{heldout:.2f}"
+            groups = " / ".join(f"{value:.0f}" for value in entry["val_group_accuracies"])
             lines.append(
                 f"| {entry['arm']} | {','.join(map(str, entry['seeds']))} | {number(entry['val_wga_last4'])} | "
-                f"{number(entry['val_wga_last'])} | {number(entry['val_acc_last4'])} | {explained_text} |"
+                f"{number(entry['val_wga_last'])} | {number(entry['val_acc_last4'])} | {groups} | "
+                f"{explained_text} | {heldout_text} |"
             )
         lines.append("")
     unfinished = [row for row in rows if row["status"] != "complete"]

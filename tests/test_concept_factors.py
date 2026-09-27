@@ -16,6 +16,8 @@ from golden_support import synthetic_splice_cache, train_sample_ids, write_water
 from test_golden_training import COMMON_ARGS, GRAPH_CONFIG
 from cospro.methods.concept_factors import (
     ConceptBlockContrast,
+    CrossFitDistillation,
+    cross_fit_predictions,
     ConceptConditionedBatchSampler,
     FactorDistillationRegularizer,
 )
@@ -51,7 +53,7 @@ class FactorDiscoveryTests(unittest.TestCase):
     def test_the_correlated_class_and_context_groups_form_the_top_pairs(self):
         pairs = factor_report(self.factors)["pairs"]
         self.assertEqual({tuple(pair["concepts"]) for pair in pairs}, {
-            ("water / lake / ocean", "waterbird / gull"), ("forest", "sparrow"),
+            ("water | lake | ocean", "waterbird | gull"), ("forest", "sparrow"),
         })
         for pair in pairs:
             self.assertAlmostEqual(pair["phi"], 0.5, places=6)
@@ -145,6 +147,47 @@ class AtypicalityTests(unittest.TestCase):
         self.assertAlmostEqual(float(plain(predictions, torch.tensor([0, 1]))), 0.5)
         self.assertAlmostEqual(float(weighted(predictions, torch.tensor([0, 1]))), 1.5)
         self.assertAlmostEqual(weighted.last_diagnostics["factor_mse"], 0.5)
+
+
+class CrossFitTests(unittest.TestCase):
+    def test_the_kernel_form_equals_the_weighted_primal_ridge(self):
+        torch.manual_seed(0)
+        features, targets = torch.randn(10, 6), torch.randn(10, 2)
+        weights = torch.rand(10) + 0.5
+        fit = torch.arange(10) < 6
+        predicted = cross_fit_predictions(features, targets, weights, fit, 0.1)
+        h, t, w = features[fit], targets[fit], weights[fit] / weights[fit].mean()
+        mean_h, mean_t = (w[:, None] * h).mean(0), (w[:, None] * t).mean(0)
+        hc, tc = h - mean_h, t - mean_t
+        scale = (hc @ hc.T).diagonal().mean()
+        primal = torch.linalg.solve(hc.T @ torch.diag(w) @ hc + 0.1 * scale * torch.eye(6), hc.T @ torch.diag(w) @ tc)
+        expected = (features[~fit] - mean_h) @ primal + mean_t
+        self.assertTrue(torch.allclose(predicted, expected, atol=1e-4))
+
+    def test_memorized_image_identities_do_not_lower_the_held_out_loss(self):
+        # Features that only identify images (one-hot per image) explain nothing across halves;
+        # features that carry the concept do.
+        count = 16
+        targets = torch.randn(count, 1)
+        distillation = CrossFitDistillation(targets, 1.0, 0, 0)
+        distillation.set_epoch(1)
+        identity = torch.eye(count)
+        concept = torch.cat([targets, torch.randn(count, 3) * 0.01], dim=1)
+        indices = torch.arange(count)
+        identity_loss = float(distillation(torch.cat([identity, identity]), indices))
+        concept_loss = float(distillation(torch.cat([concept, concept]), indices))
+        self.assertGreater(identity_loss, 0.5)
+        self.assertLess(concept_loss, 0.1)
+        self.assertGreater(distillation.last_diagnostics["factor_heldout_explained_variance"], 0.9)
+
+    def test_gradients_reach_the_backbone_through_the_solve(self):
+        targets = torch.randn(8, 2)
+        distillation = CrossFitDistillation(targets, 1.0, 0, 0, sample_weights=torch.rand(8) + 0.5)
+        distillation.set_epoch(1)
+        backbone = torch.nn.Linear(5, 4)
+        embeddings = backbone(torch.randn(8, 5))
+        distillation(torch.cat([embeddings, embeddings]), torch.arange(8)).backward()
+        self.assertGreater(float(backbone.weight.grad.norm()), 0.0)
 
 
 class BalancingWeightTests(unittest.TestCase):
@@ -364,9 +407,11 @@ class ConceptFactorTrainingTests(unittest.TestCase):
                 "--factor_distill_weight", "1.0", "--factor_start_epoch", "0", "--factor_warmup_epochs", "0",
                 "--factor_sample_weighting", "balanced", "--factor_block_weight", "1.0", "--factor_block_count", "4",
             ]
+            cross_fit = [*command, "--factor_cross_fit", "true", "--arm", "factors_cross_fit",
+                         "--run_record", str(run_dir / "cross_fit.json")]
             result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout[-3000:] + result.stderr[-5000:])
-            self.assertIn("water / lake / ocean  <->  waterbird / gull", result.stdout)
+            self.assertIn("water | lake | ocean  <->  waterbird | gull", result.stdout)
             record = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
             self.assertEqual(record["status"], "complete")
             ssl = [event["values"] for event in record["metrics"] if event.get("stage") == "ssl"]
@@ -377,6 +422,12 @@ class ConceptFactorTrainingTests(unittest.TestCase):
             self.assertIn("method/factor_conditioned_batch_fraction", canonical)
             self.assertIn("method/factor_block_loss", canonical)
             self.assertIn("Concept blocks (real presence)", result.stdout)
+            self.assertIn("method/factor_heldout_explained_variance", canonical)
+            result = subprocess.run(cross_fit, cwd=PROJECT_ROOT, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout[-3000:] + result.stderr[-5000:])
+            record = json.loads((run_dir / "cross_fit.json").read_text(encoding="utf-8"))
+            last = [event["values"] for event in record["metrics"] if event.get("stage") == "ssl"][-1]
+            self.assertIn("method/factor_heldout_explained_variance", canonical_train_metrics(last))
 
 
 class ConceptFactorOptionTests(unittest.TestCase):
