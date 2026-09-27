@@ -280,8 +280,9 @@ class ConceptFactorOptions:
         0.0, parse=float, help="F2: weight of the linear factor-distillation loss; 0 disables F2.",
     )
     factor_targets: str = option(
-        "whitened", choices=("whitened", "standardized"),
-        help="F2 targets: ZCA-whitened factors (decorrelated) or standardized factors (ablation).",
+        "whitened", choices=("whitened", "standardized", "presence", "shuffled"),
+        help="F2 targets: ZCA-whitened factors, standardized factors, standardized presence indicators, or the "
+        "control 'shuffled' (standardized targets of other images).",
     )
     factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
     factor_start_epoch: int = option(10, parse=int, help="Pure-SimCLR epochs before F2 starts.")

@@ -128,7 +128,7 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
     if args.splice_mode in RELATIONAL_GRAPH_MODES:
         return f"{prefix}_CoSpRo_w{args.splice_weight:g}_t{args.cospro_temperature:g}{suffix}"
     if args.splice_mode == "concept_factors":
-        targets = "" if args.factor_targets == "whitened" else "_std"
+        targets = {"whitened": "", "standardized": "_std"}.get(args.factor_targets, f"_{args.factor_targets}")
         return (f"{prefix}_Factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}"
                 f"{targets}{suffix}")
     return f"{prefix}_SimCLR{suffix}"

@@ -32,7 +32,9 @@ import torch.nn.functional as F
 from cospro.tracking.artifacts import scratch_root, shared
 
 CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v2"
-TARGET_KINDS = ("whitened", "standardized")
+TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled")
+#: Seed of the fixed image permutation behind the ``shuffled`` control targets.
+SHUFFLE_SEED = 0
 
 
 @dataclass(frozen=True)
@@ -228,6 +230,12 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
         "targets": {
             "whitened": whitened(activations, config.whitening_eps),
             "standardized": standardized(activations),
+            # Presence only: whether each factor fires, without how strongly.
+            "presence": standardized(active.float()),
+            # Control: the standardized targets of other images. Same statistics, no image content.
+            "shuffled": standardized(activations)[
+                torch.randperm(activations.shape[0], generator=torch.Generator().manual_seed(SHUFFLE_SEED))
+            ],
         },
     }
 

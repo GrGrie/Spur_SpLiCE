@@ -86,6 +86,20 @@ class TrainingLauncherTests(unittest.TestCase):
             "--checkpoint_dir", "/tmp/chosen", "--resume", "/tmp/old/last.pth",
         ])
 
+    def test_standalone_records_the_run_where_git_carries_it(self):
+        with tempfile.TemporaryDirectory() as output_root:
+            result = launch(
+                "run_training.sbatch", "--dataset", "metashift", "--seed", "8", "--splice_mode", "none",
+                "--study", "factors_metashift", "--arm", "simclr",
+                extra_env={"SPUR_SPLICE_OUTPUT_ROOT": Path(output_root).as_posix()},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            command = shlex.split(result.stdout)
+            record = command[command.index("--run_record") + 1]
+            self.assertTrue(record.startswith(f"{Path(output_root).as_posix()}/seeds/factors_metashift/seed_08/simclr/"))
+            self.assertEqual(command[command.index("--study") + 1], "factors_metashift")
+            self.assertEqual(command[command.index("--artifact_dir") + 1], record.removesuffix("run.json") + "training")
+
     def test_matrix_cell_does_not_keep_default_array_task(self):
         result = launch("run_experiment.sbatch", "experiments/manifests/waterbirds_cospro.yaml",
                         "--seed", "3", "--arm", "cospro", "--dry-run")

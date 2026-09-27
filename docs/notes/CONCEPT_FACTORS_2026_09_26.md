@@ -136,6 +136,36 @@ The cache does not depend on the grouping thresholds; only the groups do. The su
 `outputs/reports/concept_factor_sweep/summary.md`, the groups and factor sets under
 `outputs/shared/<dataset>/factor_sweep/`.
 
+## F2 results of 2026-09-27 and the next study
+
+Validation WGA at SSL epoch 500, seeds 1 and 2, groups at text 0.80 and co-activation 0.30, merge 0.9:
+
+| Dataset | SimCLR | F2 whitened | F2 standardized |
+|---|---|---|---|
+| Spur-CIFAR10 | 15.6 | 37.0 | 36.4 |
+| MetaShift | 47.2 | 49.3 | 42.4 |
+
+On Spur-CIFAR10 F2 lifts WGA by about 21 points and average accuracy by about 10, with either target
+kind: the gain comes from distilling the dataset's concept factors, and whitening adds nothing there.
+On MetaShift the student explains only 9 to 13 percent of the factor variance and the arms differ by
+less than the noise of 72-image validation groups. LateTVG reports a SimSiam MetaShift baseline of
+55.8 average accuracy, as low as ours, and lifts it to 70.1, so MetaShift can reward a method; F2 in
+its first configuration does not.
+
+`scripts/submit_factor_study.sh` runs the next study. On MetaShift it varies one F2 setting at a time
+(loss weight, target kind, coarser factors, the LAION dictionary, the start epoch) and tries the SSL
+hyperparameters LateTVG used, next to the `shuffled` control: the same target statistics, taken from
+other images. On Spur-CIFAR10 it adds the `shuffled` control to SimCLR and F2.
+
+```bash
+bash scripts/submit_factor_study.sh metashift
+bash scripts/submit_factor_study.sh spur_cifar10
+```
+
+Each run records itself under `outputs/seeds/factors_<dataset>/seed_<NN>/<arm>/<job id>/` and refreshes
+`outputs/reports/factors_<dataset>/summary.md`, whose headline column averages the last four
+validation probes.
+
 ## References
 
 * Kirichenko et al., Last Layer Re-Training is Sufficient for Robustness to Spurious Correlations,

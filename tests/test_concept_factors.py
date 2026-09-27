@@ -80,6 +80,46 @@ class FactorDiscoveryTests(unittest.TestCase):
             rows_for_subset(["waterbirds:4"], "waterbirds", [5])
 
 
+class TargetKindTests(unittest.TestCase):
+    def test_shuffled_targets_keep_the_statistics_and_lose_the_images(self):
+        cache, groups = synthetic_inputs()
+        targets = build_concept_factors(cache, groups, FactorConfig())["targets"]
+        standard, shuffled = targets["standardized"], targets["shuffled"]
+        self.assertTrue(torch.allclose(standard.sort(dim=0).values, shuffled.sort(dim=0).values))
+        self.assertFalse(torch.allclose(standard, shuffled))
+        presence = targets["presence"]
+        self.assertEqual(presence.shape, standard.shape)
+        self.assertTrue(all(len(torch.unique(column)) <= 2 for column in presence.T))
+
+
+class StudySummaryTests(unittest.TestCase):
+    def test_runs_of_a_study_are_summarized_per_arm(self):
+        from cospro.cli import summarize_study
+
+        def record(seed, wga):
+            probes = [{"stage": "linear_probe", "values": {"ssl_epoch": epoch, "eval_worst_group_accuracy": wga + epoch / 100,
+                                                        "eval_accuracy": 60.0}} for epoch in (25, 50, 75, 100, 125)]
+            ssl = [{"stage": "ssl", "values": {"SSL relational_factor_explained_variance": 0.4}}]
+            return {"status": "complete", "config": {"seed": seed, "dataset": "metashift", "factor_targets": "standardized"},
+                    "final_metrics": {"Last linear val worst-group acc": wga + 1.25}, "metrics": probes + ssl}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for seed, wga in ((1, 40.0), (2, 50.0)):
+                path = root / "seeds" / "study" / f"seed_{seed:02d}" / "f2_std" / "123" / "run.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(record(seed, wga)), encoding="utf-8")
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root)}):
+                markdown = summarize_study.main(["--study", "study"])
+            summary = json.loads((markdown.parent / "summary.json").read_text(encoding="utf-8"))
+            arm = summary["arms"][0]
+            self.assertEqual((arm["arm"], arm["seeds"]), ("f2_std", [1, 2]))
+            # The last four probes are epochs 50 to 125: wga + 0.875 on average.
+            self.assertAlmostEqual(arm["val_wga_last4"]["mean"], 45.875)
+            self.assertAlmostEqual(arm["factor_explained_variance"]["mean"], 0.4)
+            self.assertIn("| f2_std | 1,2 |", markdown.read_text(encoding="utf-8"))
+
+
 class RedundancyMergeTests(unittest.TestCase):
     def test_synonym_groups_merge_by_image_similarity_and_the_pair_survives(self):
         cache, _ = synthetic_inputs()
