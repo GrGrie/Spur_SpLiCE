@@ -1,0 +1,656 @@
+{
+  "config": {
+    "condition_pairs": 8,
+    "max_count": 0,
+    "max_frequency": 0.9,
+    "max_text_similarity": 0.75,
+    "merge_similarity": 0.7,
+    "min_correlation": 0.2,
+    "min_frequency": 0.02,
+    "whitening_eps": 0.1
+  },
+  "factors": [
+    {
+      "concepts": [
+        "pets",
+        "pet",
+        "watching",
+        "sleepy",
+        "bedside",
+        "bed",
+        "sleeping",
+        "vet",
+        "helper",
+        "cosy",
+        "studying",
+        "adopt",
+        "treats",
+        "treat",
+        "scanning",
+        "laptop",
+        "asleep",
+        "handsome",
+        "peeking",
+        "resting",
+        "paws",
+        "workspace",
+        "relaxed",
+        "browsing",
+        "couch",
+        "surprised",
+        "thoughtful",
+        "shocked",
+        "secretary",
+        "helps",
+        "cozy",
+        "adorable",
+        "comfy",
+        "focused",
+        "adoption",
+        "sleep",
+        "staring",
+        "bonus",
+        "blankets",
+        "blanket",
+        "reading",
+        "nap",
+        "analyst",
+        "assistant",
+        "desk",
+        "sitting",
+        "curious",
+        "foster",
+        "pillows"
+      ],
+      "frequency": 0.6106,
+      "name": "pets / pet / watching (+46)",
+      "type": "neither",
+      "u_attribute": 0.0416,
+      "u_class": 0.0143
+    },
+    {
+      "concepts": [
+        "dogs",
+        "dog",
+        "pups",
+        "pup",
+        "puppies",
+        "puppy",
+        "canine",
+        "breeds",
+        "breed",
+        "retriever",
+        "terrier",
+        "labrador",
+        "collie",
+        "spaniel",
+        "kennel",
+        "sticks",
+        "stick",
+        "chihuahua",
+        "pointer",
+        "dachshund"
+      ],
+      "frequency": 0.3659,
+      "name": "dogs / dog / pups (+17)",
+      "type": "class",
+      "u_attribute": 0.0061,
+      "u_class": 0.1605
+    },
+    {
+      "concepts": [
+        "beaches",
+        "beach",
+        "surfers",
+        "surfer",
+        "seaside",
+        "paddling",
+        "surfing"
+      ],
+      "frequency": 0.0729,
+      "name": "beaches / beach / surfers (+4)",
+      "type": "neither",
+      "u_attribute": 0.0232,
+      "u_class": 0.0393
+    },
+    {
+      "concepts": [
+        "potty",
+        "toilet"
+      ],
+      "frequency": 0.04,
+      "name": "potty / toilet",
+      "type": "neither",
+      "u_attribute": 0.0327,
+      "u_class": 0.0055
+    },
+    {
+      "concepts": [
+        "inspecting"
+      ],
+      "frequency": 0.1465,
+      "name": "inspecting",
+      "type": "neither",
+      "u_attribute": 0.0059,
+      "u_class": 0.0403
+    },
+    {
+      "concepts": [
+        "windshield"
+      ],
+      "frequency": 0.0271,
+      "name": "windshield",
+      "type": "attribute",
+      "u_attribute": 0.0652,
+      "u_class": 0.0091
+    },
+    {
+      "concepts": [
+        "husky"
+      ],
+      "frequency": 0.0224,
+      "name": "husky",
+      "type": "neither",
+      "u_attribute": 0.0013,
+      "u_class": 0.0113
+    },
+    {
+      "concepts": [
+        "grooming"
+      ],
+      "frequency": 0.0588,
+      "name": "grooming",
+      "type": "neither",
+      "u_attribute": 0.0076,
+      "u_class": 0.0057
+    },
+    {
+      "concepts": [
+        "leash"
+      ],
+      "frequency": 0.0541,
+      "name": "leash",
+      "type": "neither",
+      "u_attribute": 0.003,
+      "u_class": 0.033
+    },
+    {
+      "concepts": [
+        "tuxedo"
+      ],
+      "frequency": 0.0959,
+      "name": "tuxedo",
+      "type": "neither",
+      "u_attribute": 0.0318,
+      "u_class": 0.0318
+    },
+    {
+      "concepts": [
+        "cats",
+        "cat",
+        "kittens",
+        "kitten",
+        "tabby",
+        "chats",
+        "chat",
+        "kitty",
+        "scratch"
+      ],
+      "frequency": 0.4488,
+      "name": "cats / cat / kittens (+6)",
+      "type": "class",
+      "u_attribute": 0.0033,
+      "u_class": 0.2906
+    },
+    {
+      "concepts": [
+        "blackandwhite"
+      ],
+      "frequency": 0.0288,
+      "name": "blackandwhite",
+      "type": "neither",
+      "u_attribute": 0.0031,
+      "u_class": 0.0116
+    },
+    {
+      "concepts": [
+        "litter"
+      ],
+      "frequency": 0.0306,
+      "name": "litter",
+      "type": "neither",
+      "u_attribute": 0.0325,
+      "u_class": 0.0382
+    },
+    {
+      "concepts": [
+        "lawn",
+        "pasture",
+        "farm",
+        "grazing"
+      ],
+      "frequency": 0.07,
+      "name": "lawn / pasture / farm (+1)",
+      "type": "attribute",
+      "u_attribute": 0.0622,
+      "u_class": 0.0049
+    },
+    {
+      "concepts": [
+        "kong"
+      ],
+      "frequency": 0.0212,
+      "name": "kong",
+      "type": "class",
+      "u_attribute": 0.0013,
+      "u_class": 0.0612
+    },
+    {
+      "concepts": [
+        "shampoo"
+      ],
+      "frequency": 0.0241,
+      "name": "shampoo",
+      "type": "neither",
+      "u_attribute": 0.0117,
+      "u_class": 0.0037
+    },
+    {
+      "concepts": [
+        "myself"
+      ],
+      "frequency": 0.0365,
+      "name": "myself",
+      "type": "attribute",
+      "u_attribute": 0.0526,
+      "u_class": 0.0024
+    },
+    {
+      "concepts": [
+        "mink"
+      ],
+      "frequency": 0.0376,
+      "name": "mink",
+      "type": "class",
+      "u_attribute": 0.0012,
+      "u_class": 0.0862
+    },
+    {
+      "concepts": [
+        "benches",
+        "bench"
+      ],
+      "frequency": 0.0335,
+      "name": "benches / bench",
+      "type": "attribute",
+      "u_attribute": 0.161,
+      "u_class": 0.0389
+    },
+    {
+      "concepts": [
+        "rescued",
+        "rescue"
+      ],
+      "frequency": 0.0812,
+      "name": "rescued / rescue",
+      "type": "neither",
+      "u_attribute": 0.0006,
+      "u_class": 0.0198
+    },
+    {
+      "concepts": [
+        "disc",
+        "jumps",
+        "jump",
+        "throwing"
+      ],
+      "frequency": 0.0629,
+      "name": "disc / jumps / jump (+1)",
+      "type": "neither",
+      "u_attribute": 0.0252,
+      "u_class": 0.0252
+    },
+    {
+      "concepts": [
+        "boxer"
+      ],
+      "frequency": 0.0265,
+      "name": "boxer",
+      "type": "class",
+      "u_attribute": 0.0117,
+      "u_class": 0.0886
+    },
+    {
+      "concepts": [
+        "homeless"
+      ],
+      "frequency": 0.02,
+      "name": "homeless",
+      "type": "neither",
+      "u_attribute": 0.033,
+      "u_class": 0.0081
+    },
+    {
+      "concepts": [
+        "parked"
+      ],
+      "frequency": 0.02,
+      "name": "parked",
+      "type": "mixed",
+      "u_attribute": 0.0934,
+      "u_class": 0.063
+    },
+    {
+      "concepts": [
+        "packed",
+        "packing",
+        "organized"
+      ],
+      "frequency": 0.0694,
+      "name": "packed / packing / organized",
+      "type": "attribute",
+      "u_attribute": 0.0543,
+      "u_class": 0.0078
+    },
+    {
+      "concepts": [
+        "snowy"
+      ],
+      "frequency": 0.0253,
+      "name": "snowy",
+      "type": "neither",
+      "u_attribute": 0.0363,
+      "u_class": 0.0227
+    },
+    {
+      "concepts": [
+        "swim"
+      ],
+      "frequency": 0.02,
+      "name": "swim",
+      "type": "neither",
+      "u_attribute": 0.0261,
+      "u_class": 0.0261
+    },
+    {
+      "concepts": [
+        "injured"
+      ],
+      "frequency": 0.0206,
+      "name": "injured",
+      "type": "neither",
+      "u_attribute": 0.0494,
+      "u_class": 0.0045
+    },
+    {
+      "concepts": [
+        "sheep"
+      ],
+      "frequency": 0.0212,
+      "name": "sheep",
+      "type": "neither",
+      "u_attribute": 0.0233,
+      "u_class": 0.0233
+    },
+    {
+      "concepts": [
+        "matching"
+      ],
+      "frequency": 0.0224,
+      "name": "matching",
+      "type": "neither",
+      "u_attribute": 0.0103,
+      "u_class": 0.0002
+    },
+    {
+      "concepts": [
+        "owner"
+      ],
+      "frequency": 0.0371,
+      "name": "owner",
+      "type": "neither",
+      "u_attribute": 0.0104,
+      "u_class": 0.0116
+    },
+    {
+      "concepts": [
+        "shadow"
+      ],
+      "frequency": 0.0259,
+      "name": "shadow",
+      "type": "neither",
+      "u_attribute": 0.0108,
+      "u_class": 0.0097
+    },
+    {
+      "concepts": [
+        "miles"
+      ],
+      "frequency": 0.0241,
+      "name": "miles",
+      "type": "neither",
+      "u_attribute": 0.0137,
+      "u_class": 0.0235
+    },
+    {
+      "concepts": [
+        "driving"
+      ],
+      "frequency": 0.0235,
+      "name": "driving",
+      "type": "attribute",
+      "u_attribute": 0.053,
+      "u_class": 0.0048
+    },
+    {
+      "concepts": [
+        "sink"
+      ],
+      "frequency": 0.0306,
+      "name": "sink",
+      "type": "neither",
+      "u_attribute": 0.0248,
+      "u_class": 0.0248
+    },
+    {
+      "concepts": [
+        "walking",
+        "walks"
+      ],
+      "frequency": 0.0582,
+      "name": "walking / walks",
+      "type": "neither",
+      "u_attribute": 0.0365,
+      "u_class": 0.0113
+    },
+    {
+      "concepts": [
+        "presents"
+      ],
+      "frequency": 0.0224,
+      "name": "presents",
+      "type": "neither",
+      "u_attribute": 0.0347,
+      "u_class": 0.0168
+    },
+    {
+      "concepts": [
+        "tv"
+      ],
+      "frequency": 0.0235,
+      "name": "tv",
+      "type": "neither",
+      "u_attribute": 0.0164,
+      "u_class": 0.0164
+    },
+    {
+      "concepts": [
+        "training"
+      ],
+      "frequency": 0.0424,
+      "name": "training",
+      "type": "neither",
+      "u_attribute": 0.0272,
+      "u_class": 0.0272
+    },
+    {
+      "concepts": [
+        "window"
+      ],
+      "frequency": 0.0265,
+      "name": "window",
+      "type": "class",
+      "u_attribute": 0.0274,
+      "u_class": 0.0971
+    },
+    {
+      "concepts": [
+        "playing"
+      ],
+      "frequency": 0.0288,
+      "name": "playing",
+      "type": "neither",
+      "u_attribute": 0.016,
+      "u_class": 0.0226
+    }
+  ],
+  "group_count": 116,
+  "pairs": [
+    {
+      "concepts": [
+        "windshield",
+        "driving"
+      ],
+      "phi": 0.6438,
+      "types": [
+        "attribute",
+        "attribute"
+      ],
+      "verdict": "both attribute"
+    },
+    {
+      "concepts": [
+        "potty / toilet",
+        "sink"
+      ],
+      "phi": 0.5913,
+      "types": [
+        "neither",
+        "neither"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "shampoo",
+        "sink"
+      ],
+      "phi": 0.551,
+      "types": [
+        "neither",
+        "neither"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "pets / pet / watching (+46)",
+        "cats / cat / kittens (+6)"
+      ],
+      "phi": 0.4757,
+      "types": [
+        "neither",
+        "class"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "lawn / pasture / farm (+1)",
+        "sheep"
+      ],
+      "phi": 0.424,
+      "types": [
+        "attribute",
+        "neither"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "potty / toilet",
+        "shampoo"
+      ],
+      "phi": 0.3397,
+      "types": [
+        "neither",
+        "neither"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "disc / jumps / jump (+1)",
+        "playing"
+      ],
+      "phi": 0.3318,
+      "types": [
+        "neither",
+        "neither"
+      ],
+      "verdict": "noise"
+    },
+    {
+      "concepts": [
+        "kong",
+        "disc / jumps / jump (+1)"
+      ],
+      "phi": 0.3152,
+      "types": [
+        "class",
+        "neither"
+      ],
+      "verdict": "noise"
+    }
+  ],
+  "summary": {
+    "best_attribute_signal": 0.161,
+    "cross_pairs": 0,
+    "factor_count": 41,
+    "pair_count": 8,
+    "pair_precision": 0.0,
+    "top_attribute_factors": [
+      {
+        "name": "benches / bench",
+        "u_attribute": 0.161,
+        "u_class": 0.0389
+      },
+      {
+        "name": "parked",
+        "u_attribute": 0.0934,
+        "u_class": 0.063
+      },
+      {
+        "name": "windshield",
+        "u_attribute": 0.0652,
+        "u_class": 0.0091
+      },
+      {
+        "name": "lawn / pasture / farm (+1)",
+        "u_attribute": 0.0622,
+        "u_class": 0.0049
+      },
+      {
+        "name": "packed / packing / organized",
+        "u_attribute": 0.0543,
+        "u_class": 0.0078
+      }
+    ],
+    "type_counts": {
+      "attribute": 6,
+      "class": 6,
+      "mixed": 1,
+      "neither": 28
+    }
+  }
+}
