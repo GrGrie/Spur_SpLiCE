@@ -14,7 +14,9 @@ class ConceptPageTests(unittest.TestCase):
     def test_top_concepts_are_the_strongest_positive_weights(self):
         code = torch.tensor([0.0, 0.5, 0.1, 0.9, 0.0])
         concepts = top_concepts(code, ["a", "b", "c", "d", "e"], 4)
-        self.assertEqual(concepts, [("d", 0.9), ("b", 0.5), ("c", 0.1)])
+        self.assertEqual([name for name, _ in concepts], ["d", "b", "c"])
+        for (_, weight), expected in zip(concepts, (0.9, 0.5, 0.1)):
+            self.assertAlmostEqual(weight, expected, places=6)
 
     def test_page_holds_every_image_and_escapes_concept_names(self):
         entry = Entry(title="cat.jpg", image=Image.new("RGB", (32, 32)), concepts=[("<Cat>", 0.4), ("Sofa", 0.2)],
