@@ -295,8 +295,8 @@ class ConceptFactorOptions:
         help="F2 with cross-fitting: a closed-form ridge regression fitted on one half of the batch predicts "
         "the factors of the other half, so per-image memorization cannot lower the loss.",
     )
-    factor_ridge: float = option(0.1, parse=float, help="Ridge of the cross-fitted regression, relative to the "
-                                 "mean squared feature norm.")
+    factor_ridge: float = option(1.0, parse=float, help="Ridge of the cross-fitted regression on unit-norm "
+                                 "features; larger values give smoother, better conditioned fits.")
     factor_block_weight: float = option(
         0.0, parse=float, help="F3: weight of the concept-block contrastive loss; 0 disables F3.",
     )

@@ -5,6 +5,7 @@
 #
 #   bash scripts/submit_factor_study.sh metashift [SEED ...]      (default seeds: 1 2)
 #   bash scripts/submit_factor_study.sh spur_cifar10 [SEED ...]
+#   bash scripts/submit_factor_study.sh waterbirds|celeba [SEED ...]   (held-out datasets)
 #   ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4   (only these arms)
 #
 # MetaShift, study factors_metashift. Each F2 arm changes one thing from f2_std:
@@ -33,11 +34,22 @@
 #   xfit                      cross-fitted F2, weight 3, standardized targets
 #   xfit_balanced             with balancing weights in the fit and the loss
 #   xfit_shuffled             control: targets of other images, which cross-fitting cannot learn
+#   Their ridge was relative and small, so fits on 64 images in 512 dimensions were noisy and the
+#   solve diverged on Spur-CIFAR10. The xfit_norm arms use unit-norm features and an absolute ridge:
+#   xfit_norm                 cross-fitted F2, weight 1, ridge 1
+#   xfit_norm_r10             ridge 10
+#   xfit_norm_w3              weight 3
+#   xfit_norm_shuffled        control
+#   xfit_norm_balanced        with balancing weights (MetaShift only)
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
-# f2_w3_balanced, cbc, xfit and xfit_shuffled.
+# f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
+# Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
+# development datasets (f2_std: weight 1, merge 0.9, standardized targets) against simclr and the
+# f2_shuffled control. CelebA trains 250 epochs, as its CoSpRo pipeline did. Their concept groups at
+# the default thresholds are built first when missing.
 set -euo pipefail
 
-DATASET="${1:?Usage: $0 metashift|spur_cifar10 [SEED ...]}"
+DATASET="${1:?Usage: $0 metashift|spur_cifar10|waterbirds|celeba [SEED ...]}"
 shift
 SEEDS=("$@")
 if [[ "${#SEEDS[@]}" == "0" ]]; then
@@ -54,6 +66,10 @@ F2=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_sim
 F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9)
 CBC=(--splice_mode concept_factors --factor_block_weight 1.0 --factor_merge_similarity 0.9)
 XFIT=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9 --factor_cross_fit true)
+XFIT_NORM=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9 --factor_cross_fit true --factor_ridge 1.0)
+OPENIMAGES_CACHE_NAME="cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25"
+DEFAULT_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json"
+GROUPS_CACHE=""
 # ARMS in the environment selects arms by name; the table below then reuses the name.
 SELECTED_ARMS="${ARMS:-}"
 unset ARMS
@@ -88,6 +104,11 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit]="${XFIT[*]} --factor_targets standardized"
     [xfit_balanced]="${XFIT[*]} --factor_targets standardized --factor_sample_weighting balanced"
     [xfit_shuffled]="${XFIT[*]} --factor_targets shuffled"
+    [xfit_norm]="${XFIT_NORM[*]} --factor_targets standardized"
+    [xfit_norm_r10]="${XFIT_NORM[*]} --factor_targets standardized --factor_ridge 10.0"
+    [xfit_norm_w3]="${XFIT_NORM[*]} --factor_targets standardized --factor_distill_weight 3.0"
+    [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
+    [xfit_norm_balanced]="${XFIT_NORM[*]} --factor_targets standardized --factor_sample_weighting balanced"
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
@@ -100,9 +121,23 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [cbc]="${CBC[*]}"
     [xfit]="${XFIT[*]} --factor_targets standardized"
     [xfit_shuffled]="${XFIT[*]} --factor_targets shuffled"
+    [xfit_norm]="${XFIT_NORM[*]} --factor_targets standardized"
+    [xfit_norm_r10]="${XFIT_NORM[*]} --factor_targets standardized --factor_ridge 10.0"
+    [xfit_norm_w3]="${XFIT_NORM[*]} --factor_targets standardized --factor_distill_weight 3.0"
+    [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
+  )
+elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
+  if [[ "${DATASET}" == "celeba" ]]; then
+    COMMON+=(--epochs 250)
+  fi
+  GROUPS_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
+  ARMS=(
+    [simclr]="--splice_mode none"
+    [f2_std]="${F2[*]} --factor_targets standardized"
+    [f2_shuffled]="${F2[*]} --factor_targets shuffled"
   )
 else
-  echo "Unknown dataset ${DATASET}; use metashift or spur_cifar10." >&2
+  echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
   exit 2
 fi
 
@@ -129,11 +164,27 @@ if [[ " ${SELECTED[*]} " == *" f2_laion "* && -n "${LAION_GROUPS:-}" && ! -f "${
   echo "laion_groups_job=${GROUP_JOB%%;*}"
 fi
 
+# Held-out datasets have concept groups only at older thresholds; build the default ones first.
+DEFAULT_GROUP_DEPENDENCY=()
+if [[ -n "${GROUPS_CACHE}" && ! -f "${DEFAULT_GROUPS}" ]]; then
+  if [[ ! -f "${GROUPS_CACHE}" ]]; then
+    echo "SpLiCE cache not found: ${GROUPS_CACHE}; build it with scripts/cache_splice_dataset.sh first." >&2
+    exit 2
+  fi
+  DEFAULT_GROUP_JOB=$(sbatch --parsable scripts/generate_cospro_concept_groups.sh "${GROUPS_CACHE}" \
+    --output-root "outputs/shared/${DATASET}/graphs/concept_groups" \
+    --text-similarity-threshold 0.80 --coactivation-threshold 0.30 --no-embed-images)
+  DEFAULT_GROUP_DEPENDENCY=(--dependency="afterok:${DEFAULT_GROUP_JOB%%;*}")
+  echo "default_groups_job=${DEFAULT_GROUP_JOB%%;*}"
+fi
+
 for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
     dependency=()
     if [[ "${arm}" == "f2_laion" ]]; then
       dependency=(${GROUP_DEPENDENCY[@]+"${GROUP_DEPENDENCY[@]}"})
+    elif [[ "${arm}" != "simclr" ]]; then
+      dependency=(${DEFAULT_GROUP_DEPENDENCY[@]+"${DEFAULT_GROUP_DEPENDENCY[@]}"})
     fi
     # shellcheck disable=SC2206
     arm_args=(${ARMS[${arm}]})

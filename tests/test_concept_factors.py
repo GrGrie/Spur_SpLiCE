@@ -155,30 +155,41 @@ class CrossFitTests(unittest.TestCase):
         features, targets = torch.randn(10, 6), torch.randn(10, 2)
         weights = torch.rand(10) + 0.5
         fit = torch.arange(10) < 6
-        predicted = cross_fit_predictions(features, targets, weights, fit, 0.1)
-        h, t, w = features[fit], targets[fit], weights[fit] / weights[fit].mean()
+        predicted = cross_fit_predictions(features, targets, weights, fit, 0.5)
+        unit = torch.nn.functional.normalize(features, dim=1)
+        h, t, w = unit[fit], targets[fit], weights[fit] / weights[fit].mean()
         mean_h, mean_t = (w[:, None] * h).mean(0), (w[:, None] * t).mean(0)
         hc, tc = h - mean_h, t - mean_t
-        scale = (hc @ hc.T).diagonal().mean()
-        primal = torch.linalg.solve(hc.T @ torch.diag(w) @ hc + 0.1 * scale * torch.eye(6), hc.T @ torch.diag(w) @ tc)
-        expected = (features[~fit] - mean_h) @ primal + mean_t
+        primal = torch.linalg.solve(hc.T @ torch.diag(w) @ hc + 0.5 * torch.eye(6), hc.T @ torch.diag(w) @ tc)
+        expected = (unit[~fit] - mean_h) @ primal + mean_t
         self.assertTrue(torch.allclose(predicted, expected, atol=1e-4))
+
+    def test_shrinking_the_features_cannot_weaken_the_ridge(self):
+        torch.manual_seed(1)
+        features, targets = torch.randn(12, 8), torch.randn(12, 1)
+        fit = torch.arange(12) < 6
+        weights = torch.ones(12)
+        large = cross_fit_predictions(features, targets, weights, fit, 1.0)
+        small = cross_fit_predictions(features * 1e-4, targets, weights, fit, 1.0)
+        self.assertTrue(torch.allclose(large, small, atol=1e-4))
 
     def test_memorized_image_identities_do_not_lower_the_held_out_loss(self):
         # Features that only identify images (one-hot per image) explain nothing across halves;
         # features that carry the concept do.
-        count = 16
+        torch.manual_seed(0)
+        count = 64
         targets = torch.randn(count, 1)
-        distillation = CrossFitDistillation(targets, 1.0, 0, 0)
+        distillation = CrossFitDistillation(targets, 1.0, 0, 0, ridge=0.01)
         distillation.set_epoch(1)
         identity = torch.eye(count)
-        concept = torch.cat([targets, torch.randn(count, 3) * 0.01], dim=1)
+        # The concept rides on a constant component, so unit-norm rows keep its value.
+        concept = torch.cat([0.2 * targets, torch.ones(count, 1), torch.randn(count, 2) * 0.001], dim=1)
         indices = torch.arange(count)
         identity_loss = float(distillation(torch.cat([identity, identity]), indices))
         concept_loss = float(distillation(torch.cat([concept, concept]), indices))
         self.assertGreater(identity_loss, 0.5)
-        self.assertLess(concept_loss, 0.1)
-        self.assertGreater(distillation.last_diagnostics["factor_heldout_explained_variance"], 0.9)
+        self.assertLess(concept_loss, 0.2)
+        self.assertGreater(distillation.last_diagnostics["factor_heldout_explained_variance"], 0.8)
 
     def test_gradients_reach_the_backbone_through_the_solve(self):
         targets = torch.randn(8, 2)

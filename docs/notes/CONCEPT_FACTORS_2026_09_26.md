@@ -260,6 +260,38 @@ ARMS="xfit xfit_balanced xfit_shuffled" bash scripts/submit_factor_study.sh meta
 ARMS="simclr f2_std f2_shuffled xfit xfit_shuffled" bash scripts/submit_factor_study.sh spur_cifar10 1 2
 ```
 
+## Spur-CIFAR10 control, cross-fitting repaired and the held-out datasets (2026-09-28)
+
+Spur-CIFAR10, seeds 1 and 2, validation:
+
+| arm | val WGA | val acc | factor expl. var. |
+|---|---|---|---|
+| simclr | 15.6 ± 1.0 | 59.5 | |
+| f2_shuffled | 24.2 ± 0.4 | 58.6 | 0.02 |
+| f2_std | 32.9 ± 1.6 | 69.5 | 0.62 |
+
+Real concepts beat the shuffled control by about 9 points of WGA and 11 of accuracy, so the concept
+content carries part of the gain; the control itself adds about 9 points of WGA over SimCLR at equal
+accuracy, so the auxiliary regression also helps as such. The shuffled targets reach an explained
+variance of 0.02 on 45,000 images against 0.33 on MetaShift's 1,700: concept targets shape the
+student where images cannot be memorized.
+
+The first cross-fitted runs failed: NaN features on three of four Spur-CIFAR10 runs and negative
+held-out explained variance everywhere. The ridge scaled with the feature norm and was small, so fits
+of 64 images in 512 dimensions nearly interpolated and the solve became ill conditioned. The fit now
+scales every feature row to unit norm and uses an absolute ridge (`--factor_ridge`, default 1), which
+keeps the system's eigenvalues at least that large; the `xfit_norm` arms test it.
+
+The held-out datasets get the F2 configuration frozen on the development datasets (`f2_std`) against
+SimCLR and the shuffled control, four seeds each; CelebA trains 250 epochs as its CoSpRo pipeline did.
+
+```bash
+bash scripts/submit_factor_study.sh waterbirds 1 2 3 4
+bash scripts/submit_factor_study.sh celeba 1 2 3 4
+ARMS="xfit_norm xfit_norm_r10 xfit_norm_w3 xfit_norm_shuffled xfit_norm_balanced" bash scripts/submit_factor_study.sh metashift 1 2 3 4
+ARMS="xfit_norm xfit_norm_shuffled" bash scripts/submit_factor_study.sh spur_cifar10 1 2
+```
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

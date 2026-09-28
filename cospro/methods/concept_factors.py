@@ -187,20 +187,21 @@ def cross_fit_predictions(features: torch.Tensor, targets: torch.Tensor, weights
 
     Kernel form: with the fitted rows H, their targets T and weights D, the prediction for rows G is
     G H' (D H H' + lambda I)^-1 D T, which equals the primal weighted ridge solution and needs only an
-    n-by-n solve for n fitted rows. Features and targets are centred on the weighted mean of the fitted
-    rows, so the regression has an intercept, and lambda scales with the mean squared feature norm.
-    Gradients flow into the features through the solve.
+    n-by-n solve for n fitted rows. Every feature row is scaled to unit norm first, so the backbone
+    cannot weaken the ridge by shrinking its features, and the system's eigenvalues stay at least
+    lambda: the solve is well conditioned. Features and targets are then centred on the weighted mean
+    of the fitted rows, so the regression has an intercept. Gradients flow through the solve.
     """
 
     held_out = ~fit
+    features = torch.nn.functional.normalize(features, dim=1)
     fitted, other = features[fit], features[held_out]
     fit_weights = weights[fit] / weights[fit].mean()
     feature_mean = (fit_weights[:, None] * fitted).mean(dim=0)
     target_mean = (fit_weights[:, None] * targets[fit]).mean(dim=0)
     fitted, other = fitted - feature_mean, other - feature_mean
     kernel = fitted @ fitted.T
-    scale = kernel.diagonal().mean().clamp_min(1e-6)
-    system = fit_weights[:, None] * kernel + ridge * scale * torch.eye(len(fitted), device=features.device)
+    system = fit_weights[:, None] * kernel + ridge * torch.eye(len(fitted), device=features.device)
     coefficients = torch.linalg.solve(system, fit_weights[:, None] * (targets[fit] - target_mean))
     return other @ fitted.T @ coefficients + target_mean
 
@@ -209,7 +210,7 @@ class CrossFitDistillation:
     """F2 with cross-fitting: each half of the batch is predicted by a ridge regression fitted on the other."""
 
     def __init__(self, targets: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
-                 sample_weights: torch.Tensor | None = None, ridge: float = 0.1) -> None:
+                 sample_weights: torch.Tensor | None = None, ridge: float = 1.0) -> None:
         if weight < 0 or start_epoch < 0 or warmup_epochs < 0 or ridge <= 0:
             raise ValueError("Cross-fitted distillation needs non-negative schedule values and a positive ridge.")
         self.targets = torch.as_tensor(targets).detach().float().cpu()
@@ -316,7 +317,7 @@ class FactorDistillationRegularizer:
                 half[: count // 2] = True
                 half = torch.cat([half, half])
                 predicted = cross_fit_predictions(embeddings.float(), targets, torch.ones_like(half, dtype=torch.float),
-                                                  half, 0.1)
+                                                  half, 1.0)
                 heldout = float((predicted - targets[~half]).pow(2).mean())
             self.last_diagnostics["factor_heldout_explained_variance"] = 1.0 - heldout
         return self.scheduled_weight * loss
@@ -342,7 +343,7 @@ class ConceptFactors(TrainingMethod):
         target_kind: str = "whitened",
         sample_weighting: str = "none",
         cross_fit: bool = False,
-        ridge: float = 0.1,
+        ridge: float = 1.0,
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
