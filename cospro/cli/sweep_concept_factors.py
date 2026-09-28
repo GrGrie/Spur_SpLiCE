@@ -33,6 +33,7 @@ from cospro.data.registry import canonical_dataset_name, dataset_names
 from cospro.diagnostics.factor_validity import diagnose_factors
 from cospro.diagnostics.labels import load_labels
 from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups
+from cospro.pipeline.grouping import build_meaning_groups
 from cospro.pipeline.cache import validate_splice_dataset_cache
 from cospro.pipeline.concept_factors import FactorConfig, build_concept_factors, factor_name
 from cospro.tracking.artifacts import atomic_write_json, report, scratch_root, shared
@@ -60,6 +61,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--coactivation-thresholds", nargs="+", type=float, default=[0.20, 0.30, 0.40])
     parser.add_argument("--merge-similarities", nargs="+", type=float, default=[0.0, 0.70, 0.80, 0.90],
                         help="Redundancy-merge thresholds of the factors; 0 disables merging.")
+    parser.add_argument("--methods", nargs="+", choices=("cospro", "meaning"), default=["cospro"],
+                        help="cospro: text and co-activation union; meaning: average linkage on raw text embeddings.")
+    parser.add_argument("--meaning-text-thresholds", nargs="+", type=float, default=[0.80, 0.85, 0.90])
+    parser.add_argument("--response-thresholds", nargs="+", type=float, default=[0.0, 0.5],
+                        help="Least image-response correlation of a meaning pair; 0 disables the check.")
+    parser.add_argument("--group-min-frequency", type=float, default=0.002,
+                        help="Least concept frequency the meaning grouping considers.")
+    parser.add_argument("--factor-min-frequencies", nargs="+", type=float, default=[DEFAULTS["factor_min_frequency"]])
     parser.add_argument("--feature-root", type=Path, default=None,
                         help="SpLiCE cache root; defaults to <scratch>/features/Spur_SpLiCE.")
     parser.add_argument("--cache-device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -92,6 +101,52 @@ def ensure_cache(args: argparse.Namespace, dataset: str, vocab: str) -> Path:
         "--splice-vocab", vocab, "--splice-vocab-size", str(size), "--splice-l1-penalty", str(SPLICE_L1_PENALTY),
     ], check=True)
     return path
+
+
+def raw_text_embeddings(args: argparse.Namespace, vocab: str, vocabulary: list[str]) -> torch.Tensor:
+    """Normalized CLIP text embeddings of the words, without SpLiCE's centring, cached next to the caches."""
+
+    feature_root = args.feature_root or scratch_root() / "features" / "Spur_SpLiCE"
+    path = feature_root / "text_embeddings" / f"{vocab}_{len(vocabulary)}_raw.pt"
+    if path.is_file():
+        return torch.load(path, map_location="cpu", weights_only=True)
+    import open_clip
+
+    model_name = SPLICE_MODEL.split(":", 1)[1]
+    model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=SPLICE_PRETRAINED)
+    model = model.to(args.cache_device).eval()
+    tokenizer = open_clip.get_tokenizer(model_name)
+    chunks = []
+    with torch.no_grad():
+        for start in range(0, len(vocabulary), 512):
+            tokens = tokenizer(vocabulary[start:start + 512]).to(args.cache_device)
+            chunks.append(torch.nn.functional.normalize(model.encode_text(tokens).float(), dim=1).cpu())
+    embeddings = torch.cat(chunks)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(embeddings, path)
+    return embeddings
+
+
+def groupings(args: argparse.Namespace, cache: dict, vocab: str):
+    """Every grouping of the sweep as (row fields, folder name, groups), built lazily."""
+
+    for method in args.methods:
+        if method == "cospro":
+            for text in args.text_thresholds:
+                for coactivation in args.coactivation_thresholds:
+                    config = CoSpRoAuditConfig(text_similarity_threshold=text, coactivation_threshold=coactivation)
+                    yield ({"method": "cospro", "text": text, "coactivation": coactivation},
+                           f"text_{token(text)}_coactivation_{token(coactivation)}",
+                           lambda config=config: build_concept_groups(cache, config))
+        else:
+            text_embeddings = raw_text_embeddings(args, vocab, [str(word) for word in cache["vocabulary"]])
+            for text in args.meaning_text_thresholds:
+                for response in args.response_thresholds:
+                    yield ({"method": "meaning", "text": text, "coactivation": response},
+                           f"meaning_text_{token(text)}_response_{token(response)}_min_{args.group_min_frequency:g}",
+                           lambda text=text, response=response: build_meaning_groups(
+                               cache, text_embeddings, text_threshold=text, response_threshold=response,
+                               min_frequency=args.group_min_frequency))
 
 
 def compact_groups(groups: dict, presence: torch.Tensor) -> dict[str, Any]:
@@ -138,25 +193,29 @@ def factor_set_record(factors: dict, diagnosis: dict) -> dict[str, Any]:
 def summary_markdown(rows: list[dict]) -> str:
     lines = ["# Concept-factor sweep", "",
              "Pair precision: share of the top entangled pairs that join a class factor to an attribute factor "
-             "(post-hoc, hidden labels). Attribute signal: the largest I(F; a | y) / H(F) over the factors.", ""]
+             "(post-hoc, hidden labels). Attribute signal: the largest I(F; a | y) / H(F) over the factors. "
+             "`coact/resp` is the co-activation threshold of `cospro` and the image-response threshold of `meaning`; "
+             "`min` is the least factor frequency; `composite` counts factors of more than one concept.", ""]
     keys = sorted({(row["dataset"], row["vocab"]) for row in rows})
     for dataset, vocab in keys:
         lines += [f"## {dataset}, {vocab}", "",
-                  "| text | coact | merge | groups | factors | cross/pairs | precision | attr. signal | attr. factors | "
-                  "strongest attribute factor |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
+                  "| method | text | coact/resp | min | merge | groups | factors | composite | cross/pairs | precision | "
+                  "attr. signal | attr. factors | strongest attribute factor | largest factor |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         selected = [row for row in rows if (row["dataset"], row["vocab"]) == (dataset, vocab)]
         selected.sort(key=lambda row: (-(row.get("pair_precision") or 0), -row.get("attribute_signal", 0)))
         for row in selected:
+            head = (f"| {row.get('method', 'cospro')} | {row['text']:.2f} | {row['coactivation']:.2f} | "
+                    f"{row.get('factor_min', DEFAULTS['factor_min_frequency']):g} | {row['merge']:.2f} | "
+                    f"{row.get('groups', '')} |")
             if "error" in row:
-                lines.append(f"| {row['text']:.2f} | {row['coactivation']:.2f} | {row['merge']:.2f} | "
-                             f"{row.get('groups', '')} | error: {row['error']} | | | | | |")
+                lines.append(f"{head} error: {row['error']} | | | | | | | |")
                 continue
             precision = "" if row["pair_precision"] is None else f"{row['pair_precision']:.2f}"
             lines.append(
-                f"| {row['text']:.2f} | {row['coactivation']:.2f} | {row['merge']:.2f} | {row['groups']} | "
-                f"{row['factors']} | {row['cross_pairs']}/{row['pairs']} | {precision} | "
-                f"{row['attribute_signal']:.3f} | {row['attribute_factors']} | {row['top_attribute']} |"
+                f"{head} {row['factors']} | {row.get('composite_factors', '')} | {row['cross_pairs']}/{row['pairs']} | "
+                f"{precision} | {row['attribute_signal']:.3f} | {row['attribute_factors']} | {row['top_attribute']} | "
+                f"{row.get('largest_factor', '')} |"
             )
         lines.append("")
     return "\n".join(lines)
@@ -176,30 +235,36 @@ def main(argv: list[str] | None = None) -> Path:
             )
             y, a = labels.for_ids(cache["sample_ids"])
             presence = cache["splice_codes"] > 0
-            for text in args.text_thresholds:
-                for coactivation in args.coactivation_thresholds:
-                    grouping = CoSpRoAuditConfig(text_similarity_threshold=text, coactivation_threshold=coactivation)
-                    groups = build_concept_groups(cache, grouping)
-                    folder = shared(dataset, "factor_sweep", vocab, f"text_{token(text)}_coactivation_{token(coactivation)}")
-                    folder.mkdir(parents=True, exist_ok=True)
-                    atomic_write_json(folder / "groups.json", compact_groups(groups, presence))
+            for fields, folder_name, build in groupings(args, cache, vocab):
+                groups = build()
+                folder = shared(dataset, "factor_sweep", vocab, folder_name)
+                folder.mkdir(parents=True, exist_ok=True)
+                atomic_write_json(folder / "groups.json", compact_groups(groups, presence))
+                for minimum in args.factor_min_frequencies:
                     for merge in args.merge_similarities:
-                        row = {"dataset": dataset, "vocab": vocab, "text": text, "coactivation": coactivation,
+                        row = {"dataset": dataset, "vocab": vocab, **fields, "factor_min": minimum,
                                "merge": merge, "groups": len(groups["groups"])}
                         try:
-                            factors = build_concept_factors(cache, groups, FactorConfig(merge_similarity=merge))
+                            factors = build_concept_factors(
+                                cache, groups, FactorConfig(min_frequency=minimum, merge_similarity=merge),
+                            )
                         except ValueError as error:
                             rows.append({**row, "error": str(error)})
                             continue
                         names = [factor_name(factor) for factor in factors["factors"]]
                         diagnosis = diagnose_factors(factors["active"].numpy(), factors["pairs"], names, y, a)
-                        atomic_write_json(folder / f"factors_merge_{token(merge)}.json",
+                        suffix = "" if minimum == DEFAULTS["factor_min_frequency"] else f"_min_{minimum:g}"
+                        atomic_write_json(folder / f"factors_merge_{token(merge)}{suffix}.json",
                                           factor_set_record(factors, diagnosis))
                         summary = diagnosis["summary"]
                         top = summary["top_attribute_factors"][0] if summary["top_attribute_factors"] else {}
+                        composite = [factor for factor in factors["factors"] if len(factor["concepts"]) > 1]
+                        largest = max(factors["factors"], key=lambda factor: len(factor["concepts"]))
                         rows.append({
                             **row,
                             "factors": summary["factor_count"],
+                            "composite_factors": len(composite),
+                            "largest_factor": ", ".join(largest["concepts"][:8]),
                             "pairs": summary["pair_count"],
                             "cross_pairs": summary["cross_pairs"],
                             "pair_precision": summary["pair_precision"],
@@ -209,13 +274,14 @@ def main(argv: list[str] | None = None) -> Path:
                             "top_pairs": [f"{pair['verdict']}: {pair['concepts'][0]} <-> {pair['concepts'][1]}"
                                           for pair in diagnosis["pairs"][:3]],
                         })
-                        print(f"[sweep] {dataset} {vocab} text={text:.2f} coact={coactivation:.2f} merge={merge:.2f}: "
+                        print(f"[sweep] {dataset} {vocab} {folder_name} min={minimum:g} merge={merge:.2f}: "
+                              f"{summary['factor_count']} factors ({len(composite)} composite), "
                               f"{summary['cross_pairs']}/{summary['pair_count']} cross pairs, "
                               f"attribute signal {summary['best_attribute_signal']:.3f}", flush=True)
-                    # Write after every grouping, so an interrupted sweep still leaves a readable summary.
-                    summary_dir.mkdir(parents=True, exist_ok=True)
-                    atomic_write_json(summary_dir / "summary.json", {"rows": rows})
-                    (summary_dir / "summary.md").write_text(summary_markdown(rows), encoding="utf-8")
+                # Write after every grouping, so an interrupted sweep still leaves a readable summary.
+                summary_dir.mkdir(parents=True, exist_ok=True)
+                atomic_write_json(summary_dir / "summary.json", {"rows": rows})
+                (summary_dir / "summary.md").write_text(summary_markdown(rows), encoding="utf-8")
             del cache, presence
     print(f"[results] Sweep summary: {summary_dir / 'summary.md'}")
     return summary_dir / "summary.md"

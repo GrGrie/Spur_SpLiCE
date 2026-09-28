@@ -21,14 +21,16 @@ from cospro.methods.concept_factors import (
     ConceptConditionedBatchSampler,
     FactorDistillationRegularizer,
 )
-from cospro.cli import sweep_concept_factors
+from cospro.cli import build_meaning_groups, sweep_concept_factors
 from cospro.cli.cache_splice_dataset import cache_config_name
 from cospro.diagnostics.factor_validity import conditional_uncertainty, diagnose_factors
 from cospro.pipeline import CoSpRoAuditConfig, build_concept_groups
+from cospro.pipeline.grouping import group_by_meaning
 from cospro.pipeline.concept_factors import (
     FactorConfig,
     build_concept_factors,
     factor_report,
+    load_concept_factors,
     rows_for_subset,
 )
 from cospro.tracking.artifacts import PROJECT_ROOT
@@ -316,6 +318,56 @@ class FactorValidityTests(unittest.TestCase):
         self.assertAlmostEqual(float(conditional_uncertainty(np.array([0, 0, 1, 1], bool), y, a)), 1.0)
 
 
+class MeaningGroupingTests(unittest.TestCase):
+    def cache(self, codes):
+        return {"splice_codes": torch.as_tensor(codes, dtype=torch.float32),
+                "vocabulary": ["path", "walkway", "bamboo", "jungle"], "sample_ids": ["0", "1", "2", "3"]}
+
+    def test_synonyms_that_never_coactivate_share_a_group(self):
+        # path and walkway fire on different images, as SpLiCE's L1 penalty makes synonyms do.
+        codes = torch.eye(4)
+        text = torch.tensor([[1.0, 0.0, 0.0], [0.95, 0.31, 0.0], [0.0, 0.0, 1.0], [0.0, 0.8, 0.6]])
+        groups = group_by_meaning(self.cache(codes), text, text_threshold=0.8, response_threshold=0.0,
+                                  min_frequency=0.1, max_frequency=0.95)
+        self.assertEqual(groups, [[0, 1], [2], [3]])
+
+    def test_average_linkage_breaks_a_chain_of_pairwise_matches(self):
+        # 0~1 and 1~2 pass the threshold, 0~2 does not: a union of pairs would join all three.
+        text = torch.tensor([[1.0, 0.0], [0.906, 0.423], [0.643, 0.766], [-1.0, 0.0]])
+        groups = group_by_meaning(self.cache(torch.eye(4)), text, text_threshold=0.9, response_threshold=0.0,
+                                  min_frequency=0.1, max_frequency=0.95)
+        self.assertEqual(len(groups), 3)
+        self.assertNotIn([0, 1, 2], groups)
+
+
+class MeaningGroupsCommandTests(unittest.TestCase):
+    def test_the_written_groups_load_as_training_factors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache, _ = synthetic_inputs()
+            name = cache_config_name(argparse.Namespace(
+                dataset="waterbirds", splice_model=sweep_concept_factors.SPLICE_MODEL,
+                splice_pretrained=sweep_concept_factors.SPLICE_PRETRAINED, splice_vocab="laion",
+                splice_vocab_size=10000, splice_l1_penalty=0.25, splice_vocab_file=None, splice_vocab_order=None,
+            ))
+            cache_path = root / "features" / "waterbirds" / "splice_dataset_cache" / name / "splice_dataset_cache.pt"
+            cache_path.parent.mkdir(parents=True)
+            torch.save(cache, cache_path)
+            text = torch.as_tensor(cache["dictionary"]).float()
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root / "outputs")}), \
+                    patch.object(build_meaning_groups, "raw_text_embeddings", return_value=text):
+                output = build_meaning_groups.main([
+                    "--dataset", "waterbirds", "--vocab", "laion", "--feature-root", str(root / "features"),
+                    "--text-threshold", "0.9", "--factor-min-frequency", "0.02",
+                ])
+            factors, _, loaded_cache = load_concept_factors(
+                "waterbirds", FactorConfig(), concept_groups=str(output), splice_cache=str(cache_path),
+            )
+            self.assertEqual(loaded_cache, cache_path)
+            self.assertGreaterEqual(len(factors["factors"]), 2)
+            self.assertTrue((output.parent / "factor_report.json").is_file())
+
+
 class SweepTests(unittest.TestCase):
     def test_the_sweep_writes_groups_factor_sets_and_a_summary(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -344,6 +396,35 @@ class SweepTests(unittest.TestCase):
             record = json.loads((folder / "factors_merge_0p00.json").read_text(encoding="utf-8"))
             # Both planted pairs join a class factor to an attribute factor; weaker pairs follow them.
             self.assertEqual([pair["verdict"] for pair in record["pairs"][:2]], ["cross", "cross"])
+
+    def test_the_meaning_grouping_runs_with_raw_text_embeddings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_waterbirds_fixture(root / "datasets")
+            cache, _ = synthetic_inputs()
+            name = cache_config_name(argparse.Namespace(
+                dataset="waterbirds", splice_model=sweep_concept_factors.SPLICE_MODEL,
+                splice_pretrained=sweep_concept_factors.SPLICE_PRETRAINED, splice_vocab="laion",
+                splice_vocab_size=10000, splice_l1_penalty=0.25, splice_vocab_file=None, splice_vocab_order=None,
+            ))
+            cache_path = root / "features" / "waterbirds" / "splice_dataset_cache" / name / "splice_dataset_cache.pt"
+            cache_path.parent.mkdir(parents=True)
+            torch.save(cache, cache_path)
+            text = torch.as_tensor(cache["dictionary"]).float()
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root / "outputs")}), \
+                    patch.object(sweep_concept_factors, "raw_text_embeddings", return_value=text):
+                summary = sweep_concept_factors.main([
+                    "--data-folder", str(root / "datasets"), "--datasets", "waterbirds", "--vocabs", "laion",
+                    "--feature-root", str(root / "features"), "--methods", "meaning",
+                    "--meaning-text-thresholds", "0.9", "--response-thresholds", "0", "0.5",
+                    "--factor-min-frequencies", "0.02", "0.01", "--merge-similarities", "0",
+                ])
+            rows = json.loads((summary.parent / "summary.json").read_text(encoding="utf-8"))["rows"]
+            self.assertEqual(len(rows), 4)
+            self.assertEqual({row["method"] for row in rows}, {"meaning"})
+            self.assertTrue(all("error" not in row for row in rows))
+            folder = root / "outputs" / "shared" / "waterbirds" / "factor_sweep" / "laion"
+            self.assertTrue((folder / "meaning_text_0p90_response_0p00_min_0.002" / "factors_merge_0p00_min_0.01.json").is_file())
 
 
 class ConditionedSamplerTests(unittest.TestCase):

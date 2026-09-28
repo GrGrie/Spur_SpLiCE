@@ -301,6 +301,78 @@ def _concept_group_report_diagnostics(
     }
 
 
+def image_response_correlation(cache: dict, indices: torch.Tensor) -> torch.Tensor:
+    """Correlation, across the dataset's images, of their CLIP alignment with each pair of concepts."""
+
+    embeddings = F.normalize(torch.as_tensor(cache["clip_embeddings"]).float(), dim=1)
+    centered = embeddings - torch.as_tensor(cache["image_mean"]).float().view(1, -1)
+    responses = centered @ F.normalize(torch.as_tensor(cache["dictionary"])[indices].float(), dim=1).T
+    responses = (responses - responses.mean(dim=0)) / responses.std(dim=0, unbiased=False).clamp_min(1e-9)
+    return responses.T @ responses / responses.shape[0]
+
+
+def group_by_meaning(cache: dict, text_embeddings: torch.Tensor, *, text_threshold: float,
+                     response_threshold: float, min_frequency: float, max_frequency: float) -> list[list[int]]:
+    """Average-linkage clusters of the concepts whose raw CLIP text embeddings name the same thing.
+
+    SpLiCE's L1 penalty activates one of two synonyms per image, so synonyms rarely co-activate and
+    the centred dictionary lowers their text similarity (path and walkway: 0.23). The raw text
+    embeddings keep it (0.85), and average linkage joins two clusters only when their members agree
+    on average, which stops the chains a union of pairwise matches forms through a bird and its
+    background. With ``response_threshold`` above 0, a pair whose image responses correlate less
+    than it counts as dissimilar. The frequency band is wide, so rare synonyms group before the
+    factor band applies to their sum.
+    """
+
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+
+    frequency = (torch.as_tensor(cache["splice_codes"]) > 0).float().mean(dim=0)
+    active = torch.where((frequency >= min_frequency) & (frequency <= max_frequency))[0]
+    if len(active) < 2:
+        return [[int(index)] for index in active.tolist()]
+    text = F.normalize(torch.as_tensor(text_embeddings)[active].float(), dim=1)
+    similarity = text @ text.T
+    if response_threshold > 0:
+        dissimilar = image_response_correlation(cache, active) < response_threshold
+        similarity = similarity.masked_fill(dissimilar, -1.0)
+    distance = (1.0 - similarity).clamp_min(0.0).double()
+    distance.fill_diagonal_(0.0)
+    distance = (distance + distance.T) / 2
+    labels = fcluster(linkage(squareform(distance.numpy(), checks=False), method="average"),
+                      t=1.0 - text_threshold, criterion="distance")
+    clusters: dict[int, list[int]] = {}
+    for label, index in zip(labels.tolist(), active.tolist()):
+        clusters.setdefault(int(label), []).append(int(index))
+    return sorted((sorted(members) for members in clusters.values()), key=lambda members: members[0])
+
+
+def build_meaning_groups(cache: dict, text_embeddings: torch.Tensor, *, text_threshold: float,
+                         response_threshold: float, min_frequency: float, max_frequency: float = 0.95) -> dict:
+    """Concept groups of ``group_by_meaning`` in the layout ``build_concept_factors`` reads."""
+
+    indices = group_by_meaning(cache, text_embeddings, text_threshold=text_threshold,
+                               response_threshold=response_threshold, min_frequency=min_frequency,
+                               max_frequency=max_frequency)
+    groups = [
+        {"group_id": group_id, "concept_indices": members,
+         "concepts": [cache["vocabulary"][index] for index in members], "size": len(members)}
+        for group_id, members in enumerate(indices)
+    ]
+    active_count = sum(len(members) for members in indices)
+    return {
+        "sample_ids": cache["sample_ids"],
+        "provenance": dict(cache.get("provenance", {})),
+        "config": {"method": "meaning", "text_threshold": text_threshold, "response_threshold": response_threshold,
+                   "min_frequency": min_frequency, "max_frequency": max_frequency},
+        "vocabulary": cache["vocabulary"],
+        "active_concept_count": active_count,
+        "groups": groups,
+        "group_sizes": [group["size"] for group in groups],
+        "diagnostics": _concept_group_diagnostics(groups, active_count),
+    }
+
+
 def build_concept_groups(splice_dataset_cache: dict, config: CoSpRoAuditConfig) -> dict:
     """Generate reusable concept groups from a frozen SpLiCE dataset cache."""
 
