@@ -292,6 +292,40 @@ ARMS="xfit_norm xfit_norm_r10 xfit_norm_w3 xfit_norm_shuffled xfit_norm_balanced
 ARMS="xfit_norm xfit_norm_shuffled" bash scripts/submit_factor_study.sh spur_cifar10 1 2
 ```
 
+## Meaning groups and the repaired cross-fit (2026-09-29)
+
+SpLiCE activates one of two synonyms per image and centres its dictionary, so the text-and-co-activation
+grouping keeps synonyms apart (heron and egret co-activate at 0.09) and chains a bird to its background
+when its thresholds drop. The meaning grouping (`--methods meaning` in the sweep,
+`cospro.cli.build_meaning_groups`) clusters concepts by average linkage on raw CLIP text embeddings,
+where synonyms reach 0.85 to 0.94 and object-context pairs 0.64 to 0.72.
+
+A ridge fitted on 64 images cannot predict a factor that occurs once per half batch. With CLIP image
+embeddings as features, the held-out explained variance of the 278 meaning factors from 1 percent is
+-0.015 and of the 24 factors from 5 percent +0.16; shuffled targets give -0.07. These bound what the
+student can reach.
+
+Validation, seeds 1 and 2, epoch 500:
+
+| dataset | arm | factors | held-out expl. var. | val WGA | val acc |
+|---|---|---|---|---|---|
+| Spur-CIFAR10 | simclr | | | 15.6 | 59.5 |
+| Spur-CIFAR10 | f2_std | 88 | 0.10 | 32.9 | 69.5 |
+| Spur-CIFAR10 | xfit_norm | 88 | 0.13 | 33.6 | 69.7 |
+| Spur-CIFAR10 | xfit_shuffled (weight 3) | 88 | -0.02 | 15.3 | 48.8 |
+| MetaShift | xfit_norm | 145 | -0.01 | 43.9 | 54.8 |
+| MetaShift | xfit_norm_shuffled | 145 | -0.03 | 41.7 | 54.4 |
+| MetaShift | xfit_meaning | 24 | 0.05, rising | 46.0 | 58.8 |
+| MetaShift | xfit_meaning_shuffled | 24 | -0.02 | 46.7 | 58.6 |
+
+On Spur-CIFAR10 the cross-fitted F2 matches F2 and its shuffled control falls to SimCLR, so the gain
+comes from the concept content alone. On MetaShift the meaning factors are learned across images, a
+third of the CLIP bound and still rising at epoch 500, and WGA does not move. The next study raises
+the loss weight (`xfit_meaning_w3`, `xfit_meaning_w10`) and adds seeds 3 and 4.
+
+`submit_factor_study.sh` runs at most `MAX_PARALLEL` (default 8) of its jobs at once; `submit_experiment.sh`
+throttles its array the same way.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

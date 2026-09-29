@@ -48,6 +48,8 @@
 # no merge. The groups file is built locally and synchronized through Git.
 #   f2_meaning, xfit_meaning  F2 and cross-fitted F2 (weight 1, ridge 1) on these factors
 #   f2_meaning_shuffled, xfit_meaning_shuffled  their controls
+#   xfit_meaning_w3, xfit_meaning_w10, xfit_meaning_w3_shuffled  loss weight 3 and 10: at weight 1 the
+#                             held-out explained variance was still rising at epoch 500
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -97,6 +99,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [f2_meaning_shuffled]="${F2_MEANING[*]} --factor_targets shuffled"
     [xfit_meaning]="${XFIT_MEANING[*]} --factor_targets standardized"
     [xfit_meaning_shuffled]="${XFIT_MEANING[*]} --factor_targets shuffled"
+    [xfit_meaning_w3]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 3.0"
+    [xfit_meaning_w10]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 10.0"
+    [xfit_meaning_w3_shuffled]="${XFIT_MEANING[*]} --factor_targets shuffled --factor_distill_weight 3.0"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -195,19 +200,31 @@ if [[ -n "${GROUPS_CACHE}" && ! -f "${DEFAULT_GROUPS}" ]]; then
   echo "default_groups_job=${DEFAULT_GROUP_JOB%%;*}"
 fi
 
+# At most MAX_PARALLEL training jobs of this submission run at once: job i waits for job i - MAX_PARALLEL
+# to end (afterany), so the jobs run in MAX_PARALLEL lanes one after another.
+MAX_PARALLEL="${MAX_PARALLEL:-8}"
+SUBMITTED=()
 for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
+    conditions=()
+    if [[ "${arm}" == "f2_laion" && "${#GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
+      conditions+=("${GROUP_DEPENDENCY[0]#--dependency=}")
+    elif [[ "${arm}" != "simclr" && "${#DEFAULT_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
+      conditions+=("${DEFAULT_GROUP_DEPENDENCY[0]#--dependency=}")
+    fi
+    if (( ${#SUBMITTED[@]} >= MAX_PARALLEL )); then
+      conditions+=("afterany:${SUBMITTED[${#SUBMITTED[@]} - MAX_PARALLEL]}")
+    fi
     dependency=()
-    if [[ "${arm}" == "f2_laion" ]]; then
-      dependency=(${GROUP_DEPENDENCY[@]+"${GROUP_DEPENDENCY[@]}"})
-    elif [[ "${arm}" != "simclr" ]]; then
-      dependency=(${DEFAULT_GROUP_DEPENDENCY[@]+"${DEFAULT_GROUP_DEPENDENCY[@]}"})
+    if [[ "${#conditions[@]}" -gt 0 ]]; then
+      dependency=(--dependency="$(IFS=,; echo "${conditions[*]}")")
     fi
     # shellcheck disable=SC2206
     arm_args=(${ARMS[${arm}]})
     job=$(sbatch --parsable ${dependency[@]+"${dependency[@]}"} --job-name "${STUDY}-${arm}-s${seed}" \
       scripts/run_training.sbatch "${COMMON[@]}" --seed "${seed}" --arm "${arm}" "${arm_args[@]}")
-    echo "${arm} seed=${seed} job=${job%%;*}"
+    SUBMITTED+=("${job%%;*}")
+    echo "${arm} seed=${seed} job=${job%%;*}${dependency[0]:+ (${dependency[0]})}"
   done
 done
 echo "Summary after each run: outputs/reports/${STUDY}/summary.md"

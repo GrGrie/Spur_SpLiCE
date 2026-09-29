@@ -16,7 +16,8 @@ source scripts/load_splice_cluster_env.sh
 
 TASK_COUNT=$("${PYTHON_BIN}" -c 'import sys; from experiments.runner import read_manifest_file; m=read_manifest_file(sys.argv[1]); print(len(m["seeds"])*len(m["arms"]))' "${MANIFEST}")
 LAST_TASK=$((TASK_COUNT - 1))
-ARRAY_JOB=$(sbatch --parsable --array="0-${LAST_TASK}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},MANIFEST=${MANIFEST},LOCKED_TEST=${LOCKED_TEST}" scripts/run_experiment.sbatch)
+# "%N" lets at most MAX_PARALLEL array tasks run at once.
+ARRAY_JOB=$(sbatch --parsable --array="0-${LAST_TASK}%${MAX_PARALLEL:-8}"--export="ALL,PROJECT_DIR=${PROJECT_DIR},MANIFEST=${MANIFEST},LOCKED_TEST=${LOCKED_TEST}" scripts/run_experiment.sbatch)
 ARRAY_JOB="${ARRAY_JOB%%;*}"
 COLLECT_JOB=$(sbatch --parsable --dependency="afterany:${ARRAY_JOB}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},MANIFEST=${MANIFEST}" scripts/collect_results.sbatch)
 
