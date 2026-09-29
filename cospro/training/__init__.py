@@ -12,6 +12,7 @@ from cospro.training.callbacks import (
     Callback,
     CheckpointPolicy,
     EpochReport,
+    FactorLearnability,
     PeriodicProbe,
     RankMetrics,
     RunRecordLogger,
@@ -22,6 +23,6 @@ from cospro.training.storage import StoragePolicy, artifact_identity
 from cospro.training.trainer import Trainer
 
 __all__ = [
-    "Callback", "CheckpointPolicy", "EpochReport", "PeriodicProbe", "RankMetrics", "RunRecordLogger",
+    "Callback", "CheckpointPolicy", "EpochReport", "FactorLearnability", "PeriodicProbe", "RankMetrics", "RunRecordLogger",
     "StoragePolicy", "Trainer", "TrainingState", "WandbLogger", "artifact_identity",
 ]

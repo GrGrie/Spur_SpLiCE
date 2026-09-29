@@ -16,6 +16,7 @@ from golden_support import synthetic_splice_cache, train_sample_ids, write_water
 from test_golden_training import COMMON_ARGS, GRAPH_CONFIG
 from cospro.methods.concept_factors import (
     ConceptBlockContrast,
+    ConceptFactors,
     CrossFitDistillation,
     cross_fit_predictions,
     ConceptConditionedBatchSampler,
@@ -30,6 +31,7 @@ from cospro.pipeline.concept_factors import (
     FactorConfig,
     build_concept_factors,
     factor_report,
+    heldout_explained_variance,
     load_concept_factors,
     rows_for_subset,
 )
@@ -316,6 +318,33 @@ class FactorValidityTests(unittest.TestCase):
     def test_a_single_column_gives_a_scalar(self):
         y = np.array([0, 0, 1, 1]); a = np.array([0, 1, 0, 1])
         self.assertAlmostEqual(float(conditional_uncertainty(np.array([0, 0, 1, 1], bool), y, a)), 1.0)
+
+
+class FactorLearnabilityTests(unittest.TestCase):
+    def test_encoded_factors_score_high_and_unrelated_ones_near_zero(self):
+        generator = torch.Generator().manual_seed(0)
+        features = torch.randn(600, 32, generator=generator)
+        targets = torch.stack([features[:, 0] + 0.1 * torch.randn(600, generator=generator),
+                               torch.randn(600, generator=generator)], dim=1)
+        scores = heldout_explained_variance(features, targets, ridge=1.0)
+        self.assertGreater(float(scores[0]), 0.8)
+        self.assertLess(abs(float(scores[1])), 0.1)
+
+    def test_the_method_matches_features_to_factors_by_source_index(self):
+        method = ConceptFactors()
+        generator = torch.Generator().manual_seed(1)
+        features = torch.randn(400, 16, generator=generator)
+        targets = features[:, :2].clone()
+        method.learnability = {"source_indices": list(range(100, 500)), "targets": targets,
+                               "clip": torch.tensor([0.9, 0.9]),
+                               "factors": [{"name": "a", "concepts": ["a"], "frequency": 0.5},
+                                           {"name": "b", "concepts": ["b"], "frequency": 0.5}]}
+        reverse = list(range(499, 99, -1))
+        result = method.factor_learnability(features.flip(0), reverse)
+        self.assertGreater(result["student_mean"], 0.8)
+        self.assertEqual(result["learned_fraction"], 1.0)
+        shuffled = method.factor_learnability(features, reverse)
+        self.assertLess(shuffled["student_mean"], 0.1)
 
 
 class MeaningGroupingTests(unittest.TestCase):

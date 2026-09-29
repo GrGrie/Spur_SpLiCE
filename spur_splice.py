@@ -40,6 +40,7 @@ from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, se
 from cospro.methods import LoaderContext, build_method
 from cospro.training import (
     CheckpointPolicy,
+    FactorLearnability,
     PeriodicProbe,
     RankMetrics,
     RunRecordLogger,
@@ -479,6 +480,7 @@ def build_callbacks(args: argparse.Namespace, state: TrainingState, storage: Sto
     )
     callbacks = [
         RankMetrics(state, args, every=args.rank_eval_freq),
+        FactorLearnability(state, args, every=args.rank_eval_freq, total_epochs=args.epochs),
         RunRecordLogger(recorder),
         wandb_logger,
         probe,

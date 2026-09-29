@@ -72,6 +72,11 @@ class TrainingMethod:
 
         return []
 
+    def factor_learnability(self, features, source_indices) -> dict[str, Any] | None:
+        """How well ``features`` of the training images encode the method's concept factors, if it has any."""
+
+        return None
+
     def sampling_state(self):
         """State a method saves in the checkpoint, such as an adaptive sampler."""
 

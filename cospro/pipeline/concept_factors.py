@@ -176,6 +176,40 @@ def whitened(activations: torch.Tensor, eps: float) -> torch.Tensor:
     return standardized((values @ transform).float())
 
 
+#: Ridge of the whole-dataset learnability fit. On MetaShift's 1,700 images it keeps shuffled targets
+#: and random features at an explained variance of -0.01 while CLIP features reach +0.26.
+LEARNABILITY_RIDGE = 10.0
+
+
+def heldout_explained_variance(features: torch.Tensor, targets: torch.Tensor, *, ridge: float = LEARNABILITY_RIDGE,
+                               folds: int = 5, seed: int = 0) -> torch.Tensor:
+    """Per-column explained variance of a ridge regression predicting each fold from the others.
+
+    Rows of ``features`` are scaled to unit norm, and features and targets are centred on the fitted
+    folds. A column the features encode across images scores high; memorizing single images earns
+    nothing, because every prediction is for images outside the fit.
+    """
+
+    features = F.normalize(torch.as_tensor(features).double(), dim=1)
+    targets = torch.as_tensor(targets).double()
+    count = features.shape[0]
+    if count < folds * 2:
+        raise ValueError("The learnability fit needs at least two images per fold.")
+    order = torch.randperm(count, generator=torch.Generator().manual_seed(seed))
+    predictions = torch.zeros_like(targets)
+    identity = torch.eye(features.shape[1], dtype=features.dtype)
+    for fold in range(folds):
+        held_out = order[fold::folds]
+        fit = torch.ones(count, dtype=torch.bool)
+        fit[held_out] = False
+        feature_mean, target_mean = features[fit].mean(dim=0), targets[fit].mean(dim=0)
+        centred = features[fit] - feature_mean
+        weights = torch.linalg.solve(centred.T @ centred + ridge * identity, centred.T @ (targets[fit] - target_mean))
+        predictions[held_out] = (features[held_out] - feature_mean) @ weights + target_mean
+    variance = targets.var(dim=0, unbiased=False).clamp_min(1e-12)
+    return (1.0 - (predictions - targets).pow(2).mean(dim=0) / variance).float()
+
+
 def atypicality_weights(white: torch.Tensor, cap: float = 10.0) -> torch.Tensor:
     """Per-image weights, mean 1, that grow with how far an image's factors break the dataset's correlations.
 
@@ -429,6 +463,8 @@ def load_concept_factors(dataset: str, config: FactorConfig, *, concept_groups: 
         if mismatched:
             raise ValueError(f"SpLiCE cache {cache_path} differs from the concept groups in {sorted(mismatched)}.")
     factors = build_concept_factors(cache, groups, config)
+    # The CLIP embeddings the factors come from bound what a student can learn of them.
+    factors["clip_embeddings"] = torch.as_tensor(cache["clip_embeddings"]).float()
     return factors, groups_path, cache_path
 
 

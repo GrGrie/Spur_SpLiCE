@@ -14,7 +14,9 @@ observation can move the training stream.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from cospro.tracking import canonical_train_metrics, epoch_payload
@@ -82,6 +84,43 @@ class RankMetrics(Callback):
             "Entropy": entropy,
             "Effective rank": effective_rank,
             "Energy-based rank": energy_based_rank,
+        })
+
+
+class FactorLearnability(Callback):
+    """Per-factor held-out explained variance of the training features, written beside the run status.
+
+    Runs every ``every`` epochs and at the last epoch for methods with concept factors. The file
+    ``factor_learnability_epoch_<E>.json`` lists every factor with the student's and CLIP's score, and
+    the epoch report carries the means.
+    """
+
+    def __init__(self, state: TrainingState, args, *, every: int, total_epochs: int) -> None:
+        self.state = state
+        self.args = args
+        self.every = int(every)
+        self.total_epochs = int(total_epochs)
+
+    def on_epoch_end(self, report: EpochReport) -> None:
+        due = report.epoch == self.total_epochs or (self.every > 0 and report.epoch % self.every == 0)
+        if not due or self.state.rank_loader is None or not getattr(self.state.method, "learnability", None):
+            return
+        features = extract_normalized_train_features(self.state.model, self.state.rank_loader, self.args)
+        source_indices = getattr(self.state.rank_loader.dataset, "indices", None)
+        if source_indices is None:
+            raise ValueError("Factor learnability needs a rank loader with stable source indices.")
+        result = self.state.method.factor_learnability(features, source_indices)
+        if result is None:
+            return
+        path = Path(self.args.save_folder) / f"factor_learnability_epoch_{report.epoch}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"epoch": report.epoch, **result}, indent=1), encoding="utf-8")
+        print(f"[INFO] Factor learnability at epoch {report.epoch}: student {result['student_mean']:.3f}, "
+              f"CLIP {result['clip_mean']:.3f}, learned {result['learned_fraction']:.2f} -> {path}", flush=True)
+        report.diagnostics.update({
+            "Factor held-out explained variance": result["student_mean"],
+            "Factor held-out explained variance of CLIP": result["clip_mean"],
+            "Factor learned fraction": result["learned_fraction"],
         })
 
 

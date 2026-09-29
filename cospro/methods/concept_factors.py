@@ -42,7 +42,9 @@ from torch.utils.data import DataLoader, Sampler
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
 from cospro.pipeline.concept_factors import (
+    LEARNABILITY_RIDGE,
     SHUFFLE_SEED,
+    heldout_explained_variance,
     FactorConfig,
     balancing_weights,
     block_factor_columns,
@@ -377,6 +379,7 @@ class ConceptFactors(TrainingMethod):
         self.sampler: ConceptConditionedBatchSampler | None = None
         self.regularizer: FactorDistillationRegularizer | None = None
         self.report: dict[str, Any] = {}
+        self.learnability: dict[str, Any] = {}
         self.paths: tuple[Path, Path] | None = None
 
     @classmethod
@@ -424,6 +427,7 @@ class ConceptFactors(TrainingMethod):
         print(f"[INFO] Concept factors from {groups_path} and {cache_path}", flush=True)
         print(format_factor_report(self.report), flush=True)
         rows = rows_for_subset(factors["sample_ids"], context.dataset, source_indices)
+        self._prepare_learnability(factors, rows, source_indices)
         if self.condition_fraction > 0 and not factors["condition_factors"]:
             raise ValueError("Conditioned batches need at least one entangled factor pair.")
         if self.distill_weight > 0:
@@ -472,6 +476,49 @@ class ConceptFactors(TrainingMethod):
             worker_init_fn=context.worker_init_fn if context.num_workers > 0 else None,
             generator=loader.generator,
         )
+
+    def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices) -> None:
+        """The real standardized targets and their CLIP bound, whatever targets the loss uses."""
+
+        targets = factors["targets"]["standardized"].index_select(0, rows)
+        clip = factors["clip_embeddings"].index_select(0, rows)
+        self.learnability = {
+            "source_indices": [int(index) for index in source_indices],
+            "targets": targets,
+            "clip": heldout_explained_variance(clip, targets),
+            "factors": [
+                {"name": factor_name(factor), "concepts": factor["concepts"], "frequency": round(factor["frequency"], 4)}
+                for factor in factors["factors"]
+            ],
+        }
+
+    def factor_learnability(self, features, source_indices) -> dict[str, Any] | None:
+        """Held-out explained variance of every real factor from ``features``, beside its CLIP bound.
+
+        Shuffled-target arms score the real factors too, so their record shows what SimCLR learns of
+        the concepts without the concept loss.
+        """
+
+        if not self.learnability:
+            return None
+        position = {index: row for row, index in enumerate(self.learnability["source_indices"])}
+        order = torch.tensor([position[int(index)] for index in source_indices], dtype=torch.long)
+        targets = self.learnability["targets"].index_select(0, order)
+        student = heldout_explained_variance(features, targets)
+        clip = self.learnability["clip"]
+        entries = [
+            {**factor, "student": round(float(student[column]), 4), "clip": round(float(clip[column]), 4)}
+            for column, factor in enumerate(self.learnability["factors"])
+        ]
+        entries.sort(key=lambda entry: -entry["clip"])
+        return {
+            "ridge": LEARNABILITY_RIDGE,
+            "student_mean": float(student.mean()),
+            "clip_mean": float(clip.mean()),
+            # A factor counts as learned once the student reaches half of what CLIP features explain.
+            "learned_fraction": float((student >= 0.5 * clip.clamp_min(0)).float().mean()),
+            "factors": entries,
+        }
 
     def set_epoch(self, epoch: int) -> None:
         for part in (self.regularizer, self.blocks):
