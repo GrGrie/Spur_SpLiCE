@@ -297,6 +297,11 @@ class ConceptFactorOptions:
     )
     factor_ridge: float = option(1.0, parse=float, help="Ridge of the cross-fitted regression on unit-norm "
                                  "features; larger values give smoother, better conditioned fits.")
+    factor_holdout_fraction: float = option(
+        0.0, parse=float,
+        help="Share of the training images the F2 loss leaves out (SimCLR still trains on them). The factor "
+        "learnability record then scores the factors on these unseen images, which memorizing targets cannot raise.",
+    )
     factor_block_weight: float = option(
         0.0, parse=float, help="F3: weight of the concept-block contrastive loss; 0 disables F3.",
     )
@@ -481,6 +486,7 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
                  "concept_factors needs --factor_condition_fraction, --factor_distill_weight or "
                  "--factor_block_weight above 0.")
         _require(args.factor_ridge > 0, "--factor_ridge must be positive.")
+        _require(0 <= args.factor_holdout_fraction < 1, "--factor_holdout_fraction lies in [0, 1).")
         _require(not args.factor_cross_fit or args.factor_distill_weight > 0,
                  "--factor_cross_fit applies to F2 and needs --factor_distill_weight above 0.")
         _require(args.factor_block_weight >= 0 and args.factor_block_context_weight >= 0,

@@ -50,6 +50,10 @@
 #   f2_meaning_shuffled, xfit_meaning_shuffled  their controls
 #   xfit_meaning_w3, xfit_meaning_w10, xfit_meaning_w3_shuffled  loss weight 3 and 10: at weight 1 the
 #                             held-out explained variance was still rising at epoch 500
+# Sixth round, generalization of the learned factors: the *_holdout arms keep a fifth of the training
+# images out of the concept loss, and factor_learnability_epoch_<E>.json scores the factors on them.
+#   xfit_meaning_w10_holdout, xfit_meaning_w10_shuffled_holdout   MetaShift
+#   xfit_norm_holdout, xfit_norm_shuffled_holdout                 Spur-CIFAR10
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -76,6 +80,8 @@ F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_s
 CBC=(--splice_mode concept_factors --factor_block_weight 1.0 --factor_merge_similarity 0.9)
 XFIT=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9 --factor_cross_fit true)
 XFIT_NORM=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9 --factor_cross_fit true --factor_ridge 1.0)
+# A fifth of the training images stays out of the concept loss; the learnability record scores them.
+HOLDOUT=(--factor_holdout_fraction 0.2)
 OPENIMAGES_CACHE_NAME="cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25"
 DEFAULT_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json"
 GROUPS_CACHE=""
@@ -102,6 +108,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w3]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 3.0"
     [xfit_meaning_w10]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 10.0"
     [xfit_meaning_w3_shuffled]="${XFIT_MEANING[*]} --factor_targets shuffled --factor_distill_weight 3.0"
+    [xfit_meaning_w10_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 10.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets shuffled --factor_distill_weight 10.0 ${HOLDOUT[*]}"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -147,6 +155,8 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [xfit_norm_r10]="${XFIT_NORM[*]} --factor_targets standardized --factor_ridge 10.0"
     [xfit_norm_w3]="${XFIT_NORM[*]} --factor_targets standardized --factor_distill_weight 3.0"
     [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
+    [xfit_norm_holdout]="${XFIT_NORM[*]} --factor_targets standardized ${HOLDOUT[*]}"
+    [xfit_norm_shuffled_holdout]="${XFIT_NORM[*]} --factor_targets shuffled ${HOLDOUT[*]}"
   )
 elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   if [[ "${DATASET}" == "celeba" ]]; then

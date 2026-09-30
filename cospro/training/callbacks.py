@@ -122,6 +122,13 @@ class FactorLearnability(Callback):
             "Factor held-out explained variance of CLIP": result["clip_mean"],
             "Factor learned fraction": result["learned_fraction"],
         })
+        if "student_unseen_mean" in result:
+            print(f"[INFO] On {result['unseen_images']} images outside the concept loss: student "
+                  f"{result['student_unseen_mean']:.3f}, CLIP {result['clip_unseen_mean']:.3f}", flush=True)
+            report.diagnostics.update({
+                "Factor explained variance on unseen images": result["student_unseen_mean"],
+                "Factor explained variance of CLIP on unseen images": result["clip_unseen_mean"],
+            })
 
 
 class RunRecordLogger(Callback):

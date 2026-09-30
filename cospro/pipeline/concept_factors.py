@@ -210,6 +210,29 @@ def heldout_explained_variance(features: torch.Tensor, targets: torch.Tensor, *,
     return (1.0 - (predictions - targets).pow(2).mean(dim=0) / variance).float()
 
 
+def unseen_explained_variance(features: torch.Tensor, targets: torch.Tensor, unseen: torch.Tensor, *,
+                              ridge: float = LEARNABILITY_RIDGE) -> torch.Tensor:
+    """Per-column explained variance on the ``unseen`` rows of a ridge regression fitted on the other rows.
+
+    With ``unseen`` marking the images a concept loss never touched, this measures whether the
+    encoder's concept directions carry over to new images. The whole-dataset score of
+    ``heldout_explained_variance`` holds images out of the ridge only, so an encoder that stores the
+    target of each training image still scores high there.
+    """
+
+    features = F.normalize(torch.as_tensor(features).double(), dim=1)
+    targets = torch.as_tensor(targets).double()
+    unseen = torch.as_tensor(unseen, dtype=torch.bool)
+    fit = ~unseen
+    feature_mean, target_mean = features[fit].mean(dim=0), targets[fit].mean(dim=0)
+    centred = features[fit] - feature_mean
+    identity = torch.eye(features.shape[1], dtype=features.dtype)
+    weights = torch.linalg.solve(centred.T @ centred + ridge * identity, centred.T @ (targets[fit] - target_mean))
+    predictions = (features[unseen] - feature_mean) @ weights + target_mean
+    variance = (targets[unseen] - target_mean).pow(2).mean(dim=0).clamp_min(1e-12)
+    return (1.0 - (predictions - targets[unseen]).pow(2).mean(dim=0) / variance).float()
+
+
 def atypicality_weights(white: torch.Tensor, cap: float = 10.0) -> torch.Tensor:
     """Per-image weights, mean 1, that grow with how far an image's factors break the dataset's correlations.
 

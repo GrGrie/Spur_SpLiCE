@@ -34,6 +34,7 @@ from cospro.pipeline.concept_factors import (
     heldout_explained_variance,
     load_concept_factors,
     rows_for_subset,
+    unseen_explained_variance,
 )
 from cospro.tracking.artifacts import PROJECT_ROOT
 from unittest.mock import patch
@@ -329,6 +330,20 @@ class FactorLearnabilityTests(unittest.TestCase):
         scores = heldout_explained_variance(features, targets, ridge=1.0)
         self.assertGreater(float(scores[0]), 0.8)
         self.assertLess(abs(float(scores[1])), 0.1)
+
+    def test_stored_targets_score_on_seen_images_only(self):
+        # An encoder that stores each seen image's target, and nothing of the unseen images.
+        generator = torch.Generator().manual_seed(2)
+        targets = torch.randn(600, 3, generator=generator)
+        unseen = torch.zeros(600, dtype=torch.bool)
+        unseen[::5] = True
+        features = torch.cat([torch.where(unseen[:, None], torch.randn(600, 3, generator=generator), targets),
+                              0.1 * torch.randn(600, 13, generator=generator)], dim=1)
+        self.assertGreater(float(heldout_explained_variance(features[~unseen], targets[~unseen], ridge=1.0).mean()), 0.8)
+        self.assertLess(float(unseen_explained_variance(features, targets, unseen, ridge=1.0).mean()), 0.1)
+        # Features that encode the factor everywhere carry over.
+        encoded = torch.cat([targets, 0.1 * torch.randn(600, 13, generator=generator)], dim=1)
+        self.assertGreater(float(unseen_explained_variance(encoded, targets, unseen, ridge=1.0).mean()), 0.8)
 
     def test_the_method_matches_features_to_factors_by_source_index(self):
         method = ConceptFactors()

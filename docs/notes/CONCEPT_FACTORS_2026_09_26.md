@@ -326,6 +326,31 @@ the loss weight (`xfit_meaning_w3`, `xfit_meaning_w10`) and adds seeds 3 and 4.
 `submit_factor_study.sh` runs at most `MAX_PARALLEL` (default 8) of its jobs at once; `submit_experiment.sh`
 throttles its array the same way.
 
+## Loss weight on MetaShift and what the student stores (2026-09-30)
+
+Validation, seeds 1 and 2, 24 meaning factors. `train EV` is the five-fold held-out explained variance
+of the factors from the training features (`factor_learnability_epoch_500.json`); CLIP features score 0.26.
+
+| arm | train EV | val WGA | val acc | val group acc |
+|---|---|---|---|---|
+| xfit_meaning_w3_shuffled | 0.02 | 47.6 | 58.1 | 68 / 53 / 50 / 59 |
+| xfit_meaning_w3 | 0.33 | 43.2 | 59.6 | 74 / 45 / 48 / 69 |
+| xfit_meaning_w10 | 0.79 | 45.5 | 61.0 | 74 / 51 / 48 / 71 |
+
+At weight 10 every factor reaches 0.72 to 0.87 on the training images, three times the CLIP score
+and alike for factors CLIP explains well ("cat", 0.68) and badly ("helper", 0.14). A probe on the 24
+factor values themselves reaches 77 percent WGA and 89 percent accuracy, and the student stays at 45
+and 61 on validation. The encoder therefore stores the factor values of the 1,700 training images:
+cross-fitting removes memorization in the head, and the backbone can still place each image's target
+in its features, where one shared linear map reads it. The whole-dataset score holds images out of
+the ridge only and cannot see this.
+
+`--factor_holdout_fraction` keeps a share of the training images out of the concept loss (SimCLR
+still trains on them), and the learnability record adds `student_unseen` and `clip_unseen`: the
+factors predicted on those images by a ridge fitted on the others. The `*_holdout` arms measure it on
+MetaShift and on Spur-CIFAR10, where the matched control confirms the gain of the cross-fit
+(`xfit_norm` 33.6 WGA, `xfit_norm_shuffled` 18.2, SimCLR 15.6).
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

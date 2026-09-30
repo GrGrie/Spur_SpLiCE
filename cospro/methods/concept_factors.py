@@ -54,6 +54,7 @@ from cospro.pipeline.concept_factors import (
     format_factor_report,
     load_concept_factors,
     rows_for_subset,
+    unseen_explained_variance,
 )
 
 
@@ -198,7 +199,7 @@ def cross_fit_predictions(features: torch.Tensor, targets: torch.Tensor, weights
     held_out = ~fit
     features = torch.nn.functional.normalize(features, dim=1)
     fitted, other = features[fit], features[held_out]
-    fit_weights = weights[fit] / weights[fit].mean()
+    fit_weights = weights[fit] / weights[fit].mean().clamp_min(1e-12)
     feature_mean = (fit_weights[:, None] * fitted).mean(dim=0)
     target_mean = (fit_weights[:, None] * targets[fit]).mean(dim=0)
     fitted, other = fitted - feature_mean, other - feature_mean
@@ -254,7 +255,7 @@ class CrossFitDistillation:
         for fit in (half, ~half):
             predictions = cross_fit_predictions(features, targets, weights, fit, self.ridge)
             per_image = (predictions - targets[~fit]).pow(2).mean(dim=1)
-            held_out_weights = weights[~fit] / weights[~fit].mean()
+            held_out_weights = weights[~fit] / weights[~fit].mean().clamp_min(1e-12)
             loss = loss + (held_out_weights * per_image).mean() / 2
             errors.append(per_image.detach().mean())
         mse = float(torch.stack(errors).mean())
@@ -346,6 +347,7 @@ class ConceptFactors(TrainingMethod):
         sample_weighting: str = "none",
         cross_fit: bool = False,
         ridge: float = 1.0,
+        holdout_fraction: float = 0.0,
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -365,6 +367,7 @@ class ConceptFactors(TrainingMethod):
         self.sample_weighting = sample_weighting
         self.cross_fit = bool(cross_fit)
         self.ridge = float(ridge)
+        self.holdout_fraction = float(holdout_fraction)
         self.block_settings = {
             "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
             "temperature": float(block_temperature), "context_weight": float(block_context_weight),
@@ -405,6 +408,7 @@ class ConceptFactors(TrainingMethod):
             sample_weighting=options.factor_sample_weighting,
             cross_fit=options.factor_cross_fit,
             ridge=options.factor_ridge,
+            holdout_fraction=options.factor_holdout_fraction,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -427,7 +431,10 @@ class ConceptFactors(TrainingMethod):
         print(f"[INFO] Concept factors from {groups_path} and {cache_path}", flush=True)
         print(format_factor_report(self.report), flush=True)
         rows = rows_for_subset(factors["sample_ids"], context.dataset, source_indices)
-        self._prepare_learnability(factors, rows, source_indices)
+        # The same images stay out of the concept loss in every arm and seed, so their scores compare.
+        unseen = torch.rand(len(factors["sample_ids"]), generator=torch.Generator().manual_seed(SHUFFLE_SEED))
+        unseen = (unseen < self.holdout_fraction).index_select(0, rows)
+        self._prepare_learnability(factors, rows, source_indices, unseen)
         if self.condition_fraction > 0 and not factors["condition_factors"]:
             raise ValueError("Conditioned batches need at least one entangled factor pair.")
         if self.distill_weight > 0:
@@ -439,6 +446,10 @@ class ConceptFactors(TrainingMethod):
                 weights, self.balancing = balancing_weights(factors["active"])
                 sample_weights = weights.index_select(0, rows)
                 print(f"[INFO] Balancing weights: {self.balancing}", flush=True)
+            if unseen.any():
+                sample_weights = torch.ones(len(rows)) if sample_weights is None else sample_weights.clone()
+                sample_weights[unseen] = 0.0
+                sample_weights = sample_weights / sample_weights.mean()
             if self.cross_fit:
                 self.regularizer = CrossFitDistillation(
                     targets, self.distill_weight, *self.schedule, sample_weights=sample_weights, ridge=self.ridge,
@@ -477,7 +488,7 @@ class ConceptFactors(TrainingMethod):
             generator=loader.generator,
         )
 
-    def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices) -> None:
+    def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices, unseen: torch.Tensor) -> None:
         """The real standardized targets and their CLIP bound, whatever targets the loss uses."""
 
         targets = factors["targets"]["standardized"].index_select(0, rows)
@@ -486,6 +497,8 @@ class ConceptFactors(TrainingMethod):
             "source_indices": [int(index) for index in source_indices],
             "targets": targets,
             "clip": heldout_explained_variance(clip, targets),
+            "unseen": unseen,
+            "clip_unseen": unseen_explained_variance(clip, targets, unseen) if unseen.any() else None,
             "factors": [
                 {"name": factor_name(factor), "concepts": factor["concepts"], "frequency": round(factor["frequency"], 4)}
                 for factor in factors["factors"]
@@ -510,8 +523,23 @@ class ConceptFactors(TrainingMethod):
             {**factor, "student": round(float(student[column]), 4), "clip": round(float(clip[column]), 4)}
             for column, factor in enumerate(self.learnability["factors"])
         ]
+        unseen_summary = {}
+        if self.learnability.get("clip_unseen") is not None:
+            # Images the concept loss never touched: the score an encoder that stores targets cannot reach.
+            unseen = self.learnability["unseen"].index_select(0, order)
+            student_unseen = unseen_explained_variance(features, targets, unseen)
+            clip_unseen = self.learnability["clip_unseen"]
+            for column, entry in enumerate(entries):
+                entry["student_unseen"] = round(float(student_unseen[column]), 4)
+                entry["clip_unseen"] = round(float(clip_unseen[column]), 4)
+            unseen_summary = {
+                "unseen_images": int(unseen.sum()),
+                "student_unseen_mean": float(student_unseen.mean()),
+                "clip_unseen_mean": float(clip_unseen.mean()),
+            }
         entries.sort(key=lambda entry: -entry["clip"])
         return {
+            **unseen_summary,
             "ridge": LEARNABILITY_RIDGE,
             "student_mean": float(student.mean()),
             "clip_mean": float(clip.mean()),
