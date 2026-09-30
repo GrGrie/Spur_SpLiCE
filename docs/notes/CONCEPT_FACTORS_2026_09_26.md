@@ -351,6 +351,26 @@ factors predicted on those images by a ridge fitted on the others. The `*_holdou
 MetaShift and on Spur-CIFAR10, where the matched control confirms the gain of the cross-fit
 (`xfit_norm` 33.6 WGA, `xfit_norm_shuffled` 18.2, SimCLR 15.6).
 
+## Unseen images: memorization on MetaShift, generalization on Spur-CIFAR10 (2026-10-01)
+
+A fifth of the training images stayed out of the concept loss. Explained variance of the factors,
+seeds 1 and 2, epoch 500 (`seen` on the training images, `unseen` on the held-out fifth):
+
+| dataset | arm | seen | unseen | CLIP unseen | val WGA | val acc |
+|---|---|---|---|---|---|---|
+| MetaShift | xfit_meaning_w10_holdout | 0.60 | 0.04 | 0.26 | 47.9 | 60.4 |
+| MetaShift | xfit_meaning_w10_shuffled_holdout | 0.01 | 0.02 | 0.26 | 43.8 | 52.6 |
+| Spur-CIFAR10 | xfit_norm_holdout | 0.31 | 0.27 | 0.42 | 30.2 | 68.7 |
+| Spur-CIFAR10 | xfit_norm_shuffled_holdout | 0.10 | 0.10 | 0.42 | 21.7 | 58.1 |
+
+On Spur-CIFAR10 the student carries the factors to new images, at two thirds of the CLIP score, for
+the classes (aircraft 0.75, horse 0.74, truck 0.72) and for the line colour (purple 0.62) alike. On
+MetaShift it stores the targets of its 1,700 training images: the unseen score peaks near 0.08 at epoch
+100 to 200 and falls to 0.04 while the seen score climbs to 0.60. Only the class factors carry over in
+part (cat 0.37, dog 0.23); the context factors do not (cozy 0.03). The method needs enough images for
+the distilled concepts to generalize, so CelebA (162,770 training images) is its held-out test and
+Waterbirds (4,795) the check of the small-data limit.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

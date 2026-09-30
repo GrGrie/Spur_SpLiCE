@@ -54,6 +54,8 @@
 # images out of the concept loss, and factor_learnability_epoch_<E>.json scores the factors on them.
 #   xfit_meaning_w10_holdout, xfit_meaning_w10_shuffled_holdout   MetaShift
 #   xfit_norm_holdout, xfit_norm_shuffled_holdout                 Spur-CIFAR10
+# Waterbirds and CelebA also take the cross-fitted F2 frozen on Spur-CIFAR10: xfit_norm, xfit_norm_shuffled
+# and their *_holdout variants.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -167,6 +169,10 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
+    [xfit_norm]="${XFIT_NORM[*]} --factor_targets standardized"
+    [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
+    [xfit_norm_holdout]="${XFIT_NORM[*]} --factor_targets standardized ${HOLDOUT[*]}"
+    [xfit_norm_shuffled_holdout]="${XFIT_NORM[*]} --factor_targets shuffled ${HOLDOUT[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
