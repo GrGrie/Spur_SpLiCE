@@ -5,10 +5,10 @@ One page per dataset and method, built from every run record by `python -m cospr
 | dataset | method | studies | runs | best arm (≥ 2 seeds) | val WGA | val acc |
 |---|---|---|---|---|---|---|
 | celeba | [CoSpRo (teacher graph: sampler and relational KL)](celeba/cospro.md) | 1 | 1 |  | | |
-| metashift | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](metashift/concept_factors.md) | 1 | 86 | factors_metashift / f2_w3 | 51.4 ± 1.5 | 63.1 ± 2.0 |
+| metashift | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](metashift/concept_factors.md) | 1 | 92 | factors_metashift / f2_w3 | 51.4 ± 1.5 | 63.1 ± 2.0 |
 | metashift | [CoSpRo (teacher graph: sampler and relational KL)](metashift/cospro.md) | 2 | 44 | metashift_cospro / cospro_laion | 47.7 ± 4.3 | 55.5 ± 2.5 |
 | metashift | [SimCLR](metashift/simclr.md) | 2 | 24 | factors_metashift / simclr_lt | 51.4 ± 1.5 | 55.3 ± 0.1 |
-| spur_cifar10 | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](spur_cifar10/concept_factors.md) | 1 | 12 | factors_spur_cifar10 / xfit_norm | 33.6 ± 2.3 | 69.7 ± 0.2 |
+| spur_cifar10 | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](spur_cifar10/concept_factors.md) | 1 | 14 | factors_spur_cifar10 / xfit_norm | 33.6 ± 2.3 | 69.7 ± 0.2 |
 | spur_cifar10 | [CoSpRo (teacher graph: sampler and relational KL)](spur_cifar10/cospro.md) | 1 | 1 |  | | |
 | spur_cifar10 | [SimCLR](spur_cifar10/simclr.md) | 1 | 2 | factors_spur_cifar10 / simclr | 15.6 ± 1.0 | 59.5 ± 0.2 |
 | waterbirds | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](waterbirds/concept_factors.md) | 1 | 8 | factors_waterbirds / f2_shuffled | 45.5 ± 3.5 | 51.8 ± 0.7 |
