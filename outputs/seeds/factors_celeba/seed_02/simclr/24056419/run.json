@@ -1,0 +1,2468 @@
+{
+  "artifacts": [
+    {
+      "availability": "cluster-only",
+      "bytes": 53236522,
+      "epoch": 25,
+      "kind": "probe_features",
+      "retention_state": "temporary",
+      "sha256": "d6fb69b18b44abe4ba6cd351b73925a7251194252b2a5d731389df3ee7c1ddc8",
+      "stage": "linear_probe",
+      "storage_path": "/scratch/xar68reb/CoSpRo/features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_25_ds_train_val.pt",
+      "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_25_ds_train_val.pt",
+      "verified_at": "2026-10-01T03:13:21.434310+00:00"
+    },
+    {
+      "availability": "repository-copy",
+      "bytes": 4598,
+      "epoch": 25,
+      "kind": "probe_result",
+      "retention_state": "temporary",
+      "sha256": "cddf096275aa65796a649a3ce46ddd77fdd6860886a2e78953d496e4dfb8a3e1",
+      "stage": "linear_probe",
+      "storage_path": null,
+      "uri": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training/celeba_s2_base_e250_bfc03d8ddc/probe_features_epoch_25_ds_train_val.json",
+      "verified_at": "2026-10-01T03:13:21.554053+00:00"
+    },
+    {
+      "availability": "cluster-only",
+      "bytes": 53236522,
+      "epoch": 50,
+      "kind": "probe_features",
+      "retention_state": "temporary",
+      "sha256": "16216adb105ab44f1a1df67225262c1c4fccf0a7a25549b2327856854ce2eb29",
+      "stage": "linear_probe",
+      "storage_path": "/scratch/xar68reb/CoSpRo/features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_50_ds_train_val.pt",
+      "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_50_ds_train_val.pt",
+      "verified_at": "2026-10-01T07:40:45.469954+00:00"
+    },
+    {
+      "availability": "repository-copy",
+      "bytes": 4601,
+      "epoch": 50,
+      "kind": "probe_result",
+      "retention_state": "temporary",
+      "sha256": "c47f5d38a7affacc3c133f8d6b9b8899bec4b1dc3da4b52322ff864c2830d1a2",
+      "stage": "linear_probe",
+      "storage_path": null,
+      "uri": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training/celeba_s2_base_e250_bfc03d8ddc/probe_features_epoch_50_ds_train_val.json",
+      "verified_at": "2026-10-01T07:40:45.592022+00:00"
+    },
+    {
+      "availability": "cluster-only",
+      "bytes": 53236522,
+      "epoch": 75,
+      "kind": "probe_features",
+      "retention_state": "temporary",
+      "sha256": "7f46591b54c07f1d06b199a3f5e79068916043e44a166597c9b5230123bfe748",
+      "stage": "linear_probe",
+      "storage_path": "/scratch/xar68reb/CoSpRo/features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_75_ds_train_val.pt",
+      "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_75_ds_train_val.pt",
+      "verified_at": "2026-10-01T12:29:09.967480+00:00"
+    },
+    {
+      "availability": "repository-copy",
+      "bytes": 4602,
+      "epoch": 75,
+      "kind": "probe_result",
+      "retention_state": "temporary",
+      "sha256": "cf0c9e7d538807bd01a48eaf0b33b1283576ae57e37005b890df2b28a268c6b3",
+      "stage": "linear_probe",
+      "storage_path": null,
+      "uri": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training/celeba_s2_base_e250_bfc03d8ddc/probe_features_epoch_75_ds_train_val.json",
+      "verified_at": "2026-10-01T12:29:10.139117+00:00"
+    }
+  ],
+  "config": {
+    "amp": true,
+    "arm": "simclr",
+    "artifact_dir": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training",
+    "attempt_id": "24056419",
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_dir": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training",
+    "checkpoint_keep_count": 2,
+    "concept_transfer_alpha_max": 0.1,
+    "concept_transfer_start_epoch": 10,
+    "concept_transfer_target_kind": "reconstruction",
+    "concept_transfer_targets": "",
+    "concept_transfer_warmup_epochs": 10,
+    "cosine": false,
+    "cospro_decay_end_epoch": 0,
+    "cospro_decay_start_epoch": 0,
+    "cospro_graph_fingerprint": null,
+    "cospro_start_epoch": 10,
+    "cospro_teacher_graph": "",
+    "cospro_temperature": 0.1,
+    "cospro_warmup_epochs": 10,
+    "cudnn_benchmark": false,
+    "cudnn_enabled": true,
+    "data_folder": "external://home/xar68reb/Datasets",
+    "dataset": "celeba",
+    "dataset_identity": {
+      "linear_eval_split": "val",
+      "linear_train_split": "ds_train",
+      "name": "celeba",
+      "ssl_training_examples": 162770
+    },
+    "delete_checkpoints_after_training": true,
+    "delete_epoch_checkpoints_after_training": false,
+    "device": "cuda",
+    "entity": "gsgrechkin-rptu",
+    "epochs": 250,
+    "factor_block_context_weight": 1.0,
+    "factor_block_count": 32,
+    "factor_block_dim": 16,
+    "factor_block_presence": "real",
+    "factor_block_temperature": 0.1,
+    "factor_block_weight": 0.0,
+    "factor_concept_groups": "",
+    "factor_condition_fraction": 0.0,
+    "factor_condition_pairs": 8,
+    "factor_cross_fit": false,
+    "factor_distill_weight": 0.0,
+    "factor_holdout_fraction": 0.0,
+    "factor_max_count": 0,
+    "factor_max_frequency": 0.9,
+    "factor_max_text_similarity": 0.75,
+    "factor_merge_similarity": 0.0,
+    "factor_min_correlation": 0.2,
+    "factor_min_frequency": 0.02,
+    "factor_ridge": 1.0,
+    "factor_sample_weighting": "none",
+    "factor_splice_cache": "",
+    "factor_start_epoch": 10,
+    "factor_targets": "whitened",
+    "factor_warmup_epochs": 10,
+    "factor_whitening_eps": 0.1,
+    "feat_dim": 128,
+    "final_test": false,
+    "head": "mlp",
+    "keep_checkpoints": false,
+    "la_ssl": false,
+    "la_ssl_eta": 0.1,
+    "la_ssl_gamma": 10.0,
+    "la_ssl_quantile": 0.1,
+    "la_ssl_update_freq": 2,
+    "la_ssl_warmup_epochs": 10,
+    "latetvg_layers": 5,
+    "latetvg_prune_rate": 0.0,
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_learning_rate": 1.0,
+    "linear_lr_decay_epochs": [
+      60,
+      75,
+      90
+    ],
+    "linear_lr_decay_rate": 0.2,
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "linear_weight_decay": 0.0,
+    "lr_decay_epochs": [
+      175,
+      200,
+      225
+    ],
+    "lr_decay_rate": 0.1,
+    "manifest_path": "",
+    "model": "resnet18_large",
+    "model_name": "SimCLR_celeba_SGD_resnet18_large_mlp_nosplice_seed2_lr0.01_bs128_temp0.05_amp1_cl1_cudnn1_bench0",
+    "momentum": 0.9,
+    "n_cls": 2,
+    "num_workers": 4,
+    "optimizer": "SGD",
+    "print_freq": 10,
+    "rank_eval_freq": 100,
+    "resume": "",
+    "retain_probe_artifacts_every": 0,
+    "run_record": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/run.json",
+    "runtime_versions": {
+      "cuda": "11.8",
+      "cudnn": "91001",
+      "numpy": "2.2.6",
+      "open-clip-torch": "3.3.0",
+      "platform": "Linux-5.14.0-687.52.1.el9_8.x86_64-x86_64-with-glibc2.34",
+      "python": "3.10.20",
+      "scikit-learn": "1.7.2",
+      "scipy": "1.15.3",
+      "torch": "2.5.1+cu118",
+      "torchvision": "0.20.1+cu118",
+      "wandb": "0.26.0"
+    },
+    "save_folder": "project://outputs/seeds/factors_celeba/seed_02/simclr/24056419/training/celeba_s2_base_e250_bfc03d8ddc",
+    "save_freq": 50,
+    "seed": 2,
+    "simclr_weight": 1.0,
+    "splice_mode": "none",
+    "splice_weight": 0.0,
+    "ssl_crop_min": 0.2,
+    "storage_name": "celeba_s2_base_e250_bfc03d8ddc",
+    "study": "factors_celeba",
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "use_splice": false,
+    "use_wandb": true,
+    "wandb_group": "factors_celeba",
+    "wandb_name": "CoSpRo",
+    "wandb_run_name": "celeba_s2_SimCLR_e250",
+    "wandb_tags": "",
+    "warm": false,
+    "warm_epochs": 0,
+    "warmup_from": 0.0,
+    "warmup_to": 0.01,
+    "weight_decay": 0.0001
+  },
+  "identity": {
+    "arm": "simclr",
+    "attempt_id": "24056419",
+    "seed": 2,
+    "study": "factors_celeba"
+  },
+  "manifest": {
+    "definition": {},
+    "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "metrics": [
+    {
+      "stage": "ssl",
+      "step": 1,
+      "values": {
+        "SSL SimCLR loss": 1.228625451810436,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 1.228625451810436
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 2,
+      "values": {
+        "SSL SimCLR loss": 0.2558299850316593,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.2558299850316593
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 3,
+      "values": {
+        "SSL SimCLR loss": 0.16779155582528285,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.16779155582528285
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 4,
+      "values": {
+        "SSL SimCLR loss": 0.12796167774925715,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.12796167774925715
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 5,
+      "values": {
+        "SSL SimCLR loss": 0.10731968581470501,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.10731968581470501
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 6,
+      "values": {
+        "SSL SimCLR loss": 0.09451404539704023,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.09451404539704023
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 7,
+      "values": {
+        "SSL SimCLR loss": 0.08248010899940478,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.08248010899940478
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 8,
+      "values": {
+        "SSL SimCLR loss": 0.07396577055015413,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.07396577055015413
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 9,
+      "values": {
+        "SSL SimCLR loss": 0.06915938419118178,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.06915938419118178
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 10,
+      "values": {
+        "SSL SimCLR loss": 0.06339238954757988,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.06339238954757988
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 11,
+      "values": {
+        "SSL SimCLR loss": 0.0588046416285078,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.0588046416285078
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 12,
+      "values": {
+        "SSL SimCLR loss": 0.05751744238971573,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.05751744238971573
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 13,
+      "values": {
+        "SSL SimCLR loss": 0.05310141220782656,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.05310141220782656
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 14,
+      "values": {
+        "SSL SimCLR loss": 0.04985523567827191,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04985523567827191
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 15,
+      "values": {
+        "SSL SimCLR loss": 0.04729321164486339,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04729321164486339
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 16,
+      "values": {
+        "SSL SimCLR loss": 0.04716529089554896,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04716529089554896
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 17,
+      "values": {
+        "SSL SimCLR loss": 0.04504257900701705,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04504257900701705
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 18,
+      "values": {
+        "SSL SimCLR loss": 0.04289015017398589,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04289015017398589
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 19,
+      "values": {
+        "SSL SimCLR loss": 0.04075129159527716,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.04075129159527716
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 20,
+      "values": {
+        "SSL SimCLR loss": 0.038627866262186325,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.038627866262186325
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 21,
+      "values": {
+        "SSL SimCLR loss": 0.03866309210778916,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.03866309210778916
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 22,
+      "values": {
+        "SSL SimCLR loss": 0.03643065156353196,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.03643065156353196
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 23,
+      "values": {
+        "SSL SimCLR loss": 0.03662939975735075,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.03662939975735075
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 24,
+      "values": {
+        "SSL SimCLR loss": 0.034257818219273845,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.034257818219273845
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 25,
+      "values": {
+        "SSL SimCLR loss": 0.033659012730595496,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.033659012730595496
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 9,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.29902417928163494,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.2483636052936044,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 10,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 11,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 12,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 13,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 14,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 15,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 16,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 17,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 18,
+      "values": {
+        "eval_accuracy": 87.04887628555298,
+        "eval_best_group_accuracy": 92.86708235740662,
+        "eval_loss": 0.2990239142967506,
+        "eval_worst_group_accuracy": 79.67032790184021,
+        "ssl_epoch": 25,
+        "train_accuracy": 89.63590264320374,
+        "train_best_group_accuracy": 93.87166500091553,
+        "train_loss": 0.24836359107546743,
+        "train_worst_group_accuracy": 87.81542778015137
+      }
+    },
+    {
+      "stage": "linear_probe_final",
+      "step": 25,
+      "values": {
+        "convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 18,
+          "gradient_max": 8.200940790077226e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.257775773519484,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "eval_split": "val",
+        "feature_artifact": {
+          "payload_bytes": 52659880,
+          "retention_state": "temporary",
+          "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_25_ds_train_val.pt"
+        },
+        "group_metrics": {
+          "train": {
+            "accuracy": [
+              87.8154296875,
+              88.46431732177734,
+              93.87166595458984,
+              88.39221954345703
+            ],
+            "count": [
+              1387,
+              1387,
+              1387,
+              1387
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 87.81542778015137,
+                "count": 1387
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 88.46431374549866,
+                "count": 1387
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 93.87166500091553,
+                "count": 1387
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 88.39221596717834,
+                "count": 1387
+              }
+            }
+          },
+          "val": {
+            "accuracy": [
+              84.4053955078125,
+              87.9168701171875,
+              92.86708068847656,
+              79.67032623291016
+            ],
+            "count": [
+              8535,
+              8276,
+              2874,
+              182
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 84.40539240837097,
+                "count": 8535
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 87.9168689250946,
+                "count": 8276
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 92.86708235740662,
+                "count": 2874
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 79.67032790184021,
+                "count": 182
+              }
+            }
+          }
+        },
+        "metric_semantics": {
+          "accuracy_unit": "percent",
+          "average_accuracy": "sample-weighted accuracy on eval_split",
+          "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
+          "history_window": 10,
+          "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups"
+        },
+        "metrics": {
+          "Average over 10 last linear val acc": 87.04887628555298,
+          "Average over last 10 linear val acc": 87.04887628555298,
+          "Average over last 10 linear val best-group acc": 92.86708235740662,
+          "Average over last 10 linear val worst-group acc": 79.67032790184021,
+          "Last linear val acc": 87.04887628555298,
+          "Last linear val best-group acc": 92.86708235740662,
+          "Last linear val worst-group acc": 79.67032790184021,
+          "Last linear val worst-group count": 182,
+          "Last linear val worst-group id": 3,
+          "Linear train acc": 89.63590264320374,
+          "Linear train best-group acc": 93.87166500091553,
+          "Linear train group accuracies": [
+            87.8154296875,
+            88.46431732177734,
+            93.87166595458984,
+            88.39221954345703
+          ],
+          "Linear train group counts": [
+            1387,
+            1387,
+            1387,
+            1387
+          ],
+          "Linear train worst-group acc": 87.81542778015137,
+          "Linear val acc": 87.04887628555298,
+          "Linear val best-group acc": 92.86708235740662,
+          "Linear val group accuracies": [
+            84.4053955078125,
+            87.9168701171875,
+            92.86708068847656,
+            79.67032623291016
+          ],
+          "Linear val group counts": [
+            8535,
+            8276,
+            2874,
+            182
+          ],
+          "Linear val worst-group acc": 79.67032790184021,
+          "Probe converged": true,
+          "Probe epochs": 18,
+          "Probe gradient max": 8.200940790077226e-08,
+          "Spurious probe average over last 10 val acc": 92.18301773071289,
+          "Spurious probe average over last 10 val worst-group acc": 88.85764479637146,
+          "Spurious probe converged": true,
+          "Spurious probe gradient max": 9.970115359762529e-08,
+          "Spurious probe last val acc": 92.18301773071289,
+          "Spurious probe last val worst-group acc": 88.85764479637146,
+          "Train linear effective rank": 3.1827826499938965,
+          "Train linear energy-based rank": 1.5470595359802246,
+          "Train linear entropy": 1.1577558517456055,
+          "Val linear effective rank": 2.658331871032715,
+          "Val linear energy-based rank": 1.4290541410446167,
+          "Val linear entropy": 0.977698802947998
+        },
+        "schema": "linear-probe-result-v3",
+        "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
+        "solver": "logistic",
+        "ssl_epoch": 25,
+        "train_split": "ds_train"
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 26,
+      "values": {
+        "SSL SimCLR loss": 0.03405137267297868,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.03405137267297868
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 27,
+      "values": {
+        "SSL SimCLR loss": 0.032376128128153756,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.032376128128153756
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 28,
+      "values": {
+        "SSL SimCLR loss": 0.032356671821478215,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.032356671821478215
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 29,
+      "values": {
+        "SSL SimCLR loss": 0.0312398331535403,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.0312398331535403
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 30,
+      "values": {
+        "SSL SimCLR loss": 0.029310727346929508,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.029310727346929508
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 31,
+      "values": {
+        "SSL SimCLR loss": 0.029799596929025878,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.029799596929025878
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 32,
+      "values": {
+        "SSL SimCLR loss": 0.029654604343733706,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.029654604343733706
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 33,
+      "values": {
+        "SSL SimCLR loss": 0.028083056442399734,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.028083056442399734
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 34,
+      "values": {
+        "SSL SimCLR loss": 0.02742112596676238,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02742112596676238
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 35,
+      "values": {
+        "SSL SimCLR loss": 0.027138245670201445,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.027138245670201445
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 36,
+      "values": {
+        "SSL SimCLR loss": 0.026242610095314273,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.026242610095314273
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 37,
+      "values": {
+        "SSL SimCLR loss": 0.026673183062986897,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.026673183062986897
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 38,
+      "values": {
+        "SSL SimCLR loss": 0.02591317834094219,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02591317834094219
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 39,
+      "values": {
+        "SSL SimCLR loss": 0.025799788289385932,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.025799788289385932
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 40,
+      "values": {
+        "SSL SimCLR loss": 0.02482634029589942,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02482634029589942
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 41,
+      "values": {
+        "SSL SimCLR loss": 0.024213844522778437,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.024213844522778437
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 42,
+      "values": {
+        "SSL SimCLR loss": 0.02483846433974522,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02483846433974522
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 43,
+      "values": {
+        "SSL SimCLR loss": 0.023745566095092367,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.023745566095092367
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 44,
+      "values": {
+        "SSL SimCLR loss": 0.023849268911346092,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.023849268911346092
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 45,
+      "values": {
+        "SSL SimCLR loss": 0.02319444394278776,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02319444394278776
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 46,
+      "values": {
+        "SSL SimCLR loss": 0.02393578592304033,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02393578592304033
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 47,
+      "values": {
+        "SSL SimCLR loss": 0.022697698427795076,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.022697698427795076
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 48,
+      "values": {
+        "SSL SimCLR loss": 0.022808079483494923,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.022808079483494923
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 49,
+      "values": {
+        "SSL SimCLR loss": 0.022764400104305086,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.022764400104305086
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 50,
+      "values": {
+        "SSL SimCLR loss": 0.022554394726456036,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.022554394726456036
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 9,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880877469920414,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.240413293222065,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 10,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880879745107709,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041327654102648,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 11,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 12,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 13,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 14,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 15,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 16,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 17,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 18,
+      "values": {
+        "eval_accuracy": 87.60255575180054,
+        "eval_best_group_accuracy": 93.59777569770813,
+        "eval_loss": 0.2880878550759,
+        "eval_worst_group_accuracy": 84.06593203544617,
+        "ssl_epoch": 50,
+        "train_accuracy": 90.3929352760315,
+        "train_best_group_accuracy": 94.59264874458313,
+        "train_loss": 0.24041330206798342,
+        "train_worst_group_accuracy": 88.82480263710022
+      }
+    },
+    {
+      "stage": "linear_probe_final",
+      "step": 50,
+      "values": {
+        "convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 18,
+          "gradient_max": 9.228006875998428e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.25040284324239337,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "eval_split": "val",
+        "feature_artifact": {
+          "payload_bytes": 52659880,
+          "retention_state": "temporary",
+          "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_50_ds_train_val.pt"
+        },
+        "group_metrics": {
+          "train": {
+            "accuracy": [
+              89.11319732666016,
+              88.8248062133789,
+              94.5926513671875,
+              89.04109954833984
+            ],
+            "count": [
+              1387,
+              1387,
+              1387,
+              1387
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 89.11319375038147,
+                "count": 1387
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 88.82480263710022,
+                "count": 1387
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 94.59264874458313,
+                "count": 1387
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 89.04109597206116,
+                "count": 1387
+              }
+            }
+          },
+          "val": {
+            "accuracy": [
+              85.1083755493164,
+              88.17060852050781,
+              93.5977783203125,
+              84.06593322753906
+            ],
+            "count": [
+              8535,
+              8276,
+              2874,
+              182
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 85.1083755493164,
+                "count": 8535
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 88.17061185836792,
+                "count": 8276
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 93.59777569770813,
+                "count": 2874
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 84.06593203544617,
+                "count": 182
+              }
+            }
+          }
+        },
+        "metric_semantics": {
+          "accuracy_unit": "percent",
+          "average_accuracy": "sample-weighted accuracy on eval_split",
+          "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
+          "history_window": 10,
+          "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups"
+        },
+        "metrics": {
+          "Average over 10 last linear val acc": 87.60255575180054,
+          "Average over last 10 linear val acc": 87.60255575180054,
+          "Average over last 10 linear val best-group acc": 93.59777569770813,
+          "Average over last 10 linear val worst-group acc": 84.06593203544617,
+          "Last linear val acc": 87.60255575180054,
+          "Last linear val best-group acc": 93.59777569770813,
+          "Last linear val worst-group acc": 84.06593203544617,
+          "Last linear val worst-group count": 182,
+          "Last linear val worst-group id": 3,
+          "Linear train acc": 90.3929352760315,
+          "Linear train best-group acc": 94.59264874458313,
+          "Linear train group accuracies": [
+            89.11319732666016,
+            88.8248062133789,
+            94.5926513671875,
+            89.04109954833984
+          ],
+          "Linear train group counts": [
+            1387,
+            1387,
+            1387,
+            1387
+          ],
+          "Linear train worst-group acc": 88.82480263710022,
+          "Linear val acc": 87.60255575180054,
+          "Linear val best-group acc": 93.59777569770813,
+          "Linear val group accuracies": [
+            85.1083755493164,
+            88.17060852050781,
+            93.5977783203125,
+            84.06593322753906
+          ],
+          "Linear val group counts": [
+            8535,
+            8276,
+            2874,
+            182
+          ],
+          "Linear val worst-group acc": 84.06593203544617,
+          "Probe converged": true,
+          "Probe epochs": 18,
+          "Probe gradient max": 9.228006875998428e-08,
+          "Spurious probe average over last 10 val acc": 92.89777278900146,
+          "Spurious probe average over last 10 val worst-group acc": 89.59578275680542,
+          "Spurious probe converged": true,
+          "Spurious probe gradient max": 9.92829657031017e-08,
+          "Spurious probe last val acc": 92.89777278900146,
+          "Spurious probe last val worst-group acc": 89.59578275680542,
+          "Train linear effective rank": 4.009449005126953,
+          "Train linear energy-based rank": 1.7390713691711426,
+          "Train linear entropy": 1.3886538743972778,
+          "Val linear effective rank": 3.304945230484009,
+          "Val linear energy-based rank": 1.587480068206787,
+          "Val linear entropy": 1.1954199075698853
+        },
+        "schema": "linear-probe-result-v3",
+        "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
+        "solver": "logistic",
+        "ssl_epoch": 50,
+        "train_split": "ds_train"
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 51,
+      "values": {
+        "SSL SimCLR loss": 0.02154798293400698,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02154798293400698
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 52,
+      "values": {
+        "SSL SimCLR loss": 0.021345888620035693,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.021345888620035693
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 53,
+      "values": {
+        "SSL SimCLR loss": 0.02073221447839651,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.02073221447839651
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 54,
+      "values": {
+        "SSL SimCLR loss": 0.021473455918180277,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.021473455918180277
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 55,
+      "values": {
+        "SSL SimCLR loss": 0.021190584678066234,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.021190584678066234
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 56,
+      "values": {
+        "SSL SimCLR loss": 0.019121909261822292,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.019121909261822292
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 57,
+      "values": {
+        "SSL SimCLR loss": 0.019810479514837748,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.019810479514837748
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 58,
+      "values": {
+        "SSL SimCLR loss": 0.018930975637939534,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018930975637939534
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 59,
+      "values": {
+        "SSL SimCLR loss": 0.019312395841577183,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.019312395841577183
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 60,
+      "values": {
+        "SSL SimCLR loss": 0.020004285022058463,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.020004285022058463
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 61,
+      "values": {
+        "SSL SimCLR loss": 0.018908144622056047,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018908144622056047
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 62,
+      "values": {
+        "SSL SimCLR loss": 0.019243024832726923,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.019243024832726923
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 63,
+      "values": {
+        "SSL SimCLR loss": 0.018546385216446182,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018546385216446182
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 64,
+      "values": {
+        "SSL SimCLR loss": 0.01753157631759535,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.01753157631759535
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 65,
+      "values": {
+        "SSL SimCLR loss": 0.018554727981686264,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018554727981686264
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 66,
+      "values": {
+        "SSL SimCLR loss": 0.018087384886096725,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018087384886096725
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 67,
+      "values": {
+        "SSL SimCLR loss": 0.017796661578849578,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.017796661578849578
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 68,
+      "values": {
+        "SSL SimCLR loss": 0.019037835722162184,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.019037835722162184
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 69,
+      "values": {
+        "SSL SimCLR loss": 0.01763019682454442,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.01763019682454442
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 70,
+      "values": {
+        "SSL SimCLR loss": 0.018149953164101205,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018149953164101205
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 71,
+      "values": {
+        "SSL SimCLR loss": 0.018572307462700628,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018572307462700628
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 72,
+      "values": {
+        "SSL SimCLR loss": 0.018814619650143426,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.018814619650143426
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 73,
+      "values": {
+        "SSL SimCLR loss": 0.01771073358718995,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.01771073358718995
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 74,
+      "values": {
+        "SSL SimCLR loss": 0.01709693584725267,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.01709693584725267
+      }
+    },
+    {
+      "stage": "ssl",
+      "step": 75,
+      "values": {
+        "SSL SimCLR loss": 0.017337011076670617,
+        "SSL decor loss": 0.0,
+        "SSL entropy loss": 0.0,
+        "SSL learning rate": 0.01,
+        "SSL relational confidence-weighted KL": 0.0,
+        "SSL relational mean anchor confidence": 0.0,
+        "SSL relational scheduled weight": 0.0,
+        "SSL relational supported anchor fraction": 0.0,
+        "SSL relational unweighted KL": 0.0,
+        "SSL splice loss": 0.0,
+        "SSL train loss": 0.017337011076670617
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 9,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.2825427604257023,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315560040703,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 10,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254231944397035,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793311761771026,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 11,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254225624925555,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.2279331388915535,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 12,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 13,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 14,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 15,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 16,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 17,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe",
+      "step": 18,
+      "values": {
+        "eval_accuracy": 88.16630840301514,
+        "eval_best_group_accuracy": 92.58872866630554,
+        "eval_loss": 0.28254210599862767,
+        "eval_worst_group_accuracy": 84.61538553237915,
+        "ssl_epoch": 75,
+        "train_accuracy": 90.5551552772522,
+        "train_best_group_accuracy": 94.23215389251709,
+        "train_loss": 0.22793315785835885,
+        "train_worst_group_accuracy": 88.60850930213928
+      }
+    },
+    {
+      "stage": "linear_probe_final",
+      "step": 75,
+      "values": {
+        "convergence": {
+          "averaging_window": 10,
+          "converged": true,
+          "epochs": 18,
+          "gradient_max": 9.925611226023826e-08,
+          "l2": 0.001,
+          "normalization": "train_feature_standardization",
+          "objective": 0.2381885355959286,
+          "solver": "full_batch_lbfgs",
+          "stable_epochs": 10,
+          "tolerance": 1e-06
+        },
+        "eval_split": "val",
+        "feature_artifact": {
+          "payload_bytes": 52659880,
+          "retention_state": "temporary",
+          "uri": "artifact://features/Spur_SpLiCE/factors_celeba/seed_02/simclr/24056419/probe_features_epoch_75_ds_train_val.pt"
+        },
+        "group_metrics": {
+          "train": {
+            "accuracy": [
+              89.9062728881836,
+              89.47368621826172,
+              94.2321548461914,
+              88.60851287841797
+            ],
+            "count": [
+              1387,
+              1387,
+              1387,
+              1387
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 89.90627527236938,
+                "count": 1387
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 89.47368264198303,
+                "count": 1387
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 94.23215389251709,
+                "count": 1387
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 88.60850930213928,
+                "count": 1387
+              }
+            }
+          },
+          "val": {
+            "accuracy": [
+              86.1277084350586,
+              88.81101989746094,
+              92.58872985839844,
+              84.61538696289062
+            ],
+            "count": [
+              8535,
+              8276,
+              2874,
+              182
+            ],
+            "named": {
+              "(target,context)=(0,0)": {
+                "accuracy": 86.12771034240723,
+                "count": 8535
+              },
+              "(target,context)=(0,1)": {
+                "accuracy": 88.81102204322815,
+                "count": 8276
+              },
+              "(target,context)=(1,0)": {
+                "accuracy": 92.58872866630554,
+                "count": 2874
+              },
+              "(target,context)=(1,1)": {
+                "accuracy": 84.61538553237915,
+                "count": 182
+              }
+            }
+          }
+        },
+        "metric_semantics": {
+          "accuracy_unit": "percent",
+          "average_accuracy": "sample-weighted accuracy on eval_split",
+          "best_group_accuracy": "maximum accuracy over non-empty (target,context) groups",
+          "history_window": 10,
+          "worst_group_accuracy": "minimum accuracy over non-empty (target,context) groups"
+        },
+        "metrics": {
+          "Average over 10 last linear val acc": 88.16630840301514,
+          "Average over last 10 linear val acc": 88.16630840301514,
+          "Average over last 10 linear val best-group acc": 92.58872866630554,
+          "Average over last 10 linear val worst-group acc": 84.61538553237915,
+          "Last linear val acc": 88.16630840301514,
+          "Last linear val best-group acc": 92.58872866630554,
+          "Last linear val worst-group acc": 84.61538553237915,
+          "Last linear val worst-group count": 182,
+          "Last linear val worst-group id": 3,
+          "Linear train acc": 90.5551552772522,
+          "Linear train best-group acc": 94.23215389251709,
+          "Linear train group accuracies": [
+            89.9062728881836,
+            89.47368621826172,
+            94.2321548461914,
+            88.60851287841797
+          ],
+          "Linear train group counts": [
+            1387,
+            1387,
+            1387,
+            1387
+          ],
+          "Linear train worst-group acc": 88.60850930213928,
+          "Linear val acc": 88.16630840301514,
+          "Linear val best-group acc": 92.58872866630554,
+          "Linear val group accuracies": [
+            86.1277084350586,
+            88.81101989746094,
+            92.58872985839844,
+            84.61538696289062
+          ],
+          "Linear val group counts": [
+            8535,
+            8276,
+            2874,
+            182
+          ],
+          "Linear val worst-group acc": 84.61538553237915,
+          "Probe converged": true,
+          "Probe epochs": 18,
+          "Probe gradient max": 9.925611226023826e-08,
+          "Spurious probe average over last 10 val acc": 93.71822476387024,
+          "Spurious probe average over last 10 val worst-group acc": 91.21265411376953,
+          "Spurious probe converged": true,
+          "Spurious probe gradient max": 9.8220025183604e-08,
+          "Spurious probe last val acc": 93.71822476387024,
+          "Spurious probe last val worst-group acc": 91.21265411376953,
+          "Train linear effective rank": 4.85068416595459,
+          "Train linear energy-based rank": 1.9343867301940918,
+          "Train linear entropy": 1.5791198015213013,
+          "Val linear effective rank": 4.041135311126709,
+          "Val linear energy-based rank": 1.7652671337127686,
+          "Val linear entropy": 1.3965256214141846
+        },
+        "schema": "linear-probe-result-v3",
+        "selection_criterion": "max_eval_accuracy_then_worst_group_then_best_group",
+        "solver": "logistic",
+        "ssl_epoch": 75,
+        "train_split": "ds_train"
+      }
+    }
+  ],
+  "runtime": {
+    "cuda": "11.8",
+    "cudnn": "91001",
+    "hostname": "dgx003",
+    "numpy": "2.2.6",
+    "open-clip-torch": "3.3.0",
+    "platform": "Linux-5.14.0-687.52.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.20",
+    "scikit-learn": "1.7.2",
+    "scipy": "1.15.3",
+    "torch": "2.5.1+cu118",
+    "torchvision": "0.20.1+cu118",
+    "wandb": "0.26.0"
+  },
+  "schema": "run-record-v1",
+  "slurm": {
+    "SLURM_JOB_ID": "24056419"
+  },
+  "source": {
+    "commit": "b14d8f0000f11822625511e9867c9ee2c700fee1",
+    "dirty": false,
+    "dirty_digest": null
+  },
+  "status": "running",
+  "timestamps": {
+    "started_at": "2026-09-30T22:23:33.102701+00:00",
+    "updated_at": "2026-10-01T12:29:10.148813+00:00"
+  },
+  "wandb": {
+    "entity": "gsgrechkin-rptu",
+    "id": "shu4c042",
+    "name": "celeba_s2_SimCLR_e250",
+    "project": "CoSpRo",
+    "url": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/shu4c042"
+  }
+}
