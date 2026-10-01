@@ -371,6 +371,23 @@ part (cat 0.37, dog 0.23); the context factors do not (cozy 0.03). The method ne
 the distilled concepts to generalize, so CelebA (162,770 training images) is its held-out test and
 Waterbirds (4,795) the check of the small-data limit.
 
+## Waterbirds with the frozen cross-fit (2026-10-01)
+
+Seeds 1 and 2, 217 Open Images factors from 2 percent, weight 1, a fifth of the images held out:
+
+| arm | seen | unseen | CLIP unseen | val WGA | val acc |
+|---|---|---|---|---|---|
+| xfit_norm_holdout | 0.04 | 0.03 | 0.16 | 46.5 | 51.1 |
+| xfit_norm_shuffled_holdout | 0.02 | 0.02 | 0.16 | 43.9 | 50.5 |
+
+Waterbirds shows no memorization and little learning: seen and unseen agree, and the student gains a
+few hundredths over the control. The factors that carry signal transfer to unseen images ("Water bird"
+0.25 against 0.15 shuffled, Bamboo 0.40 against 0.22, Forest 0.18 against 0.11), and most of the 217
+are rare species CLIP itself explains at 0.1. Validation accuracy stays at chance. The next arms use
+the meaning grouping frozen on MetaShift (text 0.85, response 0.5, factors from 5 percent: 70 Open
+Images factors) at weight 10, the setting that memorized on MetaShift's 1,700 images, to see which
+side Waterbirds' 4,795 images fall on.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

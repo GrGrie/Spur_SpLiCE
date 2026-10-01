@@ -55,7 +55,8 @@
 #   xfit_meaning_w10_holdout, xfit_meaning_w10_shuffled_holdout   MetaShift
 #   xfit_norm_holdout, xfit_norm_shuffled_holdout                 Spur-CIFAR10
 # Waterbirds and CelebA also take the cross-fitted F2 frozen on Spur-CIFAR10: xfit_norm, xfit_norm_shuffled
-# and their *_holdout variants.
+# and their *_holdout variants. Waterbirds also takes xfit_meaning_w10_holdout and its shuffled control:
+# Open Images meaning groups (text 0.85, response 0.5), factors from 5 percent, weight 10.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -165,6 +166,11 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     COMMON+=(--epochs 250)
   fi
   GROUPS_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
+  # Meaning groups at the thresholds frozen on MetaShift, over the Open Images codes of the earlier arms.
+  HELD_MEANING_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json"
+  XFIT_MEANING_HELD=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
+    --factor_concept_groups "${HELD_MEANING_GROUPS}" --factor_splice_cache "${GROUPS_CACHE}"
+    --factor_min_frequency 0.05 --factor_merge_similarity 0 "${HOLDOUT[@]}")
   ARMS=(
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
@@ -173,6 +179,8 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
     [xfit_norm_holdout]="${XFIT_NORM[*]} --factor_targets standardized ${HOLDOUT[*]}"
     [xfit_norm_shuffled_holdout]="${XFIT_NORM[*]} --factor_targets shuffled ${HOLDOUT[*]}"
+    [xfit_meaning_w10_holdout]="${XFIT_MEANING_HELD[*]} --factor_targets standardized"
+    [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING_HELD[*]} --factor_targets shuffled"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
