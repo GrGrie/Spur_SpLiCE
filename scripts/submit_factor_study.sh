@@ -55,8 +55,9 @@
 #   xfit_meaning_w10_holdout, xfit_meaning_w10_shuffled_holdout   MetaShift
 #   xfit_norm_holdout, xfit_norm_shuffled_holdout                 Spur-CIFAR10
 # Waterbirds and CelebA also take the cross-fitted F2 frozen on Spur-CIFAR10: xfit_norm, xfit_norm_shuffled
-# and their *_holdout variants. Waterbirds also takes xfit_meaning_w10_holdout and its shuffled control:
-# Open Images meaning groups (text 0.85, response 0.5), factors from 5 percent, weight 10.
+# and their *_holdout variants. Spur-CIFAR10, Waterbirds and CelebA also take xfit_meaning_w10 (Open Images
+# meaning groups, text 0.85, response 0.5, factors from 5 percent, weight 10), its shuffled control and, on
+# Waterbirds and CelebA, their *_holdout variants.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -86,6 +87,13 @@ XFIT_NORM=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_me
 # A fifth of the training images stays out of the concept loss; the learnability record scores them.
 HOLDOUT=(--factor_holdout_fraction 0.2)
 OPENIMAGES_CACHE_NAME="cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25"
+# Cross-fitted F2 at weight 10 on Open Images meaning groups at the thresholds frozen on MetaShift (text 0.85,
+# response 0.5), factors from 5 percent. Spur-CIFAR10, Waterbirds and CelebA; the groups are built when missing.
+MEANING_OI_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json"
+MEANING_OI_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
+XFIT_MEANING_OI=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
+  --factor_concept_groups "${MEANING_OI_GROUPS}" --factor_splice_cache "${MEANING_OI_CACHE}"
+  --factor_min_frequency 0.05 --factor_merge_similarity 0)
 DEFAULT_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json"
 GROUPS_CACHE=""
 # ARMS in the environment selects arms by name; the table below then reuses the name.
@@ -145,6 +153,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
+    [xfit_meaning_w10]="${XFIT_MEANING_OI[*]} --factor_targets standardized"
+    [xfit_meaning_w10_shuffled]="${XFIT_MEANING_OI[*]} --factor_targets shuffled"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -166,11 +176,6 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     COMMON+=(--epochs 250)
   fi
   GROUPS_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
-  # Meaning groups at the thresholds frozen on MetaShift, over the Open Images codes of the earlier arms.
-  HELD_MEANING_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json"
-  XFIT_MEANING_HELD=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
-    --factor_concept_groups "${HELD_MEANING_GROUPS}" --factor_splice_cache "${GROUPS_CACHE}"
-    --factor_min_frequency 0.05 --factor_merge_similarity 0 "${HOLDOUT[@]}")
   ARMS=(
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
@@ -179,8 +184,10 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_norm_shuffled]="${XFIT_NORM[*]} --factor_targets shuffled"
     [xfit_norm_holdout]="${XFIT_NORM[*]} --factor_targets standardized ${HOLDOUT[*]}"
     [xfit_norm_shuffled_holdout]="${XFIT_NORM[*]} --factor_targets shuffled ${HOLDOUT[*]}"
-    [xfit_meaning_w10_holdout]="${XFIT_MEANING_HELD[*]} --factor_targets standardized"
-    [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING_HELD[*]} --factor_targets shuffled"
+    [xfit_meaning_w10]="${XFIT_MEANING_OI[*]} --factor_targets standardized"
+    [xfit_meaning_w10_shuffled]="${XFIT_MEANING_OI[*]} --factor_targets shuffled"
+    [xfit_meaning_w10_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized ${HOLDOUT[*]}"
+    [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING_OI[*]} --factor_targets shuffled ${HOLDOUT[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
@@ -224,6 +231,14 @@ if [[ -n "${GROUPS_CACHE}" && ! -f "${DEFAULT_GROUPS}" ]]; then
   echo "default_groups_job=${DEFAULT_GROUP_JOB%%;*}"
 fi
 
+# Open Images meaning groups of Spur-CIFAR10, Waterbirds and CelebA; build them first when missing.
+MEANING_GROUP_DEPENDENCY=()
+if [[ "${DATASET}" != "metashift" && " ${SELECTED[*]} " == *meaning* && ! -f "${MEANING_OI_GROUPS}" ]]; then
+  MEANING_GROUP_JOB=$(sbatch --parsable scripts/build_meaning_groups.sbatch --dataset "${DATASET}" --vocab openimages_v7)
+  MEANING_GROUP_DEPENDENCY=(--dependency="afterok:${MEANING_GROUP_JOB%%;*}")
+  echo "meaning_groups_job=${MEANING_GROUP_JOB%%;*}"
+fi
+
 # At most MAX_PARALLEL training jobs of this submission run at once: job i waits for job i - MAX_PARALLEL
 # to end (afterany), so the jobs run in MAX_PARALLEL lanes one after another.
 MAX_PARALLEL="${MAX_PARALLEL:-8}"
@@ -231,7 +246,9 @@ SUBMITTED=()
 for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
     conditions=()
-    if [[ "${arm}" == "f2_laion" && "${#GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
+    if [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
+      conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")
+    elif [[ "${arm}" == "f2_laion" && "${#GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${GROUP_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" != "simclr" && "${#DEFAULT_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${DEFAULT_GROUP_DEPENDENCY[0]#--dependency=}")

@@ -388,6 +388,23 @@ the meaning grouping frozen on MetaShift (text 0.85, response 0.5, factors from 
 Images factors) at weight 10, the setting that memorized on MetaShift's 1,700 images, to see which
 side Waterbirds' 4,795 images fall on.
 
+## Waterbirds with meaning factors at weight 10 (2026-10-02)
+
+70 Open Images meaning factors from 5 percent, weight 10, a fifth of the images held out, seeds 1 and 2:
+
+| arm | seen | unseen | CLIP unseen | val WGA | val acc | val group acc |
+|---|---|---|---|---|---|---|
+| simclr (seeds 1 to 4) | | | | 45.8 | 52.3 | 47 / 54 / 52 / 64 |
+| xfit_meaning_w10_shuffled_holdout | 0.01 | 0.02 | 0.27 | 42.8 | 52.6 | 43 / 57 / 58 / 66 |
+| xfit_meaning_w10_holdout | 0.30 | 0.09 | 0.27 | 55.3 | 59.2 | 56 / 59 / 66 / 68 |
+
+This is the first configuration that lifts every Waterbirds group, minority groups included, and the
+best Waterbirds WGA of the project from scratch (CoSpRo reached about 50, LateTVG 48). The student
+stores part of the targets (seen 0.30) and carries a third of the CLIP score to unseen images (0.09
+against 0.02 for the control), where MetaShift carried 0.04. The configuration is now frozen: the
+next arms run it unchanged on Waterbirds without the hold-out (seeds 1 to 4), on Spur-CIFAR10 and on
+CelebA, and nothing more is tuned on Waterbirds.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
