@@ -181,14 +181,36 @@ def whitened(activations: torch.Tensor, eps: float) -> torch.Tensor:
 LEARNABILITY_RIDGE = 10.0
 
 
-def heldout_explained_variance(features: torch.Tensor, targets: torch.Tensor, *, ridge: float = LEARNABILITY_RIDGE,
-                               folds: int = 5, seed: int = 0) -> torch.Tensor:
-    """Per-column explained variance of a ridge regression predicting each fold from the others.
+def partial_residuals(targets: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
+    """Each column minus its linear regression on the other columns, rescaled to unit variance.
 
-    Rows of ``features`` are scaled to unit norm, and features and targets are centred on the fitted
-    folds. A column the features encode across images scores high; memorizing single images earns
-    nothing, because every prediction is for images outside the fit.
+    With P the inverse covariance, the residual of column k is (T P)_k / P_kk. A direction shared by
+    two correlated factors predicts their common part and little of these residuals: for two factors
+    of correlation rho, a fused direction explains (1 - rho) / 2 of each residual.
     """
+
+    values = torch.as_tensor(targets).double()
+    values = values - values.mean(dim=0)
+    covariance = values.T @ values / values.shape[0]
+    precision = torch.linalg.inv(covariance + eps * torch.eye(covariance.shape[0], dtype=values.dtype))
+    residuals = values @ precision / precision.diagonal()
+    return standardized(residuals.float())
+
+
+def _ridge_predictions(features: torch.Tensor, targets: torch.Tensor, fit: torch.Tensor, predict: torch.Tensor,
+                       ridge: float) -> torch.Tensor:
+    """Ridge predictions for the ``predict`` rows, fitted on the ``fit`` rows with centred features and targets."""
+
+    feature_mean, target_mean = features[fit].mean(dim=0), targets[fit].mean(dim=0)
+    centred = features[fit] - feature_mean
+    identity = torch.eye(features.shape[1], dtype=features.dtype)
+    weights = torch.linalg.solve(centred.T @ centred + ridge * identity, centred.T @ (targets[fit] - target_mean))
+    return (features[predict] - feature_mean) @ weights + target_mean
+
+
+def out_of_fold_predictions(features: torch.Tensor, targets: torch.Tensor, *, ridge: float = LEARNABILITY_RIDGE,
+                            folds: int = 5, seed: int = 0) -> torch.Tensor:
+    """Every row predicted by a ridge regression fitted on the other folds; rows of ``features`` at unit norm."""
 
     features = F.normalize(torch.as_tensor(features).double(), dim=1)
     targets = torch.as_tensor(targets).double()
@@ -197,17 +219,60 @@ def heldout_explained_variance(features: torch.Tensor, targets: torch.Tensor, *,
         raise ValueError("The learnability fit needs at least two images per fold.")
     order = torch.randperm(count, generator=torch.Generator().manual_seed(seed))
     predictions = torch.zeros_like(targets)
-    identity = torch.eye(features.shape[1], dtype=features.dtype)
     for fold in range(folds):
-        held_out = order[fold::folds]
-        fit = torch.ones(count, dtype=torch.bool)
-        fit[held_out] = False
-        feature_mean, target_mean = features[fit].mean(dim=0), targets[fit].mean(dim=0)
-        centred = features[fit] - feature_mean
-        weights = torch.linalg.solve(centred.T @ centred + ridge * identity, centred.T @ (targets[fit] - target_mean))
-        predictions[held_out] = (features[held_out] - feature_mean) @ weights + target_mean
-    variance = targets.var(dim=0, unbiased=False).clamp_min(1e-12)
-    return (1.0 - (predictions - targets).pow(2).mean(dim=0) / variance).float()
+        held_out = torch.zeros(count, dtype=torch.bool)
+        held_out[order[fold::folds]] = True
+        predictions[held_out] = _ridge_predictions(features, targets, ~held_out, held_out, ridge)
+    return predictions
+
+
+def unseen_predictions(features: torch.Tensor, targets: torch.Tensor, unseen: torch.Tensor, *,
+                       ridge: float = LEARNABILITY_RIDGE) -> torch.Tensor:
+    """Predictions for the ``unseen`` rows of a ridge regression fitted on the other rows."""
+
+    features = F.normalize(torch.as_tensor(features).double(), dim=1)
+    targets = torch.as_tensor(targets).double()
+    unseen = torch.as_tensor(unseen, dtype=torch.bool)
+    return _ridge_predictions(features, targets, ~unseen, unseen, ridge)
+
+
+def explained_variance(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """Per-column explained variance of ``predictions`` against ``targets`` over the same rows."""
+
+    targets = torch.as_tensor(targets).double()
+    variance = (targets - targets.mean(dim=0)).pow(2).mean(dim=0).clamp_min(1e-12)
+    return (1.0 - (torch.as_tensor(predictions).double() - targets).pow(2).mean(dim=0) / variance).float()
+
+
+def group_explained_variance(predictions: torch.Tensor, targets: torch.Tensor,
+                             groups: torch.Tensor) -> dict[int, torch.Tensor]:
+    """Per-column explained variance inside every group, against the variance over all rows.
+
+    The shared denominator makes the groups comparable: a direction that fuses a concept with its
+    usual context predicts the concept well where the two co-occur and badly in the groups that break
+    the co-occurrence, so its score drops there while its score over all rows stays high.
+    """
+
+    predictions = torch.as_tensor(predictions).double()
+    targets = torch.as_tensor(targets).double()
+    groups = torch.as_tensor(groups)
+    variance = (targets - targets.mean(dim=0)).pow(2).mean(dim=0).clamp_min(1e-12)
+    return {
+        int(group): (1.0 - (predictions[groups == group] - targets[groups == group]).pow(2).mean(dim=0) / variance).float()
+        for group in torch.unique(groups).tolist()
+    }
+
+
+def heldout_explained_variance(features: torch.Tensor, targets: torch.Tensor, *, ridge: float = LEARNABILITY_RIDGE,
+                               folds: int = 5, seed: int = 0) -> torch.Tensor:
+    """Per-column explained variance of a ridge regression predicting each fold from the others.
+
+    A column the features encode across images scores high; a fixed linear map gains nothing from
+    single images, because every prediction is for images outside its fit.
+    """
+
+    predictions = out_of_fold_predictions(features, targets, ridge=ridge, folds=folds, seed=seed)
+    return explained_variance(predictions, targets)
 
 
 def unseen_explained_variance(features: torch.Tensor, targets: torch.Tensor, unseen: torch.Tensor, *,
@@ -220,17 +285,9 @@ def unseen_explained_variance(features: torch.Tensor, targets: torch.Tensor, uns
     target of each training image still scores high there.
     """
 
-    features = F.normalize(torch.as_tensor(features).double(), dim=1)
-    targets = torch.as_tensor(targets).double()
     unseen = torch.as_tensor(unseen, dtype=torch.bool)
-    fit = ~unseen
-    feature_mean, target_mean = features[fit].mean(dim=0), targets[fit].mean(dim=0)
-    centred = features[fit] - feature_mean
-    identity = torch.eye(features.shape[1], dtype=features.dtype)
-    weights = torch.linalg.solve(centred.T @ centred + ridge * identity, centred.T @ (targets[fit] - target_mean))
-    predictions = (features[unseen] - feature_mean) @ weights + target_mean
-    variance = (targets[unseen] - target_mean).pow(2).mean(dim=0).clamp_min(1e-12)
-    return (1.0 - (predictions - targets[unseen]).pow(2).mean(dim=0) / variance).float()
+    predictions = unseen_predictions(features, targets, unseen, ridge=ridge)
+    return explained_variance(predictions, torch.as_tensor(targets)[unseen])
 
 
 def atypicality_weights(white: torch.Tensor, cap: float = 10.0) -> torch.Tensor:

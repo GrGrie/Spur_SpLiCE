@@ -405,6 +405,25 @@ against 0.02 for the control), where MetaShift carried 0.04. The configuration i
 next arms run it unchanged on Waterbirds without the hold-out (seeds 1 to 4), on Spur-CIFAR10 and on
 CelebA, and nothing more is tuned on Waterbirds.
 
+## Decoupling scores and the weight grid (2026-10-03)
+
+The per-factor explained variance cannot tell two directions from one: a direction shared by "cat" and
+"couch" predicts both where they co-occur, and they co-occur on most images. The learnability record
+now adds two scores, for the student and for CLIP features alike, on the unseen images when the run
+holds images out and out of fold otherwise:
+
+* `*_residual`: each factor minus its linear regression on the other factors (`partial_residuals`),
+  label-free. For two factors of correlation rho a fused direction explains (1 - rho) / 2 of each
+  residual, separate directions all of it.
+* `*_groups`: the explained variance inside every (class, attribute) group against the variance over
+  all images, from the hidden labels and for evaluation only. A fused "cat" direction drops on cats
+  outdoors against cats indoors. The unseen fifth of MetaShift holds 15 to 21 minority images, so read
+  the key factors, not the means.
+
+The seventh round runs `xfit_meaning_w{1,3,5,10}_holdout` on one factor set per dataset (Open Images
+meaning groups on Spur-CIFAR10 and Waterbirds, LAION on MetaShift), seeds 1 and 2. It tests whether the
+weight that maximizes the unseen explained variance, a label-free choice, also gives a good WGA.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

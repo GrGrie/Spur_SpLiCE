@@ -37,10 +37,11 @@ MetaShift's 1,700 images; a ridge regression fitted in closed form on one half o
 Spur-CIFAR10 gain. A revised concept grouping, learnability bounds from CLIP features and a hold-out of
 images from the concept loss then showed that the student memorizes in its backbone on MetaShift and
 generalizes on Spur-CIFAR10. The configuration that came out of these diagnostics, meaning-grouped
-factors distilled by the cross-fit at weight 10, reaches 55.3\% validation WGA on Waterbirds against
-45.8\% for SimCLR and 42.8\% for its shuffled control, the best Waterbirds result of the project from
-random initialization. It is now frozen and runs unchanged on CelebA, Spur-CIFAR10 and further
-Waterbirds seeds.
+factors distilled by the cross-fit at weight 10, reaches $51.5\pm5.5$\% validation WGA and
+$57.5\pm2.0$\% accuracy on Waterbirds over four seeds, against $45.8\pm1.7$\% and $52.3\pm1.2$\% for
+SimCLR and $41.4\pm3.0$\% WGA for its shuffled control. The same configuration falls short of the
+weight-1 cross-fit on Spur-CIFAR10, where it memorizes its 24 targets, so the loss weight has to follow
+the dataset; the unseen-image score offers a label-free way to set it.
 \end{abstract}
 
 \section{Overview}
@@ -70,7 +71,8 @@ before 26.09 & CoSpRo & +3.8 WGA on Waterbirds test; below SimCLR on MetaShift \
 29.09 & Learnability bounds & rare factors are unpredictable from a half batch; factors from 5\% \\
 29--30.09 & Loss weight 3 and 10 & training-image scores exceed CLIP's three times; WGA flat \\
 30.09 & Unseen-image diagnostic & MetaShift memorizes, Spur-CIFAR10 generalizes \\
-01--02.10 & Waterbirds & 55.3 WGA against 45.8 for SimCLR; configuration frozen \\
+01--02.10 & Waterbirds & 55.3 WGA on two seeds; configuration frozen \\
+03.10 & Seeds 3 and 4, Spur-CIFAR10 & 51.5 WGA on four Waterbirds seeds; 22.7 on Spur-CIFAR10 against 33.6 at weight 1 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -481,8 +483,8 @@ unseen scores agree and exceed the control by a few hundredths, and validation a
 
 \begin{table}[h]
 \centering
-\caption{Waterbirds validation. SimCLR: seeds 1 to 4; other arms: seeds 1 and 2 with a fifth of the
-images held out of the concept loss; the meaning arms report the final probe.}
+\caption{Waterbirds validation. SimCLR and the meaning arms: seeds 1 to 4; the 217-factor arms: seeds 1
+and 2. All cross-fit arms keep a fifth of the images out of the concept loss.}
 \label{tab:waterbirds}
 \small
 \begin{tabular}{l r r r r c}
@@ -492,32 +494,44 @@ Arm & Seen & Unseen & WGA & Acc. & Groups \\
 SimCLR & & & $45.8\pm1.7$ & 52.3 & 47 / 54 / 52 / 64 \\
 xfit, 217 factors, weight 1 & 0.04 & 0.03 & 46.5 & 51.1 & \\
 \quad shuffled & 0.02 & 0.02 & 43.9 & 50.5 & \\
-xfit, 70 meaning factors, weight 10 & 0.30 & 0.09 & \textbf{55.3} & \textbf{59.2} & 56 / 59 / 66 / 68 \\
-\quad shuffled & 0.01 & 0.02 & 42.8 & 52.6 & 43 / 57 / 58 / 66 \\
+xfit, 70 meaning factors, weight 10 & 0.30 & 0.09 & $\mathbf{51.5\pm5.5}$ & \textbf{57.5} & 52 / 57 / 65 / 73 \\
+\quad shuffled & 0.01 & 0.02 & $41.4\pm3.0$ & 51.4 & 41 / 55 / 61 / 66 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The configuration that came out of the MetaShift diagnostics, meaning groups at text 0.85 and
 response 0.5, factors from 5\% and weight 10, lifts every Waterbirds group, minority groups included,
-to 55.3\% WGA (57.8 and 52.7 for the two seeds). This exceeds SimCLR by 9.5 points, its shuffled control
-by 12.5 points and the CoSpRo validation result ($50.0\pm3.2$) by 5.3 points. The student stores part of
+on its first two seeds (55.3\% WGA). Seeds 3 and 4 gave 43.7 and 52.2, so four seeds average
+$51.5\pm5.5$. Accuracy rises on every seed (54.8 to 60.1, mean 57.5 against 52.3 for SimCLR) and the
+shuffled control stays at $41.4\pm3.0$: the concept content adds about ten points of WGA over its
+control and six over SimCLR, at a seed spread that matches the CoSpRo validation result
+($50.0\pm3.2$) without exceeding it. The student stores part of
 the targets (seen 0.30) and carries a third of the CLIP score to unseen images (0.09 against 0.02 for
 the control), more than twice the MetaShift value. Waterbirds, with 4,795 images, sits between the
 memorizing and the generalizing dataset.
 
-We count this as the first success of the branch on a dataset where CoSpRo already worked, with two
-caveats: two seeds, and the hold-out of a fifth of the images. Its settings came from MetaShift
+We count this as a success on accuracy and against the control and as a modest one on WGA, with the
+caveat of the hold-out of a fifth of the images. Its settings came from MetaShift
 diagnostics and the learnability bounds; the weight of 10 was chosen to probe memorization on
 MetaShift, and no setting was tuned on Waterbirds labels. The configuration is frozen from here on.
 
 \section{Where we stand and how we continue}
 \label{sec:next}
 
+\paragraph{Spur-CIFAR10 with the frozen configuration.} The same configuration on Spur-CIFAR10 (24 Open
+Images meaning factors from 5\%, weight 10, seeds 1 and 2) reaches $22.7\pm0.5$ WGA and 62.0 accuracy,
+above SimCLR (15.6) and below the weight-1 cross-fit on the default 88 factors (33.6). Its training
+images score 0.86 against 0.48 for CLIP: at weight 10 even 45,000 images are memorized. The loss weight
+interacts with the dataset size, and a single weight serves neither dataset best. The unseen-image score
+uses no labels, so the weight can be chosen per dataset as the one that maximizes it; the next runs test
+this rule.
+
 \paragraph{Conclusions so far.}
 \begin{enumerate}
 \item Distilling SpLiCE concept factors into a SimCLR student improves worst-group accuracy when the
-student can generalize the factors: Spur-CIFAR10 (WGA 15.6 to 33.6) and Waterbirds (45.8 to 55.3).
+student can generalize the factors: Spur-CIFAR10 (WGA 15.6 to 33.6) and Waterbirds (45.8 to 51.5,
+accuracy 52.3 to 57.5).
 \item Cross-fitting makes the attribution clean: shuffled targets lose the gain, so the concept content
 carries it.
 \item On small datasets an auxiliary per-image target is memorized. Cross-fitting removes memorization in
