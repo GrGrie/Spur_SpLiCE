@@ -72,7 +72,7 @@ class TrainingMethod:
 
         return []
 
-    def factor_learnability(self, features, source_indices) -> dict[str, Any] | None:
+    def factor_learnability(self, features, source_indices, groups=None, group_names=None) -> dict[str, Any] | None:
         """How well ``features`` of the training images encode the method's concept factors, if it has any."""
 
         return None

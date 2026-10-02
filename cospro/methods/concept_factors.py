@@ -44,7 +44,11 @@ from cospro.methods.relational_graph import IndexedCoSpRoDataset
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
     SHUFFLE_SEED,
+    explained_variance,
+    group_explained_variance,
     heldout_explained_variance,
+    out_of_fold_predictions,
+    partial_residuals,
     FactorConfig,
     balancing_weights,
     block_factor_columns,
@@ -55,6 +59,7 @@ from cospro.pipeline.concept_factors import (
     load_concept_factors,
     rows_for_subset,
     unseen_explained_variance,
+    unseen_predictions,
 )
 
 
@@ -434,7 +439,7 @@ class ConceptFactors(TrainingMethod):
         # The same images stay out of the concept loss in every arm and seed, so their scores compare.
         unseen = torch.rand(len(factors["sample_ids"]), generator=torch.Generator().manual_seed(SHUFFLE_SEED))
         unseen = (unseen < self.holdout_fraction).index_select(0, rows)
-        self._prepare_learnability(factors, rows, source_indices, unseen)
+        self._prepare_learnability(factors, rows, source_indices, unseen, context.dataset)
         if self.condition_fraction > 0 and not factors["condition_factors"]:
             raise ValueError("Conditioned batches need at least one entangled factor pair.")
         if self.distill_weight > 0:
@@ -488,28 +493,54 @@ class ConceptFactors(TrainingMethod):
             generator=loader.generator,
         )
 
-    def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices, unseen: torch.Tensor) -> None:
-        """The real standardized targets and their CLIP bound, whatever targets the loss uses."""
+    def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices, unseen: torch.Tensor,
+                              dataset: str = "") -> None:
+        """The real targets, their residuals and the CLIP features, whatever targets the loss uses."""
 
-        targets = factors["targets"]["standardized"].index_select(0, rows)
-        clip = factors["clip_embeddings"].index_select(0, rows)
         self.learnability = {
+            "dataset": dataset,
             "source_indices": [int(index) for index in source_indices],
-            "targets": targets,
-            "clip": heldout_explained_variance(clip, targets),
+            "targets": factors["targets"]["standardized"].index_select(0, rows),
+            # Each factor minus its regression on the others: one direction shared by two co-occurring
+            # factors predicts their common part and misses this one.
+            "residuals": partial_residuals(factors["targets"]["standardized"]).index_select(0, rows),
+            "clip_features": factors["clip_embeddings"].index_select(0, rows),
             "unseen": unseen,
-            "clip_unseen": unseen_explained_variance(clip, targets, unseen) if unseen.any() else None,
             "factors": [
                 {"name": factor_name(factor), "concepts": factor["concepts"], "frequency": round(factor["frequency"], 4)}
                 for factor in factors["factors"]
             ],
         }
+        self._clip_scores = {}
 
-    def factor_learnability(self, features, source_indices) -> dict[str, Any] | None:
-        """Held-out explained variance of every real factor from ``features``, beside its CLIP bound.
+    def _scores(self, features, targets, residuals, unseen, groups) -> dict[str, Any]:
+        """Explained variance over all images, on unseen images, of the residuals and inside each group."""
 
-        Shuffled-target arms score the real factors too, so their record shows what SimCLR learns of
-        the concepts without the concept loss.
+        scores: dict[str, Any] = {"all": heldout_explained_variance(features, targets)}
+        if unseen.any():
+            predicted = unseen_predictions(features, targets, unseen)
+            predicted_residuals = unseen_predictions(features, residuals, unseen)
+            rows = unseen
+            scores["unseen"] = explained_variance(predicted, targets[unseen])
+        else:
+            predicted = out_of_fold_predictions(features, targets)
+            predicted_residuals = out_of_fold_predictions(features, residuals)
+            rows = torch.ones(len(targets), dtype=torch.bool)
+        scores["residual"] = explained_variance(predicted_residuals, residuals[rows])
+        if groups is not None:
+            scores["groups"] = group_explained_variance(predicted, targets[rows], groups[rows])
+        return scores
+
+    def factor_learnability(self, features, source_indices, groups=None, group_names=None) -> dict[str, Any] | None:
+        """How well ``features`` encode every real factor, beside the same scores of CLIP features.
+
+        ``student`` is the five-fold score over the training images. With a hold-out, ``student_unseen``
+        scores the images the concept loss never saw. ``student_residual`` scores each factor's part
+        the other factors leave unexplained, a label-free test that the factor has its own direction.
+        ``student_groups`` scores the factor inside each (class, attribute) group: a factor fused with
+        its usual context drops in the groups that break the co-occurrence. Groups enter only this
+        evaluation. Shuffled-target arms score the real factors too, so their record shows what SimCLR
+        learns of the concepts without the concept loss.
         """
 
         if not self.learnability:
@@ -517,36 +548,60 @@ class ConceptFactors(TrainingMethod):
         position = {index: row for row, index in enumerate(self.learnability["source_indices"])}
         order = torch.tensor([position[int(index)] for index in source_indices], dtype=torch.long)
         targets = self.learnability["targets"].index_select(0, order)
-        student = heldout_explained_variance(features, targets)
-        clip = self.learnability["clip"]
-        entries = [
-            {**factor, "student": round(float(student[column]), 4), "clip": round(float(clip[column]), 4)}
-            for column, factor in enumerate(self.learnability["factors"])
-        ]
-        unseen_summary = {}
-        if self.learnability.get("clip_unseen") is not None:
-            # Images the concept loss never touched: the score an encoder that stores targets cannot reach.
-            unseen = self.learnability["unseen"].index_select(0, order)
-            student_unseen = unseen_explained_variance(features, targets, unseen)
-            clip_unseen = self.learnability["clip_unseen"]
-            for column, entry in enumerate(entries):
-                entry["student_unseen"] = round(float(student_unseen[column]), 4)
-                entry["clip_unseen"] = round(float(clip_unseen[column]), 4)
-            unseen_summary = {
-                "unseen_images": int(unseen.sum()),
-                "student_unseen_mean": float(student_unseen.mean()),
-                "clip_unseen_mean": float(clip_unseen.mean()),
-            }
+        residuals = self.learnability["residuals"].index_select(0, order)
+        unseen = self.learnability["unseen"].index_select(0, order)
+        groups = None if groups is None else torch.as_tensor(groups, dtype=torch.long)
+        student = self._scores(features, targets, residuals, unseen, groups)
+        key = (len(order), int(order[:64].sum()), groups is None)
+        if key not in self._clip_scores:
+            clip_features = self.learnability["clip_features"].index_select(0, order)
+            self._clip_scores[key] = self._scores(clip_features, targets, residuals, unseen, groups)
+        clip = self._clip_scores[key]
+
+        def name(group: int) -> str:
+            return group_names[group] if group_names is not None and group < len(group_names) else str(group)
+
+        entries = []
+        for column, factor in enumerate(self.learnability["factors"]):
+            entry = {**factor}
+            for label, scores in (("student", student), ("clip", clip)):
+                entry[label] = round(float(scores["all"][column]), 4)
+                if "unseen" in scores:
+                    entry[f"{label}_unseen"] = round(float(scores["unseen"][column]), 4)
+                entry[f"{label}_residual"] = round(float(scores["residual"][column]), 4)
+                if "groups" in scores:
+                    entry[f"{label}_groups"] = {name(group): round(float(values[column]), 4)
+                                                for group, values in scores["groups"].items()}
+            entries.append(entry)
         entries.sort(key=lambda entry: -entry["clip"])
-        return {
-            **unseen_summary,
+
+        summary: dict[str, Any] = {
             "ridge": LEARNABILITY_RIDGE,
-            "student_mean": float(student.mean()),
-            "clip_mean": float(clip.mean()),
+            "evaluated_on": "unseen images" if unseen.any() else "out-of-fold training images",
+            "student_mean": float(student["all"].mean()),
+            "clip_mean": float(clip["all"].mean()),
             # A factor counts as learned once the student reaches half of what CLIP features explain.
-            "learned_fraction": float((student >= 0.5 * clip.clamp_min(0)).float().mean()),
-            "factors": entries,
+            "learned_fraction": float((student["all"] >= 0.5 * clip["all"].clamp_min(0)).float().mean()),
+            "student_residual_mean": float(student["residual"].mean()),
+            "clip_residual_mean": float(clip["residual"].mean()),
         }
+        if unseen.any():
+            summary.update({
+                "unseen_images": int(unseen.sum()),
+                "student_unseen_mean": float(student["unseen"].mean()),
+                "clip_unseen_mean": float(clip["unseen"].mean()),
+            })
+        if groups is not None:
+            for label, scores in (("student", student), ("clip", clip)):
+                stacked = torch.stack(list(scores["groups"].values()))
+                summary[f"{label}_group_means"] = {name(group): float(values.mean())
+                                                   for group, values in scores["groups"].items()}
+                # Per factor its weakest group, averaged over the factors.
+                summary[f"{label}_worst_group_mean"] = float(stacked.min(dim=0).values.mean())
+            evaluated = groups[unseen] if unseen.any() else groups
+            summary["group_counts"] = {name(int(group)): int((evaluated == group).sum())
+                                       for group in torch.unique(evaluated).tolist()}
+        return {**summary, "factors": entries}
 
     def set_epoch(self, epoch: int) -> None:
         for part in (self.regularizer, self.blocks):

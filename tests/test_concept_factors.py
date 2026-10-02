@@ -35,6 +35,7 @@ from cospro.pipeline.concept_factors import (
     load_concept_factors,
     rows_for_subset,
     unseen_explained_variance,
+    whitened,
 )
 from cospro.tracking.artifacts import PROJECT_ROOT
 from unittest.mock import patch
@@ -345,21 +346,50 @@ class FactorLearnabilityTests(unittest.TestCase):
         encoded = torch.cat([targets, 0.1 * torch.randn(600, 13, generator=generator)], dim=1)
         self.assertGreater(float(unseen_explained_variance(encoded, targets, unseen, ridge=1.0).mean()), 0.8)
 
+    @staticmethod
+    def prepared(method, targets, clip_features, unseen=None):
+        count = len(targets)
+        method._prepare_learnability(
+            {"targets": {"standardized": targets, "whitened": whitened(targets, 0.01)},
+             "clip_embeddings": clip_features,
+             "factors": [{"concepts": [name], "frequency": 0.5} for name in ("cat", "couch")]},
+            torch.arange(count), list(range(100, 100 + count)),
+            torch.zeros(count, dtype=torch.bool) if unseen is None else unseen,
+        )
+
     def test_the_method_matches_features_to_factors_by_source_index(self):
         method = ConceptFactors()
         generator = torch.Generator().manual_seed(1)
         features = torch.randn(400, 16, generator=generator)
-        targets = features[:, :2].clone()
-        method.learnability = {"source_indices": list(range(100, 500)), "targets": targets,
-                               "clip": torch.tensor([0.9, 0.9]),
-                               "factors": [{"name": "a", "concepts": ["a"], "frequency": 0.5},
-                                           {"name": "b", "concepts": ["b"], "frequency": 0.5}]}
+        self.prepared(method, features[:, :2].clone(), features)
         reverse = list(range(499, 99, -1))
         result = method.factor_learnability(features.flip(0), reverse)
         self.assertGreater(result["student_mean"], 0.8)
         self.assertEqual(result["learned_fraction"], 1.0)
         shuffled = method.factor_learnability(features, reverse)
         self.assertLess(shuffled["student_mean"], 0.1)
+
+    def test_a_fused_direction_fails_the_residual_and_the_minority_groups(self):
+        # Cat and couch co-occur in 90 percent of the images; group = 2 * cat + couch.
+        generator = torch.Generator().manual_seed(3)
+        cat = (torch.rand(2000, generator=generator) < 0.5).float()
+        couch = torch.where(torch.rand(2000, generator=generator) < 0.9, cat, 1 - cat)
+        targets = torch.stack([cat, couch], dim=1)
+        targets = (targets - targets.mean(dim=0)) / targets.std(dim=0)
+        noise = 0.05 * torch.randn(2000, 14, generator=generator)
+        separate = torch.cat([targets, noise], dim=1)
+        fused = torch.cat([(targets[:, :1] + targets[:, 1:]) / 2, torch.zeros(2000, 1), noise], dim=1)
+        groups = (2 * cat + couch).long()
+        scores = {}
+        for name, features in (("separate", separate), ("fused", fused)):
+            method = ConceptFactors()
+            self.prepared(method, targets, separate)
+            scores[name] = method.factor_learnability(features, list(range(100, 2100)), groups, ["a", "b", "c", "d"])
+        self.assertGreater(scores["separate"]["student_residual_mean"], 0.8)
+        self.assertLess(scores["fused"]["student_residual_mean"], 0.2)
+        self.assertGreater(scores["separate"]["student_worst_group_mean"], 0.8)
+        self.assertLess(scores["fused"]["student_worst_group_mean"], scores["fused"]["student_mean"] - 0.3)
+        self.assertEqual(sum(scores["fused"]["group_counts"].values()), 2000)
 
 
 class MeaningGroupingTests(unittest.TestCase):

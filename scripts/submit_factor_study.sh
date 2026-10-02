@@ -58,6 +58,8 @@
 # and their *_holdout variants. Spur-CIFAR10, Waterbirds and CelebA also take xfit_meaning_w10 (Open Images
 # meaning groups, text 0.85, response 0.5, factors from 5 percent, weight 10), its shuffled control and, on
 # Waterbirds and CelebA, their *_holdout variants.
+# Seventh round, the loss weight on one factor set per dataset: xfit_meaning_w{1,3,5,10}_holdout. The weight
+# that maximizes the explained variance on unseen images (no labels) is the candidate rule for choosing it.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -121,6 +123,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w3_shuffled]="${XFIT_MEANING[*]} --factor_targets shuffled --factor_distill_weight 3.0"
     [xfit_meaning_w10_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 10.0 ${HOLDOUT[*]}"
     [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets shuffled --factor_distill_weight 10.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w1_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 1.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w3_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 3.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -155,6 +160,10 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   ARMS=(
     [xfit_meaning_w10]="${XFIT_MEANING_OI[*]} --factor_targets standardized"
     [xfit_meaning_w10_shuffled]="${XFIT_MEANING_OI[*]} --factor_targets shuffled"
+    [xfit_meaning_w1_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 1.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w3_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 3.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w10_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized ${HOLDOUT[*]}"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -188,6 +197,9 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_meaning_w10_shuffled]="${XFIT_MEANING_OI[*]} --factor_targets shuffled"
     [xfit_meaning_w10_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized ${HOLDOUT[*]}"
     [xfit_meaning_w10_shuffled_holdout]="${XFIT_MEANING_OI[*]} --factor_targets shuffled ${HOLDOUT[*]}"
+    [xfit_meaning_w1_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 1.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w3_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 3.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 5.0 ${HOLDOUT[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2

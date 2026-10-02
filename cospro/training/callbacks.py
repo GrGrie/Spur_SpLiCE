@@ -100,6 +100,23 @@ class FactorLearnability(Callback):
         self.args = args
         self.every = int(every)
         self.total_epochs = int(total_epochs)
+        self._groups: tuple | None = None
+
+    def _training_groups(self, source_indices) -> tuple:
+        """(class, attribute) group of every training image and the group names, for evaluation only."""
+
+        if self._groups is None:
+            self._groups = (None, None)
+            try:
+                from cospro.diagnostics.labels import load_labels
+
+                dataset = self.state.method.learnability.get("dataset") or self.args.dataset
+                labels = load_labels(dataset, self.args.data_folder)
+                y, a = labels.for_ids([f"{labels.dataset}:{int(index)}" for index in source_indices])
+                self._groups = (y * labels.n_attributes + a, labels.group_names())
+            except Exception as error:  # the per-group scores are optional; the run goes on without them
+                print(f"[WARNING] Factor learnability without per-group scores: {error}", flush=True)
+        return self._groups
 
     def on_epoch_end(self, report: EpochReport) -> None:
         due = report.epoch == self.total_epochs or (self.every > 0 and report.epoch % self.every == 0)
@@ -109,7 +126,8 @@ class FactorLearnability(Callback):
         source_indices = getattr(self.state.rank_loader.dataset, "indices", None)
         if source_indices is None:
             raise ValueError("Factor learnability needs a rank loader with stable source indices.")
-        result = self.state.method.factor_learnability(features, source_indices)
+        groups, group_names = self._training_groups(source_indices)
+        result = self.state.method.factor_learnability(features, source_indices, groups, group_names)
         if result is None:
             return
         path = Path(self.args.save_folder) / f"factor_learnability_epoch_{report.epoch}.json"
@@ -128,6 +146,18 @@ class FactorLearnability(Callback):
             report.diagnostics.update({
                 "Factor explained variance on unseen images": result["student_unseen_mean"],
                 "Factor explained variance of CLIP on unseen images": result["clip_unseen_mean"],
+            })
+        report.diagnostics.update({
+            "Factor residual explained variance": result["student_residual_mean"],
+            "Factor residual explained variance of CLIP": result["clip_residual_mean"],
+        })
+        if "student_worst_group_mean" in result:
+            print(f"[INFO] Factor residuals: student {result['student_residual_mean']:.3f}, CLIP "
+                  f"{result['clip_residual_mean']:.3f}; weakest group per factor: student "
+                  f"{result['student_worst_group_mean']:.3f}, CLIP {result['clip_worst_group_mean']:.3f}", flush=True)
+            report.diagnostics.update({
+                "Factor worst-group explained variance": result["student_worst_group_mean"],
+                "Factor worst-group explained variance of CLIP": result["clip_worst_group_mean"],
             })
 
 
