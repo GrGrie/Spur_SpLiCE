@@ -1,0 +1,726 @@
+\documentclass{article}
+\usepackage{iclr2027_conference,times}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,booktabs,tabularx,microtype}
+\usepackage{hyperref}
+\usepackage{url}
+\hypersetup{hidelinks}
+\usepackage[section]{placeins}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\setlength{\emergencystretch}{2em}
+\iclrfinalcopy
+
+\newcommand{\EV}{\mathrm{EV}}
+\newcommand{\arm}[1]{\texttt{#1}}
+
+\title{From CoSpRo to Cross-Fitted Concept Distillation:\\
+A Research Log of the \texttt{concept-factors} Branch}
+\author{Spur\_SpLiCE project\\
+Branch \texttt{concept-factors}, 26 September to 2 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document records how the \texttt{concept-factors} branch left the CoSpRo method and arrived at
+cross-fitted concept distillation. CoSpRo builds a teacher graph from concept projections of a frozen
+CLIP/SpLiCE model and lifts Waterbirds worst-group accuracy (WGA) by four points over SimCLR, while on
+MetaShift it stays below SimCLR. We replaced its prior about which concept is spurious with a
+symmetric goal: keep strongly correlated concept factors on separate linear directions of the student,
+so that a group-balanced linear probe can pick the side the task needs. Six rounds of experiments
+followed. Distilling SpLiCE factors into a SimCLR ResNet doubles WGA on Spur-CIFAR10 from the first
+attempt and leaves MetaShift unchanged through reweighting, whitening and per-factor contrastive
+blocks. Shuffled-target controls showed that every per-image auxiliary loss is met by memorization on
+MetaShift's 1,700 images; a ridge regression fitted in closed form on one half of each batch
+(cross-fitting) removed memorization in the head and isolated the concept content as the source of the
+Spur-CIFAR10 gain. A revised concept grouping, learnability bounds from CLIP features and a hold-out of
+images from the concept loss then showed that the student memorizes in its backbone on MetaShift and
+generalizes on Spur-CIFAR10. The configuration that came out of these diagnostics, meaning-grouped
+factors distilled by the cross-fit at weight 10, reaches 55.3\% validation WGA on Waterbirds against
+45.8\% for SimCLR and 42.8\% for its shuffled control, the best Waterbirds result of the project from
+random initialization. It is now frozen and runs unchanged on CelebA, Spur-CIFAR10 and further
+Waterbirds seeds.
+\end{abstract}
+
+\section{Overview}
+\label{sec:overview}
+
+Table~\ref{tab:timeline} lists the stages of the branch. Each stage answered a question the previous
+one raised, and most answers were negative. The negative answers matter as much as the final positive
+one, because each of them removed an explanation for the MetaShift failure and left the next one in
+view: the choice of target factors, then the loss, then memorization in the head, then the grouping,
+then the frequency of the factors and finally memorization in the backbone.
+
+\begin{table}[h]
+\centering
+\caption{Stages of the branch. Dates are 2026; WGA is validation worst-group accuracy.}
+\label{tab:timeline}
+\small
+\begin{tabularx}{\linewidth}{l l X}
+\toprule
+Date & Stage & Outcome \\
+\midrule
+before 26.09 & CoSpRo & +3.8 WGA on Waterbirds test; below SimCLR on MetaShift \\
+26.09 & Concept factors, F1 and F2 & F2 doubles Spur-CIFAR10 WGA; MetaShift unchanged \\
+27.09 & Rounds 1 and 2 on MetaShift & loss weight, whitening, atypicality weights: majority groups rise, minority groups stay near 50 \\
+27--28.09 & Round 3 & balancing weights and concept blocks (F3); shuffled controls fit as well as real targets \\
+28.09 & Cross-fitted F2 (xfit) & first version diverges; the repaired xfit matches F2 on Spur-CIFAR10 and its control falls to SimCLR \\
+28.09 & Concept grouping revisited & synonyms rarely co-activate; meaning grouping by raw text embeddings \\
+29.09 & Learnability bounds & rare factors are unpredictable from a half batch; factors from 5\% \\
+29--30.09 & Loss weight 3 and 10 & training-image scores exceed CLIP's three times; WGA flat \\
+30.09 & Unseen-image diagnostic & MetaShift memorizes, Spur-CIFAR10 generalizes \\
+01--02.10 & Waterbirds & 55.3 WGA against 45.8 for SimCLR; configuration frozen \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Setting and protocol}
+\label{sec:protocol}
+
+All runs share the CoSpRo protocol. A ResNet-18 trains from random initialization with SimCLR
+\citep{chen2020simclr} for 500 epochs (CelebA: 250) at batch size 128, temperature 0.05, learning rate
+0.01 and float16 mixed precision on one V100. Every 25 epochs a logistic probe is fitted on a
+group-balanced training subset and evaluated on the validation split; we report the mean of the last
+four probes and the standard deviation over seeds unless a table says otherwise. Worst-group accuracy
+is the lowest accuracy over the groups formed by class and spurious attribute \citep{sagawa2020groupdro}.
+Concept factors come from SpLiCE \citep{bhalla2024splice} decompositions of OpenCLIP ViT-B/32
+embeddings \citep{radford2021clip} over the LAION (10,000 words) or Open Images V7 (20,931 words)
+vocabularies. Pretraining uses no class or group label.
+
+\begin{table}[h]
+\centering
+\caption{Datasets. MetaShift and Spur-CIFAR10 are development datasets, on which settings are chosen;
+Waterbirds and CelebA are held out for the final evaluation.}
+\label{tab:datasets}
+\small
+\begin{tabularx}{\linewidth}{l r X}
+\toprule
+Dataset & Train images & Spurious structure \\
+\midrule
+MetaShift cats and dogs \citep{liang2022metashift} & 1,700 & cats indoors and dogs outdoors in 88\% of the images; 72 validation images per group \\
+Spur-CIFAR10 & 45,000 & CIFAR-10 classes with a class-correlated coloured line; 100 groups \\
+Waterbirds \citep{sagawa2020groupdro} & 4,795 & bird type correlated with land or water background \\
+CelebA \citep{liu2015celeba} & 162,770 & hair colour correlated with gender \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Two protocol rules shaped the decisions below. The development datasets carry all tuning; Waterbirds
+and CelebA receive frozen configurations, so the label-free claim holds for them. MetaShift WGA is
+noisy: SimCLR over ten seeds scores $44.6\pm6.9$, so two-seed differences below five points carry
+little evidence and we leaned on mechanistic diagnostics more than on WGA there.
+
+\section{Starting point: CoSpRo}
+\label{sec:cospro}
+
+CoSpRo removes the subspace of one concept group from CLIP embeddings, keeps image pairs that become
+closer, filters them by activation contrast, residual concept agreement and synthetic null groups and
+transfers the resulting sparse graph to a SimCLR student through graph-aware batches and a relational
+KL loss. On Waterbirds it reaches $50.64\pm1.97$ test WGA against $46.82\pm3.65$ for SimCLR over four
+seeds. Two observations motivated the branch.
+
+\paragraph{The gain does not transfer.} On MetaShift, ten seeds give $42.9\pm2.7$ WGA for CoSpRo
+against $44.6\pm6.9$ for SimCLR, and the LAION variant reaches $47.7\pm4.3$, within the SimCLR spread.
+On Spur-CIFAR10 one seed gives 19.6 against 15.6.
+
+\paragraph{The method carries a prior.} Projection relations help when removing a concept reveals a
+same-class pair across contexts, which assumes that the spurious attribute is a removable context
+concept. Label-free alternatives carry other priors: LateTVG \citep{hamidieh2024views} and
+learning-speed methods \citep{zhu2023lassl} assume that the spurious feature is the easy one. The
+CoSpRo graph also contains wrong-class edges, and background stays linearly decodable at 91\%.
+
+\section{Concept factors: the idea}
+\label{sec:idea}
+
+Deep feature reweighting \citep{kirichenko2023dfr} shows that a linear head retrained on group-balanced
+data recovers worst-group accuracy whenever the representation encodes the core feature apart from the
+spurious one. Our probe is exactly such a head. The SSL failure to prevent is therefore the fusion of
+two correlated features into one direction, or the suppression of the harder feature by the easier one,
+which contrastive losses are known to produce \citep{chen2021intriguing,robinson2021shortcut}. Keeping
+every strongly correlated pair of concepts apart serves both sides of the pair, and the balanced probe
+chooses the side the task needs. No concept is declared spurious.
+
+SpLiCE supplies the ingredients without labels. A \emph{factor} is a concept group of the CoSpRo
+grouping stage; its value on image $i$ is the summed SpLiCE code $a_{ik}=\sum_{c\in G_k} c_{ic}$. Factors
+outside a frequency band (2\% to 90\% of the images by default) are dropped. Two mechanisms used them.
+
+\paragraph{F1, concept-conditioned batches.} A share of the batches holds only images that show one
+factor of a strongly correlated pair (phi coefficient of presences). Inside such a batch the factor
+tells no image apart, so InfoNCE has to separate the images by everything else, including the partner
+factor. This is conditional contrastive learning \citep{tsai2021conditional} with a discovered factor
+in place of an annotated attribute.
+
+\paragraph{F2, factor distillation.} A linear head $W$ on the backbone feature $h_i$ predicts the
+factor targets $t_i$ of both views,
+\begin{equation}
+\mathcal{L}=\mathcal{L}_{\mathrm{SimCLR}}+\lambda\,\frac{1}{2B}\sum_{i,v}\lVert W h_i^{(v)}-t_i\rVert^2/K .
+\end{equation}
+The targets are standardized factor values or their ZCA-whitened version \citep{kessy2018whitening},
+which leaves each factor the part the other factors do not explain and so is large exactly on the
+images that break a correlation. The head is linear so that the factors must be linearly readable, as
+the probe reads them. A \emph{shuffled} control assigns each image the targets of another image: same
+statistics, no image content.
+
+\section{Rounds 1 to 3: distillation helps where data is plentiful}
+\label{sec:rounds}
+
+\subsection{Round 1}
+The first inspection of the factors showed two defects, both fixed before training. Taking the 64 most
+frequent groups dropped the scene concepts of MetaShift and most line colours of Spur-CIFAR10, and the
+top correlated pairs were two names for one thing (cat breeds, lorry and truck). We kept every group in
+the band and merged groups whose CLIP image responses correlate above 0.9.
+
+\begin{table}[h]
+\centering
+\caption{Round 1, seeds 1 and 2. EV is the explained variance of the targets by the trained head.}
+\label{tab:round1}
+\small
+\begin{tabular}{l l r r r}
+\toprule
+Dataset & Arm & WGA & Acc. & EV \\
+\midrule
+Spur-CIFAR10 & SimCLR & $15.6\pm1.0$ & 59.5 & \\
+ & F2, standardized & $32.9\pm1.6$ & 69.5 & 0.62 \\
+ & F2, shuffled & $24.2\pm0.4$ & 58.6 & 0.02 \\
+\midrule
+MetaShift & SimCLR & $47.7\pm4.2$ & 55.8 & \\
+ & F2, standardized & $43.2\pm1.2$ & 58.2 & 0.12 \\
+ & F2, shuffled & $42.2\pm4.7$ & 51.0 & 0.06 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On Spur-CIFAR10 the gain was large and content-specific: real targets beat the shuffled control by
+nine points of WGA and eleven of accuracy (Table~\ref{tab:round1}). The control itself added nine points
+over SimCLR at equal accuracy, so the auxiliary regression also helps as such; Section~\ref{sec:xfit}
+removes this ambiguity. On MetaShift the head explained 12\% of the factor variance and the arms
+differed by less than the seed noise. We counted Spur-CIFAR10 as a success and MetaShift as an
+unexplained failure.
+
+\subsection{Round 2: pointing the loss at the minority images}
+Every MetaShift arm with real targets raised average accuracy, while the minority groups (cats
+outdoors and dogs indoors) stayed near 45 to 55\%. Our reading was that standardized targets reproduce
+the dataset's correlations, and several Open Images concepts fuse class and context (``Cat bed'', ``Dog
+walking''). Round 2 therefore tested ways to point F2 at the images that break the correlations without
+labels: loss weights 3 and 10, whitened targets and per-image \emph{atypicality} weights (the mean
+squared whitened factor value).
+
+\begin{table}[h]
+\centering
+\caption{MetaShift, seeds 1 to 4 unless noted. Group accuracies in the order cat-indoor, cat-outdoor,
+dog-indoor, dog-outdoor.}
+\label{tab:round2}
+\small
+\begin{tabular}{l r r c r}
+\toprule
+Arm & WGA & Acc. & Groups & EV \\
+\midrule
+SimCLR & $44.8\pm9.3$ & 54.8 & 55 / 49 / 53 / 62 & \\
+F2, weight 3 & $46.6\pm5.7$ & 61.5 & 70 / 47 / 54 / 74 & 0.41 \\
+F2, weight 3, shuffled & $43.3\pm8.1$ & 54.8 & 57 / 45 / 53 / 65 & 0.33 \\
+F2, weight 10 (seeds 1, 2) & $47.0\pm7.1$ & 59.7 & 62 / 46 / 53 / 75 & 0.85 \\
+F2, whitened, weight 3 & $47.9\pm6.4$ & 56.9 & 57 / 51 / 55 / 65 & 0.31 \\
+F2, weight 3, atypicality & $50.5\pm3.8$ & 58.8 & 59 / 52 / 55 / 70 & 0.61 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Whitened targets and atypicality weights narrowed the gap between groups by lowering the majority gain;
+none of them lifted a minority group above the SimCLR spread (Table~\ref{tab:round2}). We read this as
+the regression learning through the co-occurrence itself: in 88\% of the images the indoor features
+predict the cat factors, so one fused ``cat and indoor'' direction serves the loss.
+
+\subsection{Round 3: making the co-occurrence useless}
+Two mechanisms targeted the fused direction directly.
+\emph{Balancing weights} minimize the mean squared correlation of the factor presences under per-image
+weights with an entropy penalty, so a co-occurrence stops paying off in the weighted regression; this
+is sample reweighting for independence as in stable learning \citep{zhang2021stable}.
+\emph{F3 concept blocks} give every factor its own small linear block and apply a supervised contrastive
+loss \citep{khosla2020supcon} inside the block, with images that share the factor as positives and a
+pair weight that grows with how much the two images' other factors differ. A fused direction cannot
+separate ``cat on sofa'' from ``dog on sofa'' inside the cat block, so the backbone needs a cat
+direction that survives the context; pairs that share one factor and differ elsewhere identify that
+factor in the weak-supervision sense of \citet{locatello2020weakly} and \citet{yao2024multiview}.
+
+\begin{table}[h]
+\centering
+\caption{Round 3 on MetaShift, seeds 1 to 4.}
+\label{tab:round3}
+\small
+\begin{tabular}{l r r c}
+\toprule
+Arm & WGA & Acc. & Groups \\
+\midrule
+F2, weight 3, balancing weights & $44.2\pm8.1$ & 59.0 & 64 / 44 / 55 / 72 \\
+F3 concept blocks & $43.8\pm4.1$ & 60.0 & 69 / 45 / 51 / 75 \\
+F3, all positive pairs alike & $49.7\pm2.5$ & 62.6 & 73 / 50 / 52 / 75 \\
+F3, shuffled concept sets & $46.4\pm3.5$ & 56.2 & 56 / 48 / 52 / 68 \\
+F3 and balanced F2 & $49.4\pm3.8$ & 64.4 & 74 / 52 / 55 / 78 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No arm lifted a minority group (Table~\ref{tab:round3}). The controls explained why. F2 at weight 3
+explained 0.41 of the real target variance and 0.33 of the shuffled one, and the block loss ended at
+3.34 with real concepts and 3.37 with shuffled ones. On 1,700 images a network can fit per-image targets
+through the features SimCLR learns anyway to tell images apart, and random targets are fitted almost
+as well as real ones, as \citet{zhang2017rethinking} and \citet{arpit2017closer} showed for labels. Any
+auxiliary loss attached to single images is then met without learning concepts. This was the first
+mechanistic finding of the branch, and it redirected the work from the target design to the
+estimator.
+
+\section{Cross-fitting: no memorization in the head}
+\label{sec:xfit}
+
+The cross-fitted F2 (xfit) replaces the trained head by a ridge regression fitted in closed form on one
+half $A$ of the batch and evaluated on the other half $B$, then the reverse. With unit-norm, centred
+features $H$, targets $T$ and per-image weights $D$, the kernel form
+\begin{equation}
+\hat T_B = H_B H_A^\top \bigl(D_A H_A H_A^\top+\rho I\bigr)^{-1} D_A T_A
+\end{equation}
+needs one $n\times n$ solve and is differentiable, as in the meta-learning heads R2D2
+\citep{bertinetto2019r2d2} and MetaOptNet \citep{lee2019metaoptnet}. The loss is the held-out error on
+$B$. Both views of an image stay in one half. A feature that only identifies an image carries nothing
+from $A$ to $B$, so only concept directions shared across images lower the loss; the construction is
+the sample splitting of double machine learning \citep{chernozhukov2018dml} applied to a training loss.
+The held-out explained variance of the batch fit is logged as a memorization-free diagnostic.
+
+\paragraph{First version: failure.} The first runs produced NaN features on three of four Spur-CIFAR10
+runs and negative held-out explained variance everywhere. The ridge scaled with the feature norm and was
+small, so fits of 64 images in 512 dimensions nearly interpolated and the solve became ill conditioned.
+Scaling every feature row to unit norm and using an absolute ridge $\rho=1$ keeps the eigenvalues of
+the system at least $\rho$ \citep{hoerl1970ridge}.
+
+\begin{table}[h]
+\centering
+\caption{Repaired cross-fit, seeds 1 and 2. Batch EV is the held-out explained variance of the batch fit
+at epoch 500.}
+\label{tab:xfit}
+\small
+\begin{tabular}{l l r r r}
+\toprule
+Dataset & Arm & WGA & Acc. & Batch EV \\
+\midrule
+Spur-CIFAR10 & SimCLR & $15.6\pm1.0$ & 59.5 & \\
+ & F2, standardized & $32.9\pm1.6$ & 69.5 & 0.10 \\
+ & xfit & $33.6\pm2.3$ & 69.7 & 0.13 \\
+ & xfit, shuffled & $18.2\pm3.2$ & 57.5 & $-0.02$ \\
+\midrule
+MetaShift & xfit & $43.9\pm3.2$ & 54.8 & $-0.01$ \\
+ & xfit, shuffled & $41.7\pm0.0$ & 54.4 & $-0.03$ \\
+ & xfit, ridge 10 & $42.5\pm2.2$ & 54.4 & $-0.01$ \\
+ & xfit, weight 3 & $43.9\pm0.7$ & 57.8 & $0.00$ \\
+ & xfit, balancing weights & $46.9\pm4.4$ & 58.5 & $-0.01$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On Spur-CIFAR10 the cross-fit matches F2, and its shuffled control falls to the SimCLR level
+(Table~\ref{tab:xfit}). Where the shuffled F2 had kept nine points, the cross-fitted control keeps
+2.6, so the whole remaining gain comes from the concept content. We counted this as the first clean
+attribution of the branch. On MetaShift the 145 factors stayed at the noise level under every setting,
+which pointed away from the loss and toward the factors themselves.
+
+\section{Concept grouping revisited}
+\label{sec:grouping}
+
+Inspecting single images showed that the factors were rarely groups at all. On Waterbirds with Open
+Images at the default thresholds, 499 of 502 groups were single concepts, and the strongest concepts of
+an image often fell below the frequency cut (``Footpath'' on 0.94\% of the images). We measured four
+candidate similarity signals on concept pairs of the Waterbirds LAION cache (Table~\ref{tab:signals}).
+
+\begin{table}[h]
+\centering
+\caption{Similarity of concept pairs on Waterbirds (LAION). Text: cosine of the centred SpLiCE
+dictionary directions; raw text: cosine of the uncentred CLIP text embeddings; co-activation: cosine
+of the code columns; response: correlation of the images' CLIP alignment with the two concepts.}
+\label{tab:signals}
+\small
+\begin{tabular}{l r r r r}
+\toprule
+Pair & Text & Raw text & Co-activation & Response \\
+\midrule
+path, walkway & 0.23 & 0.85 & 0.37 & 0.66 \\
+heron, egret & 0.70 & 0.87 & 0.09 & 0.79 \\
+ocean, sea & 0.71 & 0.94 & 0.00 & 0.94 \\
+forest, woodland & 0.49 & 0.90 & 0.08 & 0.89 \\
+\midrule
+bamboo, jungle & 0.24 & 0.67 & 0.10 & 0.67 \\
+gull, seascape & 0.16 & 0.65 & 0.02 & 0.58 \\
+heron, marsh & 0.08 & 0.67 & 0.06 & 0.11 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two properties of SpLiCE explain the failure of the original rule, which links two concepts only when
+both their centred text similarity and their co-activation pass a threshold. The L1 penalty selects one
+of several correlated dictionary atoms, the known behaviour of the lasso on correlated predictors
+\citep{tibshirani1996lasso,zou2005elasticnet}, so synonyms rarely fire on the same image. Centring the
+dictionary removes the shared component of related words and lowers their cosine. Lowering both
+thresholds then joins concepts through chains of pairwise links, the single-linkage behaviour of
+connected components: at text 0.3 and co-activation 0.1 one group held hummingbird, parrot, jungle and
+bamboo, so the factor itself fused a bird with its background.
+
+The \emph{meaning grouping} clusters concepts by average linkage \citep{sokal1958upgma} on the raw CLIP
+text embeddings, where synonyms reach 0.85 to 0.94 and object--context pairs 0.64 to 0.72. Average
+linkage joins two clusters only when their members agree on average, which stops the chains. An
+optional veto drops pairs whose image responses correlate below 0.5. Concepts from 0.2\% frequency
+enter the grouping, so rare synonyms join before the factor band applies to their sum. A sweep over
+576 factor sets on MetaShift and Waterbirds chose text 0.85 and response 0.5 on MetaShift, which yields
+groups such as \{kitty, kitten, cat\}, \{canine, dog\} and \{cozy, comfy, cosy\} with LAION. Open
+Images groups also join homonyms and similar Latin names (Quail and Quail meat).
+
+The same sweep put pair precision, the share of the top correlated pairs that join a class factor to an
+attribute factor, at zero for both grouping methods. The phi coefficient ranks within-scene pairs first
+(windshield and driving 0.64, toilet and sink 0.57) and class--context pairs last (dog and lawn 0.18,
+cat and couch 0.04), because phi penalizes pairs of very different frequency (cat on 36\% of the images,
+couch on 3\%). We set F1 aside: F2 and xfit use every factor and need no pairs.
+
+\section{Learnability: what the student can and does learn}
+\label{sec:learnability}
+
+\subsection{A bound from CLIP features}
+The cross-fit can only reward what a ridge fitted on 64 images can predict. We therefore ran the same
+fit on frozen CLIP image embeddings, the features the targets come from, as an upper bound
+(Table~\ref{tab:bound}). With the 278 meaning factors from 1\%, even CLIP scores below zero: a factor on
+1\% of the images occurs 0.6 times per half batch, and the loss consists of noise. Restricting the
+factors to those on at least 5\% of the images (24 factors) raises the bound to 0.16 against $-0.07$
+for shuffled targets.
+
+\begin{table}[h]
+\centering
+\caption{Held-out explained variance of a ridge ($\rho=1$) fitted on $n$ MetaShift images and evaluated
+on $n$ others, averaged over 40 draws.}
+\label{tab:bound}
+\small
+\begin{tabular}{l r r r}
+\toprule
+Factors & $n$ & CLIP features & Shuffled targets \\
+\midrule
+278 (from 1\%) & 64 & $-0.015$ & $-0.079$ \\
+278 (from 1\%) & 800 & $0.140$ & $-0.086$ \\
+24 (from 5\%) & 64 & $0.161$ & $-0.069$ \\
+11 (from 10\%) & 64 & $0.218$ & $-0.061$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With 24 factors and weight 1 the student's batch score rose to 0.05 at epoch 500 and was still rising,
+against $-0.02$ for the control, while WGA stayed at $46.0\pm2.2$ against $46.7\pm1.7$. We read the
+rising score as concepts being learned and raised the weight.
+
+\subsection{Weight 3 and 10: scores above the bound}
+Every concept-factor run now writes a per-factor record: a five-fold ridge ($\rho=10$) from the
+training features to each real standardized factor, beside the score of the same fit on CLIP features.
+Shuffled arms score the real factors too, so they show what SimCLR learns of the concepts by itself.
+
+\begin{table}[h]
+\centering
+\caption{MetaShift, 24 meaning factors, seeds 1 and 2. Train EV is the five-fold score on the training
+images; CLIP features score 0.26.}
+\label{tab:weights}
+\small
+\begin{tabular}{l r r r c}
+\toprule
+Arm & Train EV & WGA & Acc. & Groups \\
+\midrule
+xfit, weight 3, shuffled & 0.02 & 47.6 & 58.1 & 68 / 53 / 50 / 59 \\
+xfit, weight 3 & 0.33 & 43.2 & 59.6 & 74 / 45 / 48 / 69 \\
+xfit, weight 10 & 0.79 & 45.5 & 61.0 & 74 / 51 / 48 / 71 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At weight 10 every factor reached 0.72 to 0.87 on the training images, three times the CLIP score and
+alike for factors CLIP explains well (cat, 0.68) and badly (helper, 0.14). A logistic probe on the 24
+factor values themselves reaches 77\% WGA and 89\% accuracy on group-balanced splits of the training
+images, and CLIP embeddings reach 87\% and 92\%; the student stays at 45\% and 61\% on validation. The
+factors carry the information the probe needs; the student holds something else.
+
+\subsection{Unseen images: memorization in the backbone}
+Cross-fitting holds images out of the ridge and leaves the backbone free to place each training image's
+target in its own features, where one shared linear map reads it back; the whole-dataset score cannot
+see this. We kept a fixed fifth of the training images out of the concept loss (SimCLR still trains on
+them) and scored the factors on those images with a ridge fitted on the others.
+
+\begin{table}[h]
+\centering
+\caption{Explained variance of the factors on the images in the concept loss (seen) and on the fifth
+held out from it (unseen), epoch 500, seeds 1 and 2.}
+\label{tab:unseen}
+\small
+\begin{tabular}{l l r r r r r}
+\toprule
+Dataset & Arm & Seen & Unseen & CLIP unseen & WGA & Acc. \\
+\midrule
+MetaShift & xfit, weight 10 & 0.60 & 0.04 & 0.26 & 47.9 & 60.4 \\
+ & shuffled & 0.01 & 0.02 & 0.26 & 43.8 & 52.6 \\
+Spur-CIFAR10 & xfit & 0.31 & 0.27 & 0.42 & 30.2 & 68.7 \\
+ & shuffled & 0.10 & 0.10 & 0.42 & 21.7 & 58.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:unseen} separates the two datasets. On Spur-CIFAR10 the student carries the factors to new
+images at two thirds of the CLIP score, for the classes (aircraft 0.75, horse 0.74, truck 0.72) and for
+the line colour (purple 0.62) alike, the separate class and attribute directions that deep feature
+reweighting needs. On MetaShift the unseen score peaks near 0.08 at epochs 100 to 200 and falls to 0.04
+while the seen score climbs to 0.60; the class factors carry over in part (cat 0.37, dog 0.23) and the
+context factors do not (cozy 0.03). The student memorizes the targets of MetaShift's 1,700 images and
+generalizes them on the 45,000 images of Spur-CIFAR10. This explains why the majority groups of
+MetaShift rose in every round while the minority groups stayed flat.
+
+\section{Waterbirds}
+\label{sec:waterbirds}
+
+Waterbirds received frozen configurations throughout. F2 as frozen after round 1 lowered WGA to
+$41.6\pm6.1$ against $45.8\pm1.7$ for SimCLR over four seeds. The repaired cross-fit with the default
+217 Open Images factors learned little and memorized nothing (Table~\ref{tab:waterbirds}): seen and
+unseen scores agree and exceed the control by a few hundredths, and validation accuracy stays at chance.
+
+\begin{table}[h]
+\centering
+\caption{Waterbirds validation. SimCLR: seeds 1 to 4; other arms: seeds 1 and 2 with a fifth of the
+images held out of the concept loss; the meaning arms report the final probe.}
+\label{tab:waterbirds}
+\small
+\begin{tabular}{l r r r r c}
+\toprule
+Arm & Seen & Unseen & WGA & Acc. & Groups \\
+\midrule
+SimCLR & & & $45.8\pm1.7$ & 52.3 & 47 / 54 / 52 / 64 \\
+xfit, 217 factors, weight 1 & 0.04 & 0.03 & 46.5 & 51.1 & \\
+\quad shuffled & 0.02 & 0.02 & 43.9 & 50.5 & \\
+xfit, 70 meaning factors, weight 10 & 0.30 & 0.09 & \textbf{55.3} & \textbf{59.2} & 56 / 59 / 66 / 68 \\
+\quad shuffled & 0.01 & 0.02 & 42.8 & 52.6 & 43 / 57 / 58 / 66 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The configuration that came out of the MetaShift diagnostics, meaning groups at text 0.85 and
+response 0.5, factors from 5\% and weight 10, lifts every Waterbirds group, minority groups included,
+to 55.3\% WGA (57.8 and 52.7 for the two seeds). This exceeds SimCLR by 9.5 points, its shuffled control
+by 12.5 points and the CoSpRo validation result ($50.0\pm3.2$) by 5.3 points. The student stores part of
+the targets (seen 0.30) and carries a third of the CLIP score to unseen images (0.09 against 0.02 for
+the control), more than twice the MetaShift value. Waterbirds, with 4,795 images, sits between the
+memorizing and the generalizing dataset.
+
+We count this as the first success of the branch on a dataset where CoSpRo already worked, with two
+caveats: two seeds, and the hold-out of a fifth of the images. Its settings came from MetaShift
+diagnostics and the learnability bounds; the weight of 10 was chosen to probe memorization on
+MetaShift, and no setting was tuned on Waterbirds labels. The configuration is frozen from here on.
+
+\section{Where we stand and how we continue}
+\label{sec:next}
+
+\paragraph{Conclusions so far.}
+\begin{enumerate}
+\item Distilling SpLiCE concept factors into a SimCLR student improves worst-group accuracy when the
+student can generalize the factors: Spur-CIFAR10 (WGA 15.6 to 33.6) and Waterbirds (45.8 to 55.3).
+\item Cross-fitting makes the attribution clean: shuffled targets lose the gain, so the concept content
+carries it.
+\item On small datasets an auxiliary per-image target is memorized. Cross-fitting removes memorization in
+the head; the backbone still memorizes, and only a score on images outside the concept loss shows it.
+\item The grouping must join synonyms that SpLiCE never activates together and must avoid chains through
+context; the meaning grouping does both. Factors must be frequent enough for a half batch to contain
+them.
+\item Pair selection by phi favours within-scene pairs, so conditioned batches (F1) need another pair
+statistic before they can work.
+\end{enumerate}
+
+\paragraph{Running and planned experiments.}
+CelebA trains SimCLR, the weight-1 cross-fit and its control for 250 epochs on 162,770 images; at epoch
+188 the cross-fit scores 0.20 on the training factors against 0.07 for the control and 0.28 for CLIP.
+Waterbirds runs the frozen configuration on seeds 3 and 4 with the hold-out and on seeds 1 to 4 without
+it, which gives the headline number. Spur-CIFAR10 runs the same configuration to test that one setting
+serves all datasets, and CelebA follows with it once the weight-1 runs finish. At most eight jobs run at
+a time.
+
+\paragraph{Open questions.}
+Why does Waterbirds generalize part of the factors where MetaShift does not, beyond its threefold size?
+The 70 Open Images factors include bird families and backgrounds with high CLIP scores (Water bird 0.61,
+Bamboo 0.76), while the MetaShift factors are dominated by pet-photo vocabulary. Can memorization be
+made unprofitable on small datasets, for example by mixing images and their targets as in mixup
+\citep{zhang2018mixup}, so that storing per-image targets stops lowering the loss? Does a pair statistic
+that measures how much a context raises the probability of a class revive F1?
+
+\paragraph{Threats to validity.}
+Two seeds per arm leave wide intervals, and MetaShift's 72-image validation groups make its WGA noisy.
+All values are validation results; the locked test split stays unused until the final configuration is
+fixed. Waterbirds served as a diagnostic dataset for the weight-1 cross-fit before the configuration was
+frozen, so its role as a held-out dataset rests on the absence of any label-based selection on it.
+
+\appendix
+\section{Options and arms}
+\label{app:options}
+
+\begin{table}[h]
+\centering
+\caption{Training options of the concept-factor method (\texttt{--splice\_mode concept\_factors}).}
+\small
+\begin{tabularx}{\linewidth}{l X}
+\toprule
+Option & Meaning \\
+\midrule
+\texttt{--factor\_distill\_weight} & F2 or xfit loss weight $\lambda$ \\
+\texttt{--factor\_targets} & standardized, whitened, presence or shuffled \\
+\texttt{--factor\_cross\_fit}, \texttt{--factor\_ridge} & cross-fitted ridge and its ridge $\rho$ \\
+\texttt{--factor\_sample\_weighting} & none, atypicality or balanced \\
+\texttt{--factor\_min\_frequency} & lowest factor frequency \\
+\texttt{--factor\_merge\_similarity} & merge groups by image response; 0 disables \\
+\texttt{--factor\_concept\_groups} & groups file, e.g.\ meaning groups from \texttt{build\_meaning\_groups} \\
+\texttt{--factor\_holdout\_fraction} & share of images kept out of the concept loss \\
+\texttt{--factor\_condition\_fraction} & F1 share of conditioned batches \\
+\texttt{--factor\_block\_weight} & F3 concept-block loss weight \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Run records live under \texttt{outputs/seeds/factors\_<dataset>/}, study summaries under
+\texttt{outputs/reports/factors\_<dataset>/summary.md} and per-factor learnability records in
+\texttt{factor\_learnability\_epoch\_<E>.json} beside each run's status file. The arms are defined in
+\texttt{scripts/submit\_factor\_study.sh}; the running notes are in
+\texttt{docs/notes/CONCEPT\_FACTORS\_2026\_09\_26.md}.
+
+\begingroup
+\footnotesize
+\setlength{\bibsep}{3pt plus 1pt}
+\begin{thebibliography}{99}
+
+\bibitem[Arpit et~al.(2017)]{arpit2017closer}
+D.~Arpit, S.~Jastrz\k{e}bski, N.~Ballas, D.~Krueger, E.~Bengio, M.~S.~Kanwal, T.~Maharaj, A.~Fischer,
+A.~Courville, Y.~Bengio and S.~Lacoste-Julien.
+A Closer Look at Memorization in Deep Networks. \emph{ICML}, 2017.
+\url{https://arxiv.org/abs/1706.05394}.
+
+\bibitem[Bertinetto et~al.(2019)]{bertinetto2019r2d2}
+L.~Bertinetto, J.~F.~Henriques, P.~H.~S.~Torr and A.~Vedaldi.
+Meta-learning with differentiable closed-form solvers. \emph{ICLR}, 2019.
+\url{https://arxiv.org/abs/1805.08136}.
+
+\bibitem[Bhalla et~al.(2024)]{bhalla2024splice}
+U.~Bhalla, A.~Oesterling, S.~Srinivas, F.~P.~Calmon and H.~Lakkaraju.
+Interpreting CLIP with Sparse Linear Concept Embeddings (SpLiCE). \emph{NeurIPS}, 2024.
+\url{https://arxiv.org/abs/2402.10376}.
+
+\bibitem[Chen et~al.(2020)]{chen2020simclr}
+T.~Chen, S.~Kornblith, M.~Norouzi and G.~Hinton.
+A Simple Framework for Contrastive Learning of Visual Representations. \emph{ICML}, 2020.
+\url{https://arxiv.org/abs/2002.05709}.
+
+\bibitem[Chen et~al.(2021)]{chen2021intriguing}
+T.~Chen, C.~Luo and L.~Li.
+Intriguing Properties of Contrastive Losses. \emph{NeurIPS}, 2021.
+\url{https://arxiv.org/abs/2011.02803}.
+
+\bibitem[Chernozhukov et~al.(2018)]{chernozhukov2018dml}
+V.~Chernozhukov, D.~Chetverikov, M.~Demirer, E.~Duflo, C.~Hansen, W.~Newey and J.~Robins.
+Double/debiased machine learning for treatment and structural parameters.
+\emph{The Econometrics Journal}, 21(1):C1--C68, 2018.
+
+\bibitem[Hamidieh et~al.(2024)]{hamidieh2024views}
+K.~Hamidieh, H.~Zhang, S.~Sankaranarayanan and M.~Ghassemi.
+Views Can Be Deceiving: Improved SSL Through Feature Space Augmentation. \emph{ICLR}, 2024.
+
+\bibitem[Hoerl and Kennard(1970)]{hoerl1970ridge}
+A.~E.~Hoerl and R.~W.~Kennard.
+Ridge Regression: Biased Estimation for Nonorthogonal Problems. \emph{Technometrics}, 12(1):55--67, 1970.
+
+\bibitem[Kessy et~al.(2018)]{kessy2018whitening}
+A.~Kessy, A.~Lewin and K.~Strimmer.
+Optimal Whitening and Decorrelation. \emph{The American Statistician}, 72(4):309--314, 2018.
+
+\bibitem[Khosla et~al.(2020)]{khosla2020supcon}
+P.~Khosla et~al.
+Supervised Contrastive Learning. \emph{NeurIPS}, 2020.
+\url{https://arxiv.org/abs/2004.11362}.
+
+\bibitem[Kirichenko et~al.(2023)]{kirichenko2023dfr}
+P.~Kirichenko, P.~Izmailov and A.~G.~Wilson.
+Last Layer Re-Training is Sufficient for Robustness to Spurious Correlations. \emph{ICLR}, 2023.
+\url{https://arxiv.org/abs/2204.02937}.
+
+\bibitem[Lee et~al.(2019)]{lee2019metaoptnet}
+K.~Lee, S.~Maji, A.~Ravichandran and S.~Soatto.
+Meta-Learning with Differentiable Convex Optimization. \emph{CVPR}, 2019.
+\url{https://arxiv.org/abs/1904.03758}.
+
+\bibitem[Liang and Zou(2022)]{liang2022metashift}
+W.~Liang and J.~Zou.
+MetaShift: A Dataset of Datasets for Evaluating Contextual Distribution Shifts and Training Conflicts.
+\emph{ICLR}, 2022. \url{https://arxiv.org/abs/2202.06523}.
+
+\bibitem[Liu et~al.(2015)]{liu2015celeba}
+Z.~Liu, P.~Luo, X.~Wang and X.~Tang.
+Deep Learning Face Attributes in the Wild. \emph{ICCV}, 2015.
+
+\bibitem[Locatello et~al.(2020)]{locatello2020weakly}
+F.~Locatello, B.~Poole, G.~R\"atsch, B.~Sch\"olkopf, O.~Bachem and M.~Tschannen.
+Weakly-Supervised Disentanglement Without Compromises. \emph{ICML}, 2020.
+\url{https://arxiv.org/abs/2002.02886}.
+
+\bibitem[Radford et~al.(2021)]{radford2021clip}
+A.~Radford et~al.
+Learning Transferable Visual Models From Natural Language Supervision. \emph{ICML}, 2021.
+\url{https://arxiv.org/abs/2103.00020}.
+
+\bibitem[Robinson et~al.(2021)]{robinson2021shortcut}
+J.~Robinson, L.~Sun, K.~Yu, K.~Batmanghelich, S.~Jegelka and S.~Sra.
+Can contrastive learning avoid shortcut solutions? \emph{NeurIPS}, 2021.
+\url{https://arxiv.org/abs/2106.11230}.
+
+\bibitem[Sagawa et~al.(2020)]{sagawa2020groupdro}
+S.~Sagawa, P.~W.~Koh, T.~B.~Hashimoto and P.~Liang.
+Distributionally Robust Neural Networks for Group Shifts: On the Importance of Regularization for
+Worst-Case Generalization. \emph{ICLR}, 2020. \url{https://arxiv.org/abs/1911.08731}.
+
+\bibitem[Sokal and Michener(1958)]{sokal1958upgma}
+R.~R.~Sokal and C.~D.~Michener.
+A Statistical Method for Evaluating Systematic Relationships.
+\emph{University of Kansas Science Bulletin}, 38:1409--1438, 1958.
+
+\bibitem[Tibshirani(1996)]{tibshirani1996lasso}
+R.~Tibshirani.
+Regression Shrinkage and Selection via the Lasso.
+\emph{Journal of the Royal Statistical Society B}, 58(1):267--288, 1996.
+
+\bibitem[Tsai et~al.(2021)]{tsai2021conditional}
+Y.-H.~H.~Tsai, M.~Q.~Ma, H.~Zhao, K.~Zhang, L.-P.~Morency and R.~Salakhutdinov.
+Conditional Contrastive Learning for Improving Fairness in Self-Supervised Learning. 2021.
+\url{https://arxiv.org/abs/2106.02866}.
+
+\bibitem[Yao et~al.(2024)]{yao2024multiview}
+D.~Yao, D.~Xu, S.~Lachapelle, S.~Magliacane, P.~Taslakian, G.~Martius, J.~von K\"ugelgen and F.~Locatello.
+Multi-View Causal Representation Learning with Partial Observability. \emph{ICLR}, 2024.
+\url{https://arxiv.org/abs/2311.04056}.
+
+\bibitem[Zhang et~al.(2017)]{zhang2017rethinking}
+C.~Zhang, S.~Bengio, M.~Hardt, B.~Recht and O.~Vinyals.
+Understanding Deep Learning Requires Rethinking Generalization. \emph{ICLR}, 2017.
+\url{https://arxiv.org/abs/1611.03530}.
+
+\bibitem[Zhang et~al.(2018)]{zhang2018mixup}
+H.~Zhang, M.~Cisse, Y.~N.~Dauphin and D.~Lopez-Paz.
+mixup: Beyond Empirical Risk Minimization. \emph{ICLR}, 2018.
+\url{https://arxiv.org/abs/1710.09412}.
+
+\bibitem[Zhang et~al.(2021)]{zhang2021stable}
+X.~Zhang, P.~Cui, R.~Xu, L.~Zhou, Y.~He and Z.~Shen.
+Deep Stable Learning for Out-of-Distribution Generalization. \emph{CVPR}, 2021.
+\url{https://arxiv.org/abs/2104.07876}.
+
+\bibitem[Zhu et~al.(2023)]{zhu2023lassl}
+W.~Zhu, S.~Liu, C.~Fernandez-Granda and N.~Razavian.
+Making Self-supervised Learning Robust to Spurious Correlation via Learning-speed Aware Sampling.
+\emph{arXiv:2311.16361}, 2023. \url{https://arxiv.org/abs/2311.16361}.
+
+\bibitem[Zou and Hastie(2005)]{zou2005elasticnet}
+H.~Zou and T.~Hastie.
+Regularization and Variable Selection via the Elastic Net.
+\emph{Journal of the Royal Statistical Society B}, 67(2):301--320, 2005.
+
+\end{thebibliography}
+\endgroup
+
+\end{document}
