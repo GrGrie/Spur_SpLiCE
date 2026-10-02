@@ -2188,17 +2188,98 @@
         "weight_decay": 0.0001
       },
       "factor_explained_variance": null,
-      "factor_heldout_explained_variance": null,
+      "factor_heldout_explained_variance": -0.015973084598117405,
       "run": "seed_01/xfit_meaning_w10_shuffled/24146446",
       "seed": 1,
       "spurious_probe_val_wga": null,
       "status": "running",
-      "trajectory": [],
+      "trajectory": [
+        {
+          "acc": 45.579999685287476,
+          "epoch": 25,
+          "wga": 6.122449040412903
+        },
+        {
+          "acc": 50.540000200271606,
+          "epoch": 50,
+          "wga": 12.5
+        },
+        {
+          "acc": 50.63999891281128,
+          "epoch": 75,
+          "wga": 8.163265138864517
+        },
+        {
+          "acc": 51.340001821517944,
+          "epoch": 100,
+          "wga": 14.58333283662796
+        },
+        {
+          "acc": 52.38000154495239,
+          "epoch": 125,
+          "wga": 8.163265138864517
+        },
+        {
+          "acc": 53.17999720573425,
+          "epoch": 150,
+          "wga": 18.333333730697632
+        },
+        {
+          "acc": 53.53999733924866,
+          "epoch": 175,
+          "wga": 16.326530277729034
+        },
+        {
+          "acc": 55.33999800682068,
+          "epoch": 200,
+          "wga": 14.5454540848732
+        },
+        {
+          "acc": 55.19999861717224,
+          "epoch": 225,
+          "wga": 10.204081982374191
+        },
+        {
+          "acc": 55.3600013256073,
+          "epoch": 250,
+          "wga": 10.90909093618393
+        },
+        {
+          "acc": 56.13999962806702,
+          "epoch": 275,
+          "wga": 14.28571492433548
+        },
+        {
+          "acc": 56.55999779701233,
+          "epoch": 300,
+          "wga": 16.326530277729034
+        },
+        {
+          "acc": 55.86000084877014,
+          "epoch": 325,
+          "wga": 5.454545468091965
+        },
+        {
+          "acc": 57.200002670288086,
+          "epoch": 350,
+          "wga": 16.363635659217834
+        },
+        {
+          "acc": 57.38000273704529,
+          "epoch": 375,
+          "wga": 14.5454540848732
+        },
+        {
+          "acc": 57.35999941825867,
+          "epoch": 400,
+          "wga": 14.5454540848732
+        }
+      ],
       "val_acc_last": null,
-      "val_acc_last4": null,
+      "val_acc_last4": 56.950001418590546,
       "val_group_accuracies": null,
       "val_wga_last": null,
-      "val_wga_last4": null,
+      "val_wga_last4": 12.72727232426405,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/qrb9bqmr"
     },
     {
@@ -4429,6 +4510,124 @@
       "val_wga_last": 25.0,
       "val_wga_last4": 23.068181797862053,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/mgiwyoo8"
+    },
+    {
+      "arm": "xfit_meaning_w10_shuffled",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 24,
+        "concept_factor_groups": "project://outputs/shared/spur_cifar10/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "spur_cifar10",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 10.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "shuffled",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": -0.015664114803738066,
+      "run": "seed_02/xfit_meaning_w10_shuffled/24146447",
+      "seed": 2,
+      "spurious_probe_val_wga": null,
+      "status": "running",
+      "trajectory": [
+        {
+          "acc": 46.38000130653381,
+          "epoch": 25,
+          "wga": 15.384615957736969
+        },
+        {
+          "acc": 47.780001163482666,
+          "epoch": 50,
+          "wga": 12.765957415103912
+        },
+        {
+          "acc": 48.44000041484833,
+          "epoch": 75,
+          "wga": 14.28571492433548
+        },
+        {
+          "acc": 50.8400022983551,
+          "epoch": 100,
+          "wga": 16.66666716337204
+        },
+        {
+          "acc": 51.38000249862671,
+          "epoch": 125,
+          "wga": 14.28571492433548
+        },
+        {
+          "acc": 53.039997816085815,
+          "epoch": 150,
+          "wga": 14.28571492433548
+        },
+        {
+          "acc": 53.79999876022339,
+          "epoch": 175,
+          "wga": 22.448979318141937
+        },
+        {
+          "acc": 53.71999740600586,
+          "epoch": 200,
+          "wga": 12.244898080825806
+        },
+        {
+          "acc": 53.860002756118774,
+          "epoch": 225,
+          "wga": 17.02127605676651
+        },
+        {
+          "acc": 55.51999807357788,
+          "epoch": 250,
+          "wga": 19.148936867713928
+        },
+        {
+          "acc": 56.99999928474426,
+          "epoch": 275,
+          "wga": 25.531914830207825
+        },
+        {
+          "acc": 56.220000982284546,
+          "epoch": 300,
+          "wga": 17.02127605676651
+        },
+        {
+          "acc": 56.90000057220459,
+          "epoch": 325,
+          "wga": 10.638298094272614
+        },
+        {
+          "acc": 56.80000185966492,
+          "epoch": 350,
+          "wga": 16.66666716337204
+        },
+        {
+          "acc": 57.12000131607056,
+          "epoch": 375,
+          "wga": 19.148936867713928
+        },
+        {
+          "acc": 57.499998807907104,
+          "epoch": 400,
+          "wga": 18.36734712123871
+        }
+      ],
+      "val_acc_last": null,
+      "val_acc_last4": 57.08000063896179,
+      "val_group_accuracies": null,
+      "val_wga_last": null,
+      "val_wga_last4": 16.205312311649323,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/5rxksx5v"
     },
     {
       "arm": "xfit_norm",

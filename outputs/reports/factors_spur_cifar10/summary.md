@@ -22,3 +22,4 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 - `seed_01/xfit_meaning_w10_shuffled/24146446`: running
 - `seed_01/xfit_shuffled/23991119`: failed
 - `seed_02/xfit/23991118`: failed
+- `seed_02/xfit_meaning_w10_shuffled/24146447`: running
