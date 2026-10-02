@@ -4,12 +4,12 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | F1 fraction | F2 weight | targets | merge | min freq | F2 weighting | F2 cross-fit | F3 weight | F3 context | F3 presence | start | groups | factors | seeds | val WGA | val acc | factor expl. var. |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| factors_waterbirds | xfit_meaning_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 54.6 ± 3.6 | 58.9 ± 1.2 |  |
+| factors_waterbirds | xfit_meaning_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 51.5 ± 5.5 | 57.5 ± 2.0 |  |
 | factors_waterbirds | xfit_norm_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2 | 46.6 ± 0.5 | 51.1 ± 1.1 |  |
 | factors_waterbirds | f2_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | False | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2,3,4 | 45.5 ± 3.5 | 51.8 ± 0.7 | 0.03 |
 | factors_waterbirds | xfit_norm_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2 | 43.6 ± 2.2 | 50.3 ± 0.2 |  |
-| factors_waterbirds | xfit_meaning_w10_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | shuffled | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 43.1 ± 3.9 | 52.6 ± 2.9 |  |
 | factors_waterbirds | f2_std | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | False | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2,3,4 | 41.6 ± 6.1 | 51.2 ± 1.6 | 0.10 |
+| factors_waterbirds | xfit_meaning_w10_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | shuffled | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 41.4 ± 3.0 | 51.4 ± 2.2 |  |
 
 ## SimCLR reference on this dataset
 
