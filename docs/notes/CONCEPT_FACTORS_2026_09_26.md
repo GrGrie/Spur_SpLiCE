@@ -424,6 +424,25 @@ The seventh round runs `xfit_meaning_w{1,3,5,10}_holdout` on one factor set per 
 meaning groups on Spur-CIFAR10 and Waterbirds, LAION on MetaShift), seeds 1 and 2. It tests whether the
 weight that maximizes the unseen explained variance, a label-free choice, also gives a good WGA.
 
+## Weight grid, CelebA and residual targets (2026-10-03)
+
+CelebA, seeds 1 and 2, final probe: SimCLR 85.2 WGA and 87.7 accuracy, `xfit_norm` 85.8 and 88.5, its
+shuffled control 82.5 and 87.8. The weight-1 cross-fit changes nothing there.
+
+Spur-CIFAR10 with 24 Open Images meaning factors and a fifth held out, seeds 1 and 2: the unseen score
+stays at 0.32 to 0.33 for weights 1, 3, 5 and 10 while the seen score reaches 0.70 to 0.76, and WGA
+moves within the seed noise (26.0, 32.2, 26.7, 22.8) below the 33.6 of the default 88 factors. The
+unseen score cannot choose the weight, so the label-free weight rule is dropped. On Waterbirds weight 3
+gives 45.6 WGA against 51.5 at weight 10, at the same unseen score of 0.09.
+
+The decoupling scores answer the main question. The factor residuals reach 0.03 to 0.04 in the student
+against 0.15 to 0.17 for CLIP on MetaShift and Waterbirds, and 0.18 against 0.35 on Spur-CIFAR10. The
+MetaShift cat factor scores -0.08 on unseen cats indoors and -0.41 on cats outdoors, where CLIP scores
+0.40 and 0.46. The student learns the part the factors share, which is the dataset's correlation
+structure: a squared error on standardized targets is dominated by the shared variance of correlated
+factors. The eighth round trains on the residuals themselves (`--factor_targets residual`), the part
+of each factor a fused direction cannot predict.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

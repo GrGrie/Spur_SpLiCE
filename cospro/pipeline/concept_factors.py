@@ -32,7 +32,7 @@ import torch.nn.functional as F
 from cospro.tracking.artifacts import scratch_root, shared
 
 CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v2"
-TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled")
+TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled")
 #: Seed of the fixed image permutation behind the ``shuffled`` control targets.
 SHUFFLE_SEED = 0
 
@@ -397,6 +397,8 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
             "concepts": [str(concept) for member in members for concept in selected[member]["concepts"]],
             "frequency": float(active[:, position].float().mean()),
         })
+    shuffle = torch.randperm(activations.shape[0], generator=torch.Generator().manual_seed(SHUFFLE_SEED))
+    residuals = partial_residuals(standardized(activations))
     return {
         "artifact": CONCEPT_FACTORS_ARTIFACT,
         "config": asdict(config),
@@ -413,9 +415,11 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
             # Presence only: whether each factor fires, without how strongly.
             "presence": standardized(active.float()),
             # Control: the standardized targets of other images. Same statistics, no image content.
-            "shuffled": standardized(activations)[
-                torch.randperm(activations.shape[0], generator=torch.Generator().manual_seed(SHUFFLE_SEED))
-            ],
+            "shuffled": standardized(activations)[shuffle],
+            # Each factor minus its regression on the others: only the part a factor does not share with
+            # the factors it co-occurs with, which a fused direction cannot predict.
+            "residual": residuals,
+            "residual_shuffled": residuals[shuffle],
         },
     }
 

@@ -60,6 +60,9 @@
 # Waterbirds and CelebA, their *_holdout variants.
 # Seventh round, the loss weight on one factor set per dataset: xfit_meaning_w{1,3,5,10}_holdout. The weight
 # that maximizes the explained variance on unseen images (no labels) is the candidate rule for choosing it.
+# Eighth round, residual targets: each factor minus its regression on the others, the part a fused direction
+# cannot predict (xfit_meaning_w3_residual_holdout on MetaShift, xfit_meaning_w10_residual_holdout on
+# Waterbirds and CelebA, with residual_shuffled controls).
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -126,6 +129,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w1_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 1.0 ${HOLDOUT[*]}"
     [xfit_meaning_w3_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_holdout]="${XFIT_MEANING[*]} --factor_targets standardized --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w3_residual_holdout]="${XFIT_MEANING[*]} --factor_targets residual --factor_distill_weight 3.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w3_residual_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets residual_shuffled --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -200,6 +205,8 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_meaning_w1_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 1.0 ${HOLDOUT[*]}"
     [xfit_meaning_w3_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_holdout]="${XFIT_MEANING_OI[*]} --factor_targets standardized --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w10_residual_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual ${HOLDOUT[*]}"
+    [xfit_meaning_w10_residual_shuffled_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual_shuffled ${HOLDOUT[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2

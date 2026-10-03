@@ -369,6 +369,17 @@ class FactorLearnabilityTests(unittest.TestCase):
         shuffled = method.factor_learnability(features, reverse)
         self.assertLess(shuffled["student_mean"], 0.1)
 
+    def test_residual_targets_hold_what_the_other_factors_leave_unexplained(self):
+        cache, groups = synthetic_inputs()
+        factors = build_concept_factors(cache, groups, FactorConfig())
+        residual = factors["targets"]["residual"].double()
+        standardized_targets = factors["targets"]["standardized"].double()
+        for column in range(residual.shape[1]):
+            others = torch.cat([standardized_targets[:, :column], standardized_targets[:, column + 1:]], dim=1)
+            self.assertLess(float((others.T @ residual[:, column]).abs().max() / len(residual)), 0.05)
+        self.assertTrue(torch.allclose(factors["targets"]["residual_shuffled"].sort(dim=0).values,
+                                       factors["targets"]["residual"].sort(dim=0).values))
+
     def test_a_fused_direction_fails_the_residual_and_the_minority_groups(self):
         # Cat and couch co-occur in 90 percent of the images; group = 2 * cat + couch.
         generator = torch.Generator().manual_seed(3)
