@@ -181,6 +181,40 @@
       }
     },
     {
+      "arm": "xfit_meaning_w3_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.04231883654753533,
+        "sd": 0.002542439812681652
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 54.02418673038483,
+        "sd": 1.975650382687562
+      },
+      "val_group_accuracies": [
+        45.61027717590332,
+        54.18455123901367,
+        66.91729354858398,
+        69.17293167114258
+      ],
+      "val_wga_last": {
+        "mean": 45.610277354717255,
+        "sd": 3.9367832834055467
+      },
+      "val_wga_last4": {
+        "mean": 45.7173440605402,
+        "sd": 3.7096607656432217
+      }
+    },
+    {
       "arm": "xfit_norm_holdout",
       "dataset": "waterbirds",
       "factor_explained_variance": {
@@ -962,6 +996,149 @@
       "val_wga_last": 45.824411511421204,
       "val_wga_last4": 45.87794467806816,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/lrc0b0l1"
+    },
+    {
+      "arm": "xfit_meaning_w3_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 3.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.04411661297984118,
+      "run": "seed_01/xfit_meaning_w3_holdout/24183929",
+      "seed": 1,
+      "spurious_probe_val_wga": 90.14989137649536,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.37697958946228,
+          "epoch": 25,
+          "wga": 49.624061584472656
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 50,
+          "wga": 46.03854417800903
+        },
+        {
+          "acc": 48.45704734325409,
+          "epoch": 75,
+          "wga": 38.75803053379059
+        },
+        {
+          "acc": 49.9582976102829,
+          "epoch": 100,
+          "wga": 41.54175519943237
+        },
+        {
+          "acc": 56.880736351013184,
+          "epoch": 125,
+          "wga": 49.624061584472656
+        },
+        {
+          "acc": 56.13011121749878,
+          "epoch": 150,
+          "wga": 51.17772817611694
+        },
+        {
+          "acc": 54.96246814727783,
+          "epoch": 175,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 52.460384368896484,
+          "epoch": 200,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 56.380319595336914,
+          "epoch": 225,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 54.21184301376343,
+          "epoch": 250,
+          "wga": 46.03854417800903
+        },
+        {
+          "acc": 53.87822985649109,
+          "epoch": 275,
+          "wga": 45.396146178245544
+        },
+        {
+          "acc": 53.37781310081482,
+          "epoch": 300,
+          "wga": 41.54175519943237
+        },
+        {
+          "acc": 56.13011121749878,
+          "epoch": 325,
+          "wga": 52.67665982246399
+        },
+        {
+          "acc": 55.045872926712036,
+          "epoch": 350,
+          "wga": 50.53533315658569
+        },
+        {
+          "acc": 52.21017599105835,
+          "epoch": 375,
+          "wga": 41.54175519943237
+        },
+        {
+          "acc": 52.71059274673462,
+          "epoch": 400,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 425,
+          "wga": 43.68308484554291
+        },
+        {
+          "acc": 52.71059274673462,
+          "epoch": 450,
+          "wga": 43.04068386554718
+        },
+        {
+          "acc": 52.54378914833069,
+          "epoch": 475,
+          "wga": 42.82655119895935
+        },
+        {
+          "acc": 52.460384368896484,
+          "epoch": 500,
+          "wga": 42.82655119895935
+        }
+      ],
+      "val_acc_last": 52.460384368896484,
+      "val_acc_last4": 52.627190947532654,
+      "val_group_accuracies": [
+        42.8265495300293,
+        51.716739654541016,
+        67.66917419433594,
+        73.68421173095703
+      ],
+      "val_wga_last": 42.82655119895935,
+      "val_wga_last4": 43.0942177772522,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/31gxfur1"
     },
     {
       "arm": "xfit_norm_holdout",
@@ -1961,6 +2138,149 @@
       "val_wga_last": 39.828693866729736,
       "val_wga_last4": 40.31049236655235,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/dmt9nkfj"
+    },
+    {
+      "arm": "xfit_meaning_w3_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 3.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.040521060115229476,
+      "run": "seed_02/xfit_meaning_w3_holdout/24183930",
+      "seed": 2,
+      "spurious_probe_val_wga": 89.69957232475281,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 50.20850896835327,
+          "epoch": 25,
+          "wga": 48.06866943836212
+        },
+        {
+          "acc": 49.6246874332428,
+          "epoch": 50,
+          "wga": 41.32762253284454
+        },
+        {
+          "acc": 47.873228788375854,
+          "epoch": 75,
+          "wga": 34.47537422180176
+        },
+        {
+          "acc": 46.705588698387146,
+          "epoch": 100,
+          "wga": 35.760170221328735
+        },
+        {
+          "acc": 44.5371150970459,
+          "epoch": 125,
+          "wga": 26.124197244644165
+        },
+        {
+          "acc": 42.785653471946716,
+          "epoch": 150,
+          "wga": 30.406853556632996
+        },
+        {
+          "acc": 48.373645544052124,
+          "epoch": 175,
+          "wga": 36.188435554504395
+        },
+        {
+          "acc": 50.04169940948486,
+          "epoch": 200,
+          "wga": 37.47323453426361
+        },
+        {
+          "acc": 48.79065752029419,
+          "epoch": 225,
+          "wga": 37.04496920108795
+        },
+        {
+          "acc": 52.37697958946228,
+          "epoch": 250,
+          "wga": 40.685224533081055
+        },
+        {
+          "acc": 51.70975923538208,
+          "epoch": 275,
+          "wga": 43.04068386554718
+        },
+        {
+          "acc": 49.6246874332428,
+          "epoch": 300,
+          "wga": 35.331904888153076
+        },
+        {
+          "acc": 53.37781310081482,
+          "epoch": 325,
+          "wga": 42.82655119895935
+        },
+        {
+          "acc": 54.128438234329224,
+          "epoch": 350,
+          "wga": 49.46466684341431
+        },
+        {
+          "acc": 55.79649806022644,
+          "epoch": 375,
+          "wga": 49.25053417682648
+        },
+        {
+          "acc": 55.62968850135803,
+          "epoch": 400,
+          "wga": 48.60813617706299
+        },
+        {
+          "acc": 55.21267652511597,
+          "epoch": 425,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 55.62968850135803,
+          "epoch": 450,
+          "wga": 47.9657381772995
+        },
+        {
+          "acc": 55.4628849029541,
+          "epoch": 475,
+          "wga": 48.82226884365082
+        },
+        {
+          "acc": 55.3794801235199,
+          "epoch": 500,
+          "wga": 48.39400351047516
+        }
+      ],
+      "val_acc_last": 55.3794801235199,
+      "val_acc_last4": 55.421182513237,
+      "val_group_accuracies": [
+        48.394004821777344,
+        56.65236282348633,
+        66.16541290283203,
+        64.66165161132812
+      ],
+      "val_wga_last": 48.39400351047516,
+      "val_wga_last4": 48.3404703438282,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/b0j5zq79"
     },
     {
       "arm": "xfit_norm_holdout",

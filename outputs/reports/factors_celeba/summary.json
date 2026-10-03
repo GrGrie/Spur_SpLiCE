@@ -1,0 +1,663 @@
+{
+  "arms": [
+    {
+      "arm": "simclr",
+      "dataset": "celeba",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 87.79445737600327,
+        "sd": 0.5294318522544464
+      },
+      "val_group_accuracies": [
+        85.16695785522461,
+        88.20082473754883,
+        94.102294921875,
+        86.26373291015625
+      ],
+      "val_wga_last": {
+        "mean": 85.1669579744339,
+        "sd": 0.18226404638536123
+      },
+      "val_wga_last4": {
+        "mean": 84.87998619675636,
+        "sd": 0.024855050238086984
+      }
+    },
+    {
+      "arm": "xfit_norm",
+      "dataset": "celeba",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.06685061028382039,
+        "sd": 8.250781824481045e-05
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 88.62875550985336,
+        "sd": 0.29808358609329805
+      },
+      "val_group_accuracies": [
+        85.78792953491211,
+        89.67496490478516,
+        93.47599029541016,
+        91.75824356079102
+      ],
+      "val_wga_last": {
+        "mean": 85.78793108463287,
+        "sd": 1.0770247815322371
+      },
+      "val_wga_last4": {
+        "mean": 85.94756871461868,
+        "sd": 0.5033008061776921
+      }
+    },
+    {
+      "arm": "xfit_norm_shuffled",
+      "dataset": "celeba",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": -0.015952943290064317,
+        "sd": 0.00019207466932378206
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 87.70951926708221,
+        "sd": 0.19753595694328369
+      },
+      "val_group_accuracies": [
+        85.11423873901367,
+        88.3820686340332,
+        94.13708877563477,
+        84.0659294128418
+      ],
+      "val_wga_last": {
+        "mean": 82.47722685337067,
+        "sd": 3.9695545654651925
+      },
+      "val_wga_last4": {
+        "mean": 82.25769624114037,
+        "sd": 3.853348328422168
+      }
+    }
+  ],
+  "runs": [
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/simclr/24056418",
+      "seed": 1,
+      "spurious_probe_val_wga": 93.06385517120361,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 87.38108277320862,
+          "epoch": 25,
+          "wga": 78.57142686843872
+        },
+        {
+          "acc": 88.10086846351624,
+          "epoch": 50,
+          "wga": 76.92307829856873
+        },
+        {
+          "acc": 87.43141889572144,
+          "epoch": 75,
+          "wga": 79.67032790184021
+        },
+        {
+          "acc": 88.94649147987366,
+          "epoch": 100,
+          "wga": 77.47252583503723
+        },
+        {
+          "acc": 88.00020217895508,
+          "epoch": 125,
+          "wga": 79.67032790184021
+        },
+        {
+          "acc": 87.2854471206665,
+          "epoch": 150,
+          "wga": 84.34680700302124
+        },
+        {
+          "acc": 88.2367730140686,
+          "epoch": 175,
+          "wga": 84.06593203544617
+        },
+        {
+          "acc": 88.05556893348694,
+          "epoch": 200,
+          "wga": 84.94434952735901
+        },
+        {
+          "acc": 88.21663856506348,
+          "epoch": 225,
+          "wga": 85.28412580490112
+        },
+        {
+          "acc": 88.16630840301514,
+          "epoch": 250,
+          "wga": 85.29583811759949
+        }
+      ],
+      "val_acc_last": 88.16630840301514,
+      "val_acc_last4": 88.16882222890854,
+      "val_group_accuracies": [
+        85.29583740234375,
+        89.14935302734375,
+        93.98051452636719,
+        86.26373291015625
+      ],
+      "val_wga_last": 85.29583811759949,
+      "val_wga_last4": 84.89756137132645,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/9kl9fbss"
+    },
+    {
+      "arm": "xfit_norm",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 138,
+        "concept_factor_groups": "project://outputs/shared/celeba/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json",
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 1.0,
+        "factor_merge_similarity": 0.9,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.06690895212160221,
+      "run": "seed_01/xfit_norm/24056420",
+      "seed": 1,
+      "spurious_probe_val_wga": 97.01230525970459,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 88.34247589111328,
+          "epoch": 25,
+          "wga": 76.37362480163574
+        },
+        {
+          "acc": 88.69482278823853,
+          "epoch": 50,
+          "wga": 79.1208803653717
+        },
+        {
+          "acc": 88.88609409332275,
+          "epoch": 75,
+          "wga": 81.86812996864319
+        },
+        {
+          "acc": 88.45824599266052,
+          "epoch": 100,
+          "wga": 83.51648449897766
+        },
+        {
+          "acc": 88.65958452224731,
+          "epoch": 125,
+          "wga": 85.02635955810547
+        },
+        {
+          "acc": 88.8458251953125,
+          "epoch": 150,
+          "wga": 86.59636974334717
+        },
+        {
+          "acc": 89.29380178451538,
+          "epoch": 175,
+          "wga": 86.85413002967834
+        },
+        {
+          "acc": 88.19650411605835,
+          "epoch": 200,
+          "wga": 85.24897694587708
+        },
+        {
+          "acc": 88.14617395401001,
+          "epoch": 225,
+          "wga": 85.23725867271423
+        },
+        {
+          "acc": 88.03543448448181,
+          "epoch": 250,
+          "wga": 85.02635955810547
+        }
+      ],
+      "val_acc_last": 88.03543448448181,
+      "val_acc_last4": 88.41797858476639,
+      "val_group_accuracies": [
+        85.02635955810547,
+        89.06476593017578,
+        93.73695373535156,
+        92.30769348144531
+      ],
+      "val_wga_last": 85.02635955810547,
+      "val_wga_last4": 85.59168130159378,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/jk88x19k"
+    },
+    {
+      "arm": "xfit_norm_shuffled",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 138,
+        "concept_factor_groups": "project://outputs/shared/celeba/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json",
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 1.0,
+        "factor_merge_similarity": 0.9,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "shuffled",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": -0.015817125988891307,
+      "run": "seed_01/xfit_norm_shuffled/24056422",
+      "seed": 1,
+      "spurious_probe_val_wga": 95.06736993789673,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 87.81899809837341,
+          "epoch": 25,
+          "wga": 78.02197933197021
+        },
+        {
+          "acc": 87.74349689483643,
+          "epoch": 50,
+          "wga": 81.31868243217468
+        },
+        {
+          "acc": 87.58745789527893,
+          "epoch": 75,
+          "wga": 79.1208803653717
+        },
+        {
+          "acc": 88.68475556373596,
+          "epoch": 100,
+          "wga": 75.27472376823425
+        },
+        {
+          "acc": 86.93813681602478,
+          "epoch": 125,
+          "wga": 84.37023758888245
+        },
+        {
+          "acc": 86.74686551094055,
+          "epoch": 150,
+          "wga": 81.31868243217468
+        },
+        {
+          "acc": 87.75859475135803,
+          "epoch": 175,
+          "wga": 81.31868243217468
+        },
+        {
+          "acc": 87.97000050544739,
+          "epoch": 200,
+          "wga": 78.02197933197021
+        },
+        {
+          "acc": 87.83913254737854,
+          "epoch": 225,
+          "wga": 79.1208803653717
+        },
+        {
+          "acc": 87.82906532287598,
+          "epoch": 250,
+          "wga": 79.67032790184021
+        }
+      ],
+      "val_acc_last": 87.82906532287598,
+      "val_acc_last4": 87.84919828176498,
+      "val_group_accuracies": [
+        84.94435119628906,
+        88.76268768310547,
+        94.22407531738281,
+        79.67032623291016
+      ],
+      "val_wga_last": 79.67032790184021,
+      "val_wga_last4": 79.5329675078392,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/5m9jaiul"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/simclr/24056419",
+      "seed": 2,
+      "spurious_probe_val_wga": 93.96602511405945,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 87.04887628555298,
+          "epoch": 25,
+          "wga": 79.67032790184021
+        },
+        {
+          "acc": 87.60255575180054,
+          "epoch": 50,
+          "wga": 84.06593203544617
+        },
+        {
+          "acc": 88.16630840301514,
+          "epoch": 75,
+          "wga": 84.61538553237915
+        },
+        {
+          "acc": 87.57739067077637,
+          "epoch": 100,
+          "wga": 85.07322669029236
+        },
+        {
+          "acc": 87.73342967033386,
+          "epoch": 125,
+          "wga": 85.71428656578064
+        },
+        {
+          "acc": 87.62772679328918,
+          "epoch": 150,
+          "wga": 81.31868243217468
+        },
+        {
+          "acc": 87.76362538337708,
+          "epoch": 175,
+          "wga": 84.06593203544617
+        },
+        {
+          "acc": 87.35088109970093,
+          "epoch": 200,
+          "wga": 85.26068925857544
+        },
+        {
+          "acc": 87.26531267166138,
+          "epoch": 225,
+          "wga": 85.0849449634552
+        },
+        {
+          "acc": 87.30055093765259,
+          "epoch": 250,
+          "wga": 85.03807783126831
+        }
+      ],
+      "val_acc_last": 87.30055093765259,
+      "val_acc_last4": 87.42009252309799,
+      "val_group_accuracies": [
+        85.03807830810547,
+        87.2522964477539,
+        94.22407531738281,
+        86.26373291015625
+      ],
+      "val_wga_last": 85.03807783126831,
+      "val_wga_last4": 84.86241102218628,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/shu4c042"
+    },
+    {
+      "arm": "xfit_norm",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 138,
+        "concept_factor_groups": "project://outputs/shared/celeba/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json",
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 1.0,
+        "factor_merge_similarity": 0.9,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.06679226844603858,
+      "run": "seed_02/xfit_norm/24056421",
+      "seed": 2,
+      "spurious_probe_val_wga": 96.1452841758728,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 87.57235407829285,
+          "epoch": 25,
+          "wga": 82.96703100204468
+        },
+        {
+          "acc": 87.95993328094482,
+          "epoch": 50,
+          "wga": 83.51648449897766
+        },
+        {
+          "acc": 87.46665120124817,
+          "epoch": 75,
+          "wga": 84.78031754493713
+        },
+        {
+          "acc": 87.08914518356323,
+          "epoch": 100,
+          "wga": 83.74927043914795
+        },
+        {
+          "acc": 88.27704191207886,
+          "epoch": 125,
+          "wga": 84.81546640396118
+        },
+        {
+          "acc": 88.689786195755,
+          "epoch": 150,
+          "wga": 84.90919470787048
+        },
+        {
+          "acc": 88.09583783149719,
+          "epoch": 175,
+          "wga": 85.76449751853943
+        },
+        {
+          "acc": 88.96662592887878,
+          "epoch": 200,
+          "wga": 86.33860349655151
+        },
+        {
+          "acc": 89.18306827545166,
+          "epoch": 225,
+          "wga": 86.56122088432312
+        },
+        {
+          "acc": 89.11259770393372,
+          "epoch": 250,
+          "wga": 86.54950261116028
+        }
+      ],
+      "val_acc_last": 89.11259770393372,
+      "val_acc_last4": 88.83953243494034,
+      "val_group_accuracies": [
+        86.54949951171875,
+        90.28516387939453,
+        93.21502685546875,
+        91.20879364013672
+      ],
+      "val_wga_last": 86.54950261116028,
+      "val_wga_last4": 86.30345612764359,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/kjdowjo4"
+    },
+    {
+      "arm": "xfit_norm_shuffled",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 138,
+        "concept_factor_groups": "project://outputs/shared/celeba/graphs/concept_groups/text_0p8_coactivation_0p3/concept_groups.json",
+        "dataset": "celeba",
+        "epochs": 250,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 1.0,
+        "factor_merge_similarity": 0.9,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "shuffled",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": -0.016088760591237327,
+      "run": "seed_02/xfit_norm_shuffled/24056423",
+      "seed": 2,
+      "spurious_probe_val_wga": 92.58347749710083,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 87.24517822265625,
+          "epoch": 25,
+          "wga": 80.2197813987732
+        },
+        {
+          "acc": 87.7686619758606,
+          "epoch": 50,
+          "wga": 77.47252583503723
+        },
+        {
+          "acc": 86.92303895950317,
+          "epoch": 75,
+          "wga": 82.41758346557617
+        },
+        {
+          "acc": 88.48844766616821,
+          "epoch": 100,
+          "wga": 80.2197813987732
+        },
+        {
+          "acc": 87.14954257011414,
+          "epoch": 125,
+          "wga": 85.03807783126831
+        },
+        {
+          "acc": 87.86932826042175,
+          "epoch": 150,
+          "wga": 85.72934865951538
+        },
+        {
+          "acc": 87.2854471206665,
+          "epoch": 175,
+          "wga": 84.10075902938843
+        },
+        {
+          "acc": 87.60759234428406,
+          "epoch": 200,
+          "wga": 85.27240753173828
+        },
+        {
+          "acc": 87.67302632331848,
+          "epoch": 225,
+          "wga": 85.27240753173828
+        },
+        {
+          "acc": 87.71329522132874,
+          "epoch": 250,
+          "wga": 85.28412580490112
+        }
+      ],
+      "val_acc_last": 87.71329522132874,
+      "val_acc_last4": 87.56984025239944,
+      "val_group_accuracies": [
+        85.28412628173828,
+        88.00144958496094,
+        94.05010223388672,
+        88.46153259277344
+      ],
+      "val_wga_last": 85.28412580490112,
+      "val_wga_last4": 84.98242497444153,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/i85lakvb"
+    }
+  ],
+  "study": "factors_celeba"
+}

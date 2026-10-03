@@ -4,6 +4,6 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | seeds | val WGA | val acc |
 |---|---|---|---|---|---|---|---|---|---|---|
-| factors_celeba | simclr | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train |  (+2 unfinished) |  |  |
+| factors_celeba | simclr | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2 | 84.9 ± 0.0 | 87.8 ± 0.5 |
 
 Run records: `outputs/seeds/<study>/seed_<NN>/<arm>/<attempt>/run.json`.

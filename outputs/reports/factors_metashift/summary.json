@@ -1014,6 +1014,40 @@
       }
     },
     {
+      "arm": "xfit_meaning_w3_holdout",
+      "dataset": "metashift",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.18918237910551183,
+        "sd": 0.01633240876680112
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 60.32986268401146,
+        "sd": 2.0869465118790673
+      },
+      "val_group_accuracies": [
+        68.0555534362793,
+        47.22222328186035,
+        52.08333396911621,
+        75.0
+      ],
+      "val_wga_last": {
+        "mean": 47.22222238779068,
+        "sd": 1.9641843325501733
+      },
+      "val_wga_last4": {
+        "mean": 46.87499962747097,
+        "sd": 1.9641848593857798
+      }
+    },
+    {
       "arm": "xfit_meaning_w3_shuffled",
       "dataset": "metashift",
       "factor_explained_variance": {
@@ -5397,6 +5431,149 @@
       "val_wga_last": 44.44444477558136,
       "val_wga_last4": 46.52777686715126,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/czv46qgb"
+    },
+    {
+      "arm": "xfit_meaning_w3_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 24,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 3.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.20073113609762752,
+      "run": "seed_01/xfit_meaning_w3_holdout/24183935",
+      "seed": 1,
+      "spurious_probe_val_wga": 59.72222089767456,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 53.47222089767456,
+          "epoch": 25,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 53.125,
+          "epoch": 50,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 54.16666865348816,
+          "epoch": 75,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 55.55555820465088,
+          "epoch": 100,
+          "wga": 50.0
+        },
+        {
+          "acc": 53.125,
+          "epoch": 125,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 150,
+          "wga": 51.38888955116272
+        },
+        {
+          "acc": 54.51388955116272,
+          "epoch": 175,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 200,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 225,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 54.16666865348816,
+          "epoch": 250,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 59.375,
+          "epoch": 275,
+          "wga": 50.0
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 300,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 60.76388955116272,
+          "epoch": 325,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 63.19444179534912,
+          "epoch": 350,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 63.54166865348816,
+          "epoch": 375,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 60.76388955116272,
+          "epoch": 400,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 425,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 450,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 475,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 62.15277910232544,
+          "epoch": 500,
+          "wga": 45.83333432674408
+        }
+      ],
+      "val_acc_last": 62.15277910232544,
+      "val_acc_last4": 61.80555671453476,
+      "val_group_accuracies": [
+        70.83332824707031,
+        45.833335876464844,
+        54.16666793823242,
+        77.77777862548828
+      ],
+      "val_wga_last": 45.83333432674408,
+      "val_wga_last4": 45.48611119389534,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/tbzsg45y"
     },
     {
       "arm": "xfit_meaning_w3_shuffled",
@@ -10541,6 +10718,149 @@
       "val_wga_last": 40.27777910232544,
       "val_wga_last4": 39.93055671453476,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/e1kpflmp"
+    },
+    {
+      "arm": "xfit_meaning_w3_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 24,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 3.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.17763362211339614,
+      "run": "seed_02/xfit_meaning_w3_holdout/24183936",
+      "seed": 2,
+      "spurious_probe_val_wga": 59.72222089767456,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 56.94444179534912,
+          "epoch": 25,
+          "wga": 50.0
+        },
+        {
+          "acc": 54.16666865348816,
+          "epoch": 50,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 56.25,
+          "epoch": 75,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 54.51388955116272,
+          "epoch": 100,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 125,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 59.375,
+          "epoch": 150,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 59.375,
+          "epoch": 175,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 62.84722089767456,
+          "epoch": 200,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 225,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 250,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 55.55555820465088,
+          "epoch": 275,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 300,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 54.51388955116272,
+          "epoch": 325,
+          "wga": 37.5
+        },
+        {
+          "acc": 60.76388955116272,
+          "epoch": 350,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 60.06944179534912,
+          "epoch": 375,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 400,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 425,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 450,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 475,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 500,
+          "wga": 48.61111044883728
+        }
+      ],
+      "val_acc_last": 59.02777910232544,
+      "val_acc_last4": 58.85416865348816,
+      "val_group_accuracies": [
+        65.27777862548828,
+        48.61111068725586,
+        50.0,
+        72.22222137451172
+      ],
+      "val_wga_last": 48.61111044883728,
+      "val_wga_last4": 48.2638880610466,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/3zok68r0"
     },
     {
       "arm": "xfit_meaning_w3_shuffled",

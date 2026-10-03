@@ -4,13 +4,13 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | F1 fraction | F2 weight | targets | merge | min freq | F2 weighting | F2 cross-fit | F3 weight | F3 context | F3 presence | start | groups | factors | seeds | val WGA | val acc | factor expl. var. |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| factors_celeba | xfit_norm | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 138 |  (+2 unfinished) |  |  |  |
-| factors_celeba | xfit_norm_shuffled | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 138 |  (+2 unfinished) |  |  |  |
+| factors_celeba | xfit_norm | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 138 | 1,2 | 85.9 ± 0.5 | 88.6 ± 0.3 |  |
+| factors_celeba | xfit_norm_shuffled | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 138 | 1,2 | 82.3 ± 3.9 | 87.7 ± 0.2 |  |
 
 ## SimCLR reference on this dataset
 
 | study | arm | epochs | batch | lr | wd | temp | probe | seeds | val WGA | val acc |
 |---|---|---|---|---|---|---|---|---|---|---|
-| factors_celeba | simclr | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train |  (+2 unfinished) |  |  |
+| factors_celeba | simclr | 250 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2 | 84.9 ± 0.0 | 87.8 ± 0.5 |
 
 Run records: `outputs/seeds/<study>/seed_<NN>/<arm>/<attempt>/run.json`.
