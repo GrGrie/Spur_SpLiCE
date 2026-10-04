@@ -32,7 +32,8 @@ import torch.nn.functional as F
 from cospro.tracking.artifacts import scratch_root, shared
 
 CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v2"
-TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled", "clip_pca")
+TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled", "clip_pca",
+                "response", "response_residual")
 #: Seed of the fixed image permutation behind the ``shuffled`` control targets.
 SHUFFLE_SEED = 0
 
@@ -406,6 +407,12 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
     left, values, _ = torch.linalg.svd(clip, full_matrices=False)
     width = min(activations.shape[1], values.shape[0])
     clip_components = standardized(left[:, :width] * values[:width])
+    # Dense alternative to the sparse codes: every image's CLIP alignment with each factor's text
+    # direction. SpLiCE's L1 penalty keeps a handful of concepts per image; the alignment exists for all
+    # of them, and as a linear function of CLIP each residual is a direction CLIP features carry.
+    centred = F.normalize(torch.as_tensor(cache["clip_embeddings"]).float(), dim=1)
+    centred = centred - torch.as_tensor(cache["image_mean"]).float().view(1, -1)
+    responses = standardized(centred @ directions.float().T)
     return {
         "artifact": CONCEPT_FACTORS_ARTIFACT,
         "config": asdict(config),
@@ -428,6 +435,8 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
             "residual": residuals,
             "residual_shuffled": residuals[shuffle],
             "clip_pca": clip_components,
+            "response": responses,
+            "response_residual": partial_residuals(responses),
         },
     }
 

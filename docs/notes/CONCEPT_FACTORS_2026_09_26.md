@@ -461,6 +461,18 @@ reweighting, and keeps it fused with the background. The ninth round tests wheth
 for this gain: the same cross-fit distils as many principal components of the CLIP image embeddings
 as there are factors (`--factor_targets clip_pca`).
 
+## Dense concept responses (2026-10-04)
+
+SpLiCE keeps about nine concepts per image, so its factor residuals are mostly decomposition noise:
+CLIP features explain 0.15 to 0.17 of them on unseen images. `--factor_targets response` replaces the
+sparse codes by every image's CLIP alignment with each factor's text direction, and `response_residual`
+by their residuals on the other responses. As linear functions of CLIP both are directions CLIP carries:
+on unseen images CLIP explains 0.79 (MetaShift) and 0.88 (Waterbirds) of the responses and 0.41 and 0.43
+of their residuals. The responses correlate more than the codes (mean absolute correlation 0.34 to 0.38
+against 0.04 to 0.06), so their residuals are the part a fused direction misses. When an arm trains on
+responses, its learnability record scores responses (`scored_targets`). The tenth round runs both at
+weight 5 on MetaShift and Waterbirds.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

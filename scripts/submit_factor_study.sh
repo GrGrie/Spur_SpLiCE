@@ -65,6 +65,8 @@
 # Waterbirds and CelebA, with residual_shuffled controls).
 # Ninth round, the CLIP control: as many principal components of the CLIP image embeddings as there are
 # factors, in place of the factors (xfit_meaning_w5_clippca_holdout; xfit_norm_clippca on Spur-CIFAR10).
+# Tenth round, dense concept responses: each image's CLIP alignment with each factor's text direction
+# (xfit_meaning_w5_response_holdout) and its residuals (xfit_meaning_w5_response_residual_holdout).
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -134,6 +136,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w3_residual_holdout]="${XFIT_MEANING[*]} --factor_targets residual --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w3_residual_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets residual_shuffled --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_response_holdout]="${XFIT_MEANING[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_response_residual_holdout]="${XFIT_MEANING[*]} --factor_targets response_residual --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
     [f2_shuffled]="${F2[*]} --factor_targets shuffled"
@@ -212,6 +216,8 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_meaning_w10_residual_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual ${HOLDOUT[*]}"
     [xfit_meaning_w10_residual_shuffled_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual_shuffled ${HOLDOUT[*]}"
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_response_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [xfit_meaning_w5_response_residual_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response_residual --factor_distill_weight 5.0 ${HOLDOUT[*]}"
   )
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2

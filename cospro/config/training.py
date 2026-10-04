@@ -281,11 +281,12 @@ class ConceptFactorOptions:
     )
     factor_targets: str = option(
         "whitened", choices=("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled",
-                             "clip_pca"),
+                             "clip_pca", "response", "response_residual"),
         help="F2 targets: ZCA-whitened factors, standardized factors, standardized presence indicators, the "
         "control 'shuffled' (standardized targets of other images), 'residual' (each factor minus its "
         "regression on the others), its control 'residual_shuffled' or the control 'clip_pca' (as many "
-        "principal components of the CLIP image embeddings as there are factors).",
+        "principal components of the CLIP image embeddings as there are factors), 'response' (each image's "
+        "CLIP alignment with each factor's text direction) or 'response_residual' (its residuals).",
     )
     factor_sample_weighting: str = option(
         "none", choices=("none", "atypicality", "balanced"),

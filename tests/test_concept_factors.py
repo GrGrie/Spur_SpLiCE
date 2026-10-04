@@ -388,6 +388,14 @@ class FactorLearnabilityTests(unittest.TestCase):
         correlation = components.T @ components / len(components)
         self.assertTrue(torch.allclose(correlation, torch.eye(len(correlation), dtype=correlation.dtype), atol=1e-4))
 
+    def test_response_targets_are_linear_in_clip_and_their_residuals_learnable_from_it(self):
+        cache, groups = synthetic_inputs()
+        factors = build_concept_factors(cache, groups, FactorConfig())
+        clip = torch.as_tensor(cache["clip_embeddings"]).float()
+        for kind in ("response", "response_residual"):
+            scores = heldout_explained_variance(clip, factors["targets"][kind], ridge=1e-3)
+            self.assertGreater(float(scores.min()), 0.95, kind)
+
     def test_a_fused_direction_fails_the_residual_and_the_minority_groups(self):
         # Cat and couch co-occur in 90 percent of the images; group = 2 * cat + couch.
         generator = torch.Generator().manual_seed(3)

@@ -497,13 +497,16 @@ class ConceptFactors(TrainingMethod):
                               dataset: str = "") -> None:
         """The real targets, their residuals and the CLIP features, whatever targets the loss uses."""
 
+        # Response targets are scored as responses, every other kind against the sparse factor values.
+        base = "response" if self.target_kind.startswith("response") else "standardized"
         self.learnability = {
             "dataset": dataset,
+            "scored_targets": base,
             "source_indices": [int(index) for index in source_indices],
-            "targets": factors["targets"]["standardized"].index_select(0, rows),
+            "targets": factors["targets"][base].index_select(0, rows),
             # Each factor minus its regression on the others: one direction shared by two co-occurring
             # factors predicts their common part and misses this one.
-            "residuals": partial_residuals(factors["targets"]["standardized"]).index_select(0, rows),
+            "residuals": partial_residuals(factors["targets"][base]).index_select(0, rows),
             "clip_features": factors["clip_embeddings"].index_select(0, rows),
             "unseen": unseen,
             "factors": [
@@ -577,6 +580,7 @@ class ConceptFactors(TrainingMethod):
 
         summary: dict[str, Any] = {
             "ridge": LEARNABILITY_RIDGE,
+            "scored_targets": self.learnability.get("scored_targets", "standardized"),
             "evaluated_on": "unseen images" if unseen.any() else "out-of-fold training images",
             "student_mean": float(student["all"].mean()),
             "clip_mean": float(clip["all"].mean()),
