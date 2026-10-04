@@ -77,6 +77,11 @@ class TrainingMethod:
 
         return None
 
+    def observe_batch(self, batch) -> None:
+        """See the whole loader batch before the forward pass, e.g. extra per-view fields."""
+
+        return None
+
     def sampling_state(self):
         """State a method saves in the checkpoint, such as an adaptive sampler."""
 

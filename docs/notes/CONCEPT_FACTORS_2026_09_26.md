@@ -498,6 +498,28 @@ accuracy most (Waterbirds 65 against 58). The student does not decouple: its res
 cross-fit adds to CLIP distillation (a trained head on the same principal components) and whether more
 of CLIP helps (128 components).
 
+## Spatial concept distillation (2026-10-06)
+
+Image-level targets can separate "cat" from "couch" only through the images where the two disagree,
+and erasing "couch" before predicting "cat" reduces to the residual target that failed (see
+`docs/xfit/spatial_concepts_literature.md`). Cat and couch occupy different pixels, though, and the
+fusion happens at global average pooling. The twelfth round supervises the concepts where they are.
+
+* `cospro.cli.build_concept_maps` (launcher `scripts/build_concept_maps.sbatch`) reads every training
+  image at 448 pixels through 224-pixel windows with frozen CLIP ViT-B/32, takes the last block with
+  query-query attention and without residual and feed-forward branch (ClearCLIP), and stores per image a
+  14 x 14 softmax over the factors of each patch's cosine with the factor's text direction. MetaShift
+  takes 40 seconds on one GPU. The factor band is 2 percent: at 5 percent the MetaShift factors hold no
+  scene concept, while at 2 percent its 130 LAION factors include couch, lawn, beds, windows and bench,
+  and their maps sit on those regions.
+* `--factor_spatial_weight` with `--factor_concept_maps` records each SimCLR view's crop box and flip,
+  warps the maps onto the view (`roi_align`), captures the encoder's last feature map and regresses it
+  location by location with the cross-fit: a ridge fitted on the locations of half the images predicts
+  the other half's. `--factor_spatial_maps shuffled` gives every image another image's maps.
+
+The spatial held-out score starts near 0.4 at epoch 1, since maps are smooth and partly predictable from
+position and low-level statistics; only its rise above the shuffled control counts.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

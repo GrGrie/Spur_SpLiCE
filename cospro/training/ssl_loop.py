@@ -107,6 +107,8 @@ def train_one_epoch(
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)
         sample_indices = data[1] if needs_indices else None
+        if method is not None:
+            method.observe_batch(data)
         warmup_learning_rate(args, epoch, idx, len(train_loader), optimizer)
 
         with torch.autocast(

@@ -321,6 +321,18 @@ class ConceptFactorOptions:
         help="F3: the images' own concept sets, or the control 'shuffled' (the concept sets of other images).",
     )
     factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
+    factor_spatial_weight: float = option(
+        0.0, parse=float,
+        help="Weight of the spatial concept loss: a ridge fitted on the feature-map locations of half the batch "
+        "predicts the concept maps of the other half's locations; 0 disables it.",
+    )
+    factor_concept_maps: str = option(
+        "", parse=str, help="Concept maps from cospro.cli.build_concept_maps, needed by --factor_spatial_weight.",
+    )
+    factor_spatial_maps: str = option(
+        "real", choices=("real", "shuffled"),
+        help="Concept maps of the spatial loss: each image's own, or the control 'shuffled' (another image's).",
+    )
     factor_pca_components: int = option(
         0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
     )
@@ -489,8 +501,9 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
              "LateTVG builds its pruned view inside the SimCLR objective, so --simclr_weight must be positive.")
     _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
     if args.splice_mode == "concept_factors":
-        _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0,
-                 "concept_factors needs --factor_condition_fraction, --factor_distill_weight or "
+        _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0
+                 or args.factor_spatial_weight > 0,
+                 "concept_factors needs --factor_condition_fraction, --factor_distill_weight, --factor_spatial_weight or "
                  "--factor_block_weight above 0.")
         _require(args.factor_ridge > 0, "--factor_ridge must be positive.")
         _require(0 <= args.factor_holdout_fraction < 1, "--factor_holdout_fraction lies in [0, 1).")
@@ -510,6 +523,11 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         _require(0 <= args.factor_merge_similarity <= 1, "--factor_merge_similarity must lie in [0, 1].")
         _require(args.factor_whitening_eps > 0, "--factor_whitening_eps must be positive.")
         _require(args.factor_pca_components >= 0, "--factor_pca_components must be non-negative.")
+        _require(args.factor_spatial_weight >= 0, "--factor_spatial_weight must be non-negative.")
+        _require(args.factor_spatial_weight == 0 or args.factor_concept_maps,
+                 "--factor_spatial_weight needs --factor_concept_maps.")
+        _require(args.factor_spatial_weight == 0 or not args.latetvg_prune_rate,
+                 "The spatial concept loss reads one encoder pass and does not combine with LateTVG pruning.")
         _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,
                  "--factor_start_epoch and --factor_warmup_epochs must be non-negative.")
     _require(0 < args.ssl_crop_min <= 1, "--ssl-crop-min must be in the interval (0, 1].")

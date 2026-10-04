@@ -40,7 +40,9 @@ import torch
 from torch.utils.data import DataLoader, Sampler
 
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
+from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
+from cospro.pipeline.concept_maps import spatial_cross_fit_loss, warp_maps
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
     SHUFFLE_SEED,
@@ -331,6 +333,100 @@ class FactorDistillationRegularizer:
         return self.scheduled_weight * loss
 
 
+class IndexedViewBoxDataset(IndexedCoSpRoDataset):
+    """Two augmented views, the sample row and each view's crop box and flip, [2, 5]."""
+
+    def __init__(self, dataset) -> None:
+        super().__init__(dataset)
+        two_crop = self.transform
+        if not hasattr(two_crop, "transform"):
+            raise ValueError("Spatial concept maps need the SSL two-view transform.")
+        self.recorded = RecordedTwoCropTransform(two_crop.transform)
+
+    def __getitem__(self, index: int):
+        image = self.source_dataset.get_input(int(self.source_indices[index]))
+        views, boxes = self.recorded(image)
+        return views, int(index), boxes
+
+
+class SpatialConceptDistillation:
+    """Scheduled per-location cross-fit from the encoder's last feature map to the warped concept maps."""
+
+    def __init__(self, maps: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
+                 sample_weights: torch.Tensor, ridge: float) -> None:
+        self.maps = maps
+        self.sample_weights = sample_weights.float()
+        self.weight = float(weight)
+        self.start_epoch = int(start_epoch)
+        self.warmup_epochs = int(warmup_epochs)
+        self.ridge = float(ridge)
+        self.epoch = 0
+        self.feature_map: torch.Tensor | None = None
+        self.boxes: torch.Tensor | None = None
+        self._hooked = False
+        self.last_diagnostics: dict[str, float] = {}
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    @property
+    def scheduled_weight(self) -> float:
+        if self.epoch <= self.start_epoch:
+            return 0.0
+        if self.warmup_epochs == 0:
+            return self.weight
+        return self.weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
+
+    def hook(self, model) -> None:
+        """Keep the output of the encoder's last stage, the feature map before global pooling."""
+
+        if self._hooked:
+            return
+        encoder = getattr(model.encoder, "module", model.encoder)
+        stage = getattr(encoder, "layer4", None)
+        if stage is None:
+            raise ValueError("The spatial concept loss needs a ResNet encoder with a layer4 stage.")
+        stage.register_forward_hook(lambda module, inputs, output: setattr(self, "feature_map", output))
+        self._hooked = True
+
+    def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+        feature_map, boxes = self.feature_map, self.boxes
+        if feature_map is None or boxes is None or feature_map.shape[0] != embeddings.shape[0]:
+            # The hook attaches during the first step, whose forward pass has already run.
+            self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight}
+            return embeddings.sum() * 0.0
+        rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
+        device = feature_map.device
+        maps = self.maps.index_select(0, rows).float().to(device)
+        boxes = torch.cat([boxes[:, 0], boxes[:, 1]]).to(device)
+        targets = warp_maps(torch.cat([maps, maps]), boxes, tuple(feature_map.shape[-2:]))
+        weights = self.sample_weights.index_select(0, rows).to(device)
+        loss, explained = spatial_cross_fit_loss(feature_map, targets, torch.cat([weights, weights]), self.ridge)
+        self.last_diagnostics = {
+            "factor_spatial_scheduled_weight": self.scheduled_weight,
+            "factor_spatial_heldout_explained_variance": explained,
+        }
+        return self.scheduled_weight * loss
+
+
+def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_indices,
+                      shuffled: bool) -> torch.Tensor:
+    """Concept maps of the training subset in its order, each factor standardized over images and locations."""
+
+    stored = torch.load(path, map_location="cpu", weights_only=False)
+    if list(stored["factor_names"]) != list(factor_names):
+        raise ValueError(f"Concept maps {path} were built for other factors than this run's.")
+    maps = stored["maps"].float()
+    mean = maps.mean(dim=(0, 2, 3), keepdim=True)
+    std = maps.std(dim=(0, 2, 3), keepdim=True).clamp_min(1e-6)
+    maps = (maps - mean) / std
+    if shuffled:
+        # Control: every image carries another image's maps.
+        maps = maps[torch.randperm(len(maps), generator=torch.Generator().manual_seed(SHUFFLE_SEED))]
+    rows = rows_for_subset([str(sample_id) for sample_id in stored["sample_ids"]], dataset, source_indices)
+    return maps.index_select(0, rows).half()
+
+
 @register_method
 class ConceptFactors(TrainingMethod):
     """F1 conditioned batches and/or F2 decorrelated factor distillation."""
@@ -353,6 +449,9 @@ class ConceptFactors(TrainingMethod):
         cross_fit: bool = False,
         ridge: float = 1.0,
         holdout_fraction: float = 0.0,
+        spatial_weight: float = 0.0,
+        concept_maps: str = "",
+        spatial_maps: str = "real",
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -373,6 +472,8 @@ class ConceptFactors(TrainingMethod):
         self.cross_fit = bool(cross_fit)
         self.ridge = float(ridge)
         self.holdout_fraction = float(holdout_fraction)
+        self.spatial_settings = {"weight": float(spatial_weight), "maps": concept_maps, "kind": spatial_maps}
+        self.spatial: SpatialConceptDistillation | None = None
         self.block_settings = {
             "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
             "temperature": float(block_temperature), "context_weight": float(block_context_weight),
@@ -415,6 +516,9 @@ class ConceptFactors(TrainingMethod):
             cross_fit=options.factor_cross_fit,
             ridge=options.factor_ridge,
             holdout_fraction=options.factor_holdout_fraction,
+            spatial_weight=options.factor_spatial_weight,
+            concept_maps=options.factor_concept_maps,
+            spatial_maps=options.factor_spatial_maps,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -479,11 +583,21 @@ class ConceptFactors(TrainingMethod):
             self.factor_block_shape = (len(columns), settings["dim"])
             self.block_names = [factor_name(factors["factors"][column]) for column in columns]
             print(f"[INFO] Concept blocks ({settings['presence']} presence): {self.block_names}", flush=True)
+        spatial = self.spatial_settings
+        if spatial["weight"] > 0:
+            names = [factor_name(factor) for factor in factors["factors"]]
+            maps = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
+                                     shuffled=spatial["kind"] == "shuffled")
+            self.spatial = SpatialConceptDistillation(
+                maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
+            )
+            print(f"[INFO] Spatial concept maps ({spatial['kind']}) from {spatial['maps']}: {tuple(maps.shape)}",
+                  flush=True)
         active = factors["active"].index_select(0, rows)[:, factors["condition_factors"]]
         self.sampler = ConceptConditionedBatchSampler(
             active, context.batch_size, self.condition_fraction, loader.generator,
         )
-        indexed = IndexedCoSpRoDataset(loader.dataset)
+        indexed = IndexedViewBoxDataset(loader.dataset) if self.spatial is not None else IndexedCoSpRoDataset(loader.dataset)
         return DataLoader(
             indexed,
             batch_sampler=self.sampler,
@@ -498,8 +612,10 @@ class ConceptFactors(TrainingMethod):
                               dataset: str = "") -> None:
         """The real targets, their residuals and the CLIP features, whatever targets the loss uses."""
 
-        # Response targets are scored as responses, every other kind against the sparse factor values.
-        base = "response" if self.target_kind.startswith("response") else "standardized"
+        # Response targets and spatial maps are scored as responses, every other kind against the sparse
+        # factor values.
+        spatial = self.spatial_settings["weight"] > 0
+        base = "response" if self.target_kind.startswith("response") or spatial else "standardized"
         self.learnability = {
             "dataset": dataset,
             "scored_targets": base,
@@ -609,12 +725,16 @@ class ConceptFactors(TrainingMethod):
         return {**summary, "factors": entries}
 
     def set_epoch(self, epoch: int) -> None:
-        for part in (self.regularizer, self.blocks):
+        for part in (self.regularizer, self.blocks, self.spatial):
             if part is not None:
                 part.set_epoch(epoch)
 
+    def observe_batch(self, batch) -> None:
+        if self.spatial is not None:
+            self.spatial.boxes = batch[2] if len(batch) > 2 else None
+
     def extra_loss(self, *, model, embeddings, sample_indices) -> LossTerms | None:
-        if self.regularizer is None and self.blocks is None:
+        if self.regularizer is None and self.blocks is None and self.spatial is None:
             return None
         if sample_indices is None:
             raise ValueError("Concept-factor losses require sample indices.")
@@ -630,11 +750,16 @@ class ConceptFactors(TrainingMethod):
                 raise ValueError("Concept blocks require the model's block heads.")
             count, dim = self.factor_block_shape
             value = value + self.blocks(model.factor_blocks(embeddings).view(-1, count, dim), sample_indices)
+        if self.spatial is not None:
+            self.spatial.hook(model)
+            value = value + self.spatial(embeddings, sample_indices)
+            self.spatial.feature_map = None
         return LossTerms(value=value, diagnostics=self.diagnostics())
 
     def diagnostics(self) -> Mapping[str, float]:
         values = dict(getattr(self.regularizer, "last_diagnostics", {}))
         values.update(getattr(self.blocks, "last_diagnostics", {}))
+        values.update(getattr(self.spatial, "last_diagnostics", {}))
         if self.sampler is not None:
             values["factor_conditioned_batch_fraction"] = self.sampler.last_conditioned_fraction
         return values

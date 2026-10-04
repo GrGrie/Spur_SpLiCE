@@ -69,6 +69,9 @@
 # (xfit_meaning_w5_response_holdout) and its residuals (xfit_meaning_w5_response_residual_holdout).
 # Eleventh round, CLIP distillation itself: 128 principal components (xfit_w5_clippca128_holdout) and the
 # trained head in place of the cross-fit (f2_w5_clippca_holdout), which memorization can satisfy.
+# Twelfth round, spatial concept distillation: CLIP concept maps (14 x 14, 2-percent factor band) warped onto
+# each view and regressed per location on the last feature map (spatial_w5_holdout), with shuffled maps as
+# the control (spatial_w5_shuffled_holdout). MetaShift, Waterbirds and CelebA; the maps are built when missing.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -102,6 +105,14 @@ OPENIMAGES_CACHE_NAME="cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s3
 # response 0.5), factors from 5 percent. Spur-CIFAR10, Waterbirds and CelebA; the groups are built when missing.
 MEANING_OI_GROUPS="outputs/shared/${DATASET}/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json"
 MEANING_OI_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
+# Spatial concept loss: concept maps from frozen CLIP at the 2-percent factor band, built when missing.
+# SPATIAL_GROUPS and SPATIAL_CACHE are set per dataset below.
+spatial_args() {
+  local maps="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/concept_maps/$(basename "$(dirname "${SPATIAL_GROUPS}")")_min0.02_merge0_qq448/concept_maps.pt"
+  SPATIAL_MAPS="${maps}"
+  SPATIAL=(--splice_mode concept_factors --factor_concept_groups "${SPATIAL_GROUPS}" --factor_splice_cache "${SPATIAL_CACHE}"
+    --factor_min_frequency 0.02 --factor_merge_similarity 0 --factor_concept_maps "${maps}" --factor_targets response)
+}
 XFIT_MEANING_OI=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
   --factor_concept_groups "${MEANING_OI_GROUPS}" --factor_splice_cache "${MEANING_OI_CACHE}"
   --factor_min_frequency 0.05 --factor_merge_similarity 0)
@@ -121,6 +132,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
   MEANING_GROUPS="outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json"
   MEANING=(--factor_concept_groups "${MEANING_GROUPS}" --factor_splice_cache "${LAION_CACHE}" --factor_min_frequency 0.05 --factor_merge_similarity 0)
   F2_MEANING=(--splice_mode concept_factors --factor_distill_weight 1.0 "${MEANING[@]}")
+  SPATIAL_GROUPS="${MEANING_GROUPS}"
+  SPATIAL_CACHE="${LAION_CACHE}"
+  spatial_args
   XFIT_MEANING=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_cross_fit true --factor_ridge 1.0 "${MEANING[@]}")
   ARMS=(
     [f2_meaning]="${F2_MEANING[*]} --factor_targets standardized"
@@ -138,6 +152,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w3_residual_holdout]="${XFIT_MEANING[*]} --factor_targets residual --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w3_residual_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets residual_shuffled --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -202,6 +218,9 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     COMMON+=(--epochs 250)
   fi
   GROUPS_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/splice_dataset_cache/${OPENIMAGES_CACHE_NAME}/splice_dataset_cache.pt"
+  SPATIAL_GROUPS="${MEANING_OI_GROUPS}"
+  SPATIAL_CACHE="${MEANING_OI_CACHE}"
+  spatial_args
   ARMS=(
     [simclr]="--splice_mode none"
     [f2_std]="${F2[*]} --factor_targets standardized"
@@ -220,6 +239,8 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_meaning_w10_residual_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual ${HOLDOUT[*]}"
     [xfit_meaning_w10_residual_shuffled_holdout]="${XFIT_MEANING_OI[*]} --factor_targets residual_shuffled ${HOLDOUT[*]}"
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -275,6 +296,14 @@ if [[ "${DATASET}" != "metashift" && " ${SELECTED[*]} " == *meaning* && ! -f "${
   echo "meaning_groups_job=${MEANING_GROUP_JOB%%;*}"
 fi
 
+# Concept maps of the spatial arms; build them first when missing.
+MAPS_DEPENDENCY=()
+if [[ " ${SELECTED[*]} " == *spatial* && -n "${SPATIAL_MAPS:-}" && ! -f "${SPATIAL_MAPS}" ]]; then
+  MAPS_JOB=$(sbatch --parsable scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
+  MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
+  echo "concept_maps_job=${MAPS_JOB%%;*}"
+fi
+
 # At most MAX_PARALLEL training jobs of this submission run at once: job i waits for job i - MAX_PARALLEL
 # to end (afterany), so the jobs run in MAX_PARALLEL lanes one after another.
 MAX_PARALLEL="${MAX_PARALLEL:-8}"
@@ -282,7 +311,9 @@ SUBMITTED=()
 for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
     conditions=()
-    if [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
+    if [[ "${arm}" == spatial* && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+      conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
+    elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == "f2_laion" && "${#GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${GROUP_DEPENDENCY[0]#--dependency=}")
