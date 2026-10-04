@@ -50,6 +50,7 @@ class FactorConfig:
     min_correlation: float = 0.2
     max_text_similarity: float = 0.75
     whitening_eps: float = 0.1
+    pca_components: int = 0
 
     def __post_init__(self) -> None:
         if not 0 <= self.min_frequency < self.max_frequency <= 1:
@@ -405,7 +406,7 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
     clip = F.normalize(torch.as_tensor(cache["clip_embeddings"]).float(), dim=1)
     clip = clip - clip.mean(dim=0)
     left, values, _ = torch.linalg.svd(clip, full_matrices=False)
-    width = min(activations.shape[1], values.shape[0])
+    width = min(config.pca_components or activations.shape[1], values.shape[0])
     clip_components = standardized(left[:, :width] * values[:width])
     # Dense alternative to the sparse codes: every image's CLIP alignment with each factor's text
     # direction. SpLiCE's L1 penalty keeps a handful of concepts per image; the alignment exists for all

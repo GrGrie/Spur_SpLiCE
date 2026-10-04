@@ -321,6 +321,9 @@ class ConceptFactorOptions:
         help="F3: the images' own concept sets, or the control 'shuffled' (the concept sets of other images).",
     )
     factor_whitening_eps: float = option(0.1, parse=float, help="Ridge of the ZCA whitening.")
+    factor_pca_components: int = option(
+        0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
+    )
     factor_start_epoch: int = option(10, parse=int, help="Pure-SimCLR epochs before F2 starts.")
     factor_warmup_epochs: int = option(10, parse=int, help="Linear warm-up of the F2 weight; 0 disables it.")
 
@@ -506,6 +509,7 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         _require(args.factor_condition_pairs >= 1, "--factor_condition_pairs must be at least 1.")
         _require(0 <= args.factor_merge_similarity <= 1, "--factor_merge_similarity must lie in [0, 1].")
         _require(args.factor_whitening_eps > 0, "--factor_whitening_eps must be positive.")
+        _require(args.factor_pca_components >= 0, "--factor_pca_components must be non-negative.")
         _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,
                  "--factor_start_epoch and --factor_warmup_epochs must be non-negative.")
     _require(0 < args.ssl_crop_min <= 1, "--ssl-crop-min must be in the interval (0, 1].")

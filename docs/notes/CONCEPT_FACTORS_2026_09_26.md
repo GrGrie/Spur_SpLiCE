@@ -473,6 +473,31 @@ against 0.04 to 0.06), so their residuals are the part a fused direction misses.
 responses, its learnability record scores responses (`scored_targets`). The tenth round runs both at
 weight 5 on MetaShift and Waterbirds.
 
+## CLIP control and dense responses (2026-10-05)
+
+Weight 5, a fifth held out, seeds 1 and 2, final probe (Spur-CIFAR10: weight 1, no hold-out):
+
+| dataset | targets | WGA | acc | unseen EV | residual EV (CLIP) |
+|---|---|---|---|---|---|
+| Waterbirds | SpLiCE factors (seeds 1 to 4) | 50.6 | 57.9 | 0.10 | 0.04 (0.15) |
+| Waterbirds | CLIP principal components | 51.3 | 59.5 | 0.11 | 0.05 (0.15) |
+| Waterbirds | dense responses | 54.2 | 65.4 | 0.38 of 0.88 | 0.03 (0.43) |
+| Waterbirds | response residuals | 44.2 | 51.4 | 0.13 of 0.88 | 0.00 (0.43) |
+| MetaShift | SpLiCE factors | 47.2 | 61.7 | 0.07 | 0.03 (0.17) |
+| MetaShift | CLIP principal components | 53.5 | 65.8 | 0.09 | 0.04 (0.17) |
+| MetaShift | dense responses | 50.7 | 64.1 | 0.34 of 0.79 | 0.04 (0.41) |
+| MetaShift | response residuals | 45.2 | 57.7 | 0.12 of 0.79 | -0.04 (0.41) |
+| Spur-CIFAR10 | SpLiCE factors (88) | 33.6 | 69.7 | | |
+| Spur-CIFAR10 | CLIP principal components (88) | 36.3 | 70.9 | | |
+
+Three readings. The concepts add nothing over CLIP: principal components of the CLIP embeddings match
+or beat the SpLiCE factors on all three datasets, so the gains come from distilling CLIP through a
+cross-fit that memorization cannot satisfy. Dense targets carry more of CLIP than sparse codes and lift
+accuracy most (Waterbirds 65 against 58). The student does not decouple: its residual score stays at
+0.03 to 0.05 for every target kind, and training on residuals fails. The eleventh round asks what the
+cross-fit adds to CLIP distillation (a trained head on the same principal components) and whether more
+of CLIP helps (128 components).
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

@@ -406,6 +406,7 @@ class ConceptFactors(TrainingMethod):
                 min_correlation=options.factor_min_correlation,
                 max_text_similarity=options.factor_max_text_similarity,
                 whitening_eps=options.factor_whitening_eps,
+                pca_components=options.factor_pca_components,
             ),
             condition_fraction=options.factor_condition_fraction,
             distill_weight=options.factor_distill_weight,
