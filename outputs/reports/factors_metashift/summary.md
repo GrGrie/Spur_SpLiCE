@@ -6,8 +6,10 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 
 | arm | seeds | val WGA (last 4) | val WGA (last) | val acc (last 4) | val group acc | factor expl. var. | held-out expl. var. |
 |---|---|---|---|---|---|---|---|
+| xfit_meaning_w5_clippca_holdout | 1,2 | 54.2 ± 5.4 | 53.5 ± 4.9 | 65.9 ± 4.5 | 76 / 54 / 57 / 76 |  | 0.52 |
 | simclr_lt | 1,2 | 51.4 ± 1.5 | 50.0 ± 2.0 | 55.3 ± 0.1 | 54 / 56 / 51 / 58 |  |  |
 | f2_w3_atyp | 1,2,3,4 | 50.5 ± 3.8 | 51.0 ± 4.1 | 58.8 ± 2.1 | 59 / 52 / 55 / 70 | 0.61 |  |
+| xfit_meaning_w5_response_holdout | 1,2 | 49.8 ± 4.7 | 50.7 ± 4.9 | 63.7 ± 0.3 | 65 / 57 / 56 / 78 |  | 0.65 |
 | cbc_plain | 1,2,3,4 | 49.7 ± 2.5 | 49.7 ± 2.4 | 62.6 ± 0.8 | 73 / 50 / 52 / 75 |  |  |
 | cbc_f2_balanced | 1,2,3,4 | 49.4 ± 3.8 | 49.3 ± 4.0 | 64.4 ± 2.2 | 74 / 52 / 55 / 78 | 0.42 |  |
 | f2_std_lt | 1,2 | 48.6 ± 5.9 | 47.9 ± 6.9 | 57.4 ± 0.2 | 60 / 48 / 52 / 69 | 0.10 |  |
@@ -30,6 +32,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | f2_start0 | 1,2 | 45.0 ± 1.7 | 45.1 ± 2.9 | 56.6 ± 0.2 | 57 / 45 / 52 / 72 | 0.12 |  |
 | simclr | 1,2,3,4 | 44.8 ± 9.3 | 44.1 ± 9.5 | 54.8 ± 4.8 | 55 / 49 / 53 / 62 |  |  |
 | xfit_balanced | 1,2,4 | 44.6 ± 5.0 | 45.4 ± 5.3 | 54.7 ± 5.9 | 56 / 46 / 50 / 68 |  | -0.03 |
+| xfit_meaning_w5_response_residual_holdout | 1,2 | 44.4 ± 4.9 | 45.1 ± 4.9 | 57.7 ± 3.4 | 62 / 55 / 45 / 69 |  | 0.44 |
 | f2_w3_balanced | 1,2,3,4 | 44.2 ± 8.1 | 44.1 ± 8.2 | 59.0 ± 2.2 | 64 / 44 / 55 / 72 | 0.39 |  |
 | xfit_norm_w3 | 1,2 | 43.9 ± 0.7 | 43.8 ± 1.0 | 57.8 ± 4.5 | 61 / 44 / 49 / 78 |  | -0.00 |
 | xfit_norm | 1,2 | 43.9 ± 3.2 | 44.4 ± 3.9 | 54.8 ± 0.9 | 54 / 44 / 52 / 67 |  | -0.01 |

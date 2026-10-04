@@ -4,6 +4,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | F1 fraction | F2 weight | targets | merge | min freq | F2 weighting | F2 cross-fit | F3 weight | F3 context | F3 presence | start | groups | factors | seeds | val WGA | val acc | factor expl. var. |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| factors_spur_cifar10 | xfit_norm_clippca | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | clip_pca | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 88 | 1,2 | 37.0 ± 0.3 | 70.9 ± 0.1 |  |
 | factors_spur_cifar10 | xfit_norm | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 88 | 1,2 | 33.6 ± 2.3 | 69.7 ± 0.2 |  |
 | factors_spur_cifar10 | f2_std | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | False | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 88 | 1,2 | 32.9 ± 1.6 | 69.5 ± 0.8 | 0.62 |
 | factors_spur_cifar10 | xfit_meaning_w3_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 24 | 1,2 | 32.1 ± 9.4 | 63.6 ± 0.9 |  |

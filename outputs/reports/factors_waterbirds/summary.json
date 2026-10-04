@@ -249,6 +249,40 @@
       }
     },
     {
+      "arm": "xfit_meaning_w5_clippca_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.06129544897546858,
+        "sd": 0.004431011624456417
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 59.372393041849136,
+        "sd": 1.5480864096127338
+      },
+      "val_group_accuracies": [
+        51.28479766845703,
+        62.660945892333984,
+        68.04511451721191,
+        68.42105484008789
+      ],
+      "val_wga_last": {
+        "mean": 51.2847974896431,
+        "sd": 5.905175978779533
+      },
+      "val_wga_last4": {
+        "mean": 51.01713128387928,
+        "sd": 5.905175451943927
+      }
+    },
+    {
       "arm": "xfit_meaning_w5_holdout",
       "dataset": "waterbirds",
       "factor_explained_variance": {
@@ -256,30 +290,100 @@
         "sd": null
       },
       "factor_heldout_explained_variance": {
-        "mean": 0.06739119447930886,
-        "sd": 0.003487237260011412
+        "mean": 0.06719222646187195,
+        "sd": 0.0034371209797041872
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "val_acc_last4": {
+        "mean": 57.95975849032402,
+        "sd": 3.9493015039402333
+      },
+      "val_group_accuracies": [
+        50.80299758911133,
+        61.90987300872803,
+        61.27819633483887,
+        65.78947162628174
+      ],
+      "val_wga_last": {
+        "mean": 50.58000981807709,
+        "sd": 8.61948688809102
+      },
+      "val_wga_last4": {
+        "mean": 50.36748740822077,
+        "sd": 8.97799794848397
+      }
+    },
+    {
+      "arm": "xfit_meaning_w5_response_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.6007506030971987,
+        "sd": 0.002663100926564804
       },
       "seeds": [
         1,
         2
       ],
       "val_acc_last4": {
-        "mean": 58.7885744869709,
-        "sd": 2.4621946555685357
+        "mean": 65.37739783525467,
+        "sd": 0.2801290286276572
       },
       "val_group_accuracies": [
-        53.42612266540527,
-        63.841203689575195,
-        56.3909797668457,
-        61.2781925201416
+        64.98929214477539,
+        66.95278930664062,
+        54.135337829589844,
+        72.18045043945312
       ],
       "val_wga_last": {
-        "mean": 52.980148792266846,
-        "sd": 3.7603249654025612
+        "mean": 54.135337471961975,
+        "sd": 3.1899558791894833
       },
       "val_wga_last4": {
-        "mean": 52.796003222465515,
-        "sd": 3.197072374560548
+        "mean": 54.41729351878166,
+        "sd": 3.8545305475228986
+      }
+    },
+    {
+      "arm": "xfit_meaning_w5_response_residual_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": 0.10544387190384213,
+        "sd": 0.0028861061032041725
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 51.5116773545742,
+        "sd": 1.2532123060335403
+      },
+      "val_group_accuracies": [
+        44.218414306640625,
+        54.29184341430664,
+        57.14285659790039,
+        60.15037536621094
+      ],
+      "val_wga_last": {
+        "mean": 44.21841502189636,
+        "sd": 6.813661835143981
+      },
+      "val_wga_last4": {
+        "mean": 43.89721602201462,
+        "sd": 6.132295862363826
       }
     },
     {
@@ -1352,6 +1456,149 @@
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/31gxfur1"
     },
     {
+      "arm": "xfit_meaning_w5_clippca_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "clip_pca",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.06442864734263813,
+      "run": "seed_01/xfit_meaning_w5_clippca_holdout/24203043",
+      "seed": 1,
+      "spurious_probe_val_wga": 87.15203404426575,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 50.70892572402954,
+          "epoch": 25,
+          "wga": 46.56652212142944
+        },
+        {
+          "acc": 52.460384368896484,
+          "epoch": 50,
+          "wga": 45.182013511657715
+        },
+        {
+          "acc": 50.291907787323,
+          "epoch": 75,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 53.96163463592529,
+          "epoch": 100,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 54.62885499000549,
+          "epoch": 125,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 53.79483103752136,
+          "epoch": 150,
+          "wga": 43.25481653213501
+        },
+        {
+          "acc": 54.7956645488739,
+          "epoch": 175,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 55.045872926712036,
+          "epoch": 200,
+          "wga": 46.68094217777252
+        },
+        {
+          "acc": 54.7122597694397,
+          "epoch": 225,
+          "wga": 45.182013511657715
+        },
+        {
+          "acc": 53.127604722976685,
+          "epoch": 250,
+          "wga": 43.68308484554291
+        },
+        {
+          "acc": 56.29691481590271,
+          "epoch": 275,
+          "wga": 52.03425884246826
+        },
+        {
+          "acc": 56.213510036468506,
+          "epoch": 300,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 57.214343547821045,
+          "epoch": 325,
+          "wga": 49.678799510002136
+        },
+        {
+          "acc": 58.04837346076965,
+          "epoch": 350,
+          "wga": 46.68094217777252
+        },
+        {
+          "acc": 57.547956705093384,
+          "epoch": 375,
+          "wga": 45.396146178245544
+        },
+        {
+          "acc": 59.46621894836426,
+          "epoch": 400,
+          "wga": 49.678799510002136
+        },
+        {
+          "acc": 58.46538543701172,
+          "epoch": 425,
+          "wga": 47.32334017753601
+        },
+        {
+          "acc": 58.04837346076965,
+          "epoch": 450,
+          "wga": 46.25267684459686
+        },
+        {
+          "acc": 58.215177059173584,
+          "epoch": 475,
+          "wga": 46.68094217777252
+        },
+        {
+          "acc": 58.38198661804199,
+          "epoch": 500,
+          "wga": 47.10920751094818
+        }
+      ],
+      "val_acc_last": 58.38198661804199,
+      "val_acc_last4": 58.27773064374924,
+      "val_group_accuracies": [
+        47.10920715332031,
+        60.94420623779297,
+        74.43609619140625,
+        72.93233489990234
+      ],
+      "val_wga_last": 47.10920751094818,
+      "val_wga_last4": 46.841541677713394,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/2hge532s"
+    },
+    {
       "arm": "xfit_meaning_w5_holdout",
       "config": {
         "batch_size": 128,
@@ -1493,6 +1740,292 @@
       "val_wga_last": 55.639100074768066,
       "val_wga_last4": 55.056674778461456,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/3b407gvm"
+    },
+    {
+      "arm": "xfit_meaning_w5_response_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.6026336998213568,
+      "run": "seed_01/xfit_meaning_w5_response_holdout/24203444",
+      "seed": 1,
+      "spurious_probe_val_wga": 91.41631126403809,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 50.62552094459534,
+          "epoch": 25,
+          "wga": 47.85407781600952
+        },
+        {
+          "acc": 52.87739634513855,
+          "epoch": 50,
+          "wga": 49.03640151023865
+        },
+        {
+          "acc": 57.46455192565918,
+          "epoch": 75,
+          "wga": 48.87218177318573
+        },
+        {
+          "acc": 57.96496868133545,
+          "epoch": 100,
+          "wga": 53.53319048881531
+        },
+        {
+          "acc": 59.29941534996033,
+          "epoch": 125,
+          "wga": 53.747326135635376
+        },
+        {
+          "acc": 59.46621894836426,
+          "epoch": 150,
+          "wga": 53.38345766067505
+        },
+        {
+          "acc": 60.21685004234314,
+          "epoch": 175,
+          "wga": 55.88865280151367
+        },
+        {
+          "acc": 62.46872544288635,
+          "epoch": 200,
+          "wga": 49.624061584472656
+        },
+        {
+          "acc": 61.21768355369568,
+          "epoch": 225,
+          "wga": 52.67665982246399
+        },
+        {
+          "acc": 66.05504751205444,
+          "epoch": 250,
+          "wga": 60.15037298202515
+        },
+        {
+          "acc": 66.63886308670044,
+          "epoch": 275,
+          "wga": 52.63158082962036
+        },
+        {
+          "acc": 64.72060084342957,
+          "epoch": 300,
+          "wga": 57.894736528396606
+        },
+        {
+          "acc": 66.05504751205444,
+          "epoch": 325,
+          "wga": 57.14285969734192
+        },
+        {
+          "acc": 65.0542140007019,
+          "epoch": 350,
+          "wga": 53.38345766067505
+        },
+        {
+          "acc": 65.6380295753479,
+          "epoch": 375,
+          "wga": 57.894736528396606
+        },
+        {
+          "acc": 65.30442237854004,
+          "epoch": 400,
+          "wga": 54.8872172832489
+        },
+        {
+          "acc": 65.6380295753479,
+          "epoch": 425,
+          "wga": 57.14285969734192
+        },
+        {
+          "acc": 65.30442237854004,
+          "epoch": 450,
+          "wga": 57.14285969734192
+        },
+        {
+          "acc": 65.7214343547821,
+          "epoch": 475,
+          "wga": 57.894736528396606
+        },
+        {
+          "acc": 65.6380295753479,
+          "epoch": 500,
+          "wga": 56.390976905822754
+        }
+      ],
+      "val_acc_last": 65.6380295753479,
+      "val_acc_last4": 65.57547897100449,
+      "val_group_accuracies": [
+        63.59742736816406,
+        67.38197326660156,
+        56.39097595214844,
+        75.93984985351562
+      ],
+      "val_wga_last": 56.390976905822754,
+      "val_wga_last4": 57.1428582072258,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/835gtyhg"
+    },
+    {
+      "arm": "xfit_meaning_w5_response_residual_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "response_residual",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.10340308670704258,
+      "run": "seed_01/xfit_meaning_w5_response_residual_holdout/24203446",
+      "seed": 1,
+      "spurious_probe_val_wga": 83.45864415168762,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 51.29274129867554,
+          "epoch": 25,
+          "wga": 49.892932176589966
+        },
+        {
+          "acc": 53.46121788024902,
+          "epoch": 50,
+          "wga": 44.36090290546417
+        },
+        {
+          "acc": 56.13011121749878,
+          "epoch": 75,
+          "wga": 36.84210479259491
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 100,
+          "wga": 45.1127827167511
+        },
+        {
+          "acc": 56.213510036468506,
+          "epoch": 125,
+          "wga": 50.375938415527344
+        },
+        {
+          "acc": 53.79483103752136,
+          "epoch": 150,
+          "wga": 46.46680951118469
+        },
+        {
+          "acc": 55.62968850135803,
+          "epoch": 175,
+          "wga": 45.1127827167511
+        },
+        {
+          "acc": 54.46205139160156,
+          "epoch": 200,
+          "wga": 51.39186382293701
+        },
+        {
+          "acc": 51.70975923538208,
+          "epoch": 225,
+          "wga": 47.32334017753601
+        },
+        {
+          "acc": 53.87822985649109,
+          "epoch": 250,
+          "wga": 50.375938415527344
+        },
+        {
+          "acc": 51.125937700271606,
+          "epoch": 275,
+          "wga": 46.46680951118469
+        },
+        {
+          "acc": 55.713093280792236,
+          "epoch": 300,
+          "wga": 50.375938415527344
+        },
+        {
+          "acc": 52.460384368896484,
+          "epoch": 325,
+          "wga": 49.624061584472656
+        },
+        {
+          "acc": 52.87739634513855,
+          "epoch": 350,
+          "wga": 48.87218177318573
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 375,
+          "wga": 49.892932176589966
+        },
+        {
+          "acc": 52.37697958946228,
+          "epoch": 400,
+          "wga": 48.60813617706299
+        },
+        {
+          "acc": 52.126771211624146,
+          "epoch": 425,
+          "wga": 47.10920751094818
+        },
+        {
+          "acc": 52.54378914833069,
+          "epoch": 450,
+          "wga": 49.03640151023865
+        },
+        {
+          "acc": 52.71059274673462,
+          "epoch": 475,
+          "wga": 47.75160551071167
+        },
+        {
+          "acc": 52.21017599105835,
+          "epoch": 500,
+          "wga": 49.03640151023865
+        }
+      ],
+      "val_acc_last": 52.21017599105835,
+      "val_acc_last4": 52.39783227443695,
+      "val_group_accuracies": [
+        49.036399841308594,
+        51.50214385986328,
+        54.8872184753418,
+        63.15789031982422
+      ],
+      "val_wga_last": 49.03640151023865,
+      "val_wga_last4": 48.23340401053429,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/47pkwvlf"
     },
     {
       "arm": "xfit_norm_holdout",
@@ -2780,6 +3313,149 @@
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/b0j5zq79"
     },
     {
+      "arm": "xfit_meaning_w5_clippca_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "clip_pca",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.05816225060829903,
+      "run": "seed_02/xfit_meaning_w5_clippca_holdout/24203044",
+      "seed": 2,
+      "spurious_probe_val_wga": 90.2255654335022,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 53.87822985649109,
+          "epoch": 25,
+          "wga": 52.14592218399048
+        },
+        {
+          "acc": 51.959967613220215,
+          "epoch": 50,
+          "wga": 42.18415319919586
+        },
+        {
+          "acc": 51.29274129867554,
+          "epoch": 75,
+          "wga": 40.899357199668884
+        },
+        {
+          "acc": 49.37447905540466,
+          "epoch": 100,
+          "wga": 36.188435554504395
+        },
+        {
+          "acc": 52.04337239265442,
+          "epoch": 125,
+          "wga": 40.471091866493225
+        },
+        {
+          "acc": 53.37781310081482,
+          "epoch": 150,
+          "wga": 43.46895217895508
+        },
+        {
+          "acc": 55.62968850135803,
+          "epoch": 175,
+          "wga": 42.39828586578369
+        },
+        {
+          "acc": 56.79733157157898,
+          "epoch": 200,
+          "wga": 49.892932176589966
+        },
+        {
+          "acc": 56.046706438064575,
+          "epoch": 225,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 56.46371841430664,
+          "epoch": 250,
+          "wga": 41.7558878660202
+        },
+        {
+          "acc": 55.29608130455017,
+          "epoch": 275,
+          "wga": 43.25481653213501
+        },
+        {
+          "acc": 50.3753125667572,
+          "epoch": 300,
+          "wga": 36.616700887680054
+        },
+        {
+          "acc": 57.13094472885132,
+          "epoch": 325,
+          "wga": 46.25267684459686
+        },
+        {
+          "acc": 59.29941534996033,
+          "epoch": 350,
+          "wga": 54.389721155166626
+        },
+        {
+          "acc": 61.134278774261475,
+          "epoch": 375,
+          "wga": 56.53104782104492
+        },
+        {
+          "acc": 59.966641664505005,
+          "epoch": 400,
+          "wga": 53.31905484199524
+        },
+        {
+          "acc": 60.300248861312866,
+          "epoch": 425,
+          "wga": 55.03212213516235
+        },
+        {
+          "acc": 60.633862018585205,
+          "epoch": 450,
+          "wga": 55.46038746833801
+        },
+        {
+          "acc": 60.38365364074707,
+          "epoch": 475,
+          "wga": 54.817986488342285
+        },
+        {
+          "acc": 60.550457239151,
+          "epoch": 500,
+          "wga": 55.46038746833801
+        }
+      ],
+      "val_acc_last": 60.550457239151,
+      "val_acc_last4": 60.467055439949036,
+      "val_group_accuracies": [
+        55.46038818359375,
+        64.377685546875,
+        61.65413284301758,
+        63.90977478027344
+      ],
+      "val_wga_last": 55.46038746833801,
+      "val_wga_last4": 55.192720890045166,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/a2gtmvsb"
+    },
+    {
       "arm": "xfit_meaning_w5_holdout",
       "config": {
         "batch_size": 128,
@@ -2921,6 +3597,292 @@
       "val_wga_last": 50.321197509765625,
       "val_wga_last4": 50.535331666469574,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/e7mal0oc"
+    },
+    {
+      "arm": "xfit_meaning_w5_response_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.5988675063730405,
+      "run": "seed_02/xfit_meaning_w5_response_holdout/24203445",
+      "seed": 2,
+      "spurious_probe_val_wga": 90.97744226455688,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.21017599105835,
+          "epoch": 25,
+          "wga": 48.82226884365082
+        },
+        {
+          "acc": 50.54211616516113,
+          "epoch": 50,
+          "wga": 38.32976520061493
+        },
+        {
+          "acc": 49.12427067756653,
+          "epoch": 75,
+          "wga": 40.685224533081055
+        },
+        {
+          "acc": 54.21184301376343,
+          "epoch": 100,
+          "wga": 49.46466684341431
+        },
+        {
+          "acc": 56.046706438064575,
+          "epoch": 125,
+          "wga": 48.60813617706299
+        },
+        {
+          "acc": 53.29441428184509,
+          "epoch": 150,
+          "wga": 41.97002053260803
+        },
+        {
+          "acc": 55.713093280792236,
+          "epoch": 175,
+          "wga": 45.396146178245544
+        },
+        {
+          "acc": 56.79733157157898,
+          "epoch": 200,
+          "wga": 51.39186382293701
+        },
+        {
+          "acc": 59.71643328666687,
+          "epoch": 225,
+          "wga": 56.10278248786926
+        },
+        {
+          "acc": 56.380319595336914,
+          "epoch": 250,
+          "wga": 50.321197509765625
+        },
+        {
+          "acc": 59.38282012939453,
+          "epoch": 275,
+          "wga": 56.437766551971436
+        },
+        {
+          "acc": 61.05087399482727,
+          "epoch": 300,
+          "wga": 53.38345766067505
+        },
+        {
+          "acc": 65.88823795318604,
+          "epoch": 325,
+          "wga": 51.12782120704651
+        },
+        {
+          "acc": 64.05338048934937,
+          "epoch": 350,
+          "wga": 55.639100074768066
+        },
+        {
+          "acc": 66.63886308670044,
+          "epoch": 375,
+          "wga": 50.375938415527344
+        },
+        {
+          "acc": 65.55463075637817,
+          "epoch": 400,
+          "wga": 51.879698038101196
+        },
+        {
+          "acc": 64.8874044418335,
+          "epoch": 425,
+          "wga": 51.879698038101196
+        },
+        {
+          "acc": 65.30442237854004,
+          "epoch": 450,
+          "wga": 51.12782120704651
+        },
+        {
+          "acc": 65.47122597694397,
+          "epoch": 475,
+          "wga": 51.879698038101196
+        },
+        {
+          "acc": 65.0542140007019,
+          "epoch": 500,
+          "wga": 51.879698038101196
+        }
+      ],
+      "val_acc_last": 65.0542140007019,
+      "val_acc_last4": 65.17931669950485,
+      "val_group_accuracies": [
+        66.38115692138672,
+        66.52360534667969,
+        51.87969970703125,
+        68.42105102539062
+      ],
+      "val_wga_last": 51.879698038101196,
+      "val_wga_last4": 51.691728830337524,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/e4beilu5"
+    },
+    {
+      "arm": "xfit_meaning_w5_response_residual_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "response_residual",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.10748465710064169,
+      "run": "seed_02/xfit_meaning_w5_response_residual_holdout/24203447",
+      "seed": 2,
+      "spurious_probe_val_wga": 85.71428656578064,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 49.04086887836456,
+          "epoch": 25,
+          "wga": 43.68308484554291
+        },
+        {
+          "acc": 49.45788085460663,
+          "epoch": 50,
+          "wga": 45.396146178245544
+        },
+        {
+          "acc": 50.959134101867676,
+          "epoch": 75,
+          "wga": 47.10920751094818
+        },
+        {
+          "acc": 49.207672476768494,
+          "epoch": 100,
+          "wga": 44.635194540023804
+        },
+        {
+          "acc": 50.04169940948486,
+          "epoch": 125,
+          "wga": 44.11135017871857
+        },
+        {
+          "acc": 47.706422209739685,
+          "epoch": 150,
+          "wga": 38.97216320037842
+        },
+        {
+          "acc": 53.79483103752136,
+          "epoch": 175,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 46.78899049758911,
+          "epoch": 200,
+          "wga": 37.25910186767578
+        },
+        {
+          "acc": 49.04086887836456,
+          "epoch": 225,
+          "wga": 45.278969407081604
+        },
+        {
+          "acc": 50.12510418891907,
+          "epoch": 250,
+          "wga": 40.685224533081055
+        },
+        {
+          "acc": 48.040032386779785,
+          "epoch": 275,
+          "wga": 35.974302887916565
+        },
+        {
+          "acc": 51.125937700271606,
+          "epoch": 300,
+          "wga": 44.3254828453064
+        },
+        {
+          "acc": 48.45704734325409,
+          "epoch": 325,
+          "wga": 39.828693866729736
+        },
+        {
+          "acc": 53.127604722976685,
+          "epoch": 350,
+          "wga": 46.89507484436035
+        },
+        {
+          "acc": 50.87572932243347,
+          "epoch": 375,
+          "wga": 41.32762253284454
+        },
+        {
+          "acc": 50.959134101867676,
+          "epoch": 400,
+          "wga": 40.042826533317566
+        },
+        {
+          "acc": 50.959134101867676,
+          "epoch": 425,
+          "wga": 40.256959199905396
+        },
+        {
+          "acc": 50.12510418891907,
+          "epoch": 450,
+          "wga": 39.18629586696625
+        },
+        {
+          "acc": 50.959134101867676,
+          "epoch": 475,
+          "wga": 39.40042853355408
+        },
+        {
+          "acc": 50.458717346191406,
+          "epoch": 500,
+          "wga": 39.40042853355408
+        }
+      ],
+      "val_acc_last": 50.458717346191406,
+      "val_acc_last4": 50.625522434711456,
+      "val_group_accuracies": [
+        39.400428771972656,
+        57.08154296875,
+        59.398494720458984,
+        57.142860412597656
+      ],
+      "val_wga_last": 39.40042853355408,
+      "val_wga_last4": 39.56102803349495,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/fynzg07y"
     },
     {
       "arm": "xfit_norm_holdout",
@@ -3922,6 +4884,149 @@
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/uwv9z0vu"
     },
     {
+      "arm": "xfit_meaning_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.07039342205019763,
+      "run": "seed_03/xfit_meaning_w5_holdout/24203051",
+      "seed": 3,
+      "spurious_probe_val_wga": 88.72180581092834,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.293580770492554,
+          "epoch": 25,
+          "wga": 49.624061584472656
+        },
+        {
+          "acc": 51.70975923538208,
+          "epoch": 50,
+          "wga": 46.46680951118469
+        },
+        {
+          "acc": 48.45704734325409,
+          "epoch": 75,
+          "wga": 41.7558878660202
+        },
+        {
+          "acc": 46.78899049758911,
+          "epoch": 100,
+          "wga": 36.402568221092224
+        },
+        {
+          "acc": 51.29274129867554,
+          "epoch": 125,
+          "wga": 40.471091866493225
+        },
+        {
+          "acc": 48.45704734325409,
+          "epoch": 150,
+          "wga": 38.54389786720276
+        },
+        {
+          "acc": 46.95579707622528,
+          "epoch": 175,
+          "wga": 35.546037554740906
+        },
+        {
+          "acc": 50.62552094459534,
+          "epoch": 200,
+          "wga": 37.68736720085144
+        },
+        {
+          "acc": 52.21017599105835,
+          "epoch": 225,
+          "wga": 42.39828586578369
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 250,
+          "wga": 43.25481653213501
+        },
+        {
+          "acc": 51.87656283378601,
+          "epoch": 275,
+          "wga": 41.7558878660202
+        },
+        {
+          "acc": 53.21100950241089,
+          "epoch": 300,
+          "wga": 40.256959199905396
+        },
+        {
+          "acc": 54.0450394153595,
+          "epoch": 325,
+          "wga": 40.256959199905396
+        },
+        {
+          "acc": 52.627187967300415,
+          "epoch": 350,
+          "wga": 37.68736720085144
+        },
+        {
+          "acc": 52.87739634513855,
+          "epoch": 375,
+          "wga": 38.54389786720276
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 400,
+          "wga": 37.47323453426361
+        },
+        {
+          "acc": 52.126771211624146,
+          "epoch": 425,
+          "wga": 37.04496920108795
+        },
+        {
+          "acc": 53.04420590400696,
+          "epoch": 450,
+          "wga": 37.68736720085144
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 475,
+          "wga": 37.68736720085144
+        },
+        {
+          "acc": 53.127604722976685,
+          "epoch": 500,
+          "wga": 38.54389786720276
+        }
+      ],
+      "val_acc_last": 53.127604722976685,
+      "val_acc_last4": 52.77314484119415,
+      "val_group_accuracies": [
+        38.54389953613281,
+        59.01287841796875,
+        68.42105102539062,
+        68.42105102539062
+      ],
+      "val_wga_last": 38.54389786720276,
+      "val_wga_last4": 37.7409003674984,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/j6cq40ba"
+    },
+    {
       "arm": "f2_shuffled",
       "config": {
         "batch_size": 128,
@@ -4633,6 +5738,149 @@
       "val_wga_last": 39.18629586696625,
       "val_wga_last4": 39.34689536690712,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/pc13qcsh"
+    },
+    {
+      "arm": "xfit_meaning_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 70,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 5.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.05,
+        "factor_start_epoch": 10,
+        "factor_targets": "standardized",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": 0.06359309483867244,
+      "run": "seed_04/xfit_meaning_w5_holdout/24203052",
+      "seed": 4,
+      "spurious_probe_val_wga": 88.19742202758789,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.21017599105835,
+          "epoch": 25,
+          "wga": 49.14163053035736
+        },
+        {
+          "acc": 55.3794801235199,
+          "epoch": 50,
+          "wga": 46.61654233932495
+        },
+        {
+          "acc": 50.20850896835327,
+          "epoch": 75,
+          "wga": 46.25267684459686
+        },
+        {
+          "acc": 49.2910772562027,
+          "epoch": 100,
+          "wga": 43.04068386554718
+        },
+        {
+          "acc": 49.87489581108093,
+          "epoch": 125,
+          "wga": 40.899357199668884
+        },
+        {
+          "acc": 48.206838965415955,
+          "epoch": 150,
+          "wga": 36.402568221092224
+        },
+        {
+          "acc": 53.79483103752136,
+          "epoch": 175,
+          "wga": 45.824411511421204
+        },
+        {
+          "acc": 51.20934247970581,
+          "epoch": 200,
+          "wga": 42.82655119895935
+        },
+        {
+          "acc": 52.293580770492554,
+          "epoch": 225,
+          "wga": 41.54175519943237
+        },
+        {
+          "acc": 53.96163463592529,
+          "epoch": 250,
+          "wga": 46.03854417800903
+        },
+        {
+          "acc": 54.46205139160156,
+          "epoch": 275,
+          "wga": 49.25053417682648
+        },
+        {
+          "acc": 57.96496868133545,
+          "epoch": 300,
+          "wga": 56.008583307266235
+        },
+        {
+          "acc": 58.71559381484985,
+          "epoch": 325,
+          "wga": 54.506438970565796
+        },
+        {
+          "acc": 57.214343547821045,
+          "epoch": 350,
+          "wga": 51.39186382293701
+        },
+        {
+          "acc": 60.21685004234314,
+          "epoch": 375,
+          "wga": 55.246251821517944
+        },
+        {
+          "acc": 60.800665616989136,
+          "epoch": 400,
+          "wga": 57.60171413421631
+        },
+        {
+          "acc": 61.21768355369568,
+          "epoch": 425,
+          "wga": 57.8158438205719
+        },
+        {
+          "acc": 62.05170750617981,
+          "epoch": 450,
+          "wga": 58.67237448692322
+        },
+        {
+          "acc": 61.38448715209961,
+          "epoch": 475,
+          "wga": 58.24410915374756
+        },
+        {
+          "acc": 61.301082372665405,
+          "epoch": 500,
+          "wga": 57.8158438205719
+        }
+      ],
+      "val_acc_last": 61.301082372665405,
+      "val_acc_last4": 61.488740146160126,
+      "val_group_accuracies": [
+        57.81584548950195,
+        60.94420623779297,
+        63.90977478027344,
+        72.18045043945312
+      ],
+      "val_wga_last": 57.8158438205719,
+      "val_wga_last4": 58.137042820453644,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/982by6sf"
     }
   ],
   "study": "factors_waterbirds"
