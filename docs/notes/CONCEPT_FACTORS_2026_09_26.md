@@ -443,6 +443,24 @@ structure: a squared error on standardized targets is dominated by the shared va
 factors. The eighth round trains on the residuals themselves (`--factor_targets residual`), the part
 of each factor a fused direction cannot predict.
 
+## Residual targets fail; what the Waterbirds gain is (2026-10-04)
+
+Residual targets, seeds 1 and 2, a fifth held out: the student cannot predict them. The batch score on
+Waterbirds stays at 0.00 for 500 epochs, the unseen residual score at 0.03 on both datasets (CLIP:
+0.15 to 0.17), and WGA drops on Waterbirds to $41.7\pm0.9$, the level of the shuffled control. CLIP
+itself explains a sixth of the residuals: the SpLiCE factors of these datasets carry little
+factor-specific signal beyond what they share, so decoupling them through their residuals has little
+to work with.
+
+The weight grid on Waterbirds, seeds 1 and 2: weight 3 gives 45.7 WGA and 54.0 accuracy, weight 5 52.8
+and 58.8, weight 10 55.3 and 59.2. MetaShift stays at 47 to 48 WGA and 60 to 62 accuracy for every
+weight. The Waterbirds gain lifts the landbird groups most (weight 5: 57 / 66 / 56 / 62 against
+47 / 54 / 52 / 64 for SimCLR) while the residual score stays at 0.04: the student gains a bird feature
+that SimCLR from scratch lacks (52 percent accuracy), the absent core feature of deep feature
+reweighting, and keeps it fused with the background. The ninth round tests whether the concepts matter
+for this gain: the same cross-fit distils as many principal components of the CLIP image embeddings
+as there are factors (`--factor_targets clip_pca`).
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

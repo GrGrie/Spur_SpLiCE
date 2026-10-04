@@ -32,7 +32,7 @@ import torch.nn.functional as F
 from cospro.tracking.artifacts import scratch_root, shared
 
 CONCEPT_FACTORS_ARTIFACT = "cospro_concept_factors_v2"
-TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled")
+TARGET_KINDS = ("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled", "clip_pca")
 #: Seed of the fixed image permutation behind the ``shuffled`` control targets.
 SHUFFLE_SEED = 0
 
@@ -399,6 +399,13 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
         })
     shuffle = torch.randperm(activations.shape[0], generator=torch.Generator().manual_seed(SHUFFLE_SEED))
     residuals = partial_residuals(standardized(activations))
+    # Control: as many principal components of the CLIP image embeddings as there are factors. It
+    # distils the same frozen model at the same width with no concept, vocabulary or grouping.
+    clip = F.normalize(torch.as_tensor(cache["clip_embeddings"]).float(), dim=1)
+    clip = clip - clip.mean(dim=0)
+    left, values, _ = torch.linalg.svd(clip, full_matrices=False)
+    width = min(activations.shape[1], values.shape[0])
+    clip_components = standardized(left[:, :width] * values[:width])
     return {
         "artifact": CONCEPT_FACTORS_ARTIFACT,
         "config": asdict(config),
@@ -420,6 +427,7 @@ def build_concept_factors(cache: dict, concept_groups: dict, config: FactorConfi
             # the factors it co-occurs with, which a fused direction cannot predict.
             "residual": residuals,
             "residual_shuffled": residuals[shuffle],
+            "clip_pca": clip_components,
         },
     }
 

@@ -280,10 +280,12 @@ class ConceptFactorOptions:
         0.0, parse=float, help="F2: weight of the linear factor-distillation loss; 0 disables F2.",
     )
     factor_targets: str = option(
-        "whitened", choices=("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled"),
+        "whitened", choices=("whitened", "standardized", "presence", "shuffled", "residual", "residual_shuffled",
+                             "clip_pca"),
         help="F2 targets: ZCA-whitened factors, standardized factors, standardized presence indicators, the "
         "control 'shuffled' (standardized targets of other images), 'residual' (each factor minus its "
-        "regression on the others) or its control 'residual_shuffled'.",
+        "regression on the others), its control 'residual_shuffled' or the control 'clip_pca' (as many "
+        "principal components of the CLIP image embeddings as there are factors).",
     )
     factor_sample_weighting: str = option(
         "none", choices=("none", "atypicality", "balanced"),

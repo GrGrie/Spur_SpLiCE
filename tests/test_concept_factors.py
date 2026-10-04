@@ -380,6 +380,14 @@ class FactorLearnabilityTests(unittest.TestCase):
         self.assertTrue(torch.allclose(factors["targets"]["residual_shuffled"].sort(dim=0).values,
                                        factors["targets"]["residual"].sort(dim=0).values))
 
+    def test_the_clip_control_matches_the_factor_width_with_uncorrelated_components(self):
+        cache, groups = synthetic_inputs()
+        factors = build_concept_factors(cache, groups, FactorConfig())
+        components = factors["targets"]["clip_pca"].double()
+        self.assertEqual(components.shape, factors["targets"]["standardized"].shape)
+        correlation = components.T @ components / len(components)
+        self.assertTrue(torch.allclose(correlation, torch.eye(len(correlation), dtype=correlation.dtype), atol=1e-4))
+
     def test_a_fused_direction_fails_the_residual_and_the_minority_groups(self):
         # Cat and couch co-occur in 90 percent of the images; group = 2 * cat + couch.
         generator = torch.Generator().manual_seed(3)
