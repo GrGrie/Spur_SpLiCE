@@ -544,6 +544,23 @@ minority groups; whether it comes from the concepts or from dense CLIP informati
 `--targets pca` builds as many principal components of the dense patch embeddings as there are factors
 (`spatial_pca_w5_holdout`).
 
+## Concept maps against dense CLIP components (2026-10-06)
+
+Same seeds 1 to 4 and hold-out, mean of the last four probes:
+
+| dataset | maps | WGA | acc | group acc |
+|---|---|---|---|---|
+| MetaShift | concepts | 53.0 +- 5.8 | 62.2 | 65 / 53 / 58 / 73 |
+| MetaShift | principal components | 44.4 +- 7.4 | 56.3 | 56 / 45 / 56 / 69 |
+| Waterbirds | concepts | 53.0 +- 3.0 | 60.1 | 55 / 64 / 59 / 68 |
+| Waterbirds | principal components | 53.6 +- 1.9 | 58.1 | 56 / 58 / 61 / 66 |
+
+On MetaShift the concept maps win on every seed (final probe 61.1 against 44.4, 51.4 against 48.6, 52.8
+against 50.0, 47.2 against 34.7) and the components stay at the SimCLR level; cats outdoors reach 53
+against 45. On Waterbirds the two tie. Birds against land and water backgrounds are among the strongest
+directions of CLIP's patch embeddings, so its leading components carry them; cats against dogs and
+couches against lawns are not, and only the concept directions single them out.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
