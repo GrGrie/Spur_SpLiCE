@@ -74,6 +74,9 @@
 # the control (spatial_w5_shuffled_holdout). MetaShift, Waterbirds and CelebA; the maps are built when missing.
 # Thirteenth round: spatial_w5 without the hold-out (headline), weights 2 and 10, and the control
 # spatial_pca_w5_holdout (principal components of the dense CLIP patch embeddings in place of concept maps).
+# Fourteenth round (MetaShift): spatial_w5_noanimals_holdout and spatial_w5_noscenes_holdout leave the animal or
+# the scene concepts out of the maps. Concept maps are built on the main partition (MAPS_PARTITION): a busy
+# gpuidle GPU failed a map job and left its training jobs waiting for good.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -141,6 +144,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
   SPATIAL_GROUPS="${MEANING_GROUPS}"
   SPATIAL_CACHE="${LAION_CACHE}"
   spatial_args
+  # Concept ablations of the spatial maps: the animals themselves, or the scenes around them.
+  ANIMAL_WORDS="cat,cats,kitten,kittens,dog,dogs,pup,pups,puppy,puppies,canine,tabby,spaniel,dachshund,husky,collie,chihuahua,labrador,pointer,boxer,retriever,terrier,breeds,pet,pets,paw,paws,fluffy,tuxedo"
+  SCENE_WORDS="couch,lawn,beds,bed,windows,window,desks,desk,benches,bench,pasture,farm,field,snowy,snow,seaside,beaches,sink,bookshelf,cushions,blankets,blanket,bedside,workspace,kennel,windshield,television,tv"
   XFIT_MEANING=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_cross_fit true --factor_ridge 1.0 "${MEANING[@]}")
   ARMS=(
     [f2_meaning]="${F2_MEANING[*]} --factor_targets standardized"
@@ -158,6 +164,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w3_residual_holdout]="${XFIT_MEANING[*]} --factor_targets residual --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w3_residual_shuffled_holdout]="${XFIT_MEANING[*]} --factor_targets residual_shuffled --factor_distill_weight 3.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_noanimals_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_drop ${ANIMAL_WORDS} ${HOLDOUT[*]}"
+    [spatial_w5_noscenes_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_drop ${SCENE_WORDS} ${HOLDOUT[*]}"
     [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
     [spatial_w5]="${SPATIAL[*]} --factor_spatial_weight 5.0"
@@ -330,12 +338,12 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   return 1
 }
 if [[ -n "${SPATIAL_MAPS:-}" ]] && needs_maps "spatial_w*" "${SPATIAL_MAPS}"; then
-  MAPS_JOB=$(sbatch --parsable scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
+  MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
 fi
 if [[ -n "${SPATIAL_PCA_MAPS:-}" ]] && needs_maps "spatial_pca*" "${SPATIAL_PCA_MAPS}"; then
-  PCA_MAPS_JOB=$(sbatch --parsable scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02 --targets pca)
+  PCA_MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02 --targets pca)
   PCA_MAPS_DEPENDENCY=(--dependency="afterok:${PCA_MAPS_JOB%%;*}")
   echo "pca_maps_job=${PCA_MAPS_JOB%%;*}"
 fi

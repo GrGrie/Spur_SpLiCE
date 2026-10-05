@@ -561,6 +561,15 @@ against 45. On Waterbirds the two tie. Birds against land and water backgrounds 
 directions of CLIP's patch embeddings, so its leading components carry them; cats against dogs and
 couches against lawns are not, and only the concept directions single them out.
 
+## Concept ablation of the maps (2026-10-06)
+
+`--factor_spatial_drop` leaves out every factor whose name lists one of the given concept words. On
+MetaShift `spatial_w5_noanimals_holdout` drops the 21 animal factors (cat, dog, the breeds, pet, paws,
+fur) and `spatial_w5_noscenes_holdout` the 20 scene factors (couch, lawn, bed, window, desk, bench,
+pasture, snow, seaside and others). Whichever set the cat-outdoor gain depends on is the concept that
+makes it. The Spur-CIFAR10 map job failed on a gpuidle node whose GPU was busy; map jobs now go to the
+main partition whatever `SBATCH_PARTITION` says.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

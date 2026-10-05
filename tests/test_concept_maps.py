@@ -13,7 +13,7 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 
 from cospro.data.transforms import RecordedTwoCropTransform
-from cospro.methods.concept_factors import load_concept_maps
+from cospro.methods.concept_factors import dropped_factors, load_concept_maps
 from cospro.pipeline.concept_maps import assemble_windows, spatial_cross_fit_loss, warp_maps, window_offsets
 
 
@@ -120,6 +120,16 @@ class LoadMapsTests(unittest.TestCase):
             self.assertTrue(torch.allclose(loaded[0].float(), standardized[2], atol=1e-2))
             with self.assertRaises(ValueError):
                 load_concept_maps(str(path), ["a", "c"], "waterbirds", [7, 5], shuffled=False)
+
+    def test_dropped_concepts_leave_the_maps(self):
+        names = ["kitty | kitten | cat", "couch", "canine | dog", "pups | pup | puppies (+2)", "catalog"]
+        self.assertEqual(dropped_factors(names, "cat, puppies"), [0, 3])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "maps.pt"
+            torch.save({"sample_ids": ["waterbirds:1", "waterbirds:2"], "factor_names": names,
+                        "maps": torch.rand(2, 5, 14, 14).half()}, path)
+            loaded = load_concept_maps(str(path), names, "waterbirds", [1, 2], shuffled=False, drop="couch")
+            self.assertEqual(loaded.shape[1], 4)
 
 
 if __name__ == "__main__":

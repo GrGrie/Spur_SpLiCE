@@ -333,6 +333,11 @@ class ConceptFactorOptions:
         "real", choices=("real", "shuffled"),
         help="Concept maps of the spatial loss: each image's own, or the control 'shuffled' (another image's).",
     )
+    factor_spatial_drop: str = option(
+        "", parse=str,
+        help="Comma-separated concept words; the spatial loss leaves out every factor that names one of them "
+        "(ablation of which concepts the maps carry).",
+    )
     factor_pca_components: int = option(
         0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
     )

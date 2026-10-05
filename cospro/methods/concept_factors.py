@@ -409,14 +409,35 @@ class SpatialConceptDistillation:
         return self.scheduled_weight * loss
 
 
+def dropped_factors(names: list[str], words: str) -> list[int]:
+    """Positions of the factors whose name lists one of the comma-separated ``words``."""
+
+    wanted = {word.strip().lower() for word in words.split(",") if word.strip()}
+    positions = []
+    for position, name in enumerate(names):
+        concepts = {part.split("(+")[0].strip().lower() for part in name.split("|")}
+        if concepts & wanted:
+            positions.append(position)
+    return positions
+
+
 def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_indices,
-                      shuffled: bool) -> torch.Tensor:
-    """Concept maps of the training subset in its order, each factor standardized over images and locations."""
+                      shuffled: bool, drop: str = "") -> torch.Tensor:
+    """Concept maps of the training subset in its order, each factor standardized over images and locations.
+
+    ``drop`` names concept words whose factors leave the maps, for ablations.
+    """
 
     stored = torch.load(path, map_location="cpu", weights_only=False)
     if stored.get("kind", "concepts") == "concepts" and list(stored["factor_names"]) != list(factor_names):
         raise ValueError(f"Concept maps {path} were built for other factors than this run's.")
     maps = stored["maps"].float()
+    if drop:
+        removed = dropped_factors(list(stored["factor_names"]), drop)
+        kept = [position for position in range(maps.shape[1]) if position not in removed]
+        print(f"[INFO] Spatial maps without {len(removed)} factors: "
+              f"{[stored['factor_names'][position] for position in removed]}", flush=True)
+        maps = maps[:, kept]
     mean = maps.mean(dim=(0, 2, 3), keepdim=True)
     std = maps.std(dim=(0, 2, 3), keepdim=True).clamp_min(1e-6)
     maps = (maps - mean) / std
@@ -452,6 +473,7 @@ class ConceptFactors(TrainingMethod):
         spatial_weight: float = 0.0,
         concept_maps: str = "",
         spatial_maps: str = "real",
+        spatial_drop: str = "",
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -472,7 +494,8 @@ class ConceptFactors(TrainingMethod):
         self.cross_fit = bool(cross_fit)
         self.ridge = float(ridge)
         self.holdout_fraction = float(holdout_fraction)
-        self.spatial_settings = {"weight": float(spatial_weight), "maps": concept_maps, "kind": spatial_maps}
+        self.spatial_settings = {"weight": float(spatial_weight), "maps": concept_maps, "kind": spatial_maps,
+                                 "drop": spatial_drop}
         self.spatial: SpatialConceptDistillation | None = None
         self.block_settings = {
             "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
@@ -519,6 +542,7 @@ class ConceptFactors(TrainingMethod):
             spatial_weight=options.factor_spatial_weight,
             concept_maps=options.factor_concept_maps,
             spatial_maps=options.factor_spatial_maps,
+            spatial_drop=options.factor_spatial_drop,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -587,7 +611,7 @@ class ConceptFactors(TrainingMethod):
         if spatial["weight"] > 0:
             names = [factor_name(factor) for factor in factors["factors"]]
             maps = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
-                                     shuffled=spatial["kind"] == "shuffled")
+                                     shuffled=spatial["kind"] == "shuffled", drop=spatial["drop"])
             self.spatial = SpatialConceptDistillation(
                 maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
             )
