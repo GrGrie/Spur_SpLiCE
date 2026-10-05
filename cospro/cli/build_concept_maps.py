@@ -37,8 +37,27 @@ CLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
 CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
 
 
-def maps_name(concept_groups: Path, min_frequency: float, merge: float, attention: str, resolution: int) -> str:
-    return f"{Path(concept_groups).parent.name}_min{min_frequency:g}_merge{merge:g}_{attention}{resolution}"
+def maps_name(concept_groups: Path, min_frequency: float, merge: float, attention: str, resolution: int,
+              targets: str = "concepts") -> str:
+    name = f"{Path(concept_groups).parent.name}_min{min_frequency:g}_merge{merge:g}_{attention}{resolution}"
+    return name if targets == "concepts" else f"{name}_{targets}"
+
+
+def principal_maps(dense: torch.Tensor, width: int, sample_rows: int = 200_000, seed: int = 0) -> torch.Tensor:
+    """The ``width`` leading principal components of every patch embedding, [images, width, S, S]."""
+
+    images, channels, side, _ = dense.shape
+    rows = dense.permute(0, 2, 3, 1).reshape(-1, channels)
+    generator = torch.Generator().manual_seed(seed)
+    sample = rows[torch.randperm(len(rows), generator=generator)[:sample_rows]].float()
+    mean = sample.mean(dim=0)
+    _, _, basis = torch.linalg.svd(sample - mean, full_matrices=False)
+    components = basis[:width].T
+    output = torch.empty(images, width, side, side, dtype=torch.float16)
+    for start in range(0, images, 512):
+        block = dense[start:start + 512].float().permute(0, 2, 3, 1)
+        output[start:start + 512] = ((block - mean) @ components).permute(0, 3, 1, 2).half()
+    return output
 
 
 class _Images(Dataset):
@@ -70,6 +89,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--resolution", type=int, default=448)
     parser.add_argument("--stride", type=int, default=112)
     parser.add_argument("--temperature", type=float, default=0.01, help="Softmax temperature over the factors.")
+    parser.add_argument("--targets", choices=("concepts", "pca"), default="concepts",
+                        help="concepts: softmax over the factors; pca: the control, as many principal components of "
+                        "the patch embeddings as there are factors, with no concept.")
     parser.add_argument("--feature-root", type=Path, default=None,
                         help="Root of caches and maps; defaults to <scratch>/features/Spur_SpLiCE.")
     parser.add_argument("--batch-size", type=int, default=32)
@@ -84,7 +106,7 @@ def main(argv: list[str] | None = None) -> Path:
     args.cache_device = args.device
     feature_root = args.feature_root or scratch_root() / "features" / "Spur_SpLiCE"
     name = maps_name(args.concept_groups, args.factor_min_frequency, args.merge_similarity, args.attention,
-                     args.resolution)
+                     args.resolution, args.targets)
     output = args.output or feature_root / args.dataset / "concept_maps" / name / "concept_maps.pt"
 
     factors, _, cache_path = load_concept_factors(
@@ -112,7 +134,8 @@ def main(argv: list[str] | None = None) -> Path:
     loader = DataLoader(_Images(adapter, indices, args.resolution), batch_size=args.batch_size,
                         num_workers=args.num_workers, shuffle=False)
     offsets = window_offsets(args.resolution, args.stride)
-    maps = torch.zeros(len(indices), len(directions), MAP_SIZE, MAP_SIZE, dtype=torch.float16)
+    channels = len(directions) if args.targets == "concepts" else directions.shape[1]
+    maps = torch.zeros(len(indices), channels, MAP_SIZE, MAP_SIZE, dtype=torch.float16)
     side = WINDOW // 32
     start, done = time.time(), 0
     for images in loader:
@@ -121,18 +144,27 @@ def main(argv: list[str] | None = None) -> Path:
                                for top in offsets for left in offsets], dim=1)
         count = windows.shape[1]
         patches = patch_embeddings(model, windows.flatten(0, 1), attention=args.attention)
-        scores = (patches @ directions.T).view(len(images), count, side, side, -1).permute(0, 1, 4, 2, 3)
-        assembled = assemble_windows(scores, args.resolution, args.stride)
-        maps[done:done + len(images)] = (assembled / args.temperature).softmax(dim=1).cpu().half()
+        if args.targets == "concepts":
+            scores = (patches @ directions.T).view(len(images), count, side, side, -1).permute(0, 1, 4, 2, 3)
+            assembled = assemble_windows(scores, args.resolution, args.stride)
+            maps[done:done + len(images)] = (assembled / args.temperature).softmax(dim=1).cpu().half()
+        else:
+            dense = patches.view(len(images), count, side, side, -1).permute(0, 1, 4, 2, 3)
+            maps[done:done + len(images)] = assemble_windows(dense, args.resolution, args.stride).cpu().half()
         done += len(images)
         if done % (args.batch_size * 20) < args.batch_size:
             print(f"[INFO] {done}/{len(indices)} images, {time.time() - start:.0f} s", flush=True)
 
     names = [factor_name(factor) for factor in factors["factors"]]
+    if args.targets == "pca":
+        # Control: the same width of dense CLIP information without any concept.
+        maps = principal_maps(maps, len(names))
+        names = [f"principal component {index + 1}" for index in range(len(names))]
     config = {key: getattr(args, key) for key in ("factor_min_frequency", "merge_similarity", "attention",
-                                                   "resolution", "stride", "temperature")}
+                                                   "resolution", "stride", "temperature", "targets")}
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"sample_ids": sample_ids, "factor_names": names, "maps": maps, "config": config,
+                "kind": args.targets,
                 "concept_groups": str(args.concept_groups), "splice_cache": str(cache_path)}, output)
     winners = maps.float().argmax(dim=1)
     summary = {

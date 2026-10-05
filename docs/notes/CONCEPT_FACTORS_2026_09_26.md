@@ -520,6 +520,30 @@ fusion happens at global average pooling. The twelfth round supervises the conce
 The spatial held-out score starts near 0.4 at epoch 1, since maps are smooth and partly predictable from
 position and low-level statistics; only its rise above the shuffled control counts.
 
+## Spatial results and the dense CLIP control (2026-10-05)
+
+Seeds 1 to 4, a fifth held out of the concept loss, mean of the last four probes:
+
+| dataset | arm | WGA | acc | group acc | spatial EV at epoch 500 | unseen EV |
+|---|---|---|---|---|---|---|
+| MetaShift | SimCLR | 44.8 +- 9.3 | 54.8 | 55 / 49 / 53 / 62 | | |
+| MetaShift | spatial, shuffled maps | 45.3 +- 3.4 | 55.6 | 61 / 46 / 48 / 66 | 0.39 to 0.41 | 0.13 |
+| MetaShift | spatial | 53.0 +- 5.8 | 62.2 | 65 / 53 / 58 / 73 | 0.46 to 0.48 | 0.22 |
+| Waterbirds | SimCLR | 45.8 +- 1.7 | 52.3 | 47 / 54 / 52 / 64 | | |
+| Waterbirds | spatial, shuffled maps | 46.7 +- 2.7 | 52.6 | 48 / 56 / 54 / 57 | 0.39 to 0.40 | 0.17 |
+| Waterbirds | spatial | 53.0 +- 3.0 | 60.1 | 55 / 64 / 59 / 68 | 0.44 to 0.45 | 0.25 |
+
+The spatial loss is the first method that beats its own control on both datasets over four seeds, by
+7.7 and 6.3 points of WGA, and it lifts the minority groups (MetaShift cat outdoors 53 against 46 and
+49, dog indoors 58 against 48 and 53; Waterbirds landbird on water 64 against 56 and 54, waterbird on
+land 59 against 54 and 52). The student generalizes its concepts (seen and unseen scores agree, 0.23 and
+0.22 on MetaShift) where image-level distillation memorized. The image-level decoupling scores move
+little: the residual score stays at 0.00 against 0.15 for CLIP, and the MetaShift cat factor still scores
+0.47 on unseen cats indoors and 0.06 outdoors (shuffled maps: 0.24 and 0.08). The gain shows on the
+minority groups; whether it comes from the concepts or from dense CLIP information is the next control:
+`--targets pca` builds as many principal components of the dense patch embeddings as there are factors
+(`spatial_pca_w5_holdout`).
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

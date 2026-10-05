@@ -72,6 +72,8 @@
 # Twelfth round, spatial concept distillation: CLIP concept maps (14 x 14, 2-percent factor band) warped onto
 # each view and regressed per location on the last feature map (spatial_w5_holdout), with shuffled maps as
 # the control (spatial_w5_shuffled_holdout). MetaShift, Waterbirds and CelebA; the maps are built when missing.
+# Thirteenth round: spatial_w5 without the hold-out (headline), weights 2 and 10, and the control
+# spatial_pca_w5_holdout (principal components of the dense CLIP patch embeddings in place of concept maps).
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -108,10 +110,14 @@ MEANING_OI_CACHE="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/sp
 # Spatial concept loss: concept maps from frozen CLIP at the 2-percent factor band, built when missing.
 # SPATIAL_GROUPS and SPATIAL_CACHE are set per dataset below.
 spatial_args() {
-  local maps="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/concept_maps/$(basename "$(dirname "${SPATIAL_GROUPS}")")_min0.02_merge0_qq448/concept_maps.pt"
-  SPATIAL_MAPS="${maps}"
-  SPATIAL=(--splice_mode concept_factors --factor_concept_groups "${SPATIAL_GROUPS}" --factor_splice_cache "${SPATIAL_CACHE}"
-    --factor_min_frequency 0.02 --factor_merge_similarity 0 --factor_concept_maps "${maps}" --factor_targets response)
+  local root="${SPUR_SPLICE_SCRATCH_ROOT}/features/Spur_SpLiCE/${DATASET}/concept_maps/$(basename "$(dirname "${SPATIAL_GROUPS}")")_min0.02_merge0_qq448"
+  SPATIAL_MAPS="${root}/concept_maps.pt"
+  # Control: as many principal components of the dense CLIP patch embeddings, with no concept.
+  SPATIAL_PCA_MAPS="${root}_pca/concept_maps.pt"
+  local common=(--splice_mode concept_factors --factor_concept_groups "${SPATIAL_GROUPS}" --factor_splice_cache "${SPATIAL_CACHE}"
+    --factor_min_frequency 0.02 --factor_merge_similarity 0 --factor_targets response)
+  SPATIAL=("${common[@]}" --factor_concept_maps "${SPATIAL_MAPS}")
+  SPATIAL_PCA=("${common[@]}" --factor_concept_maps "${SPATIAL_PCA_MAPS}")
 }
 XFIT_MEANING_OI=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
   --factor_concept_groups "${MEANING_OI_GROUPS}" --factor_splice_cache "${MEANING_OI_CACHE}"
@@ -154,6 +160,10 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [spatial_w5]="${SPATIAL[*]} --factor_spatial_weight 5.0"
+    [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
+    [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
+    [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -189,6 +199,9 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_norm_balanced]="${XFIT_NORM[*]} --factor_targets standardized --factor_sample_weighting balanced"
   )
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
+  SPATIAL_GROUPS="${MEANING_OI_GROUPS}"
+  SPATIAL_CACHE="${MEANING_OI_CACHE}"
+  spatial_args
   ARMS=(
     [xfit_meaning_w10]="${XFIT_MEANING_OI[*]} --factor_targets standardized"
     [xfit_meaning_w10_shuffled]="${XFIT_MEANING_OI[*]} --factor_targets shuffled"
@@ -212,6 +225,12 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [xfit_norm_holdout]="${XFIT_NORM[*]} --factor_targets standardized ${HOLDOUT[*]}"
     [xfit_norm_shuffled_holdout]="${XFIT_NORM[*]} --factor_targets shuffled ${HOLDOUT[*]}"
     [xfit_norm_clippca]="${XFIT_NORM[*]} --factor_targets clip_pca"
+    [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [spatial_w5]="${SPATIAL[*]} --factor_spatial_weight 5.0"
+    [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
+    [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
+    [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
   )
 elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   if [[ "${DATASET}" == "celeba" ]]; then
@@ -241,6 +260,10 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [xfit_meaning_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [spatial_w5_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [spatial_w5_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [spatial_w5]="${SPATIAL[*]} --factor_spatial_weight 5.0"
+    [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
+    [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
+    [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -298,10 +321,23 @@ fi
 
 # Concept maps of the spatial arms; build them first when missing.
 MAPS_DEPENDENCY=()
-if [[ " ${SELECTED[*]} " == *spatial* && -n "${SPATIAL_MAPS:-}" && ! -f "${SPATIAL_MAPS}" ]]; then
+PCA_MAPS_DEPENDENCY=()
+needs_maps() {  # needs_maps <pattern> <maps file>
+  local arm
+  for arm in "${SELECTED[@]}"; do
+    if [[ "${arm}" == $1 && ! -f "$2" ]]; then return 0; fi
+  done
+  return 1
+}
+if [[ -n "${SPATIAL_MAPS:-}" ]] && needs_maps "spatial_w*" "${SPATIAL_MAPS}"; then
   MAPS_JOB=$(sbatch --parsable scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
+fi
+if [[ -n "${SPATIAL_PCA_MAPS:-}" ]] && needs_maps "spatial_pca*" "${SPATIAL_PCA_MAPS}"; then
+  PCA_MAPS_JOB=$(sbatch --parsable scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02 --targets pca)
+  PCA_MAPS_DEPENDENCY=(--dependency="afterok:${PCA_MAPS_JOB%%;*}")
+  echo "pca_maps_job=${PCA_MAPS_JOB%%;*}"
 fi
 
 # At most MAX_PARALLEL training jobs of this submission run at once: job i waits for job i - MAX_PARALLEL
@@ -311,7 +347,9 @@ SUBMITTED=()
 for arm in "${SELECTED[@]}"; do
   for seed in "${SEEDS[@]}"; do
     conditions=()
-    if [[ "${arm}" == spatial* && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+      conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
+    elif [[ "${arm}" == spatial_w* && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")

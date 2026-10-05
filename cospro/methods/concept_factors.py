@@ -414,7 +414,7 @@ def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_i
     """Concept maps of the training subset in its order, each factor standardized over images and locations."""
 
     stored = torch.load(path, map_location="cpu", weights_only=False)
-    if list(stored["factor_names"]) != list(factor_names):
+    if stored.get("kind", "concepts") == "concepts" and list(stored["factor_names"]) != list(factor_names):
         raise ValueError(f"Concept maps {path} were built for other factors than this run's.")
     maps = stored["maps"].float()
     mean = maps.mean(dim=(0, 2, 3), keepdim=True)

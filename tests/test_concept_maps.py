@@ -35,6 +35,19 @@ class AssemblyTests(unittest.TestCase):
             window_offsets(448, 100)
 
 
+class PrincipalMapTests(unittest.TestCase):
+    def test_the_control_keeps_the_leading_directions_of_the_patch_embeddings(self):
+        from cospro.cli.build_concept_maps import principal_maps
+
+        generator = torch.Generator().manual_seed(4)
+        signal = torch.randn(20, 1, 14, 14, generator=generator)
+        dense = torch.cat([3 * signal, 0.1 * torch.randn(20, 7, 14, 14, generator=generator)], dim=1).half()
+        maps = principal_maps(dense, 2)
+        self.assertEqual(tuple(maps.shape), (20, 2, 14, 14))
+        correlation = torch.corrcoef(torch.stack([maps[:, 0].flatten().float(), signal.flatten()]))[0, 1]
+        self.assertGreater(abs(float(correlation)), 0.99)
+
+
 class WarpTests(unittest.TestCase):
     def setUp(self):
         self.maps = torch.linspace(0, 1, 14).repeat(14, 1)[None, None].repeat(2, 1, 1, 1)  # rises left to right
