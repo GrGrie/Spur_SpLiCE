@@ -570,6 +570,24 @@ pasture, snow, seaside and others). Whichever set the cat-outdoor gain depends o
 makes it. The Spur-CIFAR10 map job failed on a gpuidle node whose GPU was busy; map jobs now go to the
 main partition whatever `SBATCH_PARTITION` says.
 
+## Which concepts carry the MetaShift gain (2026-10-06)
+
+MetaShift, seeds 1 and 2 for the ablations, a fifth held out, mean of the last four probes:
+
+| maps | WGA | acc | cat-indoor / cat-outdoor / dog-indoor / dog-outdoor |
+|---|---|---|---|
+| all 130 concepts (seeds 1 to 4) | 53.0 +- 5.8 | 62.2 | 65 / 53 / 58 / 73 |
+| without the 20 scene concepts | 50.0 +- 2.5 | 61.9 | 67 / 55 / 58 / 69 |
+| without the 21 animal concepts | 45.7 +- 9.6 | 58.9 | 58 / 46 / 62 / 71 |
+| shuffled maps (seeds 1 to 4) | 45.3 +- 3.4 | 55.6 | 61 / 46 / 48 / 66 |
+
+Leaving out the animal concepts (cat, dog, the breeds, pet, paws, fur) returns cats outdoors to the
+control level of 46; leaving out the scene concepts (couch, lawn, bed, window and others) keeps them at 55.
+The cat-outdoor gain comes from localizing the animal concepts. Waterbirds at weight 10 (seeds 1 and 2):
+53.5 WGA and 61.8 accuracy, level with weight 5. The MetaShift weight-10 runs and the real Spur-CIFAR10
+spatial runs failed at epoch 0 on node gpu003 with an IndexError that does not occur locally; the
+Spur-CIFAR10 shuffled runs on gpuidle nodes take 2.05 minutes per epoch against 0.46 on the dgx nodes.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
