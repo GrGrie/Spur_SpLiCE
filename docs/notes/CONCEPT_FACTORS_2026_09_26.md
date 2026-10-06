@@ -601,6 +601,14 @@ Spur-CIFAR10 (seeds 1 and 2, a fifth held out): spatial maps 38.1 +- 0.5 WGA and
 Spur-CIFAR10 result of the branch, against 33.6 for the image-level cross-fit, 17.2 for shuffled maps and
 15.6 for SimCLR.
 
+## Headline spatial runs without the hold-out (2026-10-08)
+
+Spatial maps at weight 5 with every image in the concept loss, seeds 1 to 4, mean of the last four probes:
+MetaShift 48.5 +- 3.7 WGA and 60.7 accuracy (with the hold-out 53.0 and 62.2; SimCLR 44.8 and 54.8),
+Waterbirds 51.4 +- 2.2 and 59.2 (with the hold-out 53.0 and 60.1; SimCLR 45.8 and 52.3). Both stay above
+SimCLR on accuracy on every seed and on WGA on average; the drop against the hold-out arms lies within
+the seed spread, largest on MetaShift seed 1 (61.1 against 51.4).
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
