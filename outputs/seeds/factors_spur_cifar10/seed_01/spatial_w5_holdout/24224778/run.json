@@ -1,0 +1,283 @@
+{
+  "artifacts": [
+    {
+      "availability": "repository-copy",
+      "bytes": 1853959,
+      "epoch": null,
+      "kind": "concept_groups",
+      "present_at_finish": true,
+      "retention_state": "retained",
+      "sha256": "46f7d244c18fb38cbdfd0a3e27812e6f1c106dc36ed20f33c0858367c9ef05ea",
+      "stage": "input",
+      "storage_path": null,
+      "uri": "project://outputs/shared/spur_cifar10/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+      "verified_at": "2026-10-05T16:38:23.376088+00:00"
+    }
+  ],
+  "cleanup": {},
+  "config": {
+    "amp": true,
+    "arm": "spatial_w5_holdout",
+    "artifact_dir": "project://outputs/seeds/factors_spur_cifar10/seed_01/spatial_w5_holdout/24224778/training",
+    "attempt_id": "24224778",
+    "batch_size": 128,
+    "channels_last": true,
+    "checkpoint_dir": "project://outputs/seeds/factors_spur_cifar10/seed_01/spatial_w5_holdout/24224778/training",
+    "checkpoint_keep_count": 2,
+    "concept_block_factors": [],
+    "concept_factor_balancing": {},
+    "concept_factor_count": 147,
+    "concept_factor_groups": "project://outputs/shared/spur_cifar10/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+    "concept_factor_pairs": [
+      {
+        "concepts": [
+          "Cargo ship | Container ship",
+          "Chemical tanker | Oil tanker"
+        ],
+        "phi": 0.6391
+      },
+      {
+        "concepts": [
+          "Deer hunting",
+          "Game camera"
+        ],
+        "phi": 0.6258
+      },
+      {
+        "concepts": [
+          "Horse | Mustang horse",
+          "Horse grooming"
+        ],
+        "phi": 0.6132
+      },
+      {
+        "concepts": [
+          "Fuchsia (Color)",
+          "Horse | Mustang horse"
+        ],
+        "phi": 0.6082
+      },
+      {
+        "concepts": [
+          "Chemical tanker | Oil tanker",
+          "Floating production storage and offloading"
+        ],
+        "phi": 0.6005
+      },
+      {
+        "concepts": [
+          "Game camera",
+          "Roe deer"
+        ],
+        "phi": 0.5901
+      },
+      {
+        "concepts": [
+          "Cargo ship | Container ship",
+          "Floating production storage and offloading"
+        ],
+        "phi": 0.5776
+      },
+      {
+        "concepts": [
+          "Fuchsia (Color)",
+          "Horse grooming"
+        ],
+        "phi": 0.5766
+      }
+    ],
+    "concept_factor_splice_cache": "artifact://features/Spur_SpLiCE/spur_cifar10/splice_dataset_cache/cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/splice_dataset_cache.pt",
+    "concept_transfer_alpha_max": 0.1,
+    "concept_transfer_start_epoch": 10,
+    "concept_transfer_target_kind": "reconstruction",
+    "concept_transfer_targets": "",
+    "concept_transfer_warmup_epochs": 10,
+    "cosine": false,
+    "cospro_decay_end_epoch": 0,
+    "cospro_decay_start_epoch": 0,
+    "cospro_graph_fingerprint": null,
+    "cospro_start_epoch": 10,
+    "cospro_teacher_graph": "",
+    "cospro_temperature": 0.1,
+    "cospro_warmup_epochs": 10,
+    "cudnn_benchmark": false,
+    "cudnn_enabled": true,
+    "data_folder": "external://home/xar68reb/Datasets",
+    "dataset": "spur_cifar10",
+    "dataset_identity": {
+      "linear_eval_split": "val",
+      "linear_train_split": "ds_train",
+      "name": "spur_cifar10",
+      "ssl_training_examples": 45000
+    },
+    "delete_checkpoints_after_training": true,
+    "delete_epoch_checkpoints_after_training": false,
+    "device": "cuda",
+    "entity": "gsgrechkin-rptu",
+    "epochs": 500,
+    "factor_block_context_weight": 1.0,
+    "factor_block_count": 32,
+    "factor_block_dim": 16,
+    "factor_block_presence": "real",
+    "factor_block_temperature": 0.1,
+    "factor_block_weight": 0.0,
+    "factor_concept_groups": "project://outputs/shared/spur_cifar10/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+    "factor_concept_maps": "artifact://features/Spur_SpLiCE/spur_cifar10/concept_maps/openimages_v7_text_0p85_response_0p50_min0.02_merge0_qq448/concept_maps.pt",
+    "factor_condition_fraction": 0.0,
+    "factor_condition_pairs": 8,
+    "factor_cross_fit": false,
+    "factor_distill_weight": 0.0,
+    "factor_holdout_fraction": 0.2,
+    "factor_max_count": 0,
+    "factor_max_frequency": 0.9,
+    "factor_max_text_similarity": 0.75,
+    "factor_merge_similarity": 0.0,
+    "factor_min_correlation": 0.2,
+    "factor_min_frequency": 0.02,
+    "factor_pca_components": 0,
+    "factor_ridge": 1.0,
+    "factor_sample_weighting": "none",
+    "factor_spatial_drop": "",
+    "factor_spatial_maps": "real",
+    "factor_spatial_weight": 5.0,
+    "factor_splice_cache": "artifact://features/Spur_SpLiCE/spur_cifar10/splice_dataset_cache/cache_v1__model_open_clip_ViT-B-32__pretrained_laion2b_s34b_b79k__vocab_openimages_v7_all__l1_0p25/splice_dataset_cache.pt",
+    "factor_start_epoch": 10,
+    "factor_targets": "response",
+    "factor_warmup_epochs": 10,
+    "factor_whitening_eps": 0.1,
+    "feat_dim": 128,
+    "final_test": false,
+    "head": "mlp",
+    "keep_checkpoints": false,
+    "la_ssl": false,
+    "la_ssl_eta": 0.1,
+    "la_ssl_gamma": 10.0,
+    "la_ssl_quantile": 0.1,
+    "la_ssl_update_freq": 2,
+    "la_ssl_warmup_epochs": 10,
+    "latetvg_layers": 5,
+    "latetvg_prune_rate": 0.0,
+    "learning_rate": 0.01,
+    "linear_eval_split": "val",
+    "linear_learning_rate": 1.0,
+    "linear_lr_decay_epochs": [
+      60,
+      75,
+      90
+    ],
+    "linear_lr_decay_rate": 0.2,
+    "linear_probe_epochs": 100,
+    "linear_probe_freq": 25,
+    "linear_probe_l2": 0.001,
+    "linear_probe_max_epochs": 200,
+    "linear_probe_mode": "periodic",
+    "linear_probe_solver": "logistic",
+    "linear_probe_tolerance": 1e-06,
+    "linear_spurious_probe": true,
+    "linear_weight_decay": 0.0,
+    "lr_decay_epochs": [
+      350,
+      400,
+      450
+    ],
+    "lr_decay_rate": 0.1,
+    "manifest_path": "",
+    "model": "resnet18",
+    "model_name": "SimCLR_spur_cifar10_SGD_resnet18_mlp_factors_c0_d0_response_b0_seed1_lr0.01_bs128_temp0.05_amp1_cl1_cudnn1_bench0",
+    "momentum": 0.9,
+    "n_cls": 10,
+    "num_workers": 4,
+    "optimizer": "SGD",
+    "print_freq": 10,
+    "rank_eval_freq": 100,
+    "resume": "",
+    "retain_probe_artifacts_every": 0,
+    "run_record": "project://outputs/seeds/factors_spur_cifar10/seed_01/spatial_w5_holdout/24224778/run.json",
+    "runtime_versions": {
+      "cuda": "11.8",
+      "cudnn": "91001",
+      "numpy": "2.2.6",
+      "open-clip-torch": "3.3.0",
+      "platform": "Linux-5.14.0-687.52.1.el9_8.x86_64-x86_64-with-glibc2.34",
+      "python": "3.10.20",
+      "scikit-learn": "1.7.2",
+      "scipy": "1.15.3",
+      "torch": "2.5.1+cu118",
+      "torchvision": "0.20.1+cu118",
+      "wandb": "0.26.0"
+    },
+    "save_folder": "project://outputs/seeds/factors_spur_cifar10/seed_01/spatial_w5_holdout/24224778/training/spur-cifar10_s1_concept-factors_e500_b949682994",
+    "save_freq": 50,
+    "seed": 1,
+    "simclr_weight": 1.0,
+    "splice_mode": "concept_factors",
+    "splice_weight": 0.0,
+    "ssl_crop_min": 0.2,
+    "storage_name": "spur-cifar10_s1_concept-factors_e500_b949682994",
+    "study": "factors_spur_cifar10",
+    "temp": 0.05,
+    "train_set_linear_layer": "ds_train",
+    "use_splice": true,
+    "use_wandb": true,
+    "wandb_group": "factors_spur_cifar10",
+    "wandb_name": "CoSpRo",
+    "wandb_run_name": "spur_cifar10_s1_Factors_c0_d0_response_e500",
+    "wandb_tags": "",
+    "warm": false,
+    "warm_epochs": 0,
+    "warmup_from": 0.0,
+    "warmup_to": 0.01,
+    "weight_decay": 0.0001
+  },
+  "error": {
+    "message": "list index out of range",
+    "type": "IndexError"
+  },
+  "identity": {
+    "arm": "spatial_w5_holdout",
+    "attempt_id": "24224778",
+    "seed": 1,
+    "study": "factors_spur_cifar10"
+  },
+  "manifest": {
+    "definition": {},
+    "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "metrics": [],
+  "runtime": {
+    "cuda": "11.8",
+    "cudnn": "91001",
+    "hostname": "gpu003",
+    "numpy": "2.2.6",
+    "open-clip-torch": "3.3.0",
+    "platform": "Linux-5.14.0-687.52.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.20",
+    "scikit-learn": "1.7.2",
+    "scipy": "1.15.3",
+    "torch": "2.5.1+cu118",
+    "torchvision": "0.20.1+cu118",
+    "wandb": "0.26.0"
+  },
+  "schema": "run-record-v1",
+  "slurm": {
+    "SLURM_JOB_ID": "24224778"
+  },
+  "source": {
+    "commit": "151800b9ab78b9cdb0e40e3ebe89a79d84799273",
+    "dirty": false,
+    "dirty_digest": null
+  },
+  "status": "failed",
+  "timestamps": {
+    "finished_at": "2026-10-05T16:38:26.547078+00:00",
+    "started_at": "2026-10-05T16:37:56.101592+00:00",
+    "updated_at": "2026-10-05T16:38:26.547100+00:00"
+  },
+  "wandb": {
+    "entity": "gsgrechkin-rptu",
+    "id": "0nqzg18g",
+    "name": "spur_cifar10_s1_Factors_c0_d0_response_e500",
+    "project": "CoSpRo",
+    "url": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/0nqzg18g"
+  }
+}

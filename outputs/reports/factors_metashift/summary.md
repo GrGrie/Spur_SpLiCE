@@ -10,6 +10,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | spatial_w5_holdout | 1,2,3,4 | 53.0 ± 5.8 | 53.1 ± 5.8 | 62.2 ± 3.0 | 65 / 53 / 58 / 73 |  |  |
 | simclr_lt | 1,2 | 51.4 ± 1.5 | 50.0 ± 2.0 | 55.3 ± 0.1 | 54 / 56 / 51 / 58 |  |  |
 | f2_w3_atyp | 1,2,3,4 | 50.5 ± 3.8 | 51.0 ± 4.1 | 58.8 ± 2.1 | 59 / 52 / 55 / 70 | 0.61 |  |
+| spatial_w5_noscenes_holdout | 1,2 | 50.0 ± 2.5 | 50.7 ± 2.9 | 61.9 ± 1.4 | 67 / 55 / 58 / 69 |  |  |
 | xfit_meaning_w5_response_holdout | 1,2 | 49.8 ± 4.7 | 50.7 ± 4.9 | 63.7 ± 0.3 | 65 / 57 / 56 / 78 |  | 0.65 |
 | cbc_plain | 1,2,3,4 | 49.7 ± 2.5 | 49.7 ± 2.4 | 62.6 ± 0.8 | 73 / 50 / 52 / 75 |  |  |
 | cbc_f2_balanced | 1,2,3,4 | 49.4 ± 3.8 | 49.3 ± 4.0 | 64.4 ± 2.2 | 74 / 52 / 55 / 78 | 0.42 |  |
@@ -29,6 +30,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | cbc_shuffled | 1,2,3,4 | 46.4 ± 3.5 | 46.2 ± 3.7 | 56.2 ± 2.5 | 56 / 48 / 52 / 68 |  |  |
 | xfit_meaning | 1,2 | 46.0 ± 2.2 | 45.8 ± 2.0 | 58.8 ± 3.1 | 61 / 49 / 51 / 74 |  | 0.05 |
 | f2_laion | 1,2 | 45.8 ± 1.0 | 46.5 ± 1.0 | 57.5 ± 0.5 | 63 / 47 / 51 / 70 | 0.18 |  |
+| spatial_w5_noanimals_holdout | 1,2 | 45.7 ± 9.6 | 45.8 ± 9.8 | 58.9 ± 0.2 | 58 / 46 / 62 / 71 |  |  |
 | xfit_meaning_w10 | 1,2 | 45.5 ± 4.4 | 45.1 ± 4.9 | 61.0 ± 1.4 | 74 / 51 / 48 / 71 |  | 0.61 |
 | spatial_w5_shuffled_holdout | 1,2,3,4 | 45.3 ± 3.4 | 45.5 ± 2.9 | 55.6 ± 2.3 | 61 / 46 / 48 / 66 |  |  |
 | f2_start0 | 1,2 | 45.0 ± 1.7 | 45.1 ± 2.9 | 56.6 ± 0.2 | 57 / 45 / 52 / 72 | 0.12 |  |
@@ -54,4 +56,6 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 
 ## Unfinished runs
 
+- `seed_01/spatial_w10_holdout/24224790`: failed
+- `seed_02/spatial_w10_holdout/24224791`: failed
 - `seed_03/xfit_balanced/23991127`: failed

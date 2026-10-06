@@ -8,6 +8,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 |---|---|---|---|---|---|---|---|
 | xfit_meaning_w5_response_holdout | 1,2 | 54.4 ± 3.9 | 54.1 ± 3.2 | 65.4 ± 0.3 | 65 / 67 / 54 / 72 |  | 0.60 |
 | spatial_pca_w5_holdout | 1,2,3,4 | 53.6 ± 1.9 | 53.6 ± 2.0 | 58.1 ± 0.9 | 56 / 58 / 61 / 66 |  |  |
+| spatial_w10_holdout | 1,2 | 53.5 ± 4.9 | 53.7 ± 5.1 | 61.8 ± 3.8 | 54 / 67 / 61 / 72 |  |  |
 | spatial_w5_holdout | 1,2,3,4 | 53.0 ± 3.0 | 53.1 ± 3.3 | 60.1 ± 2.5 | 55 / 64 / 59 / 68 |  |  |
 | xfit_meaning_w10_holdout | 1,2,3,4 | 51.5 ± 5.5 | 51.6 ± 5.9 | 57.5 ± 2.0 | 52 / 57 / 65 / 73 |  | 0.12 |
 | xfit_meaning_w5_clippca_holdout | 1,2 | 51.0 ± 5.9 | 51.3 ± 5.9 | 59.4 ± 1.5 | 51 / 63 / 68 / 68 |  | 0.06 |
