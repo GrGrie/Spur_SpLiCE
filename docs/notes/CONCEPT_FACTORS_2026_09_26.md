@@ -588,6 +588,19 @@ The cat-outdoor gain comes from localizing the animal concepts. Waterbirds at we
 spatial runs failed at epoch 0 on node gpu003 with an IndexError that does not occur locally; the
 Spur-CIFAR10 shuffled runs on gpuidle nodes take 2.05 minutes per epoch against 0.46 on the dgx nodes.
 
+## Four-seed ablation, weight 10 and Spur-CIFAR10 spatial (2026-10-07)
+
+Seeds 3 and 4 weaken the two-seed ablation. Over seeds 1 to 4 (MetaShift, a fifth held out, last four
+probes): all concepts 53.0 +- 5.8 WGA, cats outdoors 53; without scene concepts 47.9 +- 2.8, cats outdoors
+50; without animal concepts 46.6 +- 5.8, cats outdoors 49; shuffled maps 45.3 +- 3.4, cats outdoors 46.
+Both ablations lose part of the gain and differ from each other by less than the seed noise: the gain
+needs the full concept set, and the data cannot yet attribute it to the animal concepts alone. MetaShift
+at weight 10 (seeds 1 and 2): 48.3 WGA, below weight 5.
+
+Spur-CIFAR10 (seeds 1 and 2, a fifth held out): spatial maps 38.1 +- 0.5 WGA and 69.3 accuracy, the best
+Spur-CIFAR10 result of the branch, against 33.6 for the image-level cross-fit, 17.2 for shuffled maps and
+15.6 for SimCLR.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
