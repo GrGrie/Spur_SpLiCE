@@ -8,14 +8,15 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_metashift | spatial_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2,3,4 | 53.0 ± 5.8 | 62.2 ± 3.0 |  |
 | factors_metashift | f2_w3 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0.9 | 0.02 |  |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 51.4 ± 1.5 | 63.1 ± 2.0 | 0.41 |
 | factors_metashift | f2_w3_atyp | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0.9 | 0.02 | atypicality |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 50.5 ± 3.8 | 58.8 ± 2.1 | 0.61 |
-| factors_metashift | spatial_w5_noscenes_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2 | 50.0 ± 2.5 | 61.9 ± 1.4 |  |
 | factors_metashift | xfit_meaning_w5_response_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | response | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 49.8 ± 4.7 | 63.7 ± 0.3 |  |
 | factors_metashift | cbc_plain | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | whitened | 0.9 | 0.02 | none |  | 1 | 0 | real | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 49.7 ± 2.5 | 62.6 ± 0.8 |  |
 | factors_metashift | cbc_f2_balanced | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0.9 | 0.02 | balanced |  | 1 | 1 | real | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 49.4 ± 3.8 | 64.4 ± 2.2 | 0.42 |
 | factors_metashift | f2_std_lt | 500 | 256 | 0.05 | 0.001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 |  |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 48.6 ± 5.9 | 57.4 ± 0.2 | 0.10 |
 | factors_metashift | f2_presence | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | presence | 0.9 | 0.02 |  |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 48.3 ± 7.9 | 57.1 ± 2.1 | 0.15 |
+| factors_metashift | spatial_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2 (+2 unfinished) | 48.3 ± 5.9 | 60.5 ± 2.4 |  |
 | factors_metashift | f2_white_w3_atyp | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | whitened | 0.9 | 0.02 | atypicality |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 48.2 ± 3.9 | 57.6 ± 4.2 | 0.56 |
 | factors_metashift | f2_white_w3 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | whitened | 0.9 | 0.02 | none |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 47.9 ± 6.4 | 56.9 ± 3.0 | 0.31 |
+| factors_metashift | spatial_w5_noscenes_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2,3,4 | 47.9 ± 2.8 | 61.8 ± 0.8 |  |
 | factors_metashift | xfit_meaning_w3_residual_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | residual | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 47.7 ± 0.2 | 58.6 ± 5.0 |  |
 | factors_metashift | xfit_meaning_w3_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | shuffled | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 47.6 ± 5.4 | 58.1 ± 2.9 |  |
 | factors_metashift | xfit_meaning_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 47.6 ± 1.0 | 60.7 ± 1.7 |  |
@@ -24,10 +25,10 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_metashift | xfit_norm_balanced | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | balanced | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 46.9 ± 4.4 | 58.5 ± 1.2 |  |
 | factors_metashift | xfit_meaning_w3_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 46.9 ± 2.0 | 60.3 ± 2.1 |  |
 | factors_metashift | xfit_meaning_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 46.7 ± 1.7 | 58.6 ± 1.8 |  |
+| factors_metashift | spatial_w5_noanimals_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2,3,4 | 46.6 ± 5.8 | 57.7 ± 1.7 |  |
 | factors_metashift | cbc_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | whitened | 0.9 | 0.02 | none |  | 1 | 1 | shuffled | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2,3,4 | 46.4 ± 3.5 | 56.2 ± 2.5 |  |
 | factors_metashift | xfit_meaning | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 46.0 ± 2.2 | 58.8 ± 3.1 |  |
 | factors_metashift | f2_laion | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 |  |  |  |  |  | 10 | laion text_0p8_coactivation_0p3 | 103 | 1,2 | 45.8 ± 1.0 | 57.5 ± 0.5 | 0.18 |
-| factors_metashift | spatial_w5_noanimals_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2 | 45.7 ± 9.6 | 58.9 ± 0.2 |  |
 | factors_metashift | xfit_meaning_w10 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | laion | 24 | 1,2 | 45.5 ± 4.4 | 61.0 ± 1.4 |  |
 | factors_metashift | spatial_w5_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 | 1,2,3,4 | 45.3 ± 3.4 | 55.6 ± 2.3 |  |
 | factors_metashift | f2_start0 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 |  |  |  |  |  | 0 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 45.0 ± 1.7 | 56.6 ± 0.2 | 0.12 |
@@ -50,7 +51,6 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_metashift | f2_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 |  |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 42.2 ± 4.7 | 51.0 ± 0.9 | 0.06 |
 | factors_metashift | f2_w3 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0.9 | 0.02 | none |  |  |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 3,4 | 41.8 ± 1.7 | 59.9 ± 1.5 | 0.42 |
 | factors_metashift | xfit_norm_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 145 | 1,2 | 41.7 ± 0.0 | 54.4 ± 0.5 |  |
-| factors_metashift | spatial_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | laion | 130 |  (+2 unfinished) |  |  |  |
 
 ## SimCLR reference on this dataset
 

@@ -775,6 +775,40 @@
       }
     },
     {
+      "arm": "spatial_w10_holdout",
+      "dataset": "metashift",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "seeds": [
+        1,
+        2
+      ],
+      "val_acc_last4": {
+        "mean": 60.54687649011612,
+        "sd": 2.3938503796944826
+      },
+      "val_group_accuracies": [
+        66.66666603088379,
+        48.61111068725586,
+        56.25,
+        70.83333206176758
+      ],
+      "val_wga_last": {
+        "mean": 47.22222238779068,
+        "sd": 5.8925572123353716
+      },
+      "val_wga_last4": {
+        "mean": 48.26388955116272,
+        "sd": 5.8925572123353716
+      }
+    },
+    {
       "arm": "spatial_w5_holdout",
       "dataset": "metashift",
       "factor_explained_variance": {
@@ -823,25 +857,27 @@
       },
       "seeds": [
         1,
-        2
+        2,
+        3,
+        4
       ],
       "val_acc_last4": {
-        "mean": 58.9409738779068,
-        "sd": 0.2455222513153621
+        "mean": 57.68229253590107,
+        "sd": 1.6899244473082708
       },
       "val_group_accuracies": [
         57.63888931274414,
-        45.83333396911621,
-        61.80555725097656,
-        70.83333587646484
+        48.95833396911621,
+        54.861111640930176,
+        69.4444465637207
       ],
       "val_wga_last": {
-        "mean": 45.83333432674408,
-        "sd": 9.820927984778143
+        "mean": 46.875,
+        "sd": 5.823956360705949
       },
       "val_wga_last4": {
-        "mean": 45.65972313284874,
-        "sd": 9.575404679791568
+        "mean": 46.614583767950535,
+        "sd": 5.75017194738507
       }
     },
     {
@@ -857,25 +893,27 @@
       },
       "seeds": [
         1,
-        2
+        2,
+        3,
+        4
       ],
       "val_acc_last4": {
-        "mean": 61.9357630610466,
-        "sd": 1.411757159748183
+        "mean": 61.78385354578495,
+        "sd": 0.8457040409623029
       },
       "val_group_accuracies": [
-        67.36110877990723,
-        54.86111068725586,
-        57.63888931274414,
-        68.75
+        67.01388645172119,
+        50.34722328186035,
+        58.680556297302246,
+        70.83333206176758
       ],
       "val_wga_last": {
-        "mean": 50.69444477558136,
-        "sd": 2.9462796598388983
+        "mean": 48.26388955116272,
+        "sd": 3.281816500546377
       },
       "val_wga_last4": {
-        "mean": 50.0,
-        "sd": 2.4552330498657486
+        "mean": 47.916666977107525,
+        "sd": 2.8065638256306102
       }
     },
     {
@@ -4813,6 +4851,149 @@
       "val_wga_last": null,
       "val_wga_last4": null,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/0666t2xj"
+    },
+    {
+      "arm": "spatial_w10_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/spatial_w10_holdout/24240515",
+      "seed": 1,
+      "spurious_probe_val_wga": 59.72222089767456,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.77777910232544,
+          "epoch": 25,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 52.77777910232544,
+          "epoch": 50,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 75,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 100,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 125,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 150,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 175,
+          "wga": 51.38888955116272
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 200,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 225,
+          "wga": 54.16666865348816
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 250,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 63.54166865348816,
+          "epoch": 275,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 300,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 325,
+          "wga": 37.5
+        },
+        {
+          "acc": 62.5,
+          "epoch": 350,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 63.19444179534912,
+          "epoch": 375,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 63.54166865348816,
+          "epoch": 400,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 425,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 450,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 63.19444179534912,
+          "epoch": 475,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 62.15277910232544,
+          "epoch": 500,
+          "wga": 43.05555522441864
+        }
+      ],
+      "val_acc_last": 62.15277910232544,
+      "val_acc_last4": 62.23958432674408,
+      "val_group_accuracies": [
+        72.22222137451172,
+        43.0555534362793,
+        61.11111068725586,
+        72.22222137451172
+      ],
+      "val_wga_last": 43.05555522441864,
+      "val_wga_last4": 44.09722238779068,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/svs6dhr4"
     },
     {
       "arm": "spatial_w5_holdout",
@@ -11569,6 +11750,149 @@
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/c98wwsly"
     },
     {
+      "arm": "spatial_w10_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/spatial_w10_holdout/24240516",
+      "seed": 2,
+      "spurious_probe_val_wga": 62.5,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 57.63888955116272,
+          "epoch": 25,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 59.375,
+          "epoch": 50,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 57.63888955116272,
+          "epoch": 75,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 100,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 55.20833134651184,
+          "epoch": 125,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 60.06944179534912,
+          "epoch": 150,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 60.41666865348816,
+          "epoch": 175,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 62.5,
+          "epoch": 200,
+          "wga": 55.55555820465088
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 225,
+          "wga": 50.0
+        },
+        {
+          "acc": 58.33333134651184,
+          "epoch": 250,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 56.59722089767456,
+          "epoch": 275,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 300,
+          "wga": 54.16666865348816
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 325,
+          "wga": 55.55555820465088
+        },
+        {
+          "acc": 59.375,
+          "epoch": 350,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 375,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 400,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 425,
+          "wga": 54.16666865348816
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 450,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 475,
+          "wga": 51.38888955116272
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 500,
+          "wga": 51.38888955116272
+        }
+      ],
+      "val_acc_last": 59.02777910232544,
+      "val_acc_last4": 58.85416865348816,
+      "val_group_accuracies": [
+        61.11111068725586,
+        54.16666793823242,
+        51.38888931274414,
+        69.44444274902344
+      ],
+      "val_wga_last": 51.38888955116272,
+      "val_wga_last4": 52.43055671453476,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/h2u53q7w"
+    },
+    {
       "arm": "spatial_w5_holdout",
       "config": {
         "batch_size": 128,
@@ -17144,6 +17468,292 @@
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/hs4gkyzn"
     },
     {
+      "arm": "spatial_w5_noanimals_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_03/spatial_w5_noanimals_holdout/24240509",
+      "seed": 3,
+      "spurious_probe_val_wga": 56.94444179534912,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 50.0,
+          "epoch": 25,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 52.43055820465088,
+          "epoch": 50,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 55.55555820465088,
+          "epoch": 75,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 51.73611044883728,
+          "epoch": 100,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 56.59722089767456,
+          "epoch": 125,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 54.51388955116272,
+          "epoch": 150,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 52.08333134651184,
+          "epoch": 175,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 58.33333134651184,
+          "epoch": 200,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 49.30555522441864,
+          "epoch": 225,
+          "wga": 37.5
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 250,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 53.81944179534912,
+          "epoch": 275,
+          "wga": 36.11111044883728
+        },
+        {
+          "acc": 51.38888955116272,
+          "epoch": 300,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 57.63888955116272,
+          "epoch": 325,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 53.47222089767456,
+          "epoch": 350,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 56.25,
+          "epoch": 375,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 56.25,
+          "epoch": 400,
+          "wga": 51.38888955116272
+        },
+        {
+          "acc": 54.86111044883728,
+          "epoch": 425,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 450,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 55.55555820465088,
+          "epoch": 475,
+          "wga": 50.0
+        },
+        {
+          "acc": 55.20833134651184,
+          "epoch": 500,
+          "wga": 48.61111044883728
+        }
+      ],
+      "val_acc_last": 55.20833134651184,
+      "val_acc_last4": 55.38194477558136,
+      "val_group_accuracies": [
+        55.55555725097656,
+        50.0,
+        48.61111068725586,
+        66.66667175292969
+      ],
+      "val_wga_last": 48.61111044883728,
+      "val_wga_last4": 48.95833283662796,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/kbrbtzo1"
+    },
+    {
+      "arm": "spatial_w5_noscenes_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_03/spatial_w5_noscenes_holdout/24240511",
+      "seed": 3,
+      "spurious_probe_val_wga": 59.72222089767456,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 54.86111044883728,
+          "epoch": 25,
+          "wga": 51.38888955116272
+        },
+        {
+          "acc": 55.20833134651184,
+          "epoch": 50,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 53.47222089767456,
+          "epoch": 75,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 56.25,
+          "epoch": 100,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 56.59722089767456,
+          "epoch": 125,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 150,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 175,
+          "wga": 37.5
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 200,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 54.16666865348816,
+          "epoch": 225,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 250,
+          "wga": 41.66666567325592
+        },
+        {
+          "acc": 54.51388955116272,
+          "epoch": 275,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 300,
+          "wga": 36.11111044883728
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 325,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 59.375,
+          "epoch": 350,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 60.76388955116272,
+          "epoch": 375,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 60.06944179534912,
+          "epoch": 400,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 425,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 62.5,
+          "epoch": 450,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 475,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 500,
+          "wga": 45.83333432674408
+        }
+      ],
+      "val_acc_last": 61.45833134651184,
+      "val_acc_last4": 61.80555522441864,
+      "val_group_accuracies": [
+        62.5,
+        45.833335876464844,
+        63.88888931274414,
+        73.6111068725586
+      ],
+      "val_wga_last": 45.83333432674408,
+      "val_wga_last4": 45.4861119389534,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/5ai985w3"
+    },
+    {
       "arm": "spatial_w5_shuffled_holdout",
       "config": {
         "batch_size": 128,
@@ -19639,6 +20249,292 @@
       "val_wga_last": 47.22222089767456,
       "val_wga_last4": 46.87499925494194,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/t92itx63"
+    },
+    {
+      "arm": "spatial_w5_noanimals_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_04/spatial_w5_noanimals_holdout/24240510",
+      "seed": 4,
+      "spurious_probe_val_wga": 52.77777910232544,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 54.16666865348816,
+          "epoch": 25,
+          "wga": 50.0
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 50,
+          "wga": 50.0
+        },
+        {
+          "acc": 52.43055820465088,
+          "epoch": 75,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 55.90277910232544,
+          "epoch": 100,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 58.33333134651184,
+          "epoch": 125,
+          "wga": 52.77777910232544
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 150,
+          "wga": 54.16666865348816
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 175,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 60.41666865348816,
+          "epoch": 200,
+          "wga": 55.55555820465088
+        },
+        {
+          "acc": 59.02777910232544,
+          "epoch": 225,
+          "wga": 50.0
+        },
+        {
+          "acc": 56.25,
+          "epoch": 250,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 275,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 56.25,
+          "epoch": 300,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 325,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 350,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 58.33333134651184,
+          "epoch": 375,
+          "wga": 50.0
+        },
+        {
+          "acc": 58.33333134651184,
+          "epoch": 400,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 57.29166865348816,
+          "epoch": 425,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 56.94444179534912,
+          "epoch": 450,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.98611044883728,
+          "epoch": 475,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 57.63888955116272,
+          "epoch": 500,
+          "wga": 47.22222089767456
+        }
+      ],
+      "val_acc_last": 57.63888955116272,
+      "val_acc_last4": 57.46527761220932,
+      "val_group_accuracies": [
+        59.72222137451172,
+        54.16666793823242,
+        47.22222137451172,
+        69.44444274902344
+      ],
+      "val_wga_last": 47.22222089767456,
+      "val_wga_last4": 46.1805559694767,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/gebu7q5i"
+    },
+    {
+      "arm": "spatial_w5_noscenes_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 130,
+        "concept_factor_groups": "project://outputs/shared/metashift/graphs/concept_groups_meaning/laion_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "metashift",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_04/spatial_w5_noscenes_holdout/24240512",
+      "seed": 4,
+      "spurious_probe_val_wga": 59.72222089767456,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.77777910232544,
+          "epoch": 25,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 54.86111044883728,
+          "epoch": 50,
+          "wga": 37.5
+        },
+        {
+          "acc": 57.63888955116272,
+          "epoch": 75,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 55.20833134651184,
+          "epoch": 100,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 59.375,
+          "epoch": 125,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 150,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 56.94444179534912,
+          "epoch": 175,
+          "wga": 48.61111044883728
+        },
+        {
+          "acc": 56.94444179534912,
+          "epoch": 200,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 225,
+          "wga": 40.27777910232544
+        },
+        {
+          "acc": 58.68055820465088,
+          "epoch": 250,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 59.72222089767456,
+          "epoch": 275,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 55.55555820465088,
+          "epoch": 300,
+          "wga": 38.88888955116272
+        },
+        {
+          "acc": 59.375,
+          "epoch": 325,
+          "wga": 43.05555522441864
+        },
+        {
+          "acc": 56.59722089767456,
+          "epoch": 350,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 59.375,
+          "epoch": 375,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 60.06944179534912,
+          "epoch": 400,
+          "wga": 44.44444477558136
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 425,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.80555820465088,
+          "epoch": 450,
+          "wga": 47.22222089767456
+        },
+        {
+          "acc": 61.45833134651184,
+          "epoch": 475,
+          "wga": 45.83333432674408
+        },
+        {
+          "acc": 61.11111044883728,
+          "epoch": 500,
+          "wga": 45.83333432674408
+        }
+      ],
+      "val_acc_last": 61.11111044883728,
+      "val_acc_last4": 61.45833283662796,
+      "val_group_accuracies": [
+        70.83332824707031,
+        45.833335876464844,
+        55.55555725097656,
+        72.22222137451172
+      ],
+      "val_wga_last": 45.83333432674408,
+      "val_wga_last4": 46.1805559694767,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/o2qx238e"
     },
     {
       "arm": "spatial_w5_shuffled_holdout",
