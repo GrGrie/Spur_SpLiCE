@@ -49,6 +49,8 @@ class TrainingMethod:
     factor_head_dim: int | None = None
     #: (blocks, block size) of the concept-block heads, known once ``wrap_loader`` has run.
     factor_block_shape: tuple[int, int] | None = None
+    #: Output size of the concept-region projection head, known once ``wrap_loader`` has run.
+    factor_region_dim: int | None = None
 
     def wrap_loader(self, loader, context: LoaderContext):
         return loader

@@ -333,6 +333,20 @@ class ConceptFactorOptions:
         "real", choices=("real", "shuffled"),
         help="Concept maps of the spatial loss: each image's own, or the control 'shuffled' (another image's).",
     )
+    factor_region_weight: float = option(
+        0.0, parse=float,
+        help="Weight of the concept-region contrast: feature maps pooled inside each view's dominant concept "
+        "regions, pulled towards the same concept's regions in other images; 0 disables it.",
+    )
+    factor_region_temperature: float = option(0.1, parse=float, help="Temperature of the region contrast.")
+    factor_region_min_mass: float = option(
+        0.1, parse=float, help="Least mean map probability of a concept for its region to enter the contrast.",
+    )
+    factor_region_top: int = option(2, parse=int, help="Regions per view: its dominant concepts.")
+    factor_region_context_weight: float = option(
+        1.0, parse=float, help="Extra weight of region pairs whose images' concept mixes differ.",
+    )
+    factor_region_dim: int = option(128, parse=int, help="Output size of the region projection head.")
     factor_spatial_drop: str = option(
         "", parse=str,
         help="Comma-separated concept words; the spatial loss leaves out every factor that names one of them "
@@ -507,7 +521,7 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
     _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
     if args.splice_mode == "concept_factors":
         _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0
-                 or args.factor_spatial_weight > 0,
+                 or args.factor_spatial_weight > 0 or args.factor_region_weight > 0,
                  "concept_factors needs --factor_condition_fraction, --factor_distill_weight, --factor_spatial_weight or "
                  "--factor_block_weight above 0.")
         _require(args.factor_ridge > 0, "--factor_ridge must be positive.")
@@ -531,6 +545,15 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
         _require(args.factor_spatial_weight >= 0, "--factor_spatial_weight must be non-negative.")
         _require(args.factor_spatial_weight == 0 or args.factor_concept_maps,
                  "--factor_spatial_weight needs --factor_concept_maps.")
+        _require(args.factor_region_weight >= 0 and args.factor_region_temperature > 0
+                 and args.factor_region_top >= 1 and args.factor_region_dim >= 1
+                 and args.factor_region_context_weight >= 0,
+                 "Region contrast needs a non-negative weight and context weight and a positive temperature, "
+                 "count and size.")
+        _require(args.factor_region_weight == 0 or args.factor_concept_maps,
+                 "--factor_region_weight needs --factor_concept_maps.")
+        _require(args.factor_region_weight == 0 or not args.latetvg_prune_rate,
+                 "The region contrast reads one encoder pass and does not combine with LateTVG pruning.")
         _require(args.factor_spatial_weight == 0 or not args.latetvg_prune_rate,
                  "The spatial concept loss reads one encoder pass and does not combine with LateTVG pruning.")
         _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,

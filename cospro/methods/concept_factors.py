@@ -37,12 +37,13 @@ from typing import Any, Iterator, Mapping
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Sampler
 
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
 from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
-from cospro.pipeline.concept_maps import spatial_cross_fit_loss, warp_maps
+from cospro.pipeline.concept_maps import concept_regions, region_contrast_loss, spatial_cross_fit_loss, warp_maps
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
     SHUFFLE_SEED,
@@ -350,11 +351,19 @@ class IndexedViewBoxDataset(IndexedCoSpRoDataset):
 
 
 class SpatialConceptDistillation:
-    """Scheduled per-location cross-fit from the encoder's last feature map to the warped concept maps."""
+    """Scheduled spatial concept losses on the encoder's last feature map and the warped concept maps.
+
+    The regression part fits, location by location, a cross-fitted ridge from the feature map to the
+    standardized maps. The region part pools the feature map inside each view's dominant concept
+    regions and contrasts the regions of one concept across images (``region_contrast_loss``).
+    """
 
     def __init__(self, maps: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
-                 sample_weights: torch.Tensor, ridge: float) -> None:
+                 sample_weights: torch.Tensor, ridge: float, probabilities: torch.Tensor | None = None,
+                 region: dict | None = None) -> None:
         self.maps = maps
+        self.probabilities = probabilities
+        self.region = dict(region or {"weight": 0.0})
         self.sample_weights = sample_weights.float()
         self.weight = float(weight)
         self.start_epoch = int(start_epoch)
@@ -371,11 +380,14 @@ class SpatialConceptDistillation:
 
     @property
     def scheduled_weight(self) -> float:
+        return self._scheduled(self.weight)
+
+    def _scheduled(self, weight: float) -> float:
         if self.epoch <= self.start_epoch:
             return 0.0
         if self.warmup_epochs == 0:
-            return self.weight
-        return self.weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
+            return weight
+        return weight * min(1.0, (self.epoch - self.start_epoch) / self.warmup_epochs)
 
     def hook(self, model) -> None:
         """Keep the output of the encoder's last stage, the feature map before global pooling."""
@@ -389,24 +401,46 @@ class SpatialConceptDistillation:
         stage.register_forward_hook(lambda module, inputs, output: setattr(self, "feature_map", output))
         self._hooked = True
 
-    def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor) -> torch.Tensor:
+    def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor, model=None) -> torch.Tensor:
         feature_map, boxes = self.feature_map, self.boxes
+        region_weight = self._scheduled(float(self.region.get("weight", 0.0)))
         if feature_map is None or boxes is None or feature_map.shape[0] != embeddings.shape[0]:
             # The hook attaches during the first step, whose forward pass has already run.
-            self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight}
+            self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
+                                     "factor_region_scheduled_weight": region_weight}
             return embeddings.sum() * 0.0
         rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
         device = feature_map.device
-        maps = self.maps.index_select(0, rows).float().to(device)
         boxes = torch.cat([boxes[:, 0], boxes[:, 1]]).to(device)
-        targets = warp_maps(torch.cat([maps, maps]), boxes, tuple(feature_map.shape[-2:]))
+        size = tuple(feature_map.shape[-2:])
         weights = self.sample_weights.index_select(0, rows).to(device)
-        loss, explained = spatial_cross_fit_loss(feature_map, targets, torch.cat([weights, weights]), self.ridge)
-        self.last_diagnostics = {
-            "factor_spatial_scheduled_weight": self.scheduled_weight,
-            "factor_spatial_heldout_explained_variance": explained,
-        }
-        return self.scheduled_weight * loss
+        weights = torch.cat([weights, weights])
+        value = embeddings.sum() * 0.0
+        self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
+                                 "factor_region_scheduled_weight": region_weight}
+        if self.weight > 0:
+            maps = self.maps.index_select(0, rows).float().to(device)
+            targets = warp_maps(torch.cat([maps, maps]), boxes, size)
+            loss, explained = spatial_cross_fit_loss(feature_map, targets, weights, self.ridge)
+            value = value + self.scheduled_weight * loss
+            self.last_diagnostics["factor_spatial_heldout_explained_variance"] = explained
+        if self.region.get("weight", 0.0) > 0:
+            if model is None or getattr(model, "region_head", None) is None:
+                raise ValueError("The region contrast needs the model's region head.")
+            probabilities = self.probabilities.index_select(0, rows).float().to(device)
+            probabilities = warp_maps(torch.cat([probabilities, probabilities]), boxes, size).clamp_min(0.0)
+            with torch.autocast(device_type=device.type, enabled=False):
+                pooled, concepts, views, masses = concept_regions(
+                    feature_map.float(), probabilities, weights, self.region["min_mass"], self.region["top"],
+                )
+                projected = F.normalize(model.region_head(pooled).float(), dim=1)
+                loss, diagnostics = region_contrast_loss(
+                    projected, concepts, views, masses, len(rows), self.region["temperature"],
+                    self.region["context_weight"],
+                )
+            value = value + region_weight * loss
+            self.last_diagnostics.update(diagnostics)
+        return value
 
 
 def dropped_factors(names: list[str], words: str) -> list[int]:
@@ -422,10 +456,12 @@ def dropped_factors(names: list[str], words: str) -> list[int]:
 
 
 def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_indices,
-                      shuffled: bool, drop: str = "") -> torch.Tensor:
+                      shuffled: bool, drop: str = "", probabilities: bool = False):
     """Concept maps of the training subset in its order, each factor standardized over images and locations.
 
-    ``drop`` names concept words whose factors leave the maps, for ablations.
+    ``drop`` names concept words whose factors leave the maps, for ablations. With ``probabilities``
+    the stored maps themselves come back as well, as (standardized, probabilities); principal-component
+    maps have none.
     """
 
     stored = torch.load(path, map_location="cpu", weights_only=False)
@@ -438,14 +474,20 @@ def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_i
         print(f"[INFO] Spatial maps without {len(removed)} factors: "
               f"{[stored['factor_names'][position] for position in removed]}", flush=True)
         maps = maps[:, kept]
+    raw = maps
     mean = maps.mean(dim=(0, 2, 3), keepdim=True)
     std = maps.std(dim=(0, 2, 3), keepdim=True).clamp_min(1e-6)
     maps = (maps - mean) / std
     if shuffled:
         # Control: every image carries another image's maps.
-        maps = maps[torch.randperm(len(maps), generator=torch.Generator().manual_seed(SHUFFLE_SEED))]
+        order = torch.randperm(len(maps), generator=torch.Generator().manual_seed(SHUFFLE_SEED))
+        maps, raw = maps[order], raw[order]
     rows = rows_for_subset([str(sample_id) for sample_id in stored["sample_ids"]], dataset, source_indices)
-    return maps.index_select(0, rows).half()
+    if not probabilities:
+        return maps.index_select(0, rows).half()
+    if stored.get("kind", "concepts") != "concepts":
+        raise ValueError("Region contrast needs concept maps; principal-component maps have no regions.")
+    return maps.index_select(0, rows).half(), raw.index_select(0, rows).half()
 
 
 @register_method
@@ -474,6 +516,12 @@ class ConceptFactors(TrainingMethod):
         concept_maps: str = "",
         spatial_maps: str = "real",
         spatial_drop: str = "",
+        region_weight: float = 0.0,
+        region_temperature: float = 0.1,
+        region_min_mass: float = 0.1,
+        region_top: int = 2,
+        region_context_weight: float = 1.0,
+        region_dim: int = 128,
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -497,6 +545,12 @@ class ConceptFactors(TrainingMethod):
         self.spatial_settings = {"weight": float(spatial_weight), "maps": concept_maps, "kind": spatial_maps,
                                  "drop": spatial_drop}
         self.spatial: SpatialConceptDistillation | None = None
+        self.region_settings = {"weight": float(region_weight), "temperature": float(region_temperature),
+                                "min_mass": float(region_min_mass), "top": int(region_top),
+                                "context_weight": float(region_context_weight)}
+        self.region_dim = int(region_dim)
+        #: Output size of the region projection head, known once ``wrap_loader`` has run.
+        self.factor_region_dim: int | None = None
         self.block_settings = {
             "weight": float(block_weight), "count": int(block_count), "dim": int(block_dim),
             "temperature": float(block_temperature), "context_weight": float(block_context_weight),
@@ -543,6 +597,12 @@ class ConceptFactors(TrainingMethod):
             concept_maps=options.factor_concept_maps,
             spatial_maps=options.factor_spatial_maps,
             spatial_drop=options.factor_spatial_drop,
+            region_weight=options.factor_region_weight,
+            region_temperature=options.factor_region_temperature,
+            region_min_mass=options.factor_region_min_mass,
+            region_top=options.factor_region_top,
+            region_context_weight=options.factor_region_context_weight,
+            region_dim=options.factor_region_dim,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -608,13 +668,19 @@ class ConceptFactors(TrainingMethod):
             self.block_names = [factor_name(factors["factors"][column]) for column in columns]
             print(f"[INFO] Concept blocks ({settings['presence']} presence): {self.block_names}", flush=True)
         spatial = self.spatial_settings
-        if spatial["weight"] > 0:
+        region = self.region_settings
+        if spatial["weight"] > 0 or region["weight"] > 0:
             names = [factor_name(factor) for factor in factors["factors"]]
-            maps = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
-                                     shuffled=spatial["kind"] == "shuffled", drop=spatial["drop"])
+            loaded = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
+                                       shuffled=spatial["kind"] == "shuffled", drop=spatial["drop"],
+                                       probabilities=region["weight"] > 0)
+            maps, probabilities = loaded if region["weight"] > 0 else (loaded, None)
             self.spatial = SpatialConceptDistillation(
                 maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
+                probabilities=probabilities, region=region,
             )
+            if region["weight"] > 0:
+                self.factor_region_dim = self.region_dim
             print(f"[INFO] Spatial concept maps ({spatial['kind']}) from {spatial['maps']}: {tuple(maps.shape)}",
                   flush=True)
         active = factors["active"].index_select(0, rows)[:, factors["condition_factors"]]
@@ -638,7 +704,7 @@ class ConceptFactors(TrainingMethod):
 
         # Response targets and spatial maps are scored as responses, every other kind against the sparse
         # factor values.
-        spatial = self.spatial_settings["weight"] > 0
+        spatial = self.spatial_settings["weight"] > 0 or self.region_settings["weight"] > 0
         base = "response" if self.target_kind.startswith("response") or spatial else "standardized"
         self.learnability = {
             "dataset": dataset,
@@ -776,7 +842,7 @@ class ConceptFactors(TrainingMethod):
             value = value + self.blocks(model.factor_blocks(embeddings).view(-1, count, dim), sample_indices)
         if self.spatial is not None:
             self.spatial.hook(model)
-            value = value + self.spatial(embeddings, sample_indices)
+            value = value + self.spatial(embeddings, sample_indices, model)
             self.spatial.feature_map = None
         return LossTerms(value=value, diagnostics=self.diagnostics())
 

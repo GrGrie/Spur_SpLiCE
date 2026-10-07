@@ -18,6 +18,7 @@ class SimCLRModel(nn.Module):
         clip_distillation_dim: int | None = None,
         factor_dim: int | None = None,
         block_shape: tuple[int, int] | None = None,
+        region_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.encoder, dim_in = build_resnet_encoder(name)
@@ -46,6 +47,10 @@ class SimCLRModel(nn.Module):
         self.factor_head = None if factor_dim is None else nn.Linear(dim_in, factor_dim)
         # One linear block per concept factor, computed as one matrix: [batch, blocks * block_dim].
         self.factor_blocks = None if block_shape is None else nn.Linear(dim_in, block_shape[0] * block_shape[1])
+        # Projection of feature vectors pooled inside concept regions, as SimCLR projects whole images.
+        self.region_head = None if region_dim is None else nn.Sequential(
+            nn.Linear(dim_in, 512), nn.ReLU(inplace=True), nn.Linear(512, region_dim),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.encoder(x)

@@ -8,13 +8,21 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 from torchvision.transforms import functional as TF
 
 from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.concept_factors import dropped_factors, load_concept_maps
-from cospro.pipeline.concept_maps import assemble_windows, spatial_cross_fit_loss, warp_maps, window_offsets
+from cospro.pipeline.concept_maps import (
+    assemble_windows,
+    concept_regions,
+    region_contrast_loss,
+    spatial_cross_fit_loss,
+    warp_maps,
+    window_offsets,
+)
 
 
 class AssemblyTests(unittest.TestCase):
@@ -87,6 +95,44 @@ class SpatialLossTests(unittest.TestCase):
         loss.backward()
         self.assertEqual(float(features.grad[3].abs().sum()), 0.0)
         self.assertEqual(float(features.grad[11].abs().sum()), 0.0)
+
+
+class RegionTests(unittest.TestCase):
+    def test_a_region_pools_the_features_under_its_concept(self):
+        features = torch.zeros(2, 3, 4, 4)
+        features[:, 0, :, :2] = 1.0  # channel 0 on the left half
+        features[:, 1, :, 2:] = 1.0  # channel 1 on the right half
+        probabilities = torch.zeros(2, 3, 4, 4)
+        probabilities[:, 0, :, :2] = 1.0  # concept 0 on the left, concept 2 on the right
+        probabilities[:, 2, :, 2:] = 1.0
+        pooled, concepts, views, _ = concept_regions(features, probabilities, torch.ones(2), min_mass=0.1, top=2)
+        self.assertEqual(len(pooled), 4)
+        for vector, concept in zip(pooled, concepts.tolist()):
+            expected = torch.tensor([1.0, 0.0, 0.0]) if concept == 0 else torch.tensor([0.0, 1.0, 0.0])
+            self.assertTrue(torch.allclose(vector, expected))
+        _, _, kept_views, _ = concept_regions(features, probabilities, torch.tensor([1.0, 0.0]), min_mass=0.1, top=2)
+        self.assertEqual(set(kept_views.tolist()), {0})
+
+    def test_aligned_concepts_across_images_lower_the_loss(self):
+        generator = torch.Generator().manual_seed(5)
+        concepts = torch.tensor([0, 1, 0, 1, 0, 1, 0, 1])
+        views = torch.arange(8)  # eight views of eight images
+        masses = torch.rand(8, 2, generator=generator)
+        prototypes = F.normalize(torch.randn(2, 16, generator=generator), dim=1)
+        aligned = F.normalize(prototypes[concepts] + 0.05 * torch.randn(8, 16, generator=generator), dim=1)
+        scattered = F.normalize(torch.randn(8, 16, generator=generator), dim=1)
+        low, diagnostics = region_contrast_loss(aligned, concepts, views, masses, 8, 0.1, 1.0)
+        high, _ = region_contrast_loss(scattered, concepts, views, masses, 8, 0.1, 1.0)
+        self.assertLess(float(low), float(high))
+        self.assertEqual(diagnostics["factor_region_anchor_fraction"], 1.0)
+
+    def test_regions_of_one_image_are_never_positives(self):
+        concepts = torch.tensor([0, 0])
+        views = torch.tensor([0, 4])  # both views of image 0 when the batch holds four images
+        loss, diagnostics = region_contrast_loss(F.normalize(torch.randn(2, 4), dim=1), concepts, views,
+                                                 torch.rand(8, 3), 4, 0.1, 1.0)
+        self.assertEqual(float(loss), 0.0)
+        self.assertEqual(diagnostics["factor_region_anchor_fraction"], 0.0)
 
 
 class ViewBoxTests(unittest.TestCase):

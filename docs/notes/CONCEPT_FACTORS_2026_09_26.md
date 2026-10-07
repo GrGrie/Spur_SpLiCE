@@ -609,6 +609,20 @@ Waterbirds 51.4 +- 2.2 and 59.2 (with the hold-out 53.0 and 60.1; SimCLR 45.8 an
 SimCLR on accuracy on every seed and on WGA on average; the drop against the hold-out arms lies within
 the seed spread, largest on MetaShift seed 1 (61.1 against 51.4).
 
+## Concept-region contrast (2026-10-07)
+
+The spatial regression makes concepts visible: accuracy rises on every seed, but on MetaShift the gain
+sits in the majority groups (cats indoors 64 against 55) and the cat factor still scores far lower on cats
+outdoors. Nothing in it asks a cat patch on a lawn to resemble a cat patch on a couch, and the probe reads
+the average of all patches. `--factor_region_weight` adds that demand (DetCon-style, Hénaff et al. 2021):
+each view's feature map is pooled inside its two dominant concept regions (warped map probability as the
+weight, mean probability at least 0.1), projected by a small head and contrasted across the batch. The
+regions of the same concept in other images are positives, weighted towards pairs whose images' concept
+mixes differ; the image's own regions leave the denominator. On MetaShift a batch holds about 335 regions,
+94 percent with positives (about 20 each); the dominant regions are cats, puppies, blankets, lawn, fields
+and windows, so the generic "pet" concept rarely enters. Arms: `region_w1_holdout` (spatial weight 5 plus
+region weight 1) and `region_w1_shuffled_holdout`.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under

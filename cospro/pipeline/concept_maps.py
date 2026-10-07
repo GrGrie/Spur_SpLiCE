@@ -159,3 +159,58 @@ def _spatial_cross_fit_loss(features: torch.Tensor, targets: torch.Tensor, weigh
         loss = loss + (held_out * per_view).sum() / held_out.sum().clamp_min(1e-12) / 2
         errors.append(float(((held_out * per_view).sum() / held_out.sum().clamp_min(1e-12)).detach()))
     return loss, 1.0 - sum(errors) / len(errors)
+
+
+def concept_regions(features: torch.Tensor, probabilities: torch.Tensor, weights: torch.Tensor,
+                    min_mass: float, top: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Feature vectors pooled inside each view's dominant concept regions.
+
+    ``probabilities`` is [views, concepts, h, w], the concept maps warped onto the views; a view's
+    region of concept k is its feature map weighted by k's probability. Each view contributes its
+    ``top`` concepts by mean probability that reach ``min_mass``; views of weight 0 contribute none.
+    Returns the region vectors [regions, channels], their concept, their view and every view's mean
+    concept probabilities [views, concepts].
+    """
+
+    masses = probabilities.mean(dim=(2, 3))
+    values, concepts = masses.topk(min(top, masses.shape[1]), dim=1)
+    keep = (values >= min_mass) & (weights[:, None] > 0)
+    views = torch.arange(len(masses), device=masses.device)[:, None].expand_as(concepts)[keep]
+    concepts = concepts[keep]
+    region_maps = probabilities[views, concepts]
+    pooled = torch.einsum("rhw,rchw->rc", region_maps, features[views])
+    return pooled / region_maps.sum(dim=(1, 2)).clamp_min(1e-6)[:, None], concepts, views, masses
+
+
+def region_contrast_loss(embeddings: torch.Tensor, concepts: torch.Tensor, views: torch.Tensor,
+                         masses: torch.Tensor, images: int, temperature: float,
+                         context_weight: float) -> tuple[torch.Tensor, dict[str, float]]:
+    """Supervised contrast of concept regions across images, weighted towards differing contexts.
+
+    A region's positives are the regions of the same concept in other images; its negatives are the
+    regions of other concepts; regions of its own image (either view) leave the denominator. A
+    positive pair weighs ``1 + context_weight * d / mean(d)``, where d is one minus the cosine of the two
+    views' concept mixes, so a cat on a couch and a cat on a lawn pull hardest. Embeddings are unit norm.
+    """
+
+    count = len(embeddings)
+    image = views % images
+    same_image = image[:, None] == image[None, :]
+    positive = (concepts[:, None] == concepts[None, :]) & ~same_image
+    anchors = positive.any(dim=1)
+    if count < 2 or not bool(anchors.any()):
+        return embeddings.sum() * 0.0, {"factor_region_regions": float(count), "factor_region_anchor_fraction": 0.0}
+    logits = (embeddings @ embeddings.T / temperature).masked_fill(same_image, float("-inf"))
+    log_probability = torch.log_softmax(logits, dim=1).masked_fill(same_image, 0.0)
+    mixes = F.normalize(masses[views].float(), dim=1)
+    difference = 1.0 - mixes @ mixes.T
+    scale = difference[positive].mean().clamp_min(1e-6)
+    pair_weights = positive.float() * (1.0 + context_weight * difference / scale)
+    per_anchor = -(pair_weights * log_probability).sum(dim=1) / pair_weights.sum(dim=1).clamp_min(1e-12)
+    loss = per_anchor[anchors].mean()
+    return loss, {
+        "factor_region_loss": float(loss.detach()),
+        "factor_region_regions": float(count),
+        "factor_region_anchor_fraction": float(anchors.float().mean()),
+        "factor_region_positives_per_anchor": float(positive.sum(dim=1)[anchors].float().mean()),
+    }

@@ -77,6 +77,9 @@
 # Fourteenth round (MetaShift): spatial_w5_noanimals_holdout and spatial_w5_noscenes_holdout leave the animal or
 # the scene concepts out of the maps. Concept maps are built on the main partition (MAPS_PARTITION): a busy
 # gpuidle GPU failed a map job and left its training jobs waiting for good.
+# Fifteenth round, concept-region contrast: region_w1_holdout adds to spatial_w5_holdout a supervised contrast
+# of the feature map pooled inside each view's dominant concept regions, positives being the same concept in
+# other images; region_w1_shuffled_holdout uses shuffled maps.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -172,6 +175,8 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
     [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
+    [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -239,6 +244,8 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
     [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
+    [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
   )
 elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   if [[ "${DATASET}" == "celeba" ]]; then
@@ -272,6 +279,8 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [spatial_w2_holdout]="${SPATIAL[*]} --factor_spatial_weight 2.0 ${HOLDOUT[*]}"
     [spatial_w10_holdout]="${SPATIAL[*]} --factor_spatial_weight 10.0 ${HOLDOUT[*]}"
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
+    [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
+    [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -337,7 +346,7 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   done
   return 1
 }
-if [[ -n "${SPATIAL_MAPS:-}" ]] && needs_maps "spatial_w*" "${SPATIAL_MAPS}"; then
+if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"; }; then
   MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
@@ -357,7 +366,7 @@ for arm in "${SELECTED[@]}"; do
     conditions=()
     if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
-    elif [[ "${arm}" == spatial_w* && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")
