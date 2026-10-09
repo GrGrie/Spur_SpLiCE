@@ -623,6 +623,62 @@ mixes differ; the image's own regions leave the denominator. On MetaShift a batc
 and windows, so the generic "pet" concept rarely enters. Arms: `region_w1_holdout` (spatial weight 5 plus
 region weight 1) and `region_w1_shuffled_holdout`.
 
+## Region contrast results (2026-10-09)
+
+With the hold-out, mean of the last four probes. MetaShift region uses seeds 1, 3 and 4 (seed 2 died at
+epoch 175); the Waterbirds shuffled region arm uses seeds 3 and 4 (seeds 1 and 2 died at start). All three
+deaths ran on dgx nodes and left no Python error.
+
+| dataset | arm | WGA | acc | group acc |
+|---|---|---|---|---|
+| MetaShift | spatial | 53.0 +- 5.8 | 62.2 | 65 / 53 / 58 / 73 |
+| MetaShift | region | 49.3 +- 7.8 | 64.6 | 73 / 49 / 63 / 71 |
+| MetaShift | region, shuffled maps | 42.4 +- 6.7 | 54.3 | 55 / 43 / 53 / 66 |
+| Waterbirds | spatial | 53.0 +- 3.0 | 60.1 | 55 / 64 / 59 / 68 |
+| Waterbirds | region | 55.3 +- 3.1 | 62.7 | 62 / 65 / 58 / 62 |
+| Waterbirds | region, shuffled maps | 49.7 +- 2.2 | 55.0 | 52 / 59 / 50 / 57 |
+
+The region contrast raises the concept scores on unseen images on every seed (MetaShift 0.22 to 0.29,
+Waterbirds 0.25 to 0.32) and the cat factor on unseen cats outdoors from 0.05 to 0.12. The probe gain goes
+to the majority groups again. On MetaShift WGA falls on all three paired seeds (by 4.8, 2.5 and 6.3) and
+cats outdoors fall from 53 to 49. On Waterbirds accuracy rises on every seed (2.6 on average) and WGA by
+2.3, on three of four seeds. On Waterbirds seeds 3 and 4 the shuffled region arm gains as much over the
+shuffled spatial arm (6.3 and 3.8) as the real region arm over the real spatial arm (5.3 and 4.1): part of
+the Waterbirds gain belongs to region pooling itself. `region_w1_ctx3_holdout` raises the context weight to 3.
+
+## Where decoupling fails: the student inherits the co-occurrence (2026-10-09)
+
+The CLIP teacher separates cat from its surroundings: its cat factor scores 0.92 on unseen cats indoors
+and 0.88 outdoors. The student's cat factor scores 0.61 and 0.12 with the region contrast, 0.47 and 0.05
+with the spatial loss alone, and 0.18 on dogs indoors. It predicts cat-ness where cat and scene agree
+(cats indoors, dogs outdoors) and fails on both minority groups: the student's "cat" tracks indoor scenes.
+
+Every concept loss so far is an expectation over the natural training images, where 88 percent of cats sit
+indoors. A position of the ResNet-18 `layer4` map sees most of the image, so the cheapest predictor of "cat
+here" combines local evidence with the scene, and the scene is right 88 percent of the time. The spatial
+and region losses localize the concept; the joint distribution of concept and context that the student
+fits stays the training distribution, and the losses reward the scene shortcut as long as it does.
+
+## Next method: concept compositing (proposal, 2026-10-09)
+
+The concept maps can change that distribution. For a fraction of each batch, cut the object region out of
+view A (the warped maps of its object concepts, soft and resized to the view) and paste it onto view B of
+another image, with B's own object region blurred away. The composite replaces A's second view in the
+SimCLR loss. Its concept maps are composited the same way, so the spatial regression sees cats on lawns and
+dogs on couches as often as the batch pairs them. With B drawn at random, object and context are
+independent in the composites: they sample the interventional distribution in which the spurious attribute
+carries no information about the object, the content and style condition under which contrastive learning
+isolates content (von Kügelgen et al., 2021). The object concepts come from the text-only scores of
+`cospro/pipeline/concept_type.py`, so no label enters. Composites are built on the GPU from views already
+in the batch; the crop boxes and `warp_maps` give the masks at view resolution.
+
+Precedent: background swaps with unsupervised saliency raise ImageNet-9 Mixed-Rand accuracy from 70.7 to
+84.1 for MoCo-v2 (Ryali et al., 2021); copy-paste at probability 0.3 helps and always-on copy-paste
+collapses (DiLo, Zhao et al., 2021). The concept masks supply the controls that tie the gain to a concept:
+random regions of the same area pasted onto the same donors, context concepts pasted in place of object
+concepts, and shuffled maps. Object pasting above random and context pasting is the evidence that the
+concept "cat" produces the cat-outdoor gain.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
@@ -650,3 +706,9 @@ every run.
   https://arxiv.org/abs/2311.04056
 * Yang et al., Identifying Spurious Biases Early in Training through the Lens of Simplicity Bias,
   AISTATS 2024. https://arxiv.org/abs/2305.18761
+* von Kügelgen et al., Self-Supervised Learning with Data Augmentations Provably Isolates Content from
+  Style, NeurIPS 2021. https://arxiv.org/abs/2106.04619
+* Ryali, Schwab and Morcos, Characterizing and Improving the Robustness of Self-Supervised Learning
+  through Background Augmentations, 2021. https://arxiv.org/abs/2103.12719
+* Zhao et al., Distilling Localization for Self-Supervised Representation Learning (DiLo), AAAI 2021.
+  https://arxiv.org/abs/2004.06638
