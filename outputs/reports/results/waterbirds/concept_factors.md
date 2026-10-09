@@ -4,6 +4,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | F1 fraction | F2 weight | targets | merge | min freq | F2 weighting | F2 cross-fit | F3 weight | F3 context | F3 presence | start | groups | factors | seeds | val WGA | val acc | factor expl. var. |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| factors_waterbirds | region_w1_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 55.3 ± 3.1 | 62.7 ± 2.1 |  |
 | factors_waterbirds | xfit_meaning_w5_response_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | response | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 54.4 ± 3.9 | 65.4 ± 0.3 |  |
 | factors_waterbirds | spatial_pca_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 53.6 ± 1.9 | 58.1 ± 0.9 |  |
 | factors_waterbirds | spatial_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2 | 53.5 ± 4.9 | 61.8 ± 3.8 |  |
@@ -12,6 +13,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_waterbirds | spatial_w5 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 51.4 ± 2.2 | 59.2 ± 2.2 |  |
 | factors_waterbirds | xfit_meaning_w5_clippca_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | clip_pca | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 51.0 ± 5.9 | 59.4 ± 1.5 |  |
 | factors_waterbirds | xfit_meaning_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 50.4 ± 9.0 | 58.0 ± 3.9 |  |
+| factors_waterbirds | region_w1_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 3,4 | 49.7 ± 2.2 | 55.0 ± 1.0 |  |
 | factors_waterbirds | spatial_w5_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 46.7 ± 2.7 | 52.6 ± 3.5 |  |
 | factors_waterbirds | xfit_norm_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2 | 46.6 ± 0.5 | 51.1 ± 1.1 |  |
 | factors_waterbirds | xfit_meaning_w3_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 45.7 ± 3.7 | 54.0 ± 2.0 |  |
@@ -21,6 +23,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_waterbirds | xfit_meaning_w10_residual_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | residual | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 41.7 ± 0.9 | 55.3 ± 2.2 |  |
 | factors_waterbirds | f2_std | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | False | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2,3,4 | 41.6 ± 6.1 | 51.2 ± 1.6 | 0.10 |
 | factors_waterbirds | xfit_meaning_w10_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | shuffled | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 41.4 ± 3.0 | 51.4 ± 2.2 |  |
+| factors_waterbirds | region_w1_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | default |  |  (+2 unfinished) |  |  |  |
 
 ## SimCLR reference on this dataset
 
