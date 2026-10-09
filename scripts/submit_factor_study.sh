@@ -80,6 +80,8 @@
 # Fifteenth round, concept-region contrast: region_w1_holdout adds to spatial_w5_holdout a supervised contrast
 # of the feature map pooled inside each view's dominant concept regions, positives being the same concept in
 # other images; region_w1_shuffled_holdout uses shuffled maps.
+# Sixteenth round: region_w1_ctx3_holdout weighs region pairs from differing contexts three times as strongly
+# (--factor_region_context_weight 3), since at weight 1 the region gain went to the majority groups.
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -177,6 +179,7 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
     [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [region_w1_ctx3_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_region_context_weight 3.0 ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
@@ -246,6 +249,7 @@ elif [[ "${DATASET}" == "spur_cifar10" ]]; then
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
     [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [region_w1_ctx3_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_region_context_weight 3.0 ${HOLDOUT[*]}"
   )
 elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   if [[ "${DATASET}" == "celeba" ]]; then
@@ -281,6 +285,7 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
     [spatial_pca_w5_holdout]="${SPATIAL_PCA[*]} --factor_spatial_weight 5.0 ${HOLDOUT[*]}"
     [region_w1_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 ${HOLDOUT[*]}"
     [region_w1_shuffled_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+    [region_w1_ctx3_holdout]="${SPATIAL[*]} --factor_spatial_weight 5.0 --factor_region_weight 1.0 --factor_region_context_weight 3.0 ${HOLDOUT[*]}"
     [xfit_w5_clippca128_holdout]="${XFIT_MEANING_OI[*]} --factor_targets clip_pca --factor_pca_components 128 --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [f2_w5_clippca_holdout]="${XFIT_MEANING_OI[*]} --factor_cross_fit false --factor_targets clip_pca --factor_distill_weight 5.0 ${HOLDOUT[*]}"
     [xfit_meaning_w5_response_holdout]="${XFIT_MEANING_OI[*]} --factor_targets response --factor_distill_weight 5.0 ${HOLDOUT[*]}"
