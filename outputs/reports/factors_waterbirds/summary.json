@@ -120,26 +120,27 @@
         "sd": null
       },
       "seeds": [
+        2,
         3,
         4
       ],
       "val_acc_last4": {
-        "mean": 55.025020241737366,
-        "sd": 1.0025702662953173
+        "mean": 54.336947202682495,
+        "sd": 1.3866892552595727
       },
       "val_group_accuracies": [
-        52.03426170349121,
-        59.12017250061035,
-        50.00000190734863,
-        57.14285659790039
+        50.53533172607422,
+        58.58369064331055,
+        51.127820332845054,
+        56.64160410563151
       ],
       "val_wga_last": {
-        "mean": 49.594275653362274,
-        "sd": 3.1478322114452704
+        "mean": 48.90867471694946,
+        "sd": 2.52280989131892
       },
       "val_wga_last4": {
-        "mean": 49.67578276991844,
-        "sd": 2.1997820547124327
+        "mean": 49.01654596130053,
+        "sd": 1.929585461602467
       }
     },
     {
@@ -157,25 +158,26 @@
         1,
         2,
         3,
-        4
+        4,
+        5
       ],
       "val_acc_last4": {
-        "mean": 52.25187540054321,
-        "sd": 1.2116165957707317
+        "mean": 52.23102480173111,
+        "sd": 1.0503260535254797
       },
       "val_group_accuracies": [
-        47.32334232330322,
-        53.7553653717041,
-        51.50376033782959,
-        63.72180461883545
+        47.36616821289063,
+        53.17596588134766,
+        52.93233184814453,
+        63.609021759033205
       ],
       "val_wga_last": {
-        "mean": 45.540645718574524,
-        "sd": 1.7115438395649853
+        "mean": 45.94001114368439,
+        "sd": 1.7304624959618595
       },
       "val_wga_last4": {
-        "mean": 45.79523019492626,
-        "sd": 1.7138711409061045
+        "mean": 46.272158324718475,
+        "sd": 1.8276536654023339
       }
     },
     {
@@ -1167,6 +1169,41 @@
       "val_wga_last": null,
       "val_wga_last4": null,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/10l3yjzz"
+    },
+    {
+      "arm": "region_w1_shuffled_holdout",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/region_w1_shuffled_holdout/24309457",
+      "seed": 1,
+      "spurious_probe_val_wga": null,
+      "status": "running",
+      "trajectory": [],
+      "val_acc_last": null,
+      "val_acc_last4": null,
+      "val_group_accuracies": null,
+      "val_wga_last": null,
+      "val_wga_last4": null,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/a0ahn1gb"
     },
     {
       "arm": "simclr",
@@ -3917,6 +3954,149 @@
       "val_wga_last": null,
       "val_wga_last4": null,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/nlv79ntn"
+    },
+    {
+      "arm": "region_w1_shuffled_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/region_w1_shuffled_holdout/24309458",
+      "seed": 2,
+      "spurious_probe_val_wga": 86.26609444618225,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 51.0425329208374,
+          "epoch": 25,
+          "wga": 46.61654233932495
+        },
+        {
+          "acc": 49.9582976102829,
+          "epoch": 50,
+          "wga": 37.593984603881836
+        },
+        {
+          "acc": 50.62552094459534,
+          "epoch": 75,
+          "wga": 47.10920751094818
+        },
+        {
+          "acc": 54.21184301376343,
+          "epoch": 100,
+          "wga": 46.61654233932495
+        },
+        {
+          "acc": 56.46371841430664,
+          "epoch": 125,
+          "wga": 44.36090290546417
+        },
+        {
+          "acc": 56.13011121749878,
+          "epoch": 150,
+          "wga": 45.864662528038025
+        },
+        {
+          "acc": 53.46121788024902,
+          "epoch": 175,
+          "wga": 47.75160551071167
+        },
+        {
+          "acc": 54.37864661216736,
+          "epoch": 200,
+          "wga": 42.105263471603394
+        },
+        {
+          "acc": 51.29274129867554,
+          "epoch": 225,
+          "wga": 43.04068386554718
+        },
+        {
+          "acc": 51.959967613220215,
+          "epoch": 250,
+          "wga": 45.182013511657715
+        },
+        {
+          "acc": 53.29441428184509,
+          "epoch": 275,
+          "wga": 47.75160551071167
+        },
+        {
+          "acc": 54.21184301376343,
+          "epoch": 300,
+          "wga": 51.39186382293701
+        },
+        {
+          "acc": 54.21184301376343,
+          "epoch": 325,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 51.626354455947876,
+          "epoch": 350,
+          "wga": 44.967880845069885
+        },
+        {
+          "acc": 52.460384368896484,
+          "epoch": 375,
+          "wga": 45.824411511421204
+        },
+        {
+          "acc": 52.627187967300415,
+          "epoch": 400,
+          "wga": 47.9657381772995
+        },
+        {
+          "acc": 53.127604722976685,
+          "epoch": 425,
+          "wga": 47.53747284412384
+        },
+        {
+          "acc": 52.960801124572754,
+          "epoch": 450,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 52.79399752616882,
+          "epoch": 475,
+          "wga": 47.53747284412384
+        },
+        {
+          "acc": 52.960801124572754,
+          "epoch": 500,
+          "wga": 47.53747284412384
+        }
+      ],
+      "val_acc_last": 52.960801124572754,
+      "val_acc_last4": 52.960801124572754,
+      "val_group_accuracies": [
+        47.537471771240234,
+        57.51072692871094,
+        53.38345718383789,
+        55.63909912109375
+      ],
+      "val_wga_last": 47.53747284412384,
+      "val_wga_last4": 47.69807234406471,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/ib4pvjgk"
     },
     {
       "arm": "simclr",
@@ -9631,6 +9811,323 @@
       "val_wga_last": 57.8158438205719,
       "val_wga_last4": 58.137042820453644,
       "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/982by6sf"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_05/simclr/24309474",
+      "seed": 5,
+      "spurious_probe_val_wga": 89.47368264198303,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 49.6246874332428,
+          "epoch": 25,
+          "wga": 45.824411511421204
+        },
+        {
+          "acc": 53.37781310081482,
+          "epoch": 50,
+          "wga": 42.85714328289032
+        },
+        {
+          "acc": 49.2910772562027,
+          "epoch": 75,
+          "wga": 41.113489866256714
+        },
+        {
+          "acc": 52.293580770492554,
+          "epoch": 100,
+          "wga": 47.36842215061188
+        },
+        {
+          "acc": 50.20850896835327,
+          "epoch": 125,
+          "wga": 44.539615511894226
+        },
+        {
+          "acc": 48.45704734325409,
+          "epoch": 150,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 48.29024076461792,
+          "epoch": 175,
+          "wga": 42.82655119895935
+        },
+        {
+          "acc": 47.78982400894165,
+          "epoch": 200,
+          "wga": 45.396146178245544
+        },
+        {
+          "acc": 51.79315805435181,
+          "epoch": 225,
+          "wga": 50.321197509765625
+        },
+        {
+          "acc": 50.20850896835327,
+          "epoch": 250,
+          "wga": 47.75160551071167
+        },
+        {
+          "acc": 50.54211616516113,
+          "epoch": 275,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 49.2910772562027,
+          "epoch": 300,
+          "wga": 44.967880845069885
+        },
+        {
+          "acc": 49.2910772562027,
+          "epoch": 325,
+          "wga": 44.3254828453064
+        },
+        {
+          "acc": 52.54378914833069,
+          "epoch": 350,
+          "wga": 51.12782120704651
+        },
+        {
+          "acc": 51.626354455947876,
+          "epoch": 375,
+          "wga": 48.39400351047516
+        },
+        {
+          "acc": 51.70975923538208,
+          "epoch": 400,
+          "wga": 47.75160551071167
+        },
+        {
+          "acc": 52.126771211624146,
+          "epoch": 425,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 52.293580770492554,
+          "epoch": 450,
+          "wga": 48.17987084388733
+        },
+        {
+          "acc": 52.37697958946228,
+          "epoch": 475,
+          "wga": 48.82226884365082
+        },
+        {
+          "acc": 51.79315805435181,
+          "epoch": 500,
+          "wga": 47.53747284412384
+        }
+      ],
+      "val_acc_last": 51.79315805435181,
+      "val_acc_last4": 52.1476224064827,
+      "val_group_accuracies": [
+        47.537471771240234,
+        50.858367919921875,
+        58.6466178894043,
+        63.15789031982422
+      ],
+      "val_wga_last": 47.53747284412384,
+      "val_wga_last4": 48.17987084388733,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/6fnpfcax"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_05/spatial_w5_holdout/24309468",
+      "seed": 5,
+      "spurious_probe_val_wga": null,
+      "status": "running",
+      "trajectory": [],
+      "val_acc_last": null,
+      "val_acc_last4": null,
+      "val_group_accuracies": null,
+      "val_wga_last": null,
+      "val_wga_last4": null,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/qmkul2qy"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_06/simclr/24309475",
+      "seed": 6,
+      "spurious_probe_val_wga": null,
+      "status": "running",
+      "trajectory": [
+        {
+          "acc": 52.54378914833069,
+          "epoch": 25,
+          "wga": 47.36842215061188
+        },
+        {
+          "acc": 49.207672476768494,
+          "epoch": 50,
+          "wga": 44.3254828453064
+        },
+        {
+          "acc": 51.0425329208374,
+          "epoch": 75,
+          "wga": 42.39828586578369
+        },
+        {
+          "acc": 52.37697958946228,
+          "epoch": 100,
+          "wga": 42.39828586578369
+        },
+        {
+          "acc": 53.87822985649109,
+          "epoch": 125,
+          "wga": 47.10920751094818
+        },
+        {
+          "acc": 52.960801124572754,
+          "epoch": 150,
+          "wga": 46.89507484436035
+        },
+        {
+          "acc": 52.04337239265442,
+          "epoch": 175,
+          "wga": 43.46895217895508
+        },
+        {
+          "acc": 51.20934247970581,
+          "epoch": 200,
+          "wga": 43.89721751213074
+        },
+        {
+          "acc": 53.46121788024902,
+          "epoch": 225,
+          "wga": 49.25053417682648
+        },
+        {
+          "acc": 52.960801124572754,
+          "epoch": 250,
+          "wga": 49.892932176589966
+        },
+        {
+          "acc": 53.96163463592529,
+          "epoch": 275,
+          "wga": 49.25053417682648
+        },
+        {
+          "acc": 54.54545617103577,
+          "epoch": 300,
+          "wga": 50.321197509765625
+        },
+        {
+          "acc": 52.04337239265442,
+          "epoch": 325,
+          "wga": 46.46680951118469
+        },
+        {
+          "acc": 52.293580770492554,
+          "epoch": 350,
+          "wga": 46.68094217777252
+        }
+      ],
+      "val_acc_last": null,
+      "val_acc_last4": 53.21101099252701,
+      "val_group_accuracies": null,
+      "val_wga_last": null,
+      "val_wga_last4": 48.17987084388733,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/ewhj6hbd"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_06/spatial_w5_holdout/24309469",
+      "seed": 6,
+      "spurious_probe_val_wga": null,
+      "status": "running",
+      "trajectory": [],
+      "val_acc_last": null,
+      "val_acc_last4": null,
+      "val_group_accuracies": null,
+      "val_wga_last": null,
+      "val_wga_last4": null,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/lb6nbcfa"
     }
   ],
   "study": "factors_waterbirds"

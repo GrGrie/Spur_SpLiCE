@@ -5,7 +5,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | study | arm | epochs | batch | lr | wd | temp | probe | seeds | val WGA | val acc |
 |---|---|---|---|---|---|---|---|---|---|---|
 | crp_followup_controls_v1_seeds34 | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 3,4 | 47.0 ± 0.5* | 53.1 ± 0.6 |
-| factors_waterbirds | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4 | 45.8 ± 1.7 | 52.3 ± 1.2 |
+| factors_waterbirds | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4,5 (+1 unfinished) | 46.3 ± 1.8 | 52.2 ± 1.1 |
 | paper_completion_2026_09_08_core | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4 | 45.5 ± 1.7* | 52.1 ± 1.4 |
 | waterbirds_cospro | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1 | 45.0 | 50.7 |
 

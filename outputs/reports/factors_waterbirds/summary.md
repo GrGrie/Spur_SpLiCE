@@ -15,10 +15,10 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | spatial_w5 | 1,2,3,4 | 51.4 ± 2.2 | 51.3 ± 2.2 | 59.2 ± 2.2 | 54 / 62 / 58 / 69 |  |  |
 | xfit_meaning_w5_clippca_holdout | 1,2 | 51.0 ± 5.9 | 51.3 ± 5.9 | 59.4 ± 1.5 | 51 / 63 / 68 / 68 |  | 0.06 |
 | xfit_meaning_w5_holdout | 1,2,3,4 | 50.4 ± 9.0 | 50.6 ± 8.6 | 58.0 ± 3.9 | 51 / 62 / 61 / 66 |  | 0.07 |
-| region_w1_shuffled_holdout | 3,4 | 49.7 ± 2.2 | 49.6 ± 3.1 | 55.0 ± 1.0 | 52 / 59 / 50 / 57 |  |  |
+| region_w1_shuffled_holdout | 2,3,4 | 49.0 ± 1.9 | 48.9 ± 2.5 | 54.3 ± 1.4 | 51 / 59 / 51 / 57 |  |  |
 | spatial_w5_shuffled_holdout | 1,2,3,4 | 46.7 ± 2.7 | 46.9 ± 2.8 | 52.6 ± 3.5 | 48 / 56 / 54 / 57 |  |  |
 | xfit_norm_holdout | 1,2 | 46.6 ± 0.5 | 46.5 ± 0.9 | 51.1 ± 1.1 | 46 / 52 / 52 / 64 |  | -0.01 |
-| simclr | 1,2,3,4 | 45.8 ± 1.7 | 45.5 ± 1.7 | 52.3 ± 1.2 | 47 / 54 / 52 / 64 |  |  |
+| simclr | 1,2,3,4,5 | 46.3 ± 1.8 | 45.9 ± 1.7 | 52.2 ± 1.1 | 47 / 53 / 53 / 64 |  |  |
 | xfit_meaning_w3_holdout | 1,2 | 45.7 ± 3.7 | 45.6 ± 3.9 | 54.0 ± 2.0 | 46 / 54 / 67 / 69 |  | 0.04 |
 | f2_shuffled | 1,2,3,4 | 45.5 ± 3.5 | 45.7 ± 3.4 | 51.8 ± 0.7 | 47 / 54 / 53 / 61 | 0.03 | -0.08 |
 | xfit_meaning_w5_response_residual_holdout | 1,2 | 43.9 ± 6.1 | 44.2 ± 6.8 | 51.5 ± 1.3 | 44 / 54 / 57 / 60 |  | 0.11 |
@@ -30,4 +30,8 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 ## Unfinished runs
 
 - `seed_01/region_w1_shuffled_holdout/24270488`: running
+- `seed_01/region_w1_shuffled_holdout/24309457`: running
 - `seed_02/region_w1_shuffled_holdout/24270489`: running
+- `seed_05/spatial_w5_holdout/24309468`: running
+- `seed_06/simclr/24309475`: running
+- `seed_06/spatial_w5_holdout/24309469`: running
