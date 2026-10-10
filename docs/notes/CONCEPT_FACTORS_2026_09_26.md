@@ -679,6 +679,23 @@ random regions of the same area pasted onto the same donors, context concepts pa
 concepts, and shuffled maps. Object pasting above random and context pasting is the evidence that the
 concept "cat" produces the cat-outdoor gain.
 
+## Seeds 5 and 6, and stalled jobs (2026-10-10)
+
+MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
+over six seeds (cats outdoors 51), SimCLR 44.3 +- 7.3 and 55.2 (cats outdoors 47), shuffled maps 45.6 +- 3.0
+and 56.3 over five seeds (cats outdoors 46). The spatial arm beats SimCLR on five of six paired seeds, by
+6.8 WGA on average; seeds 5 and 6 sit below seeds 1 to 4 (48.6 and 45.8). Region seed 2 finished at 52.1
+against 50.7 for spatial, so the region arm stands at 50.0 +- 6.5 over four seeds, below spatial on three.
+The Waterbirds shuffled region arm seed 2 scores 47.7, level with shuffled spatial maps (47.5): over seeds 2
+to 4 the region arm beats its control by 7.8 and the spatial arm its control by 6.0.
+
+Six jobs stalled: their records stopped at epochs 275, 300 and 375 (inside the periodic probe) or during
+setup before the first epoch (after W&B started, before the dataset and concept factors were recorded).
+None wrote an error; Slurm kept them running until they were cancelled. Five of the eight jobs on dgx003
+stalled, one of four on dgx004 and none of three on dgx002; the earlier region runs that stopped without an
+error also ran on dgx nodes. Jobs submitted with MAX_PARALLEL wait for their lane predecessor to end, so a
+stalled job also holds back the jobs behind it.
+
 ## Results book
 
 `python -m cospro.cli.build_results_book` writes one page per dataset and method under
