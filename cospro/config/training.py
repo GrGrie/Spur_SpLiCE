@@ -352,6 +352,24 @@ class ConceptFactorOptions:
         help="Comma-separated concept words; the spatial loss leaves out every factor that names one of them "
         "(ablation of which concepts the maps carry).",
     )
+    factor_composite_fraction: float = option(
+        0.0, parse=float,
+        help="Share of images whose second view becomes a concept composite: its object region (from the concept "
+        "maps) pasted onto another image whose own objects are painted over; 0 disables compositing.",
+    )
+    factor_composite_mask: str = option(
+        "object", choices=("object", "context", "random"),
+        help="Region a composite keeps: the image's object factors, the controls 'context' (its other factors) "
+        "or 'random' (another image's object silhouette).",
+    )
+    factor_composite_min_mass: float = option(
+        0.05, parse=float, help="Least share of a view the kept region must cover for the view to be composited.",
+    )
+    factor_concept_types: str = option(
+        "", parse=str,
+        help="Concept-type scores from cospro.cli.score_concept_types; compositing treats the factors below the "
+        "median score as objects.",
+    )
     factor_pca_components: int = option(
         0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
     )
@@ -554,6 +572,12 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
                  "--factor_region_weight needs --factor_concept_maps.")
         _require(args.factor_region_weight == 0 or not args.latetvg_prune_rate,
                  "The region contrast reads one encoder pass and does not combine with LateTVG pruning.")
+        _require(0 <= args.factor_composite_fraction <= 1 and 0 <= args.factor_composite_min_mass < 1,
+                 "--factor_composite_fraction must lie in [0, 1] and --factor_composite_min_mass in [0, 1).")
+        _require(args.factor_composite_fraction == 0 or (args.factor_concept_maps and args.factor_concept_types),
+                 "--factor_composite_fraction needs --factor_concept_maps and --factor_concept_types.")
+        _require(args.factor_composite_fraction == 0 or not args.factor_spatial_drop,
+                 "Compositing reads every factor's map and does not combine with --factor_spatial_drop.")
         _require(args.factor_spatial_weight == 0 or not args.latetvg_prune_rate,
                  "The spatial concept loss reads one encoder pass and does not combine with LateTVG pruning.")
         _require(args.factor_start_epoch >= 0 and args.factor_warmup_epochs >= 0,

@@ -84,6 +84,11 @@ class TrainingMethod:
 
         return None
 
+    def compose_views(self, views: list[torch.Tensor], batch) -> list[torch.Tensor]:
+        """The two views the encoder sees, after the batch has moved to the device; unchanged by default."""
+
+        return views
+
     def sampling_state(self):
         """State a method saves in the checkpoint, such as an adaptive sampler."""
 

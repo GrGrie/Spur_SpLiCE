@@ -103,6 +103,8 @@ def train_one_epoch(
         image = data[0]
         image[0] = image[0].to(args.device, non_blocking=True)
         image[1] = image[1].to(args.device, non_blocking=True)
+        if method is not None:
+            image = method.compose_views(image, data)
         if args.channels_last and str(args.device).startswith("cuda"):
             image[0] = image[0].contiguous(memory_format=torch.channels_last)
             image[1] = image[1].contiguous(memory_format=torch.channels_last)

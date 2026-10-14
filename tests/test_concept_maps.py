@@ -14,11 +14,20 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 
 from cospro.data.transforms import RecordedTwoCropTransform
-from cospro.methods.concept_factors import dropped_factors, load_concept_maps
+from cospro.methods.concept_factors import (
+    SpatialConceptDistillation,
+    dropped_factors,
+    factor_type_scores,
+    load_concept_maps,
+)
 from cospro.pipeline.concept_maps import (
     assemble_windows,
+    composite_images,
+    composite_maps,
     concept_regions,
+    object_columns,
     region_contrast_loss,
+    sharpen,
     spatial_cross_fit_loss,
     warp_maps,
     window_offsets,
@@ -176,6 +185,100 @@ class LoadMapsTests(unittest.TestCase):
                         "maps": torch.rand(2, 5, 14, 14).half()}, path)
             loaded = load_concept_maps(str(path), names, "waterbirds", [1, 2], shuffled=False, drop="couch")
             self.assertEqual(loaded.shape[1], 4)
+
+
+class CompositeTests(unittest.TestCase):
+    def test_the_more_object_like_half_of_the_factors_are_objects(self):
+        self.assertEqual(object_columns([-0.2, 0.1, -0.1, 0.0]).tolist(), [True, False, True, False])
+
+    def test_a_composite_keeps_its_region_and_paints_over_the_donor_objects(self):
+        image = torch.ones(1, 3, 32, 32)
+        donor = torch.zeros(1, 3, 32, 32)
+        donor_objects = torch.zeros(1, 1, 32, 32)
+        donor_objects[..., 12:20, 20:28] = 1.0
+        donor[..., 12:20, 20:28] = 5.0  # the donor's object
+        keep = torch.zeros(1, 1, 32, 32)
+        keep[..., :, :16] = 1.0
+        composite = composite_images(image, donor, keep, donor_objects)
+        self.assertTrue(torch.equal(composite[..., :16], image[..., :16]))
+        self.assertLess(float(composite[..., 16:].abs().max()), 1e-5)
+
+    def test_composite_maps_follow_the_pixels_and_commute_with_standardization(self):
+        maps, donor_maps = torch.rand(2, 5, 7, 7), torch.rand(2, 5, 7, 7)
+        keep, donor_objects = torch.rand(2, 1, 7, 7), torch.rand(2, 1, 7, 7)
+        self.assertTrue(torch.allclose(composite_maps(maps, donor_maps, torch.ones_like(keep), donor_objects), maps))
+        self.assertTrue(torch.allclose(
+            composite_maps(maps, donor_maps, torch.zeros_like(keep), torch.zeros_like(donor_objects)), donor_maps))
+        mean, std = torch.rand(1, 5, 1, 1), torch.rand(1, 5, 1, 1) + 0.5
+        standardized = composite_maps((maps - mean) / std, (donor_maps - mean) / std, keep, donor_objects)
+        self.assertTrue(torch.allclose(standardized, (composite_maps(maps, donor_maps, keep, donor_objects) - mean) / std,
+                                       atol=1e-5))
+
+    def _distillation(self, mask: str) -> SpatialConceptDistillation:
+        # Factor 0 is the object and fills the left half of every image; factor 1 fills the right half.
+        probabilities = torch.zeros(4, 2, 14, 14)
+        probabilities[:, 0, :, :7] = 1.0
+        probabilities[:, 1, :, 7:] = 1.0
+        distillation = SpatialConceptDistillation(
+            probabilities.clone(), 1.0, 0, 0, sample_weights=torch.tensor([1.0, 1.0, 1.0, 0.0]), ridge=1.0,
+            probabilities=probabilities, composite={"fraction": 1.0, "mask": mask, "min_mass": 0.05},
+            objects=torch.tensor([True, False]),
+        )
+        distillation.set_epoch(1)
+        return distillation
+
+    def _batch(self):
+        views = [torch.rand(4, 3, 28, 28), torch.rand(4, 3, 28, 28)]
+        boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]).repeat(4, 2, 1)
+        return views, (views, torch.arange(4), boxes)
+
+    def test_compositing_pastes_the_object_half_and_leaves_held_out_images_alone(self):
+        distillation = self._distillation("object")
+        views, batch = self._batch()
+        composed = distillation.compose([view.clone() for view in views], batch)
+        plan = distillation.plan
+        self.assertEqual(plan["images"].tolist(), [0, 1, 2])
+        self.assertNotIn(3, plan["donors"].tolist())
+        self.assertFalse(bool((plan["donors"] == plan["images"]).any()))
+        self.assertTrue(torch.equal(composed[0], views[0]))
+        self.assertTrue(torch.equal(composed[1][3], views[1][3]))
+        self.assertTrue(torch.allclose(composed[1][:3, :, :, :12], views[1][:3, :, :, :12]))
+        self.assertFalse(torch.allclose(composed[1][:3, :, :, 16:], views[1][:3, :, :, 16:]))
+
+    def test_the_context_control_keeps_the_other_half(self):
+        distillation = self._distillation("context")
+        views, batch = self._batch()
+        composed = distillation.compose([view.clone() for view in views], batch)
+        self.assertTrue(torch.allclose(composed[1][:3, :, :, 16:], views[1][:3, :, :, 16:]))
+
+    def test_composited_targets_match_the_composite_maps(self):
+        distillation = self._distillation("object")
+        views, batch = self._batch()
+        distillation.compose([view.clone() for view in views], batch)
+        plan = distillation.plan
+        boxes = torch.cat([batch[2][:, 0], batch[2][:, 1]])
+        warped = torch.rand(8, 2, 7, 7)
+        composited = distillation._composited(warped, plan, boxes, (7, 7))
+        images, donors = 4 + plan["images"], 4 + plan["donors"]
+        keep = sharpen(warp_maps(plan["keep"], boxes[images], (7, 7)))
+        donor_objects = sharpen(warp_maps(plan["donor_objects"], boxes[donors], (7, 7)))
+        self.assertTrue(torch.allclose(composited[images], composite_maps(warped[images], warped[donors], keep,
+                                                                          donor_objects)))
+        self.assertTrue(torch.equal(composited[:4], warped[:4]))
+
+    def test_type_scores_must_belong_to_the_concept_groups(self):
+        with tempfile.TemporaryDirectory() as directory:
+            groups = Path(directory) / "concept_groups.json"
+            groups.write_text("{}", encoding="utf-8")
+            from cospro.pipeline.concept_type import concept_groups_digest
+            scores = Path(directory) / "scores.json"
+            scores.write_text(f'{{"concept_groups_sha256": "{concept_groups_digest(groups)}", "scores": {{"1": -0.2, "2": 0.1}}}}',
+                              encoding="utf-8")
+            factors = [{"group_ids": [1]}, {"group_ids": [1, 2]}]
+            self.assertTrue(np.allclose(factor_type_scores(factors, str(scores), groups), [-0.2, -0.05]))
+            groups.write_text("{ }", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                factor_type_scores(factors, str(scores), groups)
 
 
 if __name__ == "__main__":

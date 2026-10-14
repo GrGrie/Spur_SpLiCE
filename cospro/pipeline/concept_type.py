@@ -18,6 +18,8 @@ person, and the scores there separate nothing.
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Mapping, Sequence
 
 import torch
@@ -38,6 +40,12 @@ OBJECT_PROMPTS = (
     "an object in the foreground",
 )
 PROMPT_TEMPLATE = "a photo of {}"
+
+
+def concept_groups_digest(path: str | Path) -> str:
+    """SHA-256 of a concept-group artifact with CRLF read as LF, so a Windows checkout matches the cluster's."""
+
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _encode(texts: Sequence[str], model, tokenizer) -> torch.Tensor:

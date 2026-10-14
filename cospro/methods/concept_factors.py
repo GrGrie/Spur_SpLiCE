@@ -31,6 +31,7 @@ Every image still occurs exactly once per epoch, so the optimizer-step budget ma
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Any, Iterator, Mapping
@@ -43,7 +44,10 @@ from torch.utils.data import DataLoader, Sampler
 from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, register_method
 from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
-from cospro.pipeline.concept_maps import concept_regions, region_contrast_loss, spatial_cross_fit_loss, warp_maps
+from cospro.pipeline.concept_maps import (
+    composite_images, composite_maps, concept_regions, object_columns, region_contrast_loss, sharpen,
+    spatial_cross_fit_loss, warp_maps,
+)
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
     SHUFFLE_SEED,
@@ -64,6 +68,7 @@ from cospro.pipeline.concept_factors import (
     unseen_explained_variance,
     unseen_predictions,
 )
+from cospro.pipeline.concept_type import concept_groups_digest
 
 
 class ConceptConditionedBatchSampler(Sampler[list[int]]):
@@ -356,14 +361,28 @@ class SpatialConceptDistillation:
     The regression part fits, location by location, a cross-fitted ridge from the feature map to the
     standardized maps. The region part pools the feature map inside each view's dominant concept
     regions and contrasts the regions of one concept across images (``region_contrast_loss``).
+
+    Compositing (``compose``) replaces the second view of a share of the batch by a composite: the
+    view's object region pasted onto another image's view whose own objects are painted over. SimCLR
+    then pairs an image with its object in other surroundings, and the spatial targets of the
+    composite are composited alike (``composite_maps``). The controls paste the context region
+    (``mask="context"``) or another image's object silhouette (``mask="random"``).
     """
 
     def __init__(self, maps: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
                  sample_weights: torch.Tensor, ridge: float, probabilities: torch.Tensor | None = None,
-                 region: dict | None = None) -> None:
+                 region: dict | None = None, composite: dict | None = None,
+                 objects: torch.Tensor | None = None) -> None:
         self.maps = maps
         self.probabilities = probabilities
         self.region = dict(region or {"weight": 0.0})
+        self.composite = dict(composite or {"fraction": 0.0})
+        if self.composite["fraction"] > 0 and (probabilities is None or objects is None):
+            raise ValueError("Compositing needs the concept probabilities and the object factors.")
+        #: Boolean per factor: the factors whose regions count as objects.
+        self.objects = objects
+        self.plan: dict | None = None
+        self.composite_diagnostics: dict[str, float] = {}
         self.sample_weights = sample_weights.float()
         self.weight = float(weight)
         self.start_epoch = int(start_epoch)
@@ -401,13 +420,79 @@ class SpatialConceptDistillation:
         stage.register_forward_hook(lambda module, inputs, output: setattr(self, "feature_map", output))
         self._hooked = True
 
+    def compose(self, views: list[torch.Tensor], batch) -> list[torch.Tensor]:
+        """Replace the second view of a scheduled share of the images by a composite (see the class).
+
+        An image qualifies when it carries a concept-loss weight and its pasted region covers at least
+        ``min_mass`` of its view; a donor qualifies when it carries a weight and its surroundings cover
+        at least a quarter of its view. The plan stays until ``__call__`` composites the targets.
+        """
+
+        self.plan, self.composite_diagnostics = None, {}
+        fraction = self._scheduled(float(self.composite.get("fraction", 0.0)))
+        if fraction <= 0 or len(batch) < 3:
+            return views
+        rows = torch.as_tensor(batch[1], dtype=torch.long).detach().cpu().view(-1)
+        device = views[1].device
+        count = len(rows)
+        boxes = batch[2][:, 1].to(device)
+        size = tuple(views[1].shape[-2:])
+        probabilities = self.probabilities.index_select(0, rows).float().to(device)
+        objects = probabilities[:, self.objects.to(device)].sum(dim=1, keepdim=True)
+        mask = self.composite.get("mask", "object")
+        if mask == "context":
+            source = probabilities[:, ~self.objects.to(device)].sum(dim=1, keepdim=True)
+        elif mask == "random":
+            # Control: another image's object silhouette, so the same shapes cut arbitrary content.
+            source = objects[torch.randperm(count, device=device)]
+        else:
+            source = objects
+        keep = sharpen(warp_maps(source, boxes, size))
+        donor_objects = sharpen(warp_maps(objects, boxes, size))
+        weights = self.sample_weights.index_select(0, rows).to(device)
+        eligible = (weights > 0) & (keep.mean(dim=(1, 2, 3)) >= float(self.composite.get("min_mass", 0.05)))
+        donors_ok = (weights > 0) & (donor_objects.mean(dim=(1, 2, 3)) <= 0.75)
+        chosen = eligible & (torch.rand(count, device=device) < fraction)
+        pool = donors_ok.nonzero().view(-1)
+        self.composite_diagnostics = {"factor_composite_fraction": 0.0}
+        if not bool(chosen.any()) or len(pool) < 2:
+            return views
+        images = chosen.nonzero().view(-1)
+        drawn = torch.randint(len(pool), (len(images),), device=device)
+        donors = pool[drawn]
+        # Pool members are distinct, so the next one differs from an image drawn as its own donor.
+        donors = torch.where(donors == images, pool[(drawn + 1) % len(pool)], donors)
+        composites = composite_images(views[1][images].float(), views[1][donors].float(), keep[images],
+                                      donor_objects[donors])
+        second = views[1].clone()
+        second[images] = composites.to(second.dtype)
+        self.plan = {"images": images, "donors": donors, "keep": source[images], "donor_objects": objects[donors]}
+        self.composite_diagnostics = {
+            "factor_composite_fraction": len(images) / count,
+            "factor_composite_kept_mass": float(keep[images].mean()),
+        }
+        return [views[0], second, *views[2:]]
+
+    def _composited(self, warped: torch.Tensor, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+        """``warped`` maps of both views with the composited second views' maps put together alike."""
+
+        count = len(warped) // 2
+        images, donors = count + plan["images"], count + plan["donors"]
+        keep = sharpen(warp_maps(plan["keep"], boxes[images], size))
+        donor_objects = sharpen(warp_maps(plan["donor_objects"], boxes[donors], size))
+        values = composite_maps(warped[images], warped[donors], keep, donor_objects)
+        warped = warped.clone()
+        warped[images] = values
+        return warped
+
     def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor, model=None) -> torch.Tensor:
         feature_map, boxes = self.feature_map, self.boxes
+        plan, self.plan = self.plan, None
         region_weight = self._scheduled(float(self.region.get("weight", 0.0)))
         if feature_map is None or boxes is None or feature_map.shape[0] != embeddings.shape[0]:
             # The hook attaches during the first step, whose forward pass has already run.
             self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
-                                     "factor_region_scheduled_weight": region_weight}
+                                     "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics}
             return embeddings.sum() * 0.0
         rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
         device = feature_map.device
@@ -417,10 +502,12 @@ class SpatialConceptDistillation:
         weights = torch.cat([weights, weights])
         value = embeddings.sum() * 0.0
         self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
-                                 "factor_region_scheduled_weight": region_weight}
+                                 "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics}
         if self.weight > 0:
             maps = self.maps.index_select(0, rows).float().to(device)
             targets = warp_maps(torch.cat([maps, maps]), boxes, size)
+            if plan is not None:
+                targets = self._composited(targets, plan, boxes, size)
             loss, explained = spatial_cross_fit_loss(feature_map, targets, weights, self.ridge)
             value = value + self.scheduled_weight * loss
             self.last_diagnostics["factor_spatial_heldout_explained_variance"] = explained
@@ -429,6 +516,8 @@ class SpatialConceptDistillation:
                 raise ValueError("The region contrast needs the model's region head.")
             probabilities = self.probabilities.index_select(0, rows).float().to(device)
             probabilities = warp_maps(torch.cat([probabilities, probabilities]), boxes, size).clamp_min(0.0)
+            if plan is not None:
+                probabilities = self._composited(probabilities, plan, boxes, size)
             with torch.autocast(device_type=device.type, enabled=False):
                 pooled, concepts, views, masses = concept_regions(
                     feature_map.float(), probabilities, weights, self.region["min_mass"], self.region["top"],
@@ -453,6 +542,18 @@ def dropped_factors(names: list[str], words: str) -> list[int]:
         if concepts & wanted:
             positions.append(position)
     return positions
+
+
+def factor_type_scores(factors: list[dict], path: str, groups_path) -> list[float]:
+    """Each factor's mean concept-type score over its concept groups, from ``cospro.cli.score_concept_types``."""
+
+    if not path:
+        raise ValueError("Compositing needs --factor_concept_types, the scores of cospro.cli.score_concept_types.")
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if payload.get("concept_groups_sha256") != concept_groups_digest(groups_path):
+        raise ValueError(f"{path} scores other concept groups than {groups_path}; rerun cospro.cli.score_concept_types.")
+    scores = payload["scores"]
+    return [sum(scores[str(group)] for group in factor["group_ids"]) / len(factor["group_ids"]) for factor in factors]
 
 
 def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_indices,
@@ -486,7 +587,7 @@ def load_concept_maps(path: str, factor_names: list[str], dataset: str, source_i
     if not probabilities:
         return maps.index_select(0, rows).half()
     if stored.get("kind", "concepts") != "concepts":
-        raise ValueError("Region contrast needs concept maps; principal-component maps have no regions.")
+        raise ValueError("Region contrast and compositing need concept maps; principal-component maps have no regions.")
     return maps.index_select(0, rows).half(), raw.index_select(0, rows).half()
 
 
@@ -522,6 +623,10 @@ class ConceptFactors(TrainingMethod):
         region_top: int = 2,
         region_context_weight: float = 1.0,
         region_dim: int = 128,
+        composite_fraction: float = 0.0,
+        composite_mask: str = "object",
+        composite_min_mass: float = 0.05,
+        concept_types: str = "",
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -549,6 +654,11 @@ class ConceptFactors(TrainingMethod):
                                 "min_mass": float(region_min_mass), "top": int(region_top),
                                 "context_weight": float(region_context_weight)}
         self.region_dim = int(region_dim)
+        self.composite_settings = {"fraction": float(composite_fraction), "mask": composite_mask,
+                                   "min_mass": float(composite_min_mass)}
+        self.concept_types = concept_types
+        #: Names of the factors compositing treats as objects, known once ``wrap_loader`` has run.
+        self.object_factors: list[str] = []
         #: Output size of the region projection head, known once ``wrap_loader`` has run.
         self.factor_region_dim: int | None = None
         self.block_settings = {
@@ -603,6 +713,10 @@ class ConceptFactors(TrainingMethod):
             region_top=options.factor_region_top,
             region_context_weight=options.factor_region_context_weight,
             region_dim=options.factor_region_dim,
+            composite_fraction=options.factor_composite_fraction,
+            composite_mask=options.factor_composite_mask,
+            composite_min_mass=options.factor_composite_min_mass,
+            concept_types=options.factor_concept_types,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -669,15 +783,25 @@ class ConceptFactors(TrainingMethod):
             print(f"[INFO] Concept blocks ({settings['presence']} presence): {self.block_names}", flush=True)
         spatial = self.spatial_settings
         region = self.region_settings
-        if spatial["weight"] > 0 or region["weight"] > 0:
+        composite = self.composite_settings
+        if spatial["weight"] > 0 or region["weight"] > 0 or composite["fraction"] > 0:
             names = [factor_name(factor) for factor in factors["factors"]]
+            raw = region["weight"] > 0 or composite["fraction"] > 0
             loaded = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
                                        shuffled=spatial["kind"] == "shuffled", drop=spatial["drop"],
-                                       probabilities=region["weight"] > 0)
-            maps, probabilities = loaded if region["weight"] > 0 else (loaded, None)
+                                       probabilities=raw)
+            maps, probabilities = loaded if raw else (loaded, None)
+            objects = None
+            if composite["fraction"] > 0:
+                if spatial["drop"]:
+                    raise ValueError("Compositing reads every factor's map and does not combine with --factor_spatial_drop.")
+                objects = object_columns(factor_type_scores(factors["factors"], self.concept_types, groups_path))
+                self.object_factors = [name for name, is_object in zip(names, objects.tolist()) if is_object]
+                print(f"[INFO] Compositing ({composite['mask']} regions, fraction {composite['fraction']:g}) with "
+                      f"{len(self.object_factors)} object factors: {self.object_factors}", flush=True)
             self.spatial = SpatialConceptDistillation(
                 maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
-                probabilities=probabilities, region=region,
+                probabilities=probabilities, region=region, composite=composite, objects=objects,
             )
             if region["weight"] > 0:
                 self.factor_region_dim = self.region_dim
@@ -823,6 +947,11 @@ class ConceptFactors(TrainingMethod):
         if self.spatial is not None:
             self.spatial.boxes = batch[2] if len(batch) > 2 else None
 
+    def compose_views(self, views, batch):
+        if self.spatial is None:
+            return views
+        return self.spatial.compose(views, batch)
+
     def extra_loss(self, *, model, embeddings, sample_indices) -> LossTerms | None:
         if self.regularizer is None and self.blocks is None and self.spatial is None:
             return None
@@ -866,6 +995,7 @@ class ConceptFactors(TrainingMethod):
             ],
             "concept_block_factors": self.block_names,
             "concept_factor_balancing": self.balancing,
+            "concept_composite_object_factors": self.object_factors,
         }
 
     def input_artifacts(self) -> list[Path]:

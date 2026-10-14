@@ -10,6 +10,7 @@ from pathlib import Path
 
 import torch
 
+from cospro.pipeline.concept_type import concept_groups_digest
 from cospro.pipeline.selection import ConceptTypeGate
 from cospro.pipeline import (
     GROUPING_CONFIG_FIELDS,
@@ -117,7 +118,7 @@ def concept_type_selection(args: argparse.Namespace, artifact_path: Path):
         return None
     payload = json.loads(args.concept_type_scores.read_text(encoding="utf-8"))
     expected = payload.get("concept_groups_sha256")
-    actual = _sha256(artifact_path)
+    actual = concept_groups_digest(artifact_path)
     if expected is None:
         raise ValueError(
             f"{args.concept_type_scores} predates the digest check; recompute it with "

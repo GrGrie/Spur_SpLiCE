@@ -11,6 +11,10 @@ Training warps the maps onto each SimCLR view (``warp_maps``) and regresses the 
 on them location by location (``spatial_cross_fit_loss``): a cat patch has to encode "cat" whether
 the image shows a couch or a lawn, which an image-level target cannot ask for when cat and couch
 co-occur on most images.
+
+Compositing (``composite_images``, ``composite_maps``) uses the same maps to cut a view's object
+region and paste it onto another image whose own objects are painted over, so an object appears in
+surroundings drawn independently of it.
 """
 
 from __future__ import annotations
@@ -214,3 +218,72 @@ def region_contrast_loss(embeddings: torch.Tensor, concepts: torch.Tensor, views
         "factor_region_anchor_fraction": float(anchors.float().mean()),
         "factor_region_positives_per_anchor": float(positive.sum(dim=1)[anchors].float().mean()),
     }
+
+
+def object_columns(scores: list[float]) -> torch.Tensor:
+    """Which factors count as objects: those whose context preference lies below the median of the set.
+
+    ``scores`` holds one ``cospro.pipeline.concept_type`` score per factor (context similarity minus
+    object similarity of its words). The text encoder ranks almost every word closer to an object than
+    to a scene, so the split is relative to the run's own factors: the more object-like half.
+    """
+
+    values = torch.tensor(scores, dtype=torch.float32)
+    return values < torch.quantile(values, 0.5)
+
+
+def sharpen(masks: torch.Tensor) -> torch.Tensor:
+    """Region masks with a narrow edge: mass up to 0.25 maps to 0, from 0.75 to 1, linear between.
+
+    Upsampled 14 x 14 masks fade over a whole map cell, which pastes a translucent ghost of the region;
+    the steeper ramp keeps a soft seam half a cell wide.
+    """
+
+    return (2.0 * masks - 0.5).clamp(0.0, 1.0)
+
+
+def inpaint(images: torch.Tensor, holes: torch.Tensor, scale: int = 4) -> torch.Tensor:
+    """Fill ``holes`` from the pixels around them by normalized convolution, [n, c, H, W].
+
+    ``holes`` is [n, 1, H, W], 1 inside a hole. The known pixels are averaged over a window half the
+    image wide at a quarter of the resolution, so a hole takes the colours of its surroundings; where no
+    known pixel lies within the window the image's mean known colour fills in.
+    """
+
+    known = 1.0 - holes
+    values = F.avg_pool2d(images * known, scale)
+    weights = F.avg_pool2d(known, scale)
+    kernel = max(3, (min(weights.shape[-2:]) // 2) | 1)
+    numerator = F.avg_pool2d(values, kernel, stride=1, padding=kernel // 2)
+    denominator = F.avg_pool2d(weights, kernel, stride=1, padding=kernel // 2)
+    mean = (images * known).sum(dim=(2, 3), keepdim=True) / known.sum(dim=(2, 3), keepdim=True).clamp_min(1e-6)
+    filled = torch.where(denominator > 1e-3, numerator / denominator.clamp_min(1e-3), mean)
+    return F.interpolate(filled, size=images.shape[-2:], mode="bilinear", align_corners=False)
+
+
+def composite_images(images: torch.Tensor, donors: torch.Tensor, keep: torch.Tensor,
+                     donor_objects: torch.Tensor) -> torch.Tensor:
+    """Each image's ``keep`` region pasted onto its donor, whose own objects are painted over.
+
+    All masks are [n, 1, H, W] in [0, 1] on the views' pixel grid. The donor contributes its
+    surroundings: inside ``donor_objects`` its pixels are replaced by ``inpaint``.
+    """
+
+    background = (1.0 - donor_objects) * donors + donor_objects * inpaint(donors, donor_objects)
+    return keep * images + (1.0 - keep) * background
+
+
+def composite_maps(maps: torch.Tensor, donor_maps: torch.Tensor, keep: torch.Tensor,
+                   donor_objects: torch.Tensor) -> torch.Tensor:
+    """The concept maps of ``composite_images``, [n, factors, h, w].
+
+    Inside ``keep`` the image's own maps hold; elsewhere the donor's, with its painted-over objects
+    carrying the donor's mean over its surroundings. The mixture is affine with weights summing to one,
+    so it applies alike to probabilities and to maps standardized per factor.
+    """
+
+    surroundings = 1.0 - donor_objects
+    mean = (donor_maps * surroundings).sum(dim=(2, 3), keepdim=True) / surroundings.sum(
+        dim=(2, 3), keepdim=True).clamp_min(1e-6)
+    background = surroundings * donor_maps + donor_objects * mean
+    return keep * maps + (1.0 - keep) * background

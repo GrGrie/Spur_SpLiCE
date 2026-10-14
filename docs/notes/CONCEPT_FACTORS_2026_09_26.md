@@ -679,6 +679,34 @@ random regions of the same area pasted onto the same donors, context concepts pa
 concepts, and shuffled maps. Object pasting above random and context pasting is the evidence that the
 concept "cat" produces the cat-outdoor gain.
 
+## Concept compositing, implemented (2026-10-14)
+
+Which concepts get cut is decided without labels and without naming the spurious pair. The maps give, per
+14 x 14 cell, a softmax over the run's factors. `cospro.cli.score_concept_types` scores every concept group by
+its words alone (CLIP text similarity to scene prompts minus similarity to object prompts); a factor averages
+its groups, and the factors below the median of the run's factor set count as objects. The text encoder rates
+almost every word closer to an object than to a scene (MetaShift groups range from -0.27 to +0.10), so the
+split is relative. On MetaShift the 65 object factors hold every animal and breed factor and also verbs and
+people (jump, editor, owner); lawn, couch, bed, desk, window, beach and snow fall on the context side. On
+Waterbirds the birds are objects and bamboo, forest, wetland, loch and landscape are context; "File" (7.7
+percent of patches) lands among the objects. The one assumption, stated in `cospro/pipeline/concept_type.py`,
+is that the target is an object and the spurious attribute its surroundings; CelebA breaks it and gets no
+compositing arms.
+
+Per batch, after the views reach the GPU (`TrainingMethod.compose_views`): an image qualifies when it carries
+a concept-loss weight (held-out images never take part, as image or donor) and its object mass covers at
+least 5 percent of its second view; 30 percent of the qualifying images (ramped in with the factor schedule)
+get a random donor from the batch whose objects cover at most three quarters of its view. The object mass of
+the image and of the donor is warped onto the view with its crop box and sharpened (mass 0.25 maps to 0, 0.75
+to 1, linear between) so a pasted region keeps a seam half a map cell wide. The donor's objects are painted
+over by normalized convolution from their surroundings; the image's object region goes on top. The spatial
+targets of a composite are composited with the same masks (`composite_maps`), which is exact for standardized
+maps because the mixture is affine. On a local MetaShift batch 23 percent of the images were composited and
+the pasted region covered 44 percent of a view: dogs from couches land on lawns, a retriever from a lawn in an
+office. Arms (spatial weight 5, hold-out): `comp_w5_holdout`, controls `comp_random_w5_holdout` (another
+image's object silhouette), `comp_context_w5_holdout` (the context region is kept, the object painted over)
+and `comp_shuffled_w5_holdout` (shuffled maps), and `comp_only_holdout` (compositing without the spatial loss).
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
