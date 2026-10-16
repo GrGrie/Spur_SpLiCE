@@ -707,6 +707,29 @@ office. Arms (spatial weight 5, hold-out): `comp_w5_holdout`, controls `comp_ran
 image's object silhouette), `comp_context_w5_holdout` (the context region is kept, the object painted over)
 and `comp_shuffled_w5_holdout` (shuffled maps), and `comp_only_holdout` (compositing without the spatial loss).
 
+## Compositing results on MetaShift (2026-10-16)
+
+Seeds 1 to 4 with the hold-out, mean of the last four probes:
+
+| arm | WGA | acc | cats outdoors | cat factor indoors / outdoors (unseen) |
+|---|---|---|---|---|
+| spatial maps (same seeds) | 53.0 +- 5.8 | 62.2 | 53.1 | 0.47 / 0.06 |
+| compositing, object regions | 52.3 +- 1.9 | 63.3 | 55.2 | 0.55 / 0.12 |
+| control: another image's silhouette | 50.6 +- 3.7 | 60.0 | 51.0 | 0.53 / 0.16 |
+| control: context region kept | 49.3 +- 1.9 | 60.1 | 49.3 | 0.46 / 0.02 |
+| control: shuffled maps | 48.4 +- 3.1 | 56.6 | 49.0 | 0.26 / 0.13 |
+| SimCLR (same seeds) | 44.8 | 54.8 | 48.6 | |
+
+Compositing gives the best and steadiest MetaShift WGA of the branch and the most cats outdoors. Its arms
+order as the concept hypothesis predicts (object regions above random silhouettes above context regions);
+object compositing beats the context control on all four seeds (3.0 WGA on average) and the shuffled
+control on three (3.8). Against the random-silhouette control the gain is 1.6 with two of four seeds
+ahead, and against spatial maps on the same seeds it is -0.8 (seeds -9.0, -0.3, -1.7, +8.0). The cat
+factor on unseen cats outdoors moves from 0.06 to 0.12, and the random-silhouette control reaches 0.16:
+the representation still ties the cat to its scene. Waterbirds compositing and `comp_only_holdout` have
+not run yet. With seeds 5 and 6 the spatial arms stand at MetaShift 51.1, Waterbirds 52.8 +- 4.7
+(SimCLR 46.7, shuffled maps 47.5); Waterbirds shuffled region seed 1 completes that arm at 49.3 +- 1.7.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
