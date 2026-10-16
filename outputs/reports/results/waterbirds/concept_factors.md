@@ -8,13 +8,13 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | factors_waterbirds | xfit_meaning_w5_response_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | response | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 54.4 ± 3.9 | 65.4 ± 0.3 |  |
 | factors_waterbirds | spatial_pca_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 53.6 ± 1.9 | 58.1 ± 0.9 |  |
 | factors_waterbirds | spatial_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2 | 53.5 ± 4.9 | 61.8 ± 3.8 |  |
-| factors_waterbirds | spatial_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 53.0 ± 3.0 | 60.1 ± 2.5 |  |
+| factors_waterbirds | spatial_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4,5,6 | 52.8 ± 4.7 | 60.3 ± 2.7 |  |
 | factors_waterbirds | xfit_meaning_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 51.5 ± 5.5 | 57.5 ± 2.0 |  |
-| factors_waterbirds | spatial_w5 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 51.4 ± 2.2 | 59.2 ± 2.2 |  |
 | factors_waterbirds | xfit_meaning_w5_clippca_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | clip_pca | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 51.0 ± 5.9 | 59.4 ± 1.5 |  |
 | factors_waterbirds | xfit_meaning_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 50.4 ± 9.0 | 58.0 ± 3.9 |  |
-| factors_waterbirds | region_w1_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 2,3,4 | 49.0 ± 1.9 | 54.3 ± 1.4 |  |
-| factors_waterbirds | spatial_w5_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 46.7 ± 2.7 | 52.6 ± 3.5 |  |
+| factors_waterbirds | spatial_w5 | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4,5,6 | 49.5 ± 4.6 | 59.1 ± 3.7 |  |
+| factors_waterbirds | region_w1_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 49.3 ± 1.7 | 54.6 ± 1.2 |  |
+| factors_waterbirds | spatial_w5_shuffled_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4,5,6 | 47.5 ± 2.5 | 52.8 ± 2.7 |  |
 | factors_waterbirds | xfit_norm_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | standardized | 0.9 | 0.02 | none | True | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2 | 46.6 ± 0.5 | 51.1 ± 1.1 |  |
 | factors_waterbirds | xfit_meaning_w3_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 3 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 45.7 ± 3.7 | 54.0 ± 2.0 |  |
 | factors_waterbirds | f2_shuffled | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 1 | shuffled | 0.9 | 0.02 | none | False | 0 |  |  | 10 | openimages text_0p8_coactivation_0p3 | 217 | 1,2,3,4 | 45.5 ± 3.5 | 51.8 ± 0.7 | 0.03 |
@@ -31,7 +31,7 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 | study | arm | epochs | batch | lr | wd | temp | probe | seeds | val WGA | val acc |
 |---|---|---|---|---|---|---|---|---|---|---|
 | crp_followup_controls_v1_seeds34 | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 3,4 | 47.0 ± 0.5* | 53.1 ± 0.6 |
-| factors_waterbirds | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4,5 (+1 unfinished) | 46.3 ± 1.8 | 52.2 ± 1.1 |
+| factors_waterbirds | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4,5,6 (+1 unfinished) | 46.7 ± 1.9 | 52.4 ± 1.1 |
 | paper_completion_2026_09_08_core | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1,2,3,4 | 45.5 ± 1.7* | 52.1 ± 1.4 |
 | waterbirds_cospro | simclr | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 1 | 45.0 | 50.7 |
 
