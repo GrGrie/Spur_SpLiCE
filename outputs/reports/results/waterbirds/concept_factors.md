@@ -4,11 +4,15 @@ Validation probe. `val WGA` and `val acc` average the last four periodic probes 
 
 | study | arm | epochs | batch | lr | wd | temp | probe | F1 fraction | F2 weight | targets | merge | min freq | F2 weighting | F2 cross-fit | F3 weight | F3 context | F3 presence | start | groups | factors | seeds | val WGA | val acc | factor expl. var. |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| factors_waterbirds | comp_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 62.0 ± 3.9 | 65.9 ± 1.7 |  |
+| factors_waterbirds | comp_random_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 57.0 ± 5.5 | 64.6 ± 2.9 |  |
 | factors_waterbirds | region_w1_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 55.3 ± 3.1 | 62.7 ± 2.1 |  |
 | factors_waterbirds | xfit_meaning_w5_response_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | response | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 54.4 ± 3.9 | 65.4 ± 0.3 |  |
 | factors_waterbirds | spatial_pca_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 53.6 ± 1.9 | 58.1 ± 0.9 |  |
 | factors_waterbirds | spatial_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2 | 53.5 ± 4.9 | 61.8 ± 3.8 |  |
+| factors_waterbirds | comp_shuffled_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 52.9 ± 1.0 | 57.2 ± 0.8 |  |
 | factors_waterbirds | spatial_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4,5,6 | 52.8 ± 4.7 | 60.3 ± 2.7 |  |
+| factors_waterbirds | comp_context_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 0 | response | 0 | 0.02 | none | False | 0 |  |  | 10 | openimages | 242 | 1,2,3,4 | 52.7 ± 2.1 | 60.0 ± 1.0 |  |
 | factors_waterbirds | xfit_meaning_w10_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 10 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 51.5 ± 5.5 | 57.5 ± 2.0 |  |
 | factors_waterbirds | xfit_meaning_w5_clippca_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | clip_pca | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2 | 51.0 ± 5.9 | 59.4 ± 1.5 |  |
 | factors_waterbirds | xfit_meaning_w5_holdout | 500 | 128 | 0.01 | 0.0001 | 0.05 | logistic/ds_train | 0 | 5 | standardized | 0 | 0.05 | none | True | 0 |  |  | 10 | openimages | 70 | 1,2,3,4 | 50.4 ± 9.0 | 58.0 ± 3.9 |  |

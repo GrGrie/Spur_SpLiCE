@@ -6,11 +6,15 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 
 | arm | seeds | val WGA (last 4) | val WGA (last) | val acc (last 4) | val group acc | factor expl. var. | held-out expl. var. |
 |---|---|---|---|---|---|---|---|
+| comp_w5_holdout | 1,2,3,4 | 62.0 ± 3.9 | 62.2 ± 3.6 | 65.9 ± 1.7 | 63 / 68 / 68 / 67 |  |  |
+| comp_random_w5_holdout | 1,2,3,4 | 57.0 ± 5.5 | 57.1 ± 5.6 | 64.6 ± 2.9 | 60 / 69 / 63 / 65 |  |  |
 | region_w1_holdout | 1,2,3,4 | 55.3 ± 3.1 | 55.6 ± 2.6 | 62.7 ± 2.1 | 62 / 65 / 58 / 62 |  |  |
 | xfit_meaning_w5_response_holdout | 1,2 | 54.4 ± 3.9 | 54.1 ± 3.2 | 65.4 ± 0.3 | 65 / 67 / 54 / 72 |  | 0.60 |
 | spatial_pca_w5_holdout | 1,2,3,4 | 53.6 ± 1.9 | 53.6 ± 2.0 | 58.1 ± 0.9 | 56 / 58 / 61 / 66 |  |  |
 | spatial_w10_holdout | 1,2 | 53.5 ± 4.9 | 53.7 ± 5.1 | 61.8 ± 3.8 | 54 / 67 / 61 / 72 |  |  |
+| comp_shuffled_w5_holdout | 1,2,3,4 | 52.9 ± 1.0 | 52.7 ± 1.1 | 57.2 ± 0.8 | 57 / 54 / 59 / 67 |  |  |
 | spatial_w5_holdout | 1,2,3,4,5,6 | 52.8 ± 4.7 | 52.7 ± 4.9 | 60.3 ± 2.7 | 54 / 65 / 60 / 67 |  |  |
+| comp_context_w5_holdout | 1,2,3,4 | 52.7 ± 2.1 | 53.0 ± 2.6 | 60.0 ± 1.0 | 58 / 62 / 57 / 62 |  |  |
 | xfit_meaning_w10_holdout | 1,2,3,4 | 51.5 ± 5.5 | 51.6 ± 5.9 | 57.5 ± 2.0 | 52 / 57 / 65 / 73 |  | 0.12 |
 | xfit_meaning_w5_clippca_holdout | 1,2 | 51.0 ± 5.9 | 51.3 ± 5.9 | 59.4 ± 1.5 | 51 / 63 / 68 / 68 |  | 0.06 |
 | xfit_meaning_w5_holdout | 1,2,3,4 | 50.4 ± 9.0 | 50.6 ± 8.6 | 58.0 ± 3.9 | 51 / 62 / 61 / 66 |  | 0.07 |
