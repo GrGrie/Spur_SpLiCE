@@ -730,6 +730,53 @@ the representation still ties the cat to its scene. Waterbirds compositing and `
 not run yet. With seeds 5 and 6 the spatial arms stand at MetaShift 51.1, Waterbirds 52.8 +- 4.7
 (SimCLR 46.7, shuffled maps 47.5); Waterbirds shuffled region seed 1 completes that arm at 49.3 +- 1.7.
 
+## Symmetric concept mixing: compositing without the object prior (proposal, 2026-10-19)
+
+Compositing chooses which regions to keep through text prompts that name objects and scenes. That prior
+holds for MetaShift and Waterbirds and fails wherever the spurious attribute is something other than the
+surroundings (CelebA: hair colour against gender), and it reintroduces knowledge of what is spurious, which
+the concept-factor idea set out to avoid: decouple every correlated pair and let the balanced probe pick the
+side the task needs. The positive pair is what forces the choice. Pairing a composite with its source as a
+hard SimCLR positive asks the representation to ignore whatever came from the donor, so somebody has to
+decide what is ignorable.
+
+The symmetric version treats every concept alike and asks for composition instead of invariance:
+
+1. Mask: each concept region of view A (cells its factor wins, factors covering at least three cells) is
+   kept with probability one half, kept area clipped to 25 to 75 percent. No concept is typed.
+2. Composite: x = M * A + (1 - M) * B with a random donor B; nothing is painted over, since no part counts
+   as background.
+3. Region-to-source contrast (RegionCL, Xu et al., ECCV 2022): the composite's feature map pooled inside M
+   is a positive of A's embedding, pooled inside 1 - M a positive of B's. Each region alone has to identify
+   its source with foreign surroundings, which targets the measured failure: the student's cat cells carry
+   the indoor scene, because each layer4 cell sees most of the image.
+4. Soft global positive (Un-Mix, Shen et al., AAAI 2022): the composite's embedding is a positive of A with
+   weight equal to the kept area and of B with the rest, so it keeps both sources.
+5. The spatial concept regression runs on the composited maps (`composite_maps`), as now.
+
+The assumption that remains is spatial separability: correlated concepts occupy different pixels. It is
+symmetric (no concept is declared class or spurious) and it can be checked without labels by comparing a
+pair's image-level correlation with its pixel overlap. Additive decoders identify blocks of latent factors
+even when the factors are statistically dependent and extrapolate to unseen combinations (Lachapelle et al.,
+NeurIPS 2023), and compositional generalization needs training support that covers each component's
+marginal support (Wiedemer et al., NeurIPS 2023); mixing widens the support of (concept, surrounding) from
+the training diagonal towards the product.
+
+Check on the MetaShift maps (image-level presence: a factor wins at least three cells; one composite per
+image, random donor, no training): the twelve most correlated pairs are mostly the same thing named twice
+(cats and cat 0.82, lawn and field 0.48, laptop and computing 0.47). They share pixels and stay correlated
+under mixing (0.82 to 0.52), which is the intended behaviour. The twelve strongest animal-by-scene pairs (cat
+and field -0.41, desk and cat 0.31, blanket and cat 0.30) fall from a mean |phi| of 0.33 to 0.19 under
+symmetric mixing and to 0.17 under object pasting. With group labels used only for this check, symmetric
+mixing puts an animal region on a donor of the other scene type in 35 percent of composites (object pasting
+48 percent, natural minority share 12 percent). The symmetric version keeps most of the decorrelation
+without the prior.
+
+Arms (MetaShift, Waterbirds and CelebA, spatial weight 5, hold-out): `mix_w5_holdout` (steps 1 to 5),
+`mix_box_w5_holdout` (random rectangles of the same area: tests whether concept boundaries matter),
+`mix_shuffled_w5_holdout` (masks and targets of other images), and ablations without step 3 and with the
+hard positive in place of step 4. The existing object-paste arm measures what dropping the prior costs.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
