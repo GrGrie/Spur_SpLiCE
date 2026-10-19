@@ -777,6 +777,18 @@ Arms (MetaShift, Waterbirds and CelebA, spatial weight 5, hold-out): `mix_w5_hol
 `mix_shuffled_w5_holdout` (masks and targets of other images), and ablations without step 3 and with the
 hard positive in place of step 4. The existing object-paste arm measures what dropping the prior costs.
 
+Implemented 2026-10-19 (`--factor_mix_fraction`, `--factor_mix_mask concepts|boxes`, `--factor_mix_region`,
+`--factor_mix_global soft|hard`, `--factor_mix_weight`). A concept region is the set of cells its factor wins,
+counted from three cells; three draws per image look for a kept area between 25 and 75 percent. Donors come
+from the same cross-fit half of the batch, so the mixed views join the spatial ridge without crossing halves,
+and held-out images take part neither as image nor as donor. The mixed view is a third encoder pass; the
+keys of both contrastive terms are the first views' projections, which share no pixels with the mix. Each
+term weighs 0.5, so together they weigh about as much as the SimCLR loss (both start near log 128 = 4.85).
+On a local MetaShift run with fraction 0.5, a third of every batch got a mixed view with a kept area of 45
+percent, and an epoch took about a tenth longer. The arms run on MetaShift and Waterbirds; CelebA needs its
+concept maps first, and its 162,770 training images make the maps several times larger than the loader's
+float32 copies fit into 40 GB.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy

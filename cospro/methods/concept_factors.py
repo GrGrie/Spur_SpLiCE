@@ -45,8 +45,8 @@ from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, regist
 from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
 from cospro.pipeline.concept_maps import (
-    composite_images, composite_maps, concept_regions, object_columns, region_contrast_loss, sharpen,
-    spatial_cross_fit_loss, warp_maps,
+    box_masks, composite_images, composite_maps, concept_regions, masked_pool, mixed_source_loss, object_columns,
+    region_contrast_loss, sharpen, spatial_cross_fit_loss, two_view_folds, warp_maps,
 )
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
@@ -355,6 +355,12 @@ class IndexedViewBoxDataset(IndexedCoSpRoDataset):
         return views, int(index), boxes
 
 
+#: Symmetric mixing: a concept region counts when its factor wins at least this many map cells.
+MIX_MIN_CELLS = 3
+#: Draws of kept regions tried per image to land in the 25 to 75 percent area band.
+MIX_DRAWS = 3
+
+
 class SpatialConceptDistillation:
     """Scheduled spatial concept losses on the encoder's last feature map and the warped concept maps.
 
@@ -367,18 +373,31 @@ class SpatialConceptDistillation:
     then pairs an image with its object in other surroundings, and the spatial targets of the
     composite are composited alike (``composite_maps``). The controls paste the context region
     (``mask="context"``) or another image's object silhouette (``mask="random"``).
+
+    Symmetric mixing (``mix``) types no concept. Each concept region of an image's second view is kept
+    with probability one half, the rest comes from a donor's second view, and the mixed image is a third
+    view: its feature map pooled inside the kept regions points at the image, pooled outside at the
+    donor (region-to-source contrast), its embedding at both with their area shares (soft positive), and
+    its spatial targets are the two maps put together. The control ``mask="boxes"`` keeps a rectangle
+    of the same area.
     """
 
     def __init__(self, maps: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
                  sample_weights: torch.Tensor, ridge: float, probabilities: torch.Tensor | None = None,
                  region: dict | None = None, composite: dict | None = None,
-                 objects: torch.Tensor | None = None) -> None:
+                 objects: torch.Tensor | None = None, mix: dict | None = None, temperature: float = 0.05) -> None:
         self.maps = maps
         self.probabilities = probabilities
         self.region = dict(region or {"weight": 0.0})
         self.composite = dict(composite or {"fraction": 0.0})
         if self.composite["fraction"] > 0 and (probabilities is None or objects is None):
             raise ValueError("Compositing needs the concept probabilities and the object factors.")
+        self.mix = dict(mix or {"fraction": 0.0})
+        if self.mix["fraction"] > 0 and probabilities is None:
+            raise ValueError("Symmetric mixing needs the concept probabilities.")
+        self.temperature = float(temperature)
+        self.mix_plan: dict | None = None
+        self.mix_diagnostics: dict[str, float] = {}
         #: Boolean per factor: the factors whose regions count as objects.
         self.objects = objects
         self.plan: dict | None = None
@@ -428,6 +447,7 @@ class SpatialConceptDistillation:
         at least a quarter of its view. The plan stays until ``__call__`` composites the targets.
         """
 
+        self._prepare_mix(views, batch)
         self.plan, self.composite_diagnostics = None, {}
         fraction = self._scheduled(float(self.composite.get("fraction", 0.0)))
         if fraction <= 0 or len(batch) < 3:
@@ -473,6 +493,108 @@ class SpatialConceptDistillation:
         }
         return [views[0], second, *views[2:]]
 
+    def _prepare_mix(self, views: list[torch.Tensor], batch) -> None:
+        """Draw this batch's mixed third views (see the class); the plan waits for ``__call__``.
+
+        An image qualifies when it carries a concept-loss weight and some draw of its regions covers 25 to
+        75 percent of its second view (``MIX_DRAWS`` draws are tried). Its donor carries a weight, lies in
+        the same cross-fit half of the batch and differs from it.
+        """
+
+        self.mix_plan, self.mix_diagnostics = None, {}
+        fraction = self._scheduled(float(self.mix.get("fraction", 0.0)))
+        if fraction <= 0 or len(batch) < 3:
+            return
+        rows = torch.as_tensor(batch[1], dtype=torch.long).detach().cpu().view(-1)
+        device = views[1].device
+        count = len(rows)
+        boxes = batch[2][:, 1].to(device)
+        size = tuple(views[1].shape[-2:])
+        probabilities = self.probabilities.index_select(0, rows).float().to(device)
+        factors = probabilities.shape[1]
+        present = F.one_hot(probabilities.argmax(dim=1), factors).sum(dim=(1, 2)) >= MIX_MIN_CELLS
+        kept = (torch.rand(count, MIX_DRAWS, factors, device=device) < 0.5) & present[:, None]
+        masks = torch.einsum("ndf,nfhw->ndhw", kept.float(), probabilities)
+        view_masks = sharpen(warp_maps(masks.reshape(count * MIX_DRAWS, 1, *masks.shape[-2:]),
+                                       boxes.repeat_interleave(MIX_DRAWS, dim=0), size))
+        view_masks = view_masks.view(count, MIX_DRAWS, *size)
+        areas = view_masks.mean(dim=(2, 3))
+        valid = (areas >= 0.25) & (areas <= 0.75)
+        first = valid.float().argmax(dim=1)
+        everyone = torch.arange(count, device=device)
+        masks, keep, area = masks[everyone, first], view_masks[everyone, first][:, None], areas[everyone, first]
+        weights = self.sample_weights.index_select(0, rows).to(device)
+        fold = everyone < count // 2
+        chosen = valid.any(dim=1) & (weights > 0) & (torch.rand(count, device=device) < fraction)
+        rectangles = None
+        if self.mix.get("mask", "concepts") == "boxes":
+            # Control: a rectangle of the same area, aspect ratio between 1:2 and 2:1, anywhere in the view.
+            aspect = torch.exp((torch.rand(count, device=device) * 2 - 1) * math.log(2.0))
+            height = (area / aspect).sqrt().clamp(max=1.0)
+            width = (area / height).clamp(max=1.0)
+            top = torch.rand(count, device=device) * (1 - height)
+            left = torch.rand(count, device=device) * (1 - width)
+            rectangles = torch.stack([top, left, height, width], dim=1)
+            keep = box_masks(rectangles, size)
+        images, donors = [], []
+        for side in (True, False):
+            pool = ((weights > 0) & (fold == side)).nonzero().view(-1)
+            members = (chosen & (fold == side)).nonzero().view(-1)
+            if len(pool) < 2 or not len(members):
+                continue
+            drawn = torch.randint(len(pool), (len(members),), device=device)
+            picked = pool[drawn]
+            # Pool members are distinct, so the next one differs from an image drawn as its own donor.
+            donors.append(torch.where(picked == members, pool[(drawn + 1) % len(pool)], picked))
+            images.append(members)
+        self.mix_diagnostics = {"factor_mix_fraction": 0.0}
+        if not images:
+            return
+        images, donors = torch.cat(images), torch.cat(donors)
+        mixed = keep[images] * views[1][images].float() + (1 - keep[images]) * views[1][donors].float()
+        self.mix_plan = {
+            "images": images, "donors": donors, "mixed": mixed.to(views[1].dtype), "area": keep[images].mean(dim=(1, 2, 3)),
+            "masks": masks[images][:, None], "rectangles": None if rectangles is None else rectangles[images],
+        }
+        self.mix_diagnostics = {"factor_mix_fraction": len(images) / count,
+                                "factor_mix_kept_area": float(self.mix_plan["area"].mean())}
+
+    def _mix_masks(self, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+        """The kept part of every mixed view at ``size``: warped concept regions or the rectangle."""
+
+        if plan["rectangles"] is not None:
+            return box_masks(plan["rectangles"], size)
+        return sharpen(warp_maps(plan["masks"], boxes, size))
+
+    def _mix_loss(self, plan: dict, model, embeddings: torch.Tensor, mixed_embeddings: torch.Tensor,
+                  mixed_map: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        """Region-to-source contrast and the soft (or hard) global positive of the mixed views.
+
+        Keys are the first views' projections, so a mixed view never meets the second views it was cut from.
+        """
+
+        count = len(embeddings) // 2
+        images, donors = plan["images"], plan["donors"]
+        with torch.autocast(device_type=mixed_map.device.type, enabled=False):
+            keys = F.normalize(model.head(embeddings[:count].float()).float(), dim=1)
+            query = F.normalize(model.head(mixed_embeddings.float()).float(), dim=1)
+            if self.mix.get("global", "soft") == "hard":
+                sources, shares = images[:, None], torch.ones(len(images), 1, device=keys.device)
+            else:
+                sources = torch.stack([images, donors], dim=1)
+                shares = torch.stack([plan["area"], 1 - plan["area"]], dim=1)
+            loss = mixed_source_loss(query, keys, sources, shares, self.temperature)
+            diagnostics = {"factor_mix_global_loss": float(loss.detach())}
+            if self.mix.get("region", True):
+                pooled = torch.cat([masked_pool(mixed_map.float(), keep), masked_pool(mixed_map.float(), 1 - keep)])
+                regions = F.normalize(model.head(pooled).float(), dim=1)
+                region_loss = mixed_source_loss(regions, keys, torch.cat([images, donors])[:, None],
+                                                torch.ones(2 * len(images), 1, device=keys.device), self.temperature)
+                loss = loss + region_loss
+                diagnostics["factor_mix_region_loss"] = float(region_loss.detach())
+        self.last_diagnostics.update(diagnostics)
+        return float(self.mix.get("weight", 1.0)) * loss
+
     def _composited(self, warped: torch.Tensor, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
         """``warped`` maps of both views with the composited second views' maps put together alike."""
 
@@ -488,11 +610,13 @@ class SpatialConceptDistillation:
     def __call__(self, embeddings: torch.Tensor, sample_indices: torch.Tensor, model=None) -> torch.Tensor:
         feature_map, boxes = self.feature_map, self.boxes
         plan, self.plan = self.plan, None
+        mix_plan, self.mix_plan = self.mix_plan, None
         region_weight = self._scheduled(float(self.region.get("weight", 0.0)))
         if feature_map is None or boxes is None or feature_map.shape[0] != embeddings.shape[0]:
             # The hook attaches during the first step, whose forward pass has already run.
             self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
-                                     "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics}
+                                     "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics,
+                                     **self.mix_diagnostics}
             return embeddings.sum() * 0.0
         rows = torch.as_tensor(sample_indices, dtype=torch.long).detach().cpu().view(-1)
         device = feature_map.device
@@ -502,13 +626,36 @@ class SpatialConceptDistillation:
         weights = torch.cat([weights, weights])
         value = embeddings.sum() * 0.0
         self.last_diagnostics = {"factor_spatial_scheduled_weight": self.scheduled_weight,
-                                 "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics}
+                                 "factor_region_scheduled_weight": region_weight, **self.composite_diagnostics,
+                                 **self.mix_diagnostics}
+        mixed_map = keep = None
+        if mix_plan is not None:
+            if model is None:
+                raise ValueError("Symmetric mixing needs the model for its third view.")
+            mixed = mix_plan["mixed"]
+            if feature_map.is_contiguous(memory_format=torch.channels_last):
+                mixed = mixed.contiguous(memory_format=torch.channels_last)
+            # The layer4 hook stores the mixed views' feature map during this pass.
+            mixed_embeddings = model.encoder(mixed)
+            mixed_map = self.feature_map
+            keep = self._mix_masks(mix_plan, boxes[len(rows) + mix_plan["images"]], size)
+            value = value + self._mix_loss(mix_plan, model, embeddings, mixed_embeddings, mixed_map, keep)
         if self.weight > 0:
             maps = self.maps.index_select(0, rows).float().to(device)
             targets = warp_maps(torch.cat([maps, maps]), boxes, size)
             if plan is not None:
                 targets = self._composited(targets, plan, boxes, size)
-            loss, explained = spatial_cross_fit_loss(feature_map, targets, weights, self.ridge)
+            features, fold = feature_map, None
+            if mix_plan is not None:
+                count = len(rows)
+                images, donors = count + mix_plan["images"], count + mix_plan["donors"]
+                # The two maps put together like the pixels; a mixed view joins its image's cross-fit half.
+                mixed_targets = keep * targets[images] + (1 - keep) * targets[donors]
+                features = torch.cat([feature_map, mixed_map])
+                targets = torch.cat([targets, mixed_targets])
+                fold = torch.cat([two_view_folds(count, device), mix_plan["images"] < count // 2])
+                weights = torch.cat([weights, weights[images]])
+            loss, explained = spatial_cross_fit_loss(features, targets, weights, self.ridge, fold)
             value = value + self.scheduled_weight * loss
             self.last_diagnostics["factor_spatial_heldout_explained_variance"] = explained
         if self.region.get("weight", 0.0) > 0:
@@ -627,6 +774,12 @@ class ConceptFactors(TrainingMethod):
         composite_mask: str = "object",
         composite_min_mass: float = 0.05,
         concept_types: str = "",
+        mix_fraction: float = 0.0,
+        mix_mask: str = "concepts",
+        mix_weight: float = 0.5,
+        mix_region: bool = True,
+        mix_global: str = "soft",
+        temperature: float = 0.05,
         block_weight: float = 0.0,
         block_count: int = 32,
         block_dim: int = 16,
@@ -657,6 +810,9 @@ class ConceptFactors(TrainingMethod):
         self.composite_settings = {"fraction": float(composite_fraction), "mask": composite_mask,
                                    "min_mass": float(composite_min_mass)}
         self.concept_types = concept_types
+        self.mix_settings = {"fraction": float(mix_fraction), "mask": mix_mask, "weight": float(mix_weight),
+                             "region": bool(mix_region), "global": mix_global}
+        self.temperature = float(temperature)
         #: Names of the factors compositing treats as objects, known once ``wrap_loader`` has run.
         self.object_factors: list[str] = []
         #: Output size of the region projection head, known once ``wrap_loader`` has run.
@@ -717,6 +873,12 @@ class ConceptFactors(TrainingMethod):
             composite_mask=options.factor_composite_mask,
             composite_min_mass=options.factor_composite_min_mass,
             concept_types=options.factor_concept_types,
+            mix_fraction=options.factor_mix_fraction,
+            mix_mask=options.factor_mix_mask,
+            mix_weight=options.factor_mix_weight,
+            mix_region=options.factor_mix_region,
+            mix_global=options.factor_mix_global,
+            temperature=config.ssl.temp,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
             block_dim=options.factor_block_dim,
@@ -784,9 +946,10 @@ class ConceptFactors(TrainingMethod):
         spatial = self.spatial_settings
         region = self.region_settings
         composite = self.composite_settings
-        if spatial["weight"] > 0 or region["weight"] > 0 or composite["fraction"] > 0:
+        mix = self.mix_settings
+        if spatial["weight"] > 0 or region["weight"] > 0 or composite["fraction"] > 0 or mix["fraction"] > 0:
             names = [factor_name(factor) for factor in factors["factors"]]
-            raw = region["weight"] > 0 or composite["fraction"] > 0
+            raw = region["weight"] > 0 or composite["fraction"] > 0 or mix["fraction"] > 0
             loaded = load_concept_maps(spatial["maps"], names, context.dataset, source_indices,
                                        shuffled=spatial["kind"] == "shuffled", drop=spatial["drop"],
                                        probabilities=raw)
@@ -802,7 +965,12 @@ class ConceptFactors(TrainingMethod):
             self.spatial = SpatialConceptDistillation(
                 maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
                 probabilities=probabilities, region=region, composite=composite, objects=objects,
+                mix=mix, temperature=self.temperature,
             )
+            if mix["fraction"] > 0:
+                print(f"[INFO] Symmetric mixing ({mix['mask']} masks, fraction {mix['fraction']:g}, "
+                      f"{mix['global']} global positive, region contrast {'on' if mix['region'] else 'off'})",
+                      flush=True)
             if region["weight"] > 0:
                 self.factor_region_dim = self.region_dim
             print(f"[INFO] Spatial concept maps ({spatial['kind']}) from {spatial['maps']}: {tuple(maps.shape)}",

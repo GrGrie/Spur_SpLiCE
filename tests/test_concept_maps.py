@@ -22,13 +22,17 @@ from cospro.methods.concept_factors import (
 )
 from cospro.pipeline.concept_maps import (
     assemble_windows,
+    box_masks,
     composite_images,
     composite_maps,
     concept_regions,
+    masked_pool,
+    mixed_source_loss,
     object_columns,
     region_contrast_loss,
     sharpen,
     spatial_cross_fit_loss,
+    two_view_folds,
     warp_maps,
     window_offsets,
 )
@@ -279,6 +283,103 @@ class CompositeTests(unittest.TestCase):
             groups.write_text("{ }", encoding="utf-8")
             with self.assertRaises(ValueError):
                 factor_type_scores(factors, str(scores), groups)
+
+
+class MixTests(unittest.TestCase):
+    def test_a_box_covers_its_area_at_every_resolution(self):
+        boxes = torch.tensor([[0.1, 0.2, 0.5, 0.4], [0.0, 0.0, 1.0, 1.0]])
+        for size in [(7, 7), (28, 28), (5, 9)]:
+            masks = box_masks(boxes, size)
+            self.assertEqual(tuple(masks.shape), (2, 1, *size))
+            self.assertTrue(torch.allclose(masks.mean(dim=(1, 2, 3)), torch.tensor([0.2, 1.0]), atol=1e-5))
+        self.assertTrue(torch.allclose(box_masks(boxes[1:], (7, 7)), torch.ones(1, 1, 7, 7)))
+
+    def test_masked_pooling_averages_inside_the_mask(self):
+        features = torch.arange(8.0).view(1, 2, 2, 2)
+        mask = torch.tensor([[[[1.0, 0.0], [0.0, 1.0]]]])
+        self.assertTrue(torch.allclose(masked_pool(features, mask), torch.tensor([[1.5, 5.5]])))
+
+    def test_one_source_is_infonce_and_two_sources_mix_the_targets(self):
+        queries = F.normalize(torch.randn(3, 8), dim=1)
+        keys = F.normalize(torch.randn(5, 8), dim=1)
+        sources = torch.tensor([[1], [4], [0]])
+        hard = mixed_source_loss(queries, keys, sources, torch.ones(3, 1), 0.1)
+        self.assertTrue(torch.allclose(hard, F.cross_entropy(queries @ keys.T / 0.1, sources[:, 0])))
+        pair = torch.tensor([[1, 2]])
+        soft = mixed_source_loss(queries[:1], keys, pair, torch.tensor([[0.25, 0.75]]), 0.1)
+        log_p = torch.log_softmax(queries[:1] @ keys.T / 0.1, dim=1)[0]
+        self.assertTrue(torch.allclose(soft, -(0.25 * log_p[1] + 0.75 * log_p[2])))
+
+    def test_explicit_folds_reproduce_the_default_halves(self):
+        features, targets = torch.randn(8, 4, 3, 3), torch.randn(8, 2, 3, 3)
+        weights = torch.ones(8)
+        default, _ = spatial_cross_fit_loss(features, targets, weights, 1.0)
+        explicit, _ = spatial_cross_fit_loss(features, targets, weights, 1.0, two_view_folds(4, "cpu"))
+        self.assertTrue(torch.allclose(default, explicit))
+
+    def _mixing(self, mask: str = "concepts") -> SpatialConceptDistillation:
+        # Factor 0 fills the left half of every image, factor 1 the right half; image 5 is held out.
+        probabilities = torch.zeros(6, 2, 14, 14)
+        probabilities[:, 0, :, :7] = 1.0
+        probabilities[:, 1, :, 7:] = 1.0
+        distillation = SpatialConceptDistillation(
+            torch.randn(6, 2, 14, 14), 1.0, 0, 0, sample_weights=torch.tensor([1.0, 1, 1, 1, 1, 0]), ridge=1.0,
+            probabilities=probabilities, mix={"fraction": 1.0, "mask": mask, "weight": 1.0, "region": True,
+                                              "global": "soft"}, temperature=0.1,
+        )
+        distillation.set_epoch(1)
+        return distillation
+
+    def _batch(self, side: int = 28):
+        views = [torch.rand(6, 3, side, side), torch.rand(6, 3, side, side)]
+        boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]).repeat(6, 2, 1)
+        return views, (views, torch.arange(6), boxes)
+
+    def test_a_mixed_view_keeps_whole_concept_halves_and_stays_in_its_fold(self):
+        torch.manual_seed(0)
+        distillation = self._mixing()
+        views, batch = self._batch()
+        composed = distillation.compose([view.clone() for view in views], batch)
+        self.assertTrue(torch.equal(composed[1], views[1]))
+        plan = distillation.mix_plan
+        self.assertNotIn(5, plan["images"].tolist() + plan["donors"].tolist())
+        self.assertTrue(bool(((plan["images"] < 3) == (plan["donors"] < 3)).all()))
+        self.assertFalse(bool((plan["images"] == plan["donors"]).any()))
+        self.assertTrue(torch.allclose(plan["area"], torch.full_like(plan["area"], 0.5), atol=0.05))
+        for row, (image, donor) in enumerate(zip(plan["images"].tolist(), plan["donors"].tolist())):
+            left = bool(plan["masks"][row, 0, :, 0].mean() > 0.5)
+            kept, other = (slice(0, 12), slice(16, 28)) if left else (slice(16, 28), slice(0, 12))
+            self.assertTrue(torch.allclose(plan["mixed"][row][..., kept], views[1][image][..., kept]))
+            self.assertTrue(torch.allclose(plan["mixed"][row][..., other], views[1][donor][..., other]))
+
+    def test_the_box_control_keeps_a_rectangle_of_the_same_area(self):
+        torch.manual_seed(0)
+        distillation = self._mixing("boxes")
+        views, batch = self._batch()
+        distillation.compose([view.clone() for view in views], batch)
+        plan = distillation.mix_plan
+        self.assertIsNotNone(plan["rectangles"])
+        areas = plan["rectangles"][:, 2] * plan["rectangles"][:, 3]
+        self.assertTrue(torch.allclose(areas, torch.full_like(areas, 0.5), atol=0.05))
+
+    def test_the_mixing_losses_train_the_encoder(self):
+        from cospro.models.simclr import SimCLRModel
+
+        torch.manual_seed(0)
+        model = SimCLRModel("resnet18")
+        distillation = self._mixing()
+        distillation.hook(model)
+        views, batch = self._batch(side=64)
+        distillation.compose(views, batch)
+        distillation.boxes = batch[2]
+        embeddings = model.encoder(torch.cat(views))
+        value = distillation(embeddings, batch[1], model)
+        self.assertTrue(torch.isfinite(value))
+        for key in ("factor_mix_fraction", "factor_mix_global_loss", "factor_mix_region_loss",
+                    "factor_spatial_heldout_explained_variance"):
+            self.assertIn(key, distillation.last_diagnostics)
+        value.backward()
+        self.assertGreater(float(model.encoder.layer4[0].conv1.weight.grad.abs().sum()), 0.0)
 
 
 if __name__ == "__main__":

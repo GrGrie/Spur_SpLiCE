@@ -88,6 +88,12 @@
 # in surroundings drawn independently of it. comp_w5_holdout adds it to spatial_w5_holdout; the controls paste
 # another image's object silhouette (comp_random_w5_holdout) or the context region (comp_context_w5_holdout), or
 # use shuffled maps (comp_shuffled_w5_holdout); comp_only_holdout composites without the spatial loss.
+# Eighteenth round, symmetric concept mixing (MetaShift and Waterbirds): no concept is typed. For half of the
+# images each concept region of the second view is kept with probability one half, the rest comes from another
+# image, and the mix is a third view whose regions point at their source images and whose embedding points at
+# both sources by area (mix_w5_holdout, spatial weight 5). Controls: rectangles of the same area
+# (mix_box_w5_holdout) and shuffled maps (mix_shuffled_w5_holdout); ablations: without the region-to-source
+# contrast (mix_noregion_w5_holdout) and with the kept image as a hard positive (mix_hard_w5_holdout).
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -135,6 +141,7 @@ spatial_args() {
   # Object and context factors for compositing, scored from the factor words alone and synchronized through Git.
   local types="outputs/shared/${DATASET}/graphs/concept_types/$(basename "$(dirname "${SPATIAL_GROUPS}")")/concept_type_scores.json"
   COMPOSITE=("${SPATIAL[@]}" --factor_composite_fraction 0.3 --factor_concept_types "${types}")
+  MIX=("${SPATIAL[@]}" --factor_spatial_weight 5.0 --factor_mix_fraction 0.5)
 }
 # Concept compositing arms, for datasets whose target is an object and whose spurious attribute is its surroundings.
 add_composite_arms() {
@@ -143,6 +150,14 @@ add_composite_arms() {
   ARMS[comp_context_w5_holdout]="${COMPOSITE[*]} --factor_spatial_weight 5.0 --factor_composite_mask context ${HOLDOUT[*]}"
   ARMS[comp_shuffled_w5_holdout]="${COMPOSITE[*]} --factor_spatial_weight 5.0 --factor_spatial_maps shuffled ${HOLDOUT[*]}"
   ARMS[comp_only_holdout]="${COMPOSITE[*]} ${HOLDOUT[*]}"
+}
+# Symmetric concept mixing arms: every concept region is treated alike.
+add_mix_arms() {
+  ARMS[mix_w5_holdout]="${MIX[*]} ${HOLDOUT[*]}"
+  ARMS[mix_box_w5_holdout]="${MIX[*]} --factor_mix_mask boxes ${HOLDOUT[*]}"
+  ARMS[mix_shuffled_w5_holdout]="${MIX[*]} --factor_spatial_maps shuffled ${HOLDOUT[*]}"
+  ARMS[mix_noregion_w5_holdout]="${MIX[*]} --factor_mix_region false ${HOLDOUT[*]}"
+  ARMS[mix_hard_w5_holdout]="${MIX[*]} --factor_mix_global hard ${HOLDOUT[*]}"
 }
 XFIT_MEANING_OI=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
   --factor_concept_groups "${MEANING_OI_GROUPS}" --factor_splice_cache "${MEANING_OI_CACHE}"
@@ -232,6 +247,7 @@ if [[ "${DATASET}" == "metashift" ]]; then
     [xfit_norm_balanced]="${XFIT_NORM[*]} --factor_targets standardized --factor_sample_weighting balanced"
   )
   add_composite_arms
+  add_mix_arms
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   SPATIAL_GROUPS="${MEANING_OI_GROUPS}"
   SPATIAL_CACHE="${MEANING_OI_CACHE}"
@@ -311,6 +327,7 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   )
   if [[ "${DATASET}" == "waterbirds" ]]; then
     add_composite_arms
+    add_mix_arms
   fi
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
@@ -372,7 +389,7 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   done
   return 1
 }
-if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}"; }; then
+if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}" || needs_maps "mix_*" "${SPATIAL_MAPS}"; }; then
   MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
@@ -392,7 +409,7 @@ for arm in "${SELECTED[@]}"; do
     conditions=()
     if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
-    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")

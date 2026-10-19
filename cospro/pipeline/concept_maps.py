@@ -120,7 +120,7 @@ def warp_maps(maps: torch.Tensor, boxes: torch.Tensor, size: tuple[int, int]) ->
 
 
 def spatial_cross_fit_loss(features: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor,
-                           ridge: float) -> tuple[torch.Tensor, float]:
+                           ridge: float, fold: torch.Tensor | None = None) -> tuple[torch.Tensor, float]:
     """Held-out squared error of a per-location ridge fitted on one half of the images, both ways.
 
     ``features`` is [views, channels, h, w], ``targets`` [views, factors, h, w] and ``weights`` one
@@ -128,22 +128,28 @@ def spatial_cross_fit_loss(features: torch.Tensor, targets: torch.Tensor, weight
     each location's feature to its concept values, which predicts every location of the other half,
     and the reverse; the two views of an image stay in one half. Rows are unit-norm features, the
     ridge is absolute and the primal solve is channels by channels. Returns the loss and the held-out
-    explained variance of standardized targets.
+    explained variance of standardized targets. ``fold`` assigns every view to the first half (True) or
+    the second; by default the views are both views of each image, first the first views.
     """
 
     with torch.autocast(device_type=features.device.type, enabled=False):
-        return _spatial_cross_fit_loss(features.float(), targets.float(), weights.float(), ridge)
+        return _spatial_cross_fit_loss(features.float(), targets.float(), weights.float(), ridge, fold)
+
+
+def two_view_folds(images: int, device) -> torch.Tensor:
+    """The default cross-fit halves of ``spatial_cross_fit_loss``: the first half of the images, both views."""
+
+    half = torch.zeros(images, dtype=torch.bool, device=device)
+    half[: images // 2] = True
+    return torch.cat([half, half])
 
 
 def _spatial_cross_fit_loss(features: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor,
-                            ridge: float) -> tuple[torch.Tensor, float]:
+                            ridge: float, fold: torch.Tensor | None = None) -> tuple[torch.Tensor, float]:
     views, channels, height, width = features.shape
-    images = views // 2
     rows = F.normalize(features.float().permute(0, 2, 3, 1).reshape(views, height * width, channels), dim=-1)
     values = targets.float().permute(0, 2, 3, 1).reshape(views, height * width, -1)
-    half = torch.zeros(images, dtype=torch.bool, device=features.device)
-    half[: images // 2] = True
-    half = torch.cat([half, half])
+    half = two_view_folds(views // 2, features.device) if fold is None else fold.to(features.device)
     identity = torch.eye(channels, device=features.device)
     loss = features.sum() * 0.0
     errors = []
@@ -287,3 +293,44 @@ def composite_maps(maps: torch.Tensor, donor_maps: torch.Tensor, keep: torch.Ten
         dim=(2, 3), keepdim=True).clamp_min(1e-6)
     background = surroundings * donor_maps + donor_objects * mean
     return keep * maps + (1.0 - keep) * background
+
+
+def box_masks(boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+    """Rectangles rendered as coverage masks, [n, 1, h, w].
+
+    ``boxes`` is [n, 4]: top, left, height and width as fractions of the view. Each cell holds the share of
+    its area the rectangle covers, so the same rectangle renders consistently at pixel and feature size.
+    """
+
+    height, width = size
+    rows = torch.arange(height, device=boxes.device, dtype=boxes.dtype)
+    columns = torch.arange(width, device=boxes.device, dtype=boxes.dtype)
+
+    def coverage(start, extent, cells, count):
+        low, high = cells / count, (cells + 1) / count
+        return ((torch.minimum(high, (start + extent)[:, None]) - torch.maximum(low, start[:, None])).clamp_min(0.0)
+                * count)
+
+    vertical = coverage(boxes[:, 0], boxes[:, 2], rows, height)
+    horizontal = coverage(boxes[:, 1], boxes[:, 3], columns, width)
+    return (vertical[:, :, None] * horizontal[:, None, :])[:, None]
+
+
+def masked_pool(features: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
+    """Feature maps [n, c, h, w] averaged inside soft masks [n, 1, h, w], [n, c]."""
+
+    return (features * masks).sum(dim=(2, 3)) / masks.sum(dim=(2, 3)).clamp_min(1e-6)
+
+
+def mixed_source_loss(queries: torch.Tensor, keys: torch.Tensor, sources: torch.Tensor, weights: torch.Tensor,
+                      temperature: float) -> torch.Tensor:
+    """Contrastive loss with soft targets: query i should point at keys ``sources[i]`` with ``weights[i]``.
+
+    ``queries`` [q, d] and ``keys`` [n, d] are unit norm; ``sources`` [q, s] index the keys and each row of
+    ``weights`` [q, s] sums to one. With one source of weight one this is InfoNCE; a mixed image with two
+    sources and its area shares as weights is the soft positive of Un-Mix (Shen et al., 2022).
+    """
+
+    log_probability = torch.log_softmax(queries.float() @ keys.float().T / temperature, dim=1)
+    target = torch.zeros_like(log_probability).scatter_add_(1, sources, weights.float())
+    return -(target * log_probability).sum(dim=1).mean()

@@ -370,6 +370,29 @@ class ConceptFactorOptions:
         help="Concept-type scores from cospro.cli.score_concept_types; compositing treats the factors below the "
         "median score as objects.",
     )
+    factor_mix_fraction: float = option(
+        0.0, parse=float,
+        help="Share of images that get a mixed third view: each concept region of the second view kept with "
+        "probability one half, the rest from another image; 0 disables symmetric mixing.",
+    )
+    factor_mix_mask: str = option(
+        "concepts", choices=("concepts", "boxes"),
+        help="Kept part of a mixed view: its concept regions, or the control 'boxes' (a rectangle of the same area).",
+    )
+    factor_mix_weight: float = option(
+        0.5, parse=float,
+        help="Weight of each of the mixed views' two contrastive losses; at 0.5 together they weigh like the SimCLR loss.",
+    )
+    factor_mix_region: bool = option(
+        True, style="switch",
+        help="Region-to-source contrast: the mixed feature map pooled inside and outside the kept part points at "
+        "its two source images.",
+    )
+    factor_mix_global: str = option(
+        "soft", choices=("soft", "hard"),
+        help="Global positive of a mixed view: both sources weighted by area ('soft'), or the kept image alone "
+        "('hard', ablation).",
+    )
     factor_pca_components: int = option(
         0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
     )
@@ -576,6 +599,14 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
                  "--factor_composite_fraction must lie in [0, 1] and --factor_composite_min_mass in [0, 1).")
         _require(args.factor_composite_fraction == 0 or (args.factor_concept_maps and args.factor_concept_types),
                  "--factor_composite_fraction needs --factor_concept_maps and --factor_concept_types.")
+        _require(0 <= args.factor_mix_fraction <= 1 and args.factor_mix_weight >= 0,
+                 "--factor_mix_fraction must lie in [0, 1] and --factor_mix_weight be non-negative.")
+        _require(args.factor_mix_fraction == 0 or args.factor_concept_maps,
+                 "--factor_mix_fraction needs --factor_concept_maps.")
+        _require(args.factor_mix_fraction == 0 or (args.factor_composite_fraction == 0 and args.factor_region_weight == 0),
+                 "Symmetric mixing does not combine with compositing or the region contrast.")
+        _require(args.factor_mix_fraction == 0 or not args.latetvg_prune_rate,
+                 "Symmetric mixing reads one encoder pass and does not combine with LateTVG pruning.")
         _require(args.factor_composite_fraction == 0 or not args.factor_spatial_drop,
                  "Compositing reads every factor's map and does not combine with --factor_spatial_drop.")
         _require(args.factor_spatial_weight == 0 or not args.latetvg_prune_rate,
