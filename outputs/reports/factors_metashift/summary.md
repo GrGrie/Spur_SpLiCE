@@ -7,9 +7,13 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | arm | seeds | val WGA (last 4) | val WGA (last) | val acc (last 4) | val group acc | factor expl. var. | held-out expl. var. |
 |---|---|---|---|---|---|---|---|
 | xfit_meaning_w5_clippca_holdout | 1,2 | 54.2 ± 5.4 | 53.5 ± 4.9 | 65.9 ± 4.5 | 76 / 54 / 57 / 76 |  | 0.52 |
+| mix_noregion_w5_holdout | 1,2,3,4 | 52.8 ± 6.5 | 52.1 ± 7.6 | 62.2 ± 3.2 | 65 / 55 / 57 / 70 |  |  |
 | comp_w5_holdout | 1,2,3,4 | 52.3 ± 1.9 | 51.7 ± 2.6 | 63.3 ± 1.5 | 70 / 55 / 57 / 71 |  |  |
+| mix_box_w5_holdout | 1,2,3,4 | 51.8 ± 3.4 | 53.1 ± 3.3 | 61.4 ± 2.7 | 60 / 53 / 59 / 74 |  |  |
+| mix_hard_w5_holdout | 1,2,3,4 | 51.6 ± 2.8 | 50.7 ± 2.4 | 61.2 ± 1.4 | 60 / 51 / 60 / 72 |  |  |
 | simclr_lt | 1,2 | 51.4 ± 1.5 | 50.0 ± 2.0 | 55.3 ± 0.1 | 54 / 56 / 51 / 58 |  |  |
 | spatial_w5_holdout | 1,2,3,4,5,6 | 51.1 ± 5.4 | 51.2 ± 5.5 | 61.2 ± 2.9 | 64 / 51 / 57 / 73 |  |  |
+| mix_w5_holdout | 1,2,3,4 | 51.0 ± 8.5 | 52.4 ± 9.6 | 61.2 ± 4.1 | 59 / 53 / 61 / 72 |  |  |
 | comp_random_w5_holdout | 1,2,3,4 | 50.6 ± 3.7 | 50.3 ± 3.1 | 60.0 ± 2.8 | 61 / 51 / 58 / 69 |  |  |
 | f2_w3_atyp | 1,2,3,4 | 50.5 ± 3.8 | 51.0 ± 4.1 | 58.8 ± 2.1 | 59 / 52 / 55 / 70 | 0.61 |  |
 | region_w1_holdout | 1,2,3,4 | 50.0 ± 6.5 | 50.0 ± 6.7 | 64.3 ± 2.7 | 72 / 50 / 61 / 72 |  |  |
@@ -25,6 +29,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | f2_white_w3 | 1,2,3,4 | 47.9 ± 6.4 | 48.6 ± 6.5 | 56.9 ± 3.0 | 57 / 51 / 55 / 65 | 0.31 |  |
 | spatial_w5_noscenes_holdout | 1,2,3,4 | 47.9 ± 2.8 | 48.3 ± 3.3 | 61.8 ± 0.8 | 67 / 50 / 59 / 71 |  |  |
 | xfit_meaning_w3_residual_holdout | 1,2 | 47.7 ± 0.2 | 47.9 ± 1.0 | 58.6 ± 5.0 | 62 / 49 / 53 / 72 |  | 0.07 |
+| mix_shuffled_w5_holdout | 1,2,3,4 | 47.7 ± 1.5 | 47.9 ± 0.8 | 58.9 ± 1.7 | 60 / 49 / 55 / 72 |  |  |
 | xfit_meaning_w3_shuffled | 1,2 | 47.6 ± 5.4 | 47.9 ± 4.9 | 58.1 ± 2.9 | 68 / 53 / 50 / 59 |  | 0.04 |
 | xfit_meaning_w10_holdout | 1,2 | 47.6 ± 1.0 | 47.9 ± 1.0 | 60.7 ± 1.7 | 74 / 51 / 48 / 69 |  | 0.44 |
 | xfit_meaning_w5_holdout | 1,2 | 47.2 ± 3.9 | 47.2 ± 3.9 | 61.7 ± 0.2 | 70 / 48 / 51 / 77 |  | 0.31 |
