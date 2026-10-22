@@ -789,6 +789,39 @@ percent, and an epoch took about a tenth longer. The arms run on MetaShift and W
 concept maps first, and its 162,770 training images make the maps several times larger than the loader's
 float32 copies fit into 40 GB.
 
+## Waterbirds compositing and MetaShift mixing (2026-10-22)
+
+Seeds 1 to 4 with the hold-out, mean of the last four probes; group order landbird-land / landbird-water /
+waterbird-land / waterbird-water and cat-in / cat-out / dog-in / dog-out.
+
+| dataset | arm | WGA | acc | group acc |
+|---|---|---|---|---|
+| Waterbirds | SimCLR | 45.8 | 52.3 | 47 / 54 / 52 / 64 |
+| Waterbirds | spatial maps | 53.0 | 60.1 | 55 / 64 / 59 / 68 |
+| Waterbirds | compositing, object regions | 62.0 +- 3.9 | 65.9 | 63 / 68 / 68 / 67 |
+| Waterbirds | control: another image's silhouette | 57.0 +- 5.5 | 64.6 | 60 / 69 / 63 / 65 |
+| Waterbirds | control: context region kept | 52.7 +- 2.1 | 60.0 | 58 / 62 / 57 / 62 |
+| Waterbirds | control: shuffled maps | 52.9 +- 1.0 | 57.2 | 57 / 54 / 59 / 67 |
+| MetaShift | spatial maps | 53.0 | 62.2 | 65 / 53 / 58 / 73 |
+| MetaShift | symmetric mixing | 51.0 +- 8.5 | 61.2 | 59 / 53 / 61 / 72 |
+| MetaShift | mixing, rectangles | 51.8 +- 3.4 | 61.4 | 60 / 53 / 59 / 74 |
+| MetaShift | mixing, no region contrast | 52.8 +- 6.5 | 62.2 | 65 / 55 / 57 / 70 |
+| MetaShift | mixing, hard positive | 51.6 +- 2.8 | 61.2 | 60 / 51 / 60 / 72 |
+| MetaShift | mixing, shuffled maps | 47.7 +- 1.5 | 58.9 | 60 / 49 / 55 / 72 |
+
+Compositing on Waterbirds is the strongest result of the branch: it beats spatial maps on all four seeds
+(9.0 WGA on average), the context and shuffled controls on all four (9.3 and 9.1) and another image's
+silhouette on three (5.0), and it flattens the group accuracies (63 to 68), the minority groups included. It
+lies above LateTVG's published Waterbirds figure (55.4 for SimCLR). The object prior carries it: keeping
+the context region instead loses everything compositing adds.
+
+Symmetric mixing on MetaShift adds nothing over spatial maps (-2.0, two of four seeds) and ties its
+rectangle control (-0.8): concept boundaries make no difference there, and the main arm's seeds spread from
+44.4 to 62.2. The cat factor on unseen cats outdoors stays at 0.01 to 0.03 in every mixing arm. The
+per-group factor scores rest on few images (the unseen fifth holds about 11 waterbirds on land and 15 to 21
+cats outdoors), so on these groups the validation WGA (133 and 72 images) is the reliable measure. Symmetric
+mixing on Waterbirds, where compositing works, decides whether the prior is necessary.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
