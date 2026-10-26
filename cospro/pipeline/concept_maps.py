@@ -334,3 +334,47 @@ def mixed_source_loss(queries: torch.Tensor, keys: torch.Tensor, sources: torch.
     log_probability = torch.log_softmax(queries.float() @ keys.float().T / temperature, dim=1)
     target = torch.zeros_like(log_probability).scatter_add_(1, sources, weights.float())
     return -(target * log_probability).sum(dim=1).mean()
+
+
+def _kmeans(rows: torch.Tensor, count: int, seed: int, iterations: int = 100) -> torch.Tensor:
+    """Cluster labels of ``rows`` [n, d] by k-means with k-means++ seeding, deterministic for a seed."""
+
+    generator = torch.Generator().manual_seed(seed)
+    centers = rows[torch.randint(len(rows), (1,), generator=generator)]
+    while len(centers) < count:
+        distance = torch.cdist(rows, centers).min(dim=1).values.pow(2)
+        centers = torch.cat([centers, rows[torch.multinomial(distance / distance.sum().clamp_min(1e-12), 1,
+                                                               generator=generator)]])
+    labels = torch.cdist(rows, centers).argmin(dim=1)
+    for _ in range(iterations):
+        centers = torch.stack([rows[labels == group].mean(dim=0) if bool((labels == group).any()) else centers[group]
+                               for group in range(count)])
+        updated = torch.cdist(rows, centers).argmin(dim=1)
+        if torch.equal(updated, labels):
+            break
+        labels = updated
+    return labels
+
+
+def coactivation_groups(probabilities: torch.Tensor, count: int, seed: int = 0) -> torch.Tensor:
+    """Concept factors grouped by the pixels they share in the maps: one group id per factor.
+
+    ``probabilities`` is [images, factors, h, w]. Two factors are similar by the cosine of their maps over
+    every cell of every image: synonyms and parts of one thing share cells, while a cat and the couch it
+    lies on share images but not cells. Spectral clustering of that similarity (normalized Laplacian,
+    k-means++ on the leading eigenvectors) gives ``count`` groups. No label, prompt or concept type enters.
+    """
+
+    images, factors = probabilities.shape[:2]
+    if count >= factors:
+        return torch.arange(factors)
+    gram = torch.zeros(factors, factors, dtype=torch.float64)
+    for start in range(0, images, 256):
+        block = probabilities[start:start + 256].double().transpose(0, 1).reshape(factors, -1)
+        gram += block @ block.T
+    norm = gram.diag().clamp_min(1e-12).sqrt()
+    similarity = gram / norm[:, None] / norm[None, :]
+    degree = similarity.sum(dim=1)
+    laplacian = torch.eye(factors, dtype=torch.float64) - similarity / (degree[:, None] * degree[None, :]).sqrt()
+    _, vectors = torch.linalg.eigh(laplacian)
+    return _kmeans(F.normalize(vectors[:, :count], dim=1).float(), count, seed)

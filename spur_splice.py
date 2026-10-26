@@ -393,6 +393,7 @@ def build_training_state(args: argparse.Namespace, device: torch.device) -> Trai
         factor_dim=method.factor_head_dim,
         block_shape=method.factor_block_shape,
         region_dim=method.factor_region_dim,
+        group_count=method.factor_group_count,
     )
     if args.channels_last and device.type == "cuda":
         model = model.to(device, memory_format=torch.channels_last)

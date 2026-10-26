@@ -19,6 +19,7 @@ class SimCLRModel(nn.Module):
         factor_dim: int | None = None,
         block_shape: tuple[int, int] | None = None,
         region_dim: int | None = None,
+        group_count: int | None = None,
     ) -> None:
         super().__init__()
         self.encoder, dim_in = build_resnet_encoder(name)
@@ -51,6 +52,11 @@ class SimCLRModel(nn.Module):
         self.region_head = None if region_dim is None else nn.Sequential(
             nn.Linear(dim_in, 512), nn.ReLU(inplace=True), nn.Linear(512, region_dim),
         )
+        # One projection head per concept group, shaped like the SimCLR head (LooC-style embedding spaces).
+        self.group_heads = None if group_count is None else nn.ModuleList([
+            nn.Sequential(nn.Linear(dim_in, 512), nn.ReLU(inplace=True), nn.Linear(512, feat_dim))
+            for _ in range(group_count)
+        ])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.encoder(x)

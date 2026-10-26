@@ -96,6 +96,11 @@
 # both sources by area (mix_w5_holdout, spatial weight 5). Controls: rectangles of the same area
 # (mix_box_w5_holdout) and shuffled maps (mix_shuffled_w5_holdout); ablations: without the region-to-source
 # contrast (mix_noregion_w5_holdout) and with the kept image as a hard positive (mix_hard_w5_holdout).
+# Nineteenth round, per-group heads (MetaShift and Waterbirds), still without a concept type: the factors fall into
+# 12 groups by the pixels they share in the maps; for half of the images one group of the second view is kept, the
+# donor's copy of that group painted over, and the mix is a positive of its image only in that group's own
+# projection head (heads_w5_holdout). Controls: every pair in the SimCLR head (heads_single_w5_holdout), in a
+# random group's head (heads_random_w5_holdout), and shuffled maps (heads_shuffled_w5_holdout).
 # Spur-CIFAR10, study factors_spur_cifar10: simclr, f2_std, f2_shuffled, f2_w3, f2_w3_atyp,
 # f2_w3_balanced, cbc, xfit, xfit_shuffled and the xfit_norm arms.
 # Waterbirds and CelebA, studies factors_waterbirds and factors_celeba: the frozen F2 of the
@@ -150,6 +155,7 @@ spatial_args() {
   local types="outputs/shared/${DATASET}/graphs/concept_types/$(basename "$(dirname "${SPATIAL_GROUPS}")")/concept_type_scores.json"
   COMPOSITE=("${SPATIAL[@]}" --factor_composite_fraction 0.3 --factor_concept_types "${types}")
   MIX=("${SPATIAL[@]}" --factor_spatial_weight 5.0 --factor_mix_fraction 0.5)
+  HEADS=("${MIX[@]}" --factor_mix_mask groups --factor_mix_region false --factor_mix_weight 1.0)
 }
 # Concept compositing arms, for datasets whose target is an object and whose spurious attribute is its surroundings.
 add_composite_arms() {
@@ -166,6 +172,10 @@ add_mix_arms() {
   ARMS[mix_shuffled_w5_holdout]="${MIX[*]} --factor_spatial_maps shuffled ${HOLDOUT[*]}"
   ARMS[mix_noregion_w5_holdout]="${MIX[*]} --factor_mix_region false ${HOLDOUT[*]}"
   ARMS[mix_hard_w5_holdout]="${MIX[*]} --factor_mix_global hard ${HOLDOUT[*]}"
+  ARMS[heads_w5_holdout]="${HEADS[*]} --factor_mix_global group ${HOLDOUT[*]}"
+  ARMS[heads_single_w5_holdout]="${HEADS[*]} --factor_mix_global hard ${HOLDOUT[*]}"
+  ARMS[heads_random_w5_holdout]="${HEADS[*]} --factor_mix_global group_random ${HOLDOUT[*]}"
+  ARMS[heads_shuffled_w5_holdout]="${HEADS[*]} --factor_mix_global group --factor_spatial_maps shuffled ${HOLDOUT[*]}"
 }
 XFIT_MEANING_OI=(--splice_mode concept_factors --factor_distill_weight 10.0 --factor_cross_fit true --factor_ridge 1.0
   --factor_concept_groups "${MEANING_OI_GROUPS}" --factor_splice_cache "${MEANING_OI_CACHE}"
@@ -397,7 +407,8 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   done
   return 1
 }
-if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}" || needs_maps "mix_*" "${SPATIAL_MAPS}"; }; then
+if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}" || needs_maps "mix_*" "${SPATIAL_MAPS}" \
+  || needs_maps "heads_*" "${SPATIAL_MAPS}"; }; then
   MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
@@ -417,7 +428,7 @@ for arm in "${SELECTED[@]}"; do
     conditions=()
     if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
-    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* || "${arm}" == heads_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")

@@ -23,6 +23,7 @@ from cospro.methods.concept_factors import (
 from cospro.pipeline.concept_maps import (
     assemble_windows,
     box_masks,
+    coactivation_groups,
     composite_images,
     composite_maps,
     concept_regions,
@@ -380,6 +381,77 @@ class MixTests(unittest.TestCase):
             self.assertIn(key, distillation.last_diagnostics)
         value.backward()
         self.assertGreater(float(model.encoder.layer4[0].conv1.weight.grad.abs().sum()), 0.0)
+
+
+class GroupHeadTests(unittest.TestCase):
+    def test_factors_that_share_pixels_form_one_group(self):
+        torch.manual_seed(0)
+        maps = torch.zeros(20, 5, 14, 14)
+        for image in range(20):
+            left, top = torch.randint(0, 7, (2,)).tolist()
+            # Factors 0 and 1 split the same cells, so do 2 and 3; factor 4 sits elsewhere in every image.
+            maps[image, 0, top:top + 4, left:left + 4] = 0.6
+            maps[image, 1, top:top + 4, left:left + 4] = 0.4
+            maps[image, 2, top + 7:, left + 7:] = 0.7
+            maps[image, 3, top + 7:, left + 7:] = 0.3
+            maps[image, 4, :, :] = 1.0 - maps[image, :4].sum(dim=0)
+        groups = coactivation_groups(maps, 3).tolist()
+        self.assertEqual(groups[0], groups[1])
+        self.assertEqual(groups[2], groups[3])
+        self.assertEqual(len({groups[0], groups[2], groups[4]}), 3)
+        self.assertEqual(coactivation_groups(maps, 9).tolist(), [0, 1, 2, 3, 4])
+
+    def _heads(self, mode: str = "group") -> SpatialConceptDistillation:
+        # Three groups in vertical thirds of every image; image 5 is held out.
+        probabilities = torch.zeros(6, 3, 14, 14)
+        probabilities[:, 0, :, :5] = 1.0
+        probabilities[:, 1, :, 5:9] = 1.0
+        probabilities[:, 2, :, 9:] = 1.0
+        distillation = SpatialConceptDistillation(
+            torch.randn(6, 3, 14, 14), 1.0, 0, 0, sample_weights=torch.tensor([1.0, 1, 1, 1, 1, 0]), ridge=1.0,
+            probabilities=probabilities, temperature=0.1, groups=torch.tensor([0, 1, 2]),
+            mix={"fraction": 1.0, "mask": "groups", "weight": 1.0, "region": False, "global": mode},
+        )
+        distillation.set_epoch(1)
+        return distillation
+
+    def test_a_mixed_view_keeps_one_group_and_paints_the_donors_copy(self):
+        torch.manual_seed(0)
+        distillation = self._heads()
+        views = [torch.rand(6, 3, 28, 28), torch.rand(6, 3, 28, 28)]
+        boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]).repeat(6, 2, 1)
+        distillation.compose(views, (views, torch.arange(6), boxes))
+        plan = distillation.mix_plan
+        self.assertNotIn(5, plan["images"].tolist() + plan["donors"].tolist())
+        columns = {0: slice(0, 8), 1: slice(12, 16), 2: slice(20, 28)}
+        for row, (image, donor, group) in enumerate(zip(plan["images"].tolist(), plan["donors"].tolist(),
+                                                        plan["groups"].tolist())):
+            kept = columns[group]
+            self.assertTrue(torch.allclose(plan["mixed"][row][..., kept], views[1][image][..., kept], atol=1e-5))
+            other = columns[(group + 1) % 3]
+            self.assertTrue(torch.allclose(plan["mixed"][row][..., other], views[1][donor][..., other], atol=1e-5))
+
+    def test_each_mixed_view_trains_only_its_groups_head(self):
+        from cospro.models.simclr import SimCLRModel
+
+        torch.manual_seed(0)
+        model = SimCLRModel("resnet18", group_count=3)
+        distillation = self._heads()
+        distillation.hook(model)
+        views = [torch.rand(6, 3, 64, 64), torch.rand(6, 3, 64, 64)]
+        boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]).repeat(6, 2, 1)
+        batch = (views, torch.arange(6), boxes)
+        distillation.compose(views, batch)
+        used = set(distillation.mix_plan["groups"].tolist())
+        distillation.boxes = boxes
+        value = distillation(model.encoder(torch.cat(views)), batch[1], model)
+        self.assertIn("factor_mix_group_loss", distillation.last_diagnostics)
+        value.backward()
+        for head, projector in enumerate(model.group_heads):
+            gradient = projector[0].weight.grad
+            trained = gradient is not None and float(gradient.abs().sum()) > 0
+            self.assertEqual(trained, head in used)
+        self.assertIsNone(model.head[0].weight.grad)
 
 
 if __name__ == "__main__":

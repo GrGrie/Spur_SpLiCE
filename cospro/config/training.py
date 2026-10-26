@@ -376,8 +376,9 @@ class ConceptFactorOptions:
         "probability one half, the rest from another image; 0 disables symmetric mixing.",
     )
     factor_mix_mask: str = option(
-        "concepts", choices=("concepts", "boxes"),
-        help="Kept part of a mixed view: its concept regions, or the control 'boxes' (a rectangle of the same area).",
+        "concepts", choices=("concepts", "boxes", "groups"),
+        help="Kept part of a mixed view: its concept regions, the control 'boxes' (a rectangle of the same area), or "
+        "one concept group ('groups', groups from the pixels factors share in the maps).",
     )
     factor_mix_weight: float = option(
         0.5, parse=float,
@@ -389,10 +390,12 @@ class ConceptFactorOptions:
         "its two source images.",
     )
     factor_mix_global: str = option(
-        "soft", choices=("soft", "hard"),
-        help="Global positive of a mixed view: both sources weighted by area ('soft'), or the kept image alone "
-        "('hard', ablation).",
+        "soft", choices=("soft", "hard", "group", "group_random"),
+        help="Global positive of a mixed view: both sources weighted by area ('soft'), the kept image alone in the "
+        "SimCLR head ('hard'), the kept image in the kept group's own head ('group'), or in a random group's head "
+        "('group_random', control).",
     )
+    factor_mix_group_count: int = option(12, parse=int, help="Concept groups of the group masks and heads.")
     factor_pca_components: int = option(
         0, parse=int, help="Principal components of the clip_pca targets; 0 matches the number of factors.",
     )
@@ -603,6 +606,9 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
                  "--factor_mix_fraction must lie in [0, 1] and --factor_mix_weight be non-negative.")
         _require(args.factor_mix_fraction == 0 or args.factor_concept_maps,
                  "--factor_mix_fraction needs --factor_concept_maps.")
+        _require(args.factor_mix_global not in ("group", "group_random") or args.factor_mix_mask == "groups",
+                 "--factor_mix_global group and group_random need --factor_mix_mask groups.")
+        _require(args.factor_mix_group_count >= 2, "--factor_mix_group_count must be at least 2.")
         _require(args.factor_mix_fraction == 0 or (args.factor_composite_fraction == 0 and args.factor_region_weight == 0),
                  "Symmetric mixing does not combine with compositing or the region contrast.")
         _require(args.factor_mix_fraction == 0 or not args.latetvg_prune_rate,

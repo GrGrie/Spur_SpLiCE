@@ -852,6 +852,33 @@ probe on the test split after training) under the study `factors_<dataset>_test`
 locked-test table for it and the results book leaves those runs out. Waterbirds test holds 642 images in
 each minority group against 133 in validation.
 
+## Per-group heads: an asymmetry without a concept type (2026-10-26)
+
+Compositing gains through the object prior and symmetric mixing without it does not gain, so the prior-free
+method of the thesis is the spatial concept loss. A likely reason symmetric mixing fails: one embedding was
+asked to stay the same whatever part was replaced, sometimes the scene and sometimes the cat, and the
+contradictory demands cancel. LooC (Xiao et al., ICLR 2021) resolves such conflicts with one embedding space
+per invariance over a shared backbone. The per-group heads (`--factor_mix_mask groups --factor_mix_global
+group`) follow it:
+
+1. The factors fall into 12 groups by the pixels they share in the maps (`coactivation_groups`: cosine of
+   two factors' maps over every cell of the images the concept loss sees, spectral clustering). On MetaShift
+   the groups are cats (tabby, cats, kittens, cat), dogs (dog, puppies, spaniel, paws, collie, labrador),
+   lawn (pasture, grazing, lawn), desks (workspace, laptop, bookshelf), vehicles, beaches and boats, and one
+   group of 55 remaining factors. No label, prompt or concept type enters.
+2. For half of the images one group covering 15 to 85 percent of the second view is drawn; its regions are
+   kept, the rest comes from a donor of the same cross-fit half whose copy of that group is painted over.
+3. The mix is a positive of its image only in that group's own projection head. The cat head learns to
+   ignore what surrounds cats, the lawn head what stands on lawns, and the backbone has to carry both, so the
+   balanced probe can pick either side without anyone naming the class.
+
+A local MetaShift check mixed 37 percent of each batch, used 8 of the 12 heads per batch at a kept area of
+40 percent, and the group loss started at chance. Arms (MetaShift and Waterbirds, spatial weight 5,
+hold-out): `heads_w5_holdout`; controls `heads_single_w5_holdout` (every pair in the SimCLR head, the
+conflict the heads remove), `heads_random_w5_holdout` (a random head per pair: heads without the binding to
+the kept group) and `heads_shuffled_w5_holdout` (shuffled maps). The heads count if they beat the single
+head and the spatial maps; compositing (Waterbirds 59.1) marks what a correct prior reaches.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy

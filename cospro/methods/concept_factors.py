@@ -45,8 +45,8 @@ from cospro.methods.base import LoaderContext, LossTerms, TrainingMethod, regist
 from cospro.data.transforms import RecordedTwoCropTransform
 from cospro.methods.relational_graph import IndexedCoSpRoDataset
 from cospro.pipeline.concept_maps import (
-    box_masks, composite_images, composite_maps, concept_regions, masked_pool, mixed_source_loss, object_columns,
-    region_contrast_loss, sharpen, spatial_cross_fit_loss, two_view_folds, warp_maps,
+    box_masks, coactivation_groups, composite_images, composite_maps, concept_regions, masked_pool, mixed_source_loss,
+    object_columns, region_contrast_loss, sharpen, spatial_cross_fit_loss, two_view_folds, warp_maps,
 )
 from cospro.pipeline.concept_factors import (
     LEARNABILITY_RIDGE,
@@ -359,6 +359,8 @@ class IndexedViewBoxDataset(IndexedCoSpRoDataset):
 MIX_MIN_CELLS = 3
 #: Draws of kept regions tried per image to land in the 25 to 75 percent area band.
 MIX_DRAWS = 3
+#: Resolution at which every concept group's share of a view is measured before one is drawn.
+GROUP_AREA_SIZE = (28, 28)
 
 
 class SpatialConceptDistillation:
@@ -380,12 +382,20 @@ class SpatialConceptDistillation:
     donor (region-to-source contrast), its embedding at both with their area shares (soft positive), and
     its spatial targets are the two maps put together. The control ``mask="boxes"`` keeps a rectangle
     of the same area.
+
+    Per-group heads (``mask="groups"``, ``global="group"``) keep one concept group of the image instead: the
+    groups come from the pixels factors share in the maps (``coactivation_groups``), the donor's regions of
+    that group are painted over, and the mixed view is a positive of its image only in that group's own
+    projection head (LooC, Xiao et al., 2021). A cat group's head learns to ignore everything around cats, a
+    scene group's head everything inside the scene, and the backbone has to carry both. ``global="hard"``
+    puts every pair in the SimCLR head (one head), ``global="group_random"`` in a random group's head.
     """
 
     def __init__(self, maps: torch.Tensor, weight: float, start_epoch: int, warmup_epochs: int,
                  sample_weights: torch.Tensor, ridge: float, probabilities: torch.Tensor | None = None,
                  region: dict | None = None, composite: dict | None = None,
-                 objects: torch.Tensor | None = None, mix: dict | None = None, temperature: float = 0.05) -> None:
+                 objects: torch.Tensor | None = None, mix: dict | None = None, temperature: float = 0.05,
+                 groups: torch.Tensor | None = None) -> None:
         self.maps = maps
         self.probabilities = probabilities
         self.region = dict(region or {"weight": 0.0})
@@ -396,6 +406,11 @@ class SpatialConceptDistillation:
         if self.mix["fraction"] > 0 and probabilities is None:
             raise ValueError("Symmetric mixing needs the concept probabilities.")
         self.temperature = float(temperature)
+        if self.mix.get("mask") == "groups" and groups is None:
+            raise ValueError("Group masks need the concept groups.")
+        #: Group id per factor for the group masks and heads.
+        self.groups = groups
+        self.group_count = 0 if groups is None else int(groups.max()) + 1
         self.mix_plan: dict | None = None
         self.mix_diagnostics: dict[str, float] = {}
         #: Boolean per factor: the factors whose regions count as objects.
@@ -511,21 +526,35 @@ class SpatialConceptDistillation:
         boxes = batch[2][:, 1].to(device)
         size = tuple(views[1].shape[-2:])
         probabilities = self.probabilities.index_select(0, rows).float().to(device)
-        factors = probabilities.shape[1]
-        present = F.one_hot(probabilities.argmax(dim=1), factors).sum(dim=(1, 2)) >= MIX_MIN_CELLS
-        kept = (torch.rand(count, MIX_DRAWS, factors, device=device) < 0.5) & present[:, None]
-        masks = torch.einsum("ndf,nfhw->ndhw", kept.float(), probabilities)
-        view_masks = sharpen(warp_maps(masks.reshape(count * MIX_DRAWS, 1, *masks.shape[-2:]),
-                                       boxes.repeat_interleave(MIX_DRAWS, dim=0), size))
-        view_masks = view_masks.view(count, MIX_DRAWS, *size)
-        areas = view_masks.mean(dim=(2, 3))
-        valid = (areas >= 0.25) & (areas <= 0.75)
-        first = valid.float().argmax(dim=1)
         everyone = torch.arange(count, device=device)
-        masks, keep, area = masks[everyone, first], view_masks[everyone, first][:, None], areas[everyone, first]
+        group_maps = chosen_groups = None
+        if self.mix.get("mask") == "groups":
+            # One concept group per image, drawn among the groups covering 15 to 85 percent of its view.
+            membership = F.one_hot(self.groups.to(device), self.group_count).float()
+            group_maps = torch.einsum("nfhw,fk->nkhw", probabilities, membership)
+            covered = sharpen(warp_maps(group_maps, boxes, GROUP_AREA_SIZE)).mean(dim=(2, 3))
+            usable = (covered >= 0.15) & (covered <= 0.85)
+            chosen_groups = torch.rand(count, self.group_count, device=device).masked_fill(~usable, -1.0).argmax(dim=1)
+            masks = group_maps[everyone, chosen_groups]
+            keep = sharpen(warp_maps(masks[:, None], boxes, size))
+            area = keep.mean(dim=(1, 2, 3))
+            qualifies = usable.any(dim=1)
+        else:
+            factors = probabilities.shape[1]
+            present = F.one_hot(probabilities.argmax(dim=1), factors).sum(dim=(1, 2)) >= MIX_MIN_CELLS
+            kept = (torch.rand(count, MIX_DRAWS, factors, device=device) < 0.5) & present[:, None]
+            masks = torch.einsum("ndf,nfhw->ndhw", kept.float(), probabilities)
+            view_masks = sharpen(warp_maps(masks.reshape(count * MIX_DRAWS, 1, *masks.shape[-2:]),
+                                           boxes.repeat_interleave(MIX_DRAWS, dim=0), size))
+            view_masks = view_masks.view(count, MIX_DRAWS, *size)
+            areas = view_masks.mean(dim=(2, 3))
+            valid = (areas >= 0.25) & (areas <= 0.75)
+            first = valid.float().argmax(dim=1)
+            masks, keep, area = masks[everyone, first], view_masks[everyone, first][:, None], areas[everyone, first]
+            qualifies = valid.any(dim=1)
         weights = self.sample_weights.index_select(0, rows).to(device)
         fold = everyone < count // 2
-        chosen = valid.any(dim=1) & (weights > 0) & (torch.rand(count, device=device) < fraction)
+        chosen = qualifies & (weights > 0) & (torch.rand(count, device=device) < fraction)
         rectangles = None
         if self.mix.get("mask", "concepts") == "boxes":
             # Control: a rectangle of the same area, aspect ratio between 1:2 and 2:1, anywhere in the view.
@@ -551,13 +580,25 @@ class SpatialConceptDistillation:
         if not images:
             return
         images, donors = torch.cat(images), torch.cat(donors)
-        mixed = keep[images] * views[1][images].float() + (1 - keep[images]) * views[1][donors].float()
+        donor_masks = None
+        if group_maps is None:
+            mixed = keep[images] * views[1][images].float() + (1 - keep[images]) * views[1][donors].float()
+        else:
+            # The donor's regions of the kept group are painted over, so the group's content comes from the image.
+            donor_masks = group_maps[donors, chosen_groups[images]][:, None]
+            mixed = composite_images(views[1][images].float(), views[1][donors].float(), keep[images],
+                                     sharpen(warp_maps(donor_masks, boxes[donors], size)))
         self.mix_plan = {
             "images": images, "donors": donors, "mixed": mixed.to(views[1].dtype), "area": keep[images].mean(dim=(1, 2, 3)),
             "masks": masks[images][:, None], "rectangles": None if rectangles is None else rectangles[images],
+            "donor_masks": donor_masks,
+            "groups": None if chosen_groups is None else chosen_groups[images],
+            "random_heads": None if chosen_groups is None else torch.randint(self.group_count, (len(images),), device=device),
         }
         self.mix_diagnostics = {"factor_mix_fraction": len(images) / count,
                                 "factor_mix_kept_area": float(self.mix_plan["area"].mean())}
+        if chosen_groups is not None:
+            self.mix_diagnostics["factor_mix_groups_used"] = float(len(torch.unique(chosen_groups[images])))
 
     def _mix_masks(self, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
         """The kept part of every mixed view at ``size``: warped concept regions or the rectangle."""
@@ -566,19 +607,34 @@ class SpatialConceptDistillation:
             return box_masks(plan["rectangles"], size)
         return sharpen(warp_maps(plan["masks"], boxes, size))
 
+    def _mix_donor_masks(self, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+        """The painted-over part of every donor at ``size``; empty unless the group masks paint it."""
+
+        if plan.get("donor_masks") is None:
+            return torch.zeros(len(plan["images"]), 1, *size, device=boxes.device)
+        return sharpen(warp_maps(plan["donor_masks"], boxes, size))
+
     def _mix_loss(self, plan: dict, model, embeddings: torch.Tensor, mixed_embeddings: torch.Tensor,
                   mixed_map: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
-        """Region-to-source contrast and the soft (or hard) global positive of the mixed views.
+        """The mixed views' contrastive losses against the first views' projections.
 
-        Keys are the first views' projections, so a mixed view never meets the second views it was cut from.
+        In the SimCLR head: the soft or hard global positive plus the region-to-source contrast. In the group
+        heads (``global="group"`` or ``"group_random"``): one InfoNCE per head, without the region contrast.
+        The keys never include the second views the mixed views were cut from.
         """
 
         count = len(embeddings) // 2
         images, donors = plan["images"], plan["donors"]
         with torch.autocast(device_type=mixed_map.device.type, enabled=False):
+            mode = self.mix.get("global", "soft")
+            if mode in ("group", "group_random"):
+                loss = self._group_loss(plan, model, embeddings[:count], mixed_embeddings,
+                                        plan["groups"] if mode == "group" else plan["random_heads"])
+                self.last_diagnostics["factor_mix_group_loss"] = float(loss.detach())
+                return float(self.mix.get("weight", 1.0)) * loss
             keys = F.normalize(model.head(embeddings[:count].float()).float(), dim=1)
             query = F.normalize(model.head(mixed_embeddings.float()).float(), dim=1)
-            if self.mix.get("global", "soft") == "hard":
+            if mode == "hard":
                 sources, shares = images[:, None], torch.ones(len(images), 1, device=keys.device)
             else:
                 sources = torch.stack([images, donors], dim=1)
@@ -594,6 +650,23 @@ class SpatialConceptDistillation:
                 diagnostics["factor_mix_region_loss"] = float(region_loss.detach())
         self.last_diagnostics.update(diagnostics)
         return float(self.mix.get("weight", 1.0)) * loss
+
+    def _group_loss(self, plan: dict, model, first_views: torch.Tensor, mixed_embeddings: torch.Tensor,
+                    heads: torch.Tensor) -> torch.Tensor:
+        """InfoNCE of every mixed view against the first views, inside the projection head ``heads`` names."""
+
+        if getattr(model, "group_heads", None) is None:
+            raise ValueError("Per-group positives need the model's group heads.")
+        total = mixed_embeddings.sum() * 0.0
+        for head in torch.unique(heads).tolist():
+            members = (heads == head).nonzero().view(-1)
+            projector = model.group_heads[int(head)]
+            keys = F.normalize(projector(first_views.float()).float(), dim=1)
+            queries = F.normalize(projector(mixed_embeddings[members].float()).float(), dim=1)
+            ones = torch.ones(len(members), 1, device=keys.device)
+            total = total + mixed_source_loss(queries, keys, plan["images"][members][:, None], ones,
+                                              self.temperature) * len(members)
+        return total / len(heads)
 
     def _composited(self, warped: torch.Tensor, plan: dict, boxes: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
         """``warped`` maps of both views with the composited second views' maps put together alike."""
@@ -650,7 +723,8 @@ class SpatialConceptDistillation:
                 count = len(rows)
                 images, donors = count + mix_plan["images"], count + mix_plan["donors"]
                 # The two maps put together like the pixels; a mixed view joins its image's cross-fit half.
-                mixed_targets = keep * targets[images] + (1 - keep) * targets[donors]
+                donor_keep = self._mix_donor_masks(mix_plan, boxes[donors], size)
+                mixed_targets = composite_maps(targets[images], targets[donors], keep, donor_keep)
                 features = torch.cat([feature_map, mixed_map])
                 targets = torch.cat([targets, mixed_targets])
                 fold = torch.cat([two_view_folds(count, device), mix_plan["images"] < count // 2])
@@ -779,6 +853,7 @@ class ConceptFactors(TrainingMethod):
         mix_weight: float = 0.5,
         mix_region: bool = True,
         mix_global: str = "soft",
+        mix_group_count: int = 12,
         temperature: float = 0.05,
         block_weight: float = 0.0,
         block_count: int = 32,
@@ -811,7 +886,9 @@ class ConceptFactors(TrainingMethod):
                                    "min_mass": float(composite_min_mass)}
         self.concept_types = concept_types
         self.mix_settings = {"fraction": float(mix_fraction), "mask": mix_mask, "weight": float(mix_weight),
-                             "region": bool(mix_region), "global": mix_global}
+                             "region": bool(mix_region), "global": mix_global, "group_count": int(mix_group_count)}
+        #: Names of the factors in each concept group of the group masks, known once ``wrap_loader`` has run.
+        self.mix_groups: list[list[str]] = []
         self.temperature = float(temperature)
         #: Names of the factors compositing treats as objects, known once ``wrap_loader`` has run.
         self.object_factors: list[str] = []
@@ -878,6 +955,7 @@ class ConceptFactors(TrainingMethod):
             mix_weight=options.factor_mix_weight,
             mix_region=options.factor_mix_region,
             mix_global=options.factor_mix_global,
+            mix_group_count=options.factor_mix_group_count,
             temperature=config.ssl.temp,
             block_weight=options.factor_block_weight,
             block_count=options.factor_block_count,
@@ -965,7 +1043,7 @@ class ConceptFactors(TrainingMethod):
             self.spatial = SpatialConceptDistillation(
                 maps, spatial["weight"], *self.schedule, sample_weights=(~unseen).float(), ridge=self.ridge,
                 probabilities=probabilities, region=region, composite=composite, objects=objects,
-                mix=mix, temperature=self.temperature,
+                mix=mix, temperature=self.temperature, groups=self._concept_groups(probabilities, names, unseen),
             )
             if mix["fraction"] > 0:
                 print(f"[INFO] Symmetric mixing ({mix['mask']} masks, fraction {mix['fraction']:g}, "
@@ -989,6 +1067,21 @@ class ConceptFactors(TrainingMethod):
             worker_init_fn=context.worker_init_fn if context.num_workers > 0 else None,
             generator=loader.generator,
         )
+
+    def _concept_groups(self, probabilities, names: list[str], unseen: torch.Tensor) -> torch.Tensor | None:
+        """Group ids of the factors for the group masks, from the maps of the images the concept loss sees."""
+
+        mix = self.mix_settings
+        if mix["fraction"] <= 0 or mix["mask"] != "groups":
+            return None
+        groups = coactivation_groups(probabilities.index_select(0, (~unseen).nonzero().view(-1)), mix["group_count"])
+        self.mix_groups = [[name for name, group in zip(names, groups.tolist()) if group == index]
+                           for index in range(int(groups.max()) + 1)]
+        if mix["global"] in ("group", "group_random"):
+            self.factor_group_count = len(self.mix_groups)
+        for index, members in enumerate(self.mix_groups):
+            print(f"[INFO] Concept group {index} ({len(members)} factors): {members[:12]}", flush=True)
+        return groups
 
     def _prepare_learnability(self, factors: dict, rows: torch.Tensor, source_indices, unseen: torch.Tensor,
                               dataset: str = "") -> None:
@@ -1164,6 +1257,7 @@ class ConceptFactors(TrainingMethod):
             "concept_block_factors": self.block_names,
             "concept_factor_balancing": self.balancing,
             "concept_composite_object_factors": self.object_factors,
+            "concept_mix_groups": self.mix_groups,
         }
 
     def input_artifacts(self) -> list[Path]:
