@@ -131,6 +131,27 @@ class StudySummaryTests(unittest.TestCase):
             self.assertAlmostEqual(arm["factor_explained_variance"]["mean"], 0.4)
             self.assertIn("| f2_std | 1,2 |", markdown.read_text(encoding="utf-8"))
 
+    def test_a_locked_test_study_reports_the_final_test_probe(self):
+        from cospro.cli import summarize_study
+
+        def record(seed, wga):
+            return {"status": "complete",
+                    "config": {"seed": seed, "dataset": "waterbirds", "linear_eval_split": "test"},
+                    "final_metrics": {"Last linear val worst-group acc": wga, "Last linear val acc": wga + 10,
+                                      "Linear val group accuracies": [wga, wga + 5, wga + 6, wga + 7]},
+                    "metrics": [{"stage": "linear_probe_final", "values": {}}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for seed, wga in ((1, 60.0), (2, 64.0)):
+                path = root / "seeds" / "study_test" / f"seed_{seed:02d}" / "comp_w5_holdout" / "1" / "run.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(record(seed, wga)), encoding="utf-8")
+            with patch.dict(os.environ, {"SPUR_SPLICE_OUTPUT_ROOT": str(root)}):
+                text = summarize_study.main(["--study", "study_test"]).read_text(encoding="utf-8")
+            self.assertIn("| arm | seeds | test WGA | test acc | test group acc |", text)
+            self.assertIn("| comp_w5_holdout | 1,2 | 62.0 ± 2.8 | 72.0 ± 2.8 | 62 / 67 / 68 / 69 |", text)
+
 
 class AtypicalityTests(unittest.TestCase):
     def test_label_free_weights_favour_the_minority_groups(self):

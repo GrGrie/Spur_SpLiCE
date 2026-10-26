@@ -9,6 +9,8 @@
 #   ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4   (only these arms)
 #   SBATCH_PARTITION=gpuidle bash scripts/submit_factor_study.sh ...   (another partition: sbatch reads
 #   SBATCH_PARTITION and it overrides the #SBATCH --partition line of every launcher)
+#   FINAL_TEST=1 bash scripts/submit_factor_study.sh waterbirds 1 2   (locked test: the same arms probed once on
+#   the test split after training, recorded in their own study factors_<dataset>_test)
 #
 # MetaShift, study factors_metashift. Each F2 arm changes one thing from f2_std:
 #   simclr, f2_std            baseline and F2 (weight 1, merge 0.9, standardized targets)
@@ -114,7 +116,13 @@ mkdir -p outputs/SLURM
 source scripts/load_splice_cluster_env.sh
 
 STUDY="factors_${DATASET}"
-COMMON=(--preset matched --dataset "${DATASET}" --study "${STUDY}" --wandb_group "${STUDY}")
+LOCKED_TEST=()
+if [[ "${FINAL_TEST:-0}" == "1" ]]; then
+  # Locked test runs stay out of the validation study, so their numbers never mix with validation numbers.
+  STUDY="factors_${DATASET}_test"
+  LOCKED_TEST=(--final_test)
+fi
+COMMON=(--preset matched --dataset "${DATASET}" --study "${STUDY}" --wandb_group "${STUDY}" ${LOCKED_TEST[@]+"${LOCKED_TEST[@]}"})
 F2=(--splice_mode concept_factors --factor_distill_weight 1.0 --factor_merge_similarity 0.9)
 F2W3=(--splice_mode concept_factors --factor_distill_weight 3.0 --factor_merge_similarity 0.9)
 CBC=(--splice_mode concept_factors --factor_block_weight 1.0 --factor_merge_similarity 0.9)

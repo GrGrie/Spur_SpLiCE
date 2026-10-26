@@ -822,6 +822,36 @@ per-group factor scores rest on few images (the unseen fifth holds about 11 wate
 cats outdoors), so on these groups the validation WGA (133 and 72 images) is the reliable measure. Symmetric
 mixing on Waterbirds, where compositing works, decides whether the prior is necessary.
 
+## Symmetric mixing on Waterbirds, compositing seeds 5 and 6, and the locked test (2026-10-26)
+
+Waterbirds, mean of the last four probes:
+
+| arm | seeds | WGA | acc | group acc |
+|---|---|---|---|---|
+| spatial maps | 1 to 4 | 53.0 | 60.1 | 55 / 64 / 59 / 68 |
+| symmetric mixing | 1 to 4 | 49.2 +- 2.5 | 56.0 | 49 / 58 / 67 / 61 |
+| mixing, rectangles | 1 to 4 | 49.0 +- 4.8 | 56.2 | 49 / 59 / 65 / 62 |
+| mixing, shuffled maps | 1 to 4 | 44.8 +- 3.3 | 51.6 | 45 / 52 / 67 / 59 |
+| compositing | 1 to 6 | 59.1 +- 7.1 | | |
+| compositing, another image's silhouette | 1 to 6 | 54.2 +- 6.1 | | |
+
+Symmetric mixing loses to spatial maps on all four seeds (-3.8 WGA, -4.1 accuracy) and ties its rectangle
+control (+0.2), after tying it on MetaShift as well. Typing no concept leaves an augmentation that behaves
+like CutMix and weakens the majority group landbird on land (49 against 55). The gain of compositing needs
+the asymmetric choice: keep the object, replace its surroundings. The line ends here; the prior stays and
+the thesis states it, as the background-augmentation literature does.
+
+Compositing seeds 5 and 6 score 60.2 and 46.1. Over six seeds it beats spatial maps on all six (6.3 on
+average) and another image's silhouette on four (4.8). Seed 6 is hard for every method: spatial maps,
+compositing and the silhouette control all drift down over the last 150 epochs to 46, with the majority
+group landbird on land as the worst group in each, so the seed and its probe, not the method, set that
+number.
+
+`FINAL_TEST=1 bash scripts/submit_factor_study.sh <dataset> ...` runs the same arms with `--final_test` (one
+probe on the test split after training) under the study `factors_<dataset>_test`; `summarize_study` writes a
+locked-test table for it and the results book leaves those runs out. Waterbirds test holds 642 images in
+each minority group against 133 in validation.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy

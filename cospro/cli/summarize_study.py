@@ -8,7 +8,8 @@ the mean and spread over seeds. ``scripts/run_training.sbatch`` refreshes it aft
 
 The headline number is ``val WGA (last 4)``: worst-group accuracy of the validation probe averaged
 over the last four periodic probes (SSL epochs 425 to 500 at the default frequency), which is steadier
-than the single last probe on small validation groups.
+than the single last probe on small validation groups. A study whose runs all evaluated on the test split
+(``--final_test``, one probe after training) is written as a locked-test table of that final probe.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ CONFIG_KEYS = (
     "dataset", "model", "epochs", "batch_size", "learning_rate", "weight_decay", "temp", "splice_mode",
     "splice_weight", "factor_distill_weight", "factor_condition_fraction", "factor_targets",
     "factor_merge_similarity", "factor_min_frequency", "factor_start_epoch", "latetvg_prune_rate",
-    "latetvg_layers", "concept_factor_count", "concept_factor_groups",
+    "latetvg_layers", "concept_factor_count", "concept_factor_groups", "linear_eval_split",
 )
 LAST_PROBES = 4
 
@@ -100,6 +101,7 @@ def summarize(rows: list[dict]) -> list[dict]:
             "val_wga_last4": spread([m["val_wga_last4"] for m in members if m["val_wga_last4"] is not None]),
             "val_wga_last": spread([m["val_wga_last"] for m in members if m["val_wga_last"] is not None]),
             "val_acc_last4": spread([m["val_acc_last4"] for m in members if m["val_acc_last4"] is not None]),
+            "val_acc_last": spread([m["val_acc_last"] for m in members if m["val_acc_last"] is not None]),
             "factor_explained_variance": spread(
                 [m["factor_explained_variance"] for m in members if m["factor_explained_variance"] is not None]
             ),
@@ -121,7 +123,37 @@ def number(value: dict[str, float | None]) -> str:
     return f"{value['mean']:.1f}" + ("" if value["sd"] is None else f" ± {value['sd']:.1f}")
 
 
+def locked_test(rows: list[dict]) -> bool:
+    """True when every finished run of the study probed the test split once after training."""
+
+    finished = [row for row in rows if row["status"] == "complete"]
+    return bool(finished) and all(row["config"].get("linear_eval_split") == "test" for row in finished)
+
+
+def test_markdown(study: str, summary: list[dict], rows: list[dict]) -> str:
+    """The locked-test table: the single final probe on the test split (the record keeps it under "val")."""
+
+    lines = [f"# {study}", "",
+             "Locked test: one linear probe on the test split after training (`--final_test`). ± is the standard "
+             "deviation over seeds; `test group acc` lists every (class, attribute) group in the dataset's order.", ""]
+    for dataset in sorted({entry["dataset"] for entry in summary}):
+        lines += [f"## {dataset}", "", "| arm | seeds | test WGA | test acc | test group acc |", "|---|---|---|---|---|"]
+        entries = [entry for entry in summary if entry["dataset"] == dataset]
+        entries.sort(key=lambda entry: -(entry["val_wga_last"]["mean"] or 0))
+        for entry in entries:
+            groups = " / ".join(f"{value:.0f}" for value in entry["val_group_accuracies"])
+            lines.append(f"| {entry['arm']} | {','.join(map(str, entry['seeds']))} | {number(entry['val_wga_last'])} | "
+                         f"{number(entry['val_acc_last'])} | {groups} |")
+        lines.append("")
+    unfinished = [row for row in rows if row["status"] != "complete"]
+    if unfinished:
+        lines += ["## Unfinished runs", ""] + [f"- `{row['run']}`: {row['status']}" for row in unfinished] + [""]
+    return "\n".join(lines)
+
+
 def markdown(study: str, summary: list[dict], rows: list[dict]) -> str:
+    if locked_test(rows):
+        return test_markdown(study, summary, rows)
     lines = [f"# {study}", "",
              "Validation probe; `last 4` averages the last four periodic probes. ± is the standard deviation "
              "over seeds. `val group acc` lists the mean accuracy of every (class, attribute) group in the "

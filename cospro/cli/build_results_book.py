@@ -148,6 +148,9 @@ def load_runs(root: Path) -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
         config = record.get("config") or {}
+        if config.get("linear_eval_split") == "test":
+            # Locked test runs report through their own study summary, never as validation rows.
+            continue
         study, _, arm = path.relative_to(root / "seeds").parts[:3]
         final = record.get("final_metrics") or {}
         tail = probe_trajectory(record)[-4:]
