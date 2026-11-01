@@ -9,6 +9,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | xfit_meaning_w5_clippca_holdout | 1,2 | 54.2 ± 5.4 | 53.5 ± 4.9 | 65.9 ± 4.5 | 76 / 54 / 57 / 76 |  | 0.52 |
 | mix_noregion_w5_holdout | 1,2,3,4 | 52.8 ± 6.5 | 52.1 ± 7.6 | 62.2 ± 3.2 | 65 / 55 / 57 / 70 |  |  |
 | comp_w5_holdout | 1,2,3,4 | 52.3 ± 1.9 | 51.7 ± 2.6 | 63.3 ± 1.5 | 70 / 55 / 57 / 71 |  |  |
+| heads_single_w5_holdout | 1,2,3,4 | 52.1 ± 1.8 | 51.7 ± 1.3 | 58.8 ± 1.4 | 58 / 53 / 55 / 69 |  |  |
 | mix_box_w5_holdout | 1,2,3,4 | 51.8 ± 3.4 | 53.1 ± 3.3 | 61.4 ± 2.7 | 60 / 53 / 59 / 74 |  |  |
 | mix_hard_w5_holdout | 1,2,3,4 | 51.6 ± 2.8 | 50.7 ± 2.4 | 61.2 ± 1.4 | 60 / 51 / 60 / 72 |  |  |
 | simclr_lt | 1,2 | 51.4 ± 1.5 | 50.0 ± 2.0 | 55.3 ± 0.1 | 54 / 56 / 51 / 58 |  |  |
@@ -21,6 +22,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | cbc_plain | 1,2,3,4 | 49.7 ± 2.5 | 49.7 ± 2.4 | 62.6 ± 0.8 | 73 / 50 / 52 / 75 |  |  |
 | cbc_f2_balanced | 1,2,3,4 | 49.4 ± 3.8 | 49.3 ± 4.0 | 64.4 ± 2.2 | 74 / 52 / 55 / 78 | 0.42 |  |
 | comp_context_w5_holdout | 1,2,3,4 | 49.3 ± 1.9 | 49.3 ± 1.8 | 60.1 ± 1.6 | 62 / 49 / 62 / 67 |  |  |
+| heads_shuffled_w5_holdout | 1,2,3,4 | 49.0 ± 4.4 | 49.7 ± 4.7 | 57.7 ± 2.0 | 57 / 50 / 54 / 71 |  |  |
 | f2_std_lt | 1,2 | 48.6 ± 5.9 | 47.9 ± 6.9 | 57.4 ± 0.2 | 60 / 48 / 52 / 69 | 0.10 |  |
 | comp_shuffled_w5_holdout | 1,2,3,4 | 48.4 ± 3.1 | 48.6 ± 2.5 | 56.6 ± 1.6 | 52 / 49 / 54 / 70 |  |  |
 | f2_presence | 1,2 | 48.3 ± 7.9 | 49.3 ± 8.8 | 57.1 ± 2.1 | 54 / 49 / 56 / 71 | 0.15 |  |
@@ -35,6 +37,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | xfit_meaning_w5_holdout | 1,2 | 47.2 ± 3.9 | 47.2 ± 3.9 | 61.7 ± 0.2 | 70 / 48 / 51 / 77 |  | 0.31 |
 | f2_w10 | 1,2 | 47.0 ± 7.1 | 45.8 ± 3.9 | 59.7 ± 1.4 | 62 / 46 / 53 / 75 | 0.85 |  |
 | xfit_norm_balanced | 1,2 | 46.9 ± 4.4 | 47.2 ± 3.9 | 58.5 ± 1.2 | 63 / 50 / 50 / 69 |  | -0.01 |
+| heads_w5_holdout | 1,2,3,4 | 46.9 ± 3.3 | 47.2 ± 5.1 | 58.8 ± 3.6 | 65 / 49 / 53 / 68 |  |  |
 | xfit_meaning_w3_holdout | 1,2 | 46.9 ± 2.0 | 47.2 ± 2.0 | 60.3 ± 2.1 | 68 / 47 / 52 / 75 |  | 0.19 |
 | xfit_meaning_shuffled | 1,2 | 46.7 ± 1.7 | 47.2 ± 3.9 | 58.6 ± 1.8 | 62 / 50 / 52 / 72 |  | -0.02 |
 | spatial_w5 | 1,2,3,4,5,6 | 46.7 ± 4.5 | 47.2 ± 3.8 | 60.3 ± 3.2 | 64 / 47 / 58 / 72 |  |  |
@@ -66,6 +69,7 @@ Validation probe; `last 4` averages the last four periodic probes. ± is the sta
 | region_w1_shuffled_holdout | 1,2,3,4 | 42.4 ± 6.7 | 42.0 ± 6.8 | 54.3 ± 4.1 | 55 / 43 / 53 / 66 |  |  |
 | f2_shuffled | 1,2 | 42.2 ± 4.7 | 41.7 ± 5.9 | 51.0 ± 0.9 | 51 / 42 / 45 / 65 | 0.06 |  |
 | xfit_norm_shuffled | 1,2 | 41.7 ± 0.0 | 41.7 ± 0.0 | 54.4 ± 0.5 | 55 / 47 / 45 / 72 |  | -0.03 |
+| heads_random_w5_holdout | 1,2,3,4 | 41.1 ± 3.6 | 41.0 ± 2.4 | 58.0 ± 2.0 | 65 / 41 / 56 / 69 |  |  |
 
 ## Unfinished runs
 
