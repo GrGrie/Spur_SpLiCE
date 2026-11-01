@@ -879,6 +879,38 @@ conflict the heads remove), `heads_random_w5_holdout` (a random head per pair: h
 the kept group) and `heads_shuffled_w5_holdout` (shuffled maps). The heads count if they beat the single
 head and the spatial maps; compositing (Waterbirds 59.1) marks what a correct prior reaches.
 
+## Per-group head results (2026-11-01)
+
+Seeds 1 to 4 with the hold-out, mean of the last four probes:
+
+| arm | Waterbirds WGA | Waterbirds acc | MetaShift WGA | MetaShift acc |
+|---|---|---|---|---|
+| SimCLR | 45.8 | 52.3 | 44.8 | 54.8 |
+| spatial maps | 53.0 +- 3.0 | 60.1 | 53.0 +- 5.8 | 62.2 |
+| per-group heads | 52.4 +- 2.9 | 59.4 | 46.9 +- 3.3 | 58.8 |
+| control: one head for every pair | 42.9 +- 4.8 | 55.1 | 52.1 +- 1.8 | 58.8 |
+| control: a random head per pair | 48.1 +- 6.1 | 57.1 | 41.1 +- 3.6 | 58.0 |
+| control: shuffled maps | 45.2 +- 3.9 | 54.9 | 49.0 +- 4.4 | 57.7 |
+| compositing, with the object prior | 62.0 +- 3.9 | 65.9 | 52.3 +- 1.9 | 63.3 |
+
+The heads miss the criterion set for them. On Waterbirds they beat the single head (9.5 WGA, four of four
+seeds) and tie spatial maps (-0.6). On MetaShift they lose to the single head (-5.2, none of four), to spatial
+maps (-6.2, one of four) and to their shuffled control (-2.2, one of four). The sign of the head effect flips
+between the datasets, so the line of prior-free mixing ends here, after symmetric mixing and per-group heads.
+
+Three measurements frame the result. The heads trained: the group loss fell from about 4.7 to 2.0 on MetaShift
+and 1.3 on Waterbirds, and they reach the highest concept scores on unseen images of all arms (0.28 and 0.32
+against 0.22 and 0.25 for spatial maps), so the concept scores do not predict WGA. The background stays equally
+readable in every arm (Waterbirds spurious probe 87.9 for compositing, 90.1 for spatial maps, correlation with
+class WGA across arms -0.01), so compositing raises the class signal and erases no background. And the mixes
+rarely keep the class: with the cluster's grouping and a uniform draw on full MetaShift images, the cat and dog
+groups are kept in 21 percent of the mixes and a group of 83 remaining factors in 57 percent. On Waterbirds the
+bird concepts fall into about seven small groups by colour and species while forest and bamboo form one group
+with 56 percent of the patches. A draw that favours the class needs to know the class, which is the prior.
+
+The prior-free method of the thesis is the spatial concept loss. Compositing stays as the measure of what a
+correct object assumption adds.
+
 ## Seeds 5 and 6, and stalled jobs (2026-10-10)
 
 MetaShift with the hold-out, mean of the last four probes: spatial maps 51.1 +- 5.4 WGA and 61.2 accuracy
