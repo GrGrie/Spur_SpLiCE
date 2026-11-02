@@ -41,7 +41,8 @@ Spur_SpLiCE/
     history/                     dated migration and recovery records
     notes/                       dated working notes on paper and submission changes
   paper/
-    CoSpRo.tex                   paper source
+    CoSpRo.tex                   paper source, relational-graph method
+    SpatialConcepts.tex          paper source, spatial concept maps (tools/paper/plot_spatial_concept_figures.py)
     paper_results.json           checked compact registry for paper claims
 ```
 
