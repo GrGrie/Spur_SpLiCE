@@ -46,7 +46,7 @@ def save(figure, name: str) -> None:
 # (label, family, WGA mean, WGA sd, seeds); sd None for single seeds.
 WATERBIRDS = [
     ("SimCLR", "baseline", 46.7, 1.9, 6),
-    ("CoSpRo (Sept. paper)", "baseline", 50.0, 3.2, 4),
+    ("CoSpRo paper", "baseline", 50.0, 3.2, 4),
     ("LateTVG, prune 0.9", "baseline", 47.9, None, 1),
     ("F2: trained linear head", "image-level", 41.6, 6.1, 4),
     ("xfit: cross-fitted ridge, w10", "image-level", 51.5, 5.5, 4),
@@ -62,7 +62,7 @@ WATERBIRDS = [
 ]
 METASHIFT = [
     ("SimCLR", "baseline", 44.3, 7.3, 6),
-    ("CoSpRo (Sept. paper)", "baseline", 42.9, 2.7, 10),
+    ("CoSpRo paper", "baseline", 42.9, 2.7, 10),
     ("F2: trained linear head, w3", "image-level", 46.6, 5.7, 4),
     ("F3: concept blocks", "image-level", 43.8, 4.1, 4),
     ("xfit: cross-fitted ridge, w10", "image-level", 47.6, 1.0, 2),
