@@ -1,0 +1,1159 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,multirow}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds,shapes.misc,decorations.pathreplacing}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{float}
+
+\setlist{itemsep=2pt,topsep=3pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.12}
+
+\definecolor{cblue}{HTML}{2A78D6}
+\definecolor{corange}{HTML}{EB6834}
+\definecolor{cgreen}{HTML}{1BAF7A}
+\definecolor{cyellow}{HTML}{EDA100}
+\definecolor{cpurple}{HTML}{4A3AA7}
+\definecolor{cgrey}{HTML}{8A8F98}
+\definecolor{cred}{HTML}{C0392B}
+
+\newtcolorbox{keyidea}[1][Key idea]{colback=cblue!5,colframe=cblue!70,fonttitle=\bfseries\small,title={#1},boxrule=0.6pt,arc=2pt,left=5pt,right=5pt,top=3pt,bottom=3pt}
+\newtcolorbox{whynum}[1][Why these numbers]{colback=cgrey!7,colframe=cgrey!80,fonttitle=\bfseries\small,title={#1},boxrule=0.6pt,arc=2pt,left=5pt,right=5pt,top=3pt,bottom=3pt}
+\newtcolorbox{verdictgood}[1][Verdict]{colback=cgreen!6,colframe=cgreen!80!black,fonttitle=\bfseries\small,title={#1},boxrule=0.6pt,arc=2pt,left=5pt,right=5pt,top=3pt,bottom=3pt}
+\newtcolorbox{verdictbad}[1][Verdict]{colback=cred!5,colframe=cred!80,fonttitle=\bfseries\small,title={#1},boxrule=0.6pt,arc=2pt,left=5pt,right=5pt,top=3pt,bottom=3pt}
+\newtcolorbox{verdictmixed}[1][Verdict]{colback=cyellow!8,colframe=cyellow!90!black,fonttitle=\bfseries\small,title={#1},boxrule=0.6pt,arc=2pt,left=5pt,right=5pt,top=3pt,bottom=3pt}
+
+\newcommand{\arm}[1]{\texttt{\small #1}}
+\newcommand{\pmsd}[2]{$#1{\scriptstyle\,\pm\,#2}$}
+
+\tikzset{
+  box/.style={draw,rounded corners=2pt,align=center,font=\small,inner sep=4pt,fill=white},
+  tbox/.style={box,fill=cgreen!8,draw=cgreen!70!black},
+  sbox/.style={box,fill=cblue!8,draw=cblue!80},
+  lbox/.style={box,fill=corange!10,draw=corange!90},
+  gbox/.style={box,fill=cgrey!10,draw=cgrey},
+  arr/.style={-{Stealth[length=2mm]},thick,draw=black!70},
+  darr/.style={-{Stealth[length=2mm]},thick,dashed,draw=black!60},
+}
+
+\title{\textbf{The \texttt{concept-factors} branch}\\[3pt]
+\large From CoSpRo to Spatial Concept Distillation:\\ architectures, numbers and lessons of 26 September to 1 November 2026}
+\author{Report for the supervisor meeting of 10 November 2026}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+
+\begin{abstract}
+\noindent This report explains what the \texttt{concept-factors} branch built after the CoSpRo paper, why each
+design looks the way it does and what each experiment showed. The branch replaced CoSpRo's prior about
+\emph{which} concept is spurious by a symmetric goal: make the self-supervised student encode every
+concept CLIP/SpLiCE finds, so that a group-balanced linear probe can pick the side the task needs. Nine
+architectures were tried in three phases. Image-level concept distillation (F2, F3 and the cross-fitted
+ridge ``xfit'') doubled worst-group accuracy (WGA) on Spur-CIFAR10 and taught us that a small dataset
+lets the student memorize any per-image target. Spatial Concept Distillation (SCD) supervises every
+location of the ResNet's $7\times7$ feature map with dense CLIP concept maps; it raises validation WGA over
+SimCLR by 6.1 (Waterbirds), 6.8 (MetaShift) and 22.5 points (Spur-CIFAR10) and beats its shuffled-map
+control on all three datasets. Four extensions on top of SCD tried to make the student separate an
+object from its usual context. Only object compositing, which uses a text prior that types concepts as
+objects or scenes, adds a large gain (Waterbirds 59.1 WGA); the prior-free variants (region contrast,
+symmetric mixing and per-group heads) match or fall below SCD. All numbers are validation numbers;
+locked test runs are prepared and outstanding.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=====================================================================
+\section{The result on one page}
+%=====================================================================
+
+\begin{table}[H]
+\centering
+\caption{Headline validation numbers (mean of the last four linear probes, epochs 425--500; $\pm$ is the
+standard deviation over student seeds; seeds in brackets). ``Prior-free'' means that no step of the
+method decides which concept is the class and which the spurious attribute.}
+\label{tab:headline}
+\small
+\begin{tabularx}{\linewidth}{l *{4}{>{\centering\arraybackslash}X}}
+\toprule
+ & Waterbirds & MetaShift & Spur-CIFAR10 & CelebA \\
+\midrule
+SimCLR (reference) & \pmsd{46.7}{1.9} (6) & \pmsd{44.3}{7.3} (6) & \pmsd{15.6}{1.0} (2) & \pmsd{84.9}{0.0} (2) \\
+CoSpRo (September paper) & \pmsd{50.0}{3.2} (4) & \pmsd{42.9}{2.7} (10) & 19.6 (1) & -- \\
+\midrule
+\textbf{SCD}, prior-free (this branch) & \textbf{\pmsd{52.8}{4.7}} (6) & \textbf{\pmsd{51.1}{5.4}} (6) & \textbf{\pmsd{38.1}{0.5}} (2) & no maps yet \\
+\quad same loss, shuffled maps & \pmsd{47.5}{2.5} (6) & \pmsd{45.1}{2.9} (6) & \pmsd{17.2}{2.0} (2) & \\
+\midrule
+SCD + compositing, object prior & \textbf{\pmsd{59.1}{7.1}} (6) & \pmsd{52.3}{1.9} (4) & -- & excluded \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyidea}[Three sentences to say first]
+\begin{enumerate}[leftmargin=*]
+\item CoSpRo helped on Waterbirds only and carried a hidden assumption (the spurious attribute is a
+removable context concept); the new branch drops that assumption and distils \emph{all} concepts.
+\item Distilling concepts per image fails on small datasets because the student memorizes per-image
+targets; distilling them \emph{per location} of the feature map (SCD) works on all three datasets and
+beats a control that uses the same loss on another image's maps.
+\item SCD makes the core feature stronger, but the student still ties the object to its usual context;
+the only extension that breaks this tie (compositing) needs an object-versus-scene prior.
+\end{enumerate}
+\end{keyidea}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{figures/scoreboard.pdf}
+\caption{Every architecture of the branch on the two main datasets. Bars are validation WGA, whiskers one
+standard deviation over seeds, ``(6s)'' the number of seeds. Grey bars are controls. The dashed line is
+SimCLR. Section~\ref{sec:scoreboard} discusses this figure row by row.}
+\label{fig:scoreboard}
+\end{figure}
+
+%=====================================================================
+\section{The problem and what we want to beat}
+%=====================================================================
+
+\subsection{Spurious correlations and worst-group accuracy}
+In Waterbirds the bird type agrees with the background on 95\% of the training images (waterbirds on
+water, landbirds on land). In MetaShift 88\% of the training cats sit indoors and 88\% of the dogs outdoors.
+A representation that learns ``water'' as evidence for ``waterbird'' or ``indoor'' as evidence for ``cat''
+fails on the rare images that break the rule. Each image belongs to a group $g=(y,a)$ of class $y$ and
+spurious attribute $a$ and the metric is the accuracy of the worst group:
+\begin{equation}
+\mathrm{WGA}=\min_g \frac{1}{n_g}\sum_{i:\,g_i=g}\mathbf{1}\{\hat y_i=y_i\}.
+\end{equation}
+
+\begin{table}[H]
+\centering
+\caption{Datasets. MetaShift and Spur-CIFAR10 were the development datasets; Waterbirds and CelebA
+received frozen configurations.}
+\small
+\begin{tabularx}{\linewidth}{l r X}
+\toprule
+Dataset & Train images & Spurious structure and evaluation \\
+\midrule
+Waterbirds & 4,795 & bird type vs.\ land/water background; validation groups 467 / 466 / 133 / 133 images, the two waterbird groups smallest; test 642 per minority group \\
+MetaShift (cats/dogs) & 1,700 & cat/dog vs.\ indoor/outdoor, 88\% agreement; 72 validation images per group, so WGA is noisy (one image = 1.4 points) \\
+Spur-CIFAR10 & 45,000 & 10 CIFAR classes, a 2-pixel coloured line agrees with the class on 95\% of the training images; 100 (class, colour) groups \\
+CelebA & 162,770 & blond hair vs.\ gender; only image-level runs so far \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Why a linear probe on a balanced set is enough: deep feature reweighting}
+Our evaluation fits a logistic regression on frozen features using a small \emph{group-balanced} subset of
+the training split (224 images on Waterbirds, 400 on MetaShift, 1,400 on Spur-CIFAR10). Kirichenko et al.\
+(DFR, ICLR 2023) showed that such a balanced last layer recovers high WGA \emph{whenever the
+representation encodes the core feature separately from the spurious one}. This fixes the goal of the
+whole branch:
+
+\begin{keyidea}[Goal derived from DFR]
+The representation must contain a \textbf{bird direction} and a \textbf{background direction} as two
+separate, linearly readable directions. It does not have to forget the background. The balanced probe
+then puts its weight on the bird direction. The failure we must prevent is the \emph{fusion} of the two
+into one direction (``waterbird-and-water''), or the \emph{suppression} of the harder feature by the easier
+one.
+\end{keyidea}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.95]
+\begin{scope}
+\draw[->,cgrey] (0,0)--(3.2,0) node[right,font=\scriptsize]{feature 1};
+\draw[->,cgrey] (0,0)--(0,2.6) node[above,font=\scriptsize]{feature 2};
+\draw[-{Stealth},very thick,corange] (0,0)--(2.4,1.8) node[above right,font=\small,align=left]{one fused direction\\``cat + indoor''};
+\node[font=\small\bfseries] at (1.5,-0.7) {fused: the probe cannot pick};
+\fill[cblue] (2.0,1.5) circle (2pt);
+\fill[cblue] (1.0,0.75) circle (2pt);
+\node[font=\scriptsize,cblue,anchor=west] at (1.15,0.55) {cat outdoors};
+\node[font=\scriptsize,cblue] at (2.45,1.25) {cat indoors};
+\end{scope}
+\begin{scope}[xshift=7cm]
+\draw[->,cgrey] (0,0)--(3.2,0) node[right,font=\scriptsize]{cat direction};
+\draw[->,cgrey] (0,0)--(0,2.6) node[above,font=\scriptsize]{indoor direction};
+\draw[-{Stealth},very thick,cblue] (0,0)--(2.4,0);
+\draw[-{Stealth},very thick,cgreen] (0,0)--(0,1.9);
+\fill[cblue] (2.2,1.6) circle (2pt) node[right,font=\scriptsize]{cat indoors};
+\fill[cblue] (2.2,0.25) circle (2pt) node[right,font=\scriptsize]{cat outdoors};
+\fill[corange] (0.3,1.6) circle (2pt) node[above right,font=\scriptsize]{dog indoors};
+\draw[dashed,thick,black!70] (1.25,-0.3)--(1.25,2.3) node[above,font=\scriptsize]{balanced probe};
+\node[font=\small\bfseries] at (1.5,-0.7) {separate: the probe splits on ``cat''};
+\end{scope}
+\end{tikzpicture}
+\caption{The geometry behind the goal. Left: a fused direction places cats outdoors close to the origin,
+so no linear probe separates them from dogs indoors. Right: with separate directions the balanced probe
+uses the cat axis alone.}
+\label{fig:fusion}
+\end{figure}
+
+\subsection{The restriction: no prior about which concept is spurious}
+Label-free methods against spurious correlations need some assumption about what is spurious.
+LateTVG and LA-SSL assume the spurious feature is the \emph{easy} one (learned early or by early layers).
+Background augmentation assumes it is the \emph{background}. CoSpRo assumed it is a \emph{removable context
+concept}. These assumptions differ between datasets: in CelebA the spurious attribute (gender) is not a
+background at all. The branch therefore adopts one restriction:
+
+\begin{keyidea}[Restriction of the thesis method]
+No step of pretraining may use target labels, group labels or knowledge of which concept is the class
+and which the spurious attribute. Every concept enters the loss in the same way. Labels enter only the
+balanced probe and the post-hoc analysis, identically for every method.
+\end{keyidea}
+
+\subsection{What we compare against}
+\begin{itemize}[leftmargin=*]
+\item \textbf{SimCLR} under the identical protocol: the reference every gain is measured against.
+\item \textbf{A control for every new loss}: the same loss on another image's targets (``shuffled'').
+It keeps every statistic of the targets and removes the link to the image content, so a gain above it
+is a gain of the concept content. Most decisions of the branch rest on these controls.
+\item \textbf{CoSpRo} (our September paper): \pmsd{50.64}{1.97} test WGA on Waterbirds against
+\pmsd{46.82}{3.65} for SimCLR; on MetaShift \pmsd{42.9}{2.7} against \pmsd{44.6}{6.9} over ten seeds.
+\item \textbf{LateTVG} (Hamidieh et al., ICLR 2024) reports 55.4 (Waterbirds) and 59.3 (MetaShift) WGA with
+SimCLR under its own protocol. Under our protocol one seed reaches 47.9 on Waterbirds; the matched
+six-seed test run is predeclared (\texttt{waterbirds\_latetvg\_test.yaml}).
+\item \textbf{LA-SSL} (learning-speed-aware sampling) has an adaptation in the CoSpRo paper's appendix.
+\end{itemize}
+Absolute accuracies are low (SimCLR reaches 52\% average accuracy on Waterbirds) because a ResNet-18
+trains from random initialization on 1,700 to 4,795 images. Supervised or ImageNet-pretrained numbers
+(DFR reaches above 90\% WGA on Waterbirds with a pretrained ResNet-50) answer a different question: our
+protocol measures what the SSL objective learns from the dataset's own images.
+
+%=====================================================================
+\section{Where we started: CoSpRo in two paragraphs}
+%=====================================================================
+CoSpRo removed the subspace of one concept group from the CLIP embeddings, kept image pairs that became
+closer, filtered them (activation contrast, residual concept agreement, synthetic null groups) into a
+sparse teacher graph and transferred the graph to a SimCLR student through graph-aware batches and a
+relational KL loss. On Waterbirds it gained about four points of test WGA.
+
+Two observations ended this line. First, the gain did not transfer: below SimCLR on MetaShift over ten
+seeds, 19.6 against 15.6 on one Spur-CIFAR10 seed. Second, the method carries the prior that the
+spurious attribute is a removable context concept, the graph keeps wrong-class edges and the background
+stays linearly decodable at 91\%.
+
+%=====================================================================
+\section{Shared machinery of every architecture}
+%=====================================================================
+
+\subsection{Training and evaluation protocol}
+\begin{table}[H]
+\centering
+\caption{Protocol shared by every run of the branch (inherited from CoSpRo so that numbers are comparable).}
+\small
+\begin{tabularx}{\linewidth}{l X}
+\toprule
+Student & ResNet-18 from random initialization. Waterbirds, MetaShift, CelebA: 224-pixel input (``large'' stem, $7\times7$ convolution with stride 2 and max-pooling). Spur-CIFAR10: 32-pixel input (CIFAR stem) \\
+SSL & SimCLR, 500 epochs (CelebA 250), batch 128, temperature 0.05, SGD with learning rate 0.01 decayed by 0.1 at epochs 350, 400 and 450, weight decay $10^{-4}$, crop scale $[0.2,1]$, float16 autocast with a GradScaler on one V100 \\
+Probe & logistic regression (L2 coefficient 0.001) on the pooled 512-d features, fitted on the group-balanced subset of the training split, evaluated every 25 epochs \\
+Reported value & mean of the last four probes (epochs 425 to 500); this damps single-probe noise on MetaShift's 72-image groups \\
+Seeds & 4 to 6 for Waterbirds and MetaShift, 2 for Spur-CIFAR10 and CelebA \\
+Split & validation; the locked test split stays unused until the configuration is final \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{The ResNet-18 student and why we read the $7\times7$ map}
+\label{sec:resnet}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=3mm,
+ l/.style={draw,fill=cblue!8,draw=cblue!70,minimum width=9mm,align=center,font=\scriptsize,inner sep=2pt}]
+\node[l,minimum height=20mm] (in) {input\\$224^2{\times}3$};
+\node[l,minimum height=16mm,right=of in] (c1) {stem\\$56^2{\times}64$};
+\node[l,minimum height=16mm,right=of c1] (l1) {layer1\\$56^2{\times}64$};
+\node[l,minimum height=13mm,right=of l1] (l2) {layer2\\$28^2{\times}128$};
+\node[l,minimum height=10mm,right=of l2] (l3) {layer3\\$14^2{\times}256$};
+\node[l,minimum height=8mm,right=of l3,fill=corange!20,draw=corange,very thick] (l4) {layer4\\$7^2{\times}512$};
+\node[l,minimum height=6mm,right=6mm of l4] (gap) {global\\avg pool\\512};
+\node[l,minimum height=6mm,right=6mm of gap,fill=cgrey!10,draw=cgrey] (head) {MLP head\\128};
+\node[l,minimum height=6mm,below=8mm of gap,fill=cgreen!10,draw=cgreen] (probe) {linear\\probe};
+\draw[arr] (in)--(c1); \draw[arr] (c1)--(l1); \draw[arr] (l1)--(l2); \draw[arr] (l2)--(l3); \draw[arr] (l3)--(l4);
+\draw[arr] (l4)--(gap); \draw[arr] (gap)--(head); \draw[arr] (gap)--(probe);
+\node[above=1mm of head,font=\scriptsize,align=center] {SimCLR loss};
+\node[below left=9mm and -8mm of l4,font=\scriptsize,align=center,text=corange] (hook) {forward hook:\\spatial concept loss\\on 49 locations};
+\draw[darr,corange] (l4.south)--(hook.north);
+\node[right=1mm of probe,font=\scriptsize] {evaluation only};
+\end{tikzpicture}
+\caption{The student. SimCLR and the probe read the 512-d vector after global average pooling. The
+spatial concept loss reads the $7\times7\times512$ output of \texttt{layer4} through a forward hook,
+\emph{before} pooling. Spur-CIFAR10 uses the CIFAR stem, so its map is $4\times4\times512$.}
+\label{fig:resnet}
+\end{figure}
+
+\begin{whynum}[Why the $7\times7$ map before pooling and not the pooled vector]
+\begin{itemize}[leftmargin=*]
+\item \textbf{Pooling is where concepts fuse.} After global average pooling a cat and a couch become one
+512-d vector per image. Across images they co-occur (88\%), so an image-level target cannot tell
+``cat'' from ``couch'' except on the few images where they disagree. At the $7\times7$ map they sit at
+different locations of \emph{every} image.
+\item \textbf{The last stage is what the probe reads.} \texttt{layer4} feeds the pooled vector directly,
+so shaping it shapes exactly the representation the probe evaluates. An earlier stage would be shaped
+and then transformed by \texttt{layer4} before the probe sees it.
+\item \textbf{$7=224/32$.} ResNet-18 halves the resolution five times (stem convolution, max-pooling,
+\texttt{layer2}, \texttt{layer3}, \texttt{layer4}). Nothing is cropped or ``thrown away''; we tap the
+tensor that pooling would average.
+\item \textbf{Limitation built into this choice.} Each of the 49 locations has a receptive field that
+covers most of the 224-pixel view. A ``cat'' location therefore also sees the scene, which is why the
+student keeps part of the co-occurrence (Section~\ref{sec:audit}).
+\end{itemize}
+\end{whynum}
+
+\subsection{SpLiCE concepts}
+A frozen OpenCLIP ViT-B/32 (LAION-2B weights) embeds every training image as $z_i$. SpLiCE (Bhalla et al.,
+NeurIPS 2024) writes the centred, normalized embedding as a sparse non-negative combination of text
+directions from a vocabulary,
+\begin{equation}
+u_i=\operatorname{norm}(z_i-\mu),\qquad c_i\in\arg\min_{c\ge0}\|u_i-D^\top c\|_2^2+\lambda_1\|c\|_1,
+\end{equation}
+with L1 penalty 0.25. About nine concepts are active per image. MetaShift uses the LAION vocabulary (10,000
+words), Waterbirds and Spur-CIFAR10 the Open Images v7 vocabulary (20,931 words).
+
+\subsection{From concepts to concept factors: the meaning grouping}
+\label{sec:grouping}
+A vocabulary names one visual content several times (\emph{cat, kitten, kitty}). A \emph{concept factor}
+is a group of concepts that name one thing; its value on an image is the sum of its members' SpLiCE
+codes. Getting this grouping right took a full round of the branch, because the obvious signals fail
+(Figure~\ref{fig:signals}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/grouping_signals.pdf}
+\caption{Four similarity signals on Waterbirds concept pairs. Co-activation (orange) fails for synonyms:
+the L1 penalty activates one of two synonyms per image (heron and egret co-activate at 0.09, ocean and sea at
+0.00). Centred SpLiCE text directions (grey) also separate synonyms. Raw CLIP text embeddings (blue) put
+synonyms at 0.85 to 0.94 and object--context pairs at 0.64 to 0.72, so a threshold at 0.85 separates them.}
+\label{fig:signals}
+\end{figure}
+
+The original CoSpRo rule linked two concepts when both centred text similarity and co-activation passed a
+threshold. On Waterbirds 499 of 502 groups were single concepts; lowering both thresholds chained a bird to
+its background (one group held hummingbird, parrot, jungle and bamboo). The \textbf{meaning grouping}
+(\texttt{cospro/cli/build\_meaning\_groups.py}) fixes both problems:
+\begin{enumerate}[leftmargin=*]
+\item keep concepts active on 0.2\% to 95\% of the training images;
+\item similarity $s_{k\ell}=\cos(t_k,t_\ell)$ of the raw CLIP text embeddings, set to $-1$ (veto) when the
+images' responses to the two concepts correlate below 0.5;
+\item average-linkage clustering cut at text similarity 0.85. Average linkage joins two clusters only when
+their members agree on average, which stops chains;
+\item a factor's text direction is the normalized mean of its members' text embeddings;
+\item keep factors active on 2\% to 90\% of the images (5\% to 90\% for the image-level variants).
+\end{enumerate}
+Examples: \{kitty, kitten, cat\}, \{canine, dog\}, \{cozy, comfy, cosy\}. Result: 242 factors on Waterbirds, 130 on
+MetaShift and 147 on Spur-CIFAR10 (2\% band).
+
+\begin{whynum}
+\begin{itemize}[leftmargin=*]
+\item \textbf{Text 0.85}: lies between synonyms (0.85--0.94) and object--context pairs (0.64--0.72); a sweep
+over 576 factor sets on MetaShift chose it together with the response veto 0.5.
+\item \textbf{Response veto 0.5}: two words with similar text but images that respond differently stay apart
+(heron and marsh: response 0.11).
+\item \textbf{Frequency band 2\%--90\%}: a factor on fewer than 2\% of the images occurs about once per
+half batch (64 images), so a fit on half a batch cannot learn it; at 5\% the MetaShift factors lose every
+scene concept (couch, lawn, bed, window, bench), at 2\% they keep them. Factors above 90\% carry no
+contrast between images.
+\end{itemize}
+\end{whynum}
+
+%=====================================================================
+\section{The month at a glance}
+%=====================================================================
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=2.5mm,
+  st/.style={draw,rounded corners=2pt,align=left,font=\scriptsize,text width=46mm,inner sep=3pt},
+  ok/.style={st,fill=cgreen!10,draw=cgreen!80!black},
+  no/.style={st,fill=cred!7,draw=cred!70},
+  mx/.style={st,fill=cyellow!12,draw=cyellow!90!black},
+  ph/.style={font=\small\bfseries,align=center,text width=46mm}]
+% Phase A
+\node[ph] (pa) {Phase A: image-level\\26.09 -- 05.10};
+\node[mx,below=of pa] (a1) {\textbf{F1} conditioned batches: implemented, set aside (pair search finds synonyms and within-scene pairs)};
+\node[mx,below=of a1] (a2) {\textbf{F2} trained linear head on factors: Spur-CIFAR10 15.6$\to$32.9; MetaShift flat};
+\node[no,below=of a2] (a3) {\textbf{F2 variants}: whitening, atypicality, balancing weights; \textbf{F3} concept blocks: minority groups flat; \emph{shuffled targets fit as well $\Rightarrow$ memorization}};
+\node[ok,below=of a3] (a4) {\textbf{xfit} cross-fitted ridge: removes head memorization; clean attribution on Spur-CIFAR10};
+\node[mx,below=of a4] (a5) {meaning grouping, hold-out, weight grid: Waterbirds 51.5; \emph{backbone still memorizes MetaShift}; residual targets fail; CLIP-PCA targets equal concepts};
+% Phase B
+\node[ph,right=6mm of pa] (pb) {Phase B: spatial\\04.10 -- 10.10};
+\node[ok,below=of pb] (b1) {\textbf{SCD} dense ClearCLIP concept maps, per-location cross-fit on the $7\times7$ map: first method above its control on every dataset};
+\node[mx,below=of b1] (b2) {controls: PCA maps tie on Waterbirds, lose on MetaShift; ablation of animal/scene concepts: gain needs the full set};
+\node[no,below=of b2] (b3) {audit: student's cat factor 0.47 indoors, 0.07 outdoors (CLIP 0.92 / 0.88): \emph{no decoupling}};
+% Phase C
+\node[ph,right=6mm of pb] (pc) {Phase C: break the co-occurrence\\07.10 -- 01.11};
+\node[mx,below=of pc] (c1) {\textbf{Region contrast} (DetCon): +2.3 Waterbirds, $-$3.0 MetaShift};
+\node[ok,below=of c1] (c2) {\textbf{Compositing} (object prior): Waterbirds 59.1, best of the branch; needs text typing of objects};
+\node[no,below=of c2] (c3) {\textbf{Symmetric mixing} (no prior): below SCD, ties rectangle control};
+\node[no,below=of c3] (c4) {\textbf{Per-group heads} (LooC): sign flips between datasets; line ends 01.11};
+\draw[arr] (a5.east) -- ++(2mm,0) |- (b1.west);
+\draw[arr] (b3.east) -- ++(2mm,0) |- (c1.west);
+\end{tikzpicture}
+\caption{Roadmap of the branch. Green: worked and kept; yellow: partial or informative; red: failed. Each
+stage answered a question the previous one raised.}
+\label{fig:roadmap}
+\end{figure}
+
+%=====================================================================
+\section{Phase A: image-level concept distillation}
+%=====================================================================
+
+\subsection{F1: concept-conditioned batches (set aside)}
+\textbf{Idea.} Pick pairs of factors whose presences correlate strongly across images (phi coefficient) and
+whose words name different things. With some probability fill a batch only with images that show one
+factor of a pair. Inside such a batch the factor tells no image apart, so InfoNCE must separate the
+images by everything else, the partner factor included. This is conditional contrastive learning (Tsai et
+al., 2021) with a discovered factor in place of an annotated attribute.
+
+\textbf{Why it was never trained.} Ranking pairs by phi filled the top eight with two names for one thing
+(cat breeds, lorry and truck). After the meaning grouping the top pairs were within-scene pairs
+(windshield and driving 0.64, toilet and sink 0.57) and the class--context pairs came last (dog and lawn
+0.18, cat and couch 0.04): phi penalizes pairs of very different frequency (cat on 36\% of the images,
+couch on 3\%). Pair precision, the share of top pairs that join a class factor to an attribute factor, was
+zero. F2 and every later method use all factors and need no pairs, so F1 was set aside.
+
+\subsection{F2: factor distillation with a trained linear head}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=5mm]
+\node[gbox] (img) {view $x_i^{(v)}$};
+\node[sbox,right=of img] (enc) {ResNet-18};
+\node[sbox,right=of enc] (h) {pooled $h_i\in\mathbb{R}^{512}$};
+\node[sbox,right=of h] (W) {linear head $W$};
+\node[lbox,right=of W] (L) {$\lVert W h_i - t_i\rVert^2$};
+\node[tbox,above=6mm of L] (t) {factor targets $t_i\in\mathbb{R}^K$\\(SpLiCE, standardized\\or ZCA-whitened)};
+\node[gbox,below=5mm of h] (simclr) {SimCLR head + InfoNCE};
+\draw[arr] (img)--(enc); \draw[arr] (enc)--(h); \draw[arr] (h)--(W); \draw[arr] (W)--(L); \draw[arr] (t)--(L);
+\draw[arr] (h)--(simclr);
+\end{tikzpicture}
+\caption{F2. A linear head predicts each image's factor values from the pooled backbone feature. The head is
+linear so the factors must be linearly readable, as the probe reads them.}
+\end{figure}
+Loss: $\mathcal L=\mathcal L_{\text{SimCLR}}+\lambda\,\frac{1}{2B}\sum_{i,v}\lVert W h_i^{(v)}-t_i\rVert^2/K$,
+weight $\lambda$ switched on at epoch 10 with a 10-epoch linear warm-up. Whitened targets (ZCA, ridge 0.1)
+keep for each factor the part the other factors leave unexplained, which is large exactly on the images
+that break a correlation.
+
+\begin{table}[H]
+\centering
+\caption{F2 rounds (validation WGA / average accuracy; groups on MetaShift: cat-in / cat-out / dog-in / dog-out).}
+\small
+\begin{tabular}{llccc}
+\toprule
+Dataset & Arm & WGA & Acc. & Groups \\
+\midrule
+Spur-CIFAR10 & SimCLR & \pmsd{15.6}{1.0} & 59.5 & \\
+ & F2, standardized & \pmsd{32.9}{1.6} & 69.5 & \\
+ & F2, shuffled targets & \pmsd{24.2}{0.4} & 58.6 & \\
+\midrule
+MetaShift & SimCLR & \pmsd{44.3}{7.3} & 55.2 & 57 / 47 / 53 / 64 \\
+ & F2, weight 3 & \pmsd{46.6}{5.7} & 61.5 & 70 / 47 / 54 / 74 \\
+ & F2, weight 3, shuffled & \pmsd{43.3}{8.1} & 54.8 & 57 / 45 / 53 / 65 \\
+ & F2, whitened, weight 3 & \pmsd{47.9}{6.4} & 56.9 & 57 / 51 / 55 / 65 \\
+ & F2, atypicality weights & \pmsd{50.5}{3.8} & 58.8 & 59 / 52 / 55 / 70 \\
+ & F2, balancing weights & \pmsd{44.2}{8.1} & 59.0 & 64 / 44 / 55 / 72 \\
+\midrule
+Waterbirds & F2 (frozen from round 1) & \pmsd{41.6}{6.1} & 51.2 & below SimCLR \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Atypicality weights} scale each image's loss by its mean squared whitened factor value (how strongly
+its concepts break the dataset's correlations; minority images receive about twice the weight on a synthetic
+fixture). \textbf{Balancing weights} are per-image weights that minimize the squared correlations between
+factor presences, so that under them ``indoor'' no longer predicts ``cat'' (stable learning, Zhang et al.,
+2021).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{figures/metashift_rounds.pdf}
+\caption{MetaShift through the image-level rounds. Average accuracy rises with almost every concept loss;
+the two minority groups (cat outdoors, dog indoors) stay within a few points of SimCLR. The gain goes to
+the majority groups.}
+\label{fig:rounds}
+\end{figure}
+
+\subsection{F3: concept blocks (supervised contrast per factor)}
+One small linear block per factor (32 most balanced factors). Inside block $k$, images that both show
+factor $k$ are positives (SupCon) and a positive pair weighs more when the two images' other factors
+differ (``cat on sofa'' with ``cat on street''). A fused ``cat-and-indoor'' direction cannot rank ``cat on
+street'' above ``dog on sofa'' inside the cat block, so the backbone would need a cat direction that
+survives the context. Result: \pmsd{43.8}{4.1} WGA; its control with uniform pair weights scored
+\pmsd{49.7}{2.5} and its shuffled control \pmsd{46.4}{3.5}.
+
+\begin{verdictbad}[Verdict on F2 and F3: memorization]
+The controls explained every MetaShift failure. F2 at weight 3 explained 0.41 of the real target variance
+and \textbf{0.33 of the shuffled one}; the block loss ended at 3.34 with real concepts and 3.37 with shuffled
+ones. On 1,700 images the network fits a per-image target through the features SimCLR learns anyway to
+tell images apart and random targets are fitted almost as well as real ones (as Zhang et al.\ 2017 showed
+for labels). Any auxiliary loss attached to single images is then met without learning concepts. On
+Spur-CIFAR10 (45,000 images) shuffled targets reach only 0.02, so the concepts shape the student there.
+\end{verdictbad}
+
+\subsection{xfit: the cross-fitted ridge}
+\label{sec:xfit}
+\begin{keyidea}[Idea of the cross-fit]
+Replace the trained head by a ridge regression \emph{fitted in closed form on one half of the batch and
+evaluated on the other half}. A feature that only identifies one image carries nothing from half $A$ to
+half $B$, so memorizing images lowers no part of the loss; only concept directions shared across images do.
+This is the sample splitting of double machine learning applied to a training loss, implemented like the
+differentiable closed-form heads of R2D2 and MetaOptNet.
+\end{keyidea}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=4mm]
+\node[sbox,minimum width=26mm,minimum height=11mm] (A) {half $A$: 64 images\\both views};
+\node[sbox,minimum width=26mm,minimum height=11mm,below=8mm of A] (B) {half $B$: 64 images\\both views};
+\node[lbox,right=14mm of A] (fitA) {ridge fit on $A$\\$W_A$ (closed form)};
+\node[lbox,right=14mm of B] (fitB) {ridge fit on $B$\\$W_B$};
+\node[box,right=10mm of fitA] (predB) {apply $W_A$ to features of $B$\\squared error on $B$'s targets};
+\node[box,right=10mm of fitB] (predA) {apply $W_B$ to features of $A$\\squared error on $A$'s targets};
+\node[box,fill=cyellow!10,draw=cyellow!90!black,right=12mm of $(predB.east)!0.5!(predA.east)$] (loss) {$\mathcal L_{\text{xfit}}$\\mean of the\\two held-out\\errors};
+\draw[arr] (A)--(fitA); \draw[arr] (B)--(fitB);
+\draw[arr] (fitA)--(predB); \draw[arr] (fitB)--(predA);
+\draw[arr] (predB.east)--(loss); \draw[arr] (predA.east)--(loss);
+\end{tikzpicture}
+\caption{Cross-fitting. Gradients flow through the solve and the prediction into the backbone. Both views
+of an image stay in the same half, so no half sees a view of an image it predicts.}
+\label{fig:xfit}
+\end{figure}
+
+With unit-norm centred features $H$, targets $T$ and per-image weights $D$, the kernel form is
+\begin{equation}
+\hat T_B = H_B H_A^\top\big(D_A H_A H_A^\top+\rho I\big)^{-1} D_A T_A,
+\end{equation}
+one $n\times n$ solve per half (code: \texttt{cross\_fit\_predictions} in
+\texttt{cospro/methods/concept\_factors.py}).
+
+\begin{whynum}[{Why unit-norm rows and an absolute ridge $\rho=1$}]
+The first version scaled the ridge with the feature norm and was small. Fits of 64 images in 512
+dimensions nearly interpolated, the solve became ill conditioned, three of four Spur-CIFAR10 runs produced
+NaN features and the held-out explained variance was negative everywhere. Normalizing every feature row
+stops the backbone from weakening the ridge by shrinking its features and an absolute ridge keeps every
+eigenvalue of the system at least $\rho$. Ridge 10 performed no better on MetaShift (42.5 WGA).
+\end{whynum}
+
+\begin{table}[H]
+\centering
+\caption{Repaired cross-fit (seeds 1 and 2). Batch EV: held-out explained variance of the in-batch fit.}
+\small
+\begin{tabular}{llccc}
+\toprule
+Dataset & Arm & WGA & Acc. & Batch EV \\
+\midrule
+Spur-CIFAR10 & SimCLR & \pmsd{15.6}{1.0} & 59.5 & \\
+ & F2 trained head & \pmsd{32.9}{1.6} & 69.5 & 0.10 \\
+ & \textbf{xfit} & \pmsd{33.6}{2.3} & 69.7 & 0.13 \\
+ & xfit, shuffled & \pmsd{18.2}{3.2} & 57.5 & $-0.02$ \\
+\midrule
+MetaShift & xfit (145 factors) & \pmsd{43.9}{3.2} & 54.8 & $-0.01$ \\
+ & xfit, shuffled & \pmsd{41.7}{0.0} & 54.4 & $-0.03$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+On Spur-CIFAR10 the cross-fit matches F2 and its shuffled control falls to the SimCLR level: the
+\textbf{whole gain comes from the concept content}, the first clean attribution of the branch.
+
+\subsection{What the student can learn: bounds, weights and unseen images}
+\textbf{Learnability bound.} A ridge fitted on 64 images can only predict factors that occur often enough.
+Running the same fit on frozen CLIP features gives an upper bound: with 278 factors from 1\% frequency even
+CLIP scores $-0.015$; with the 24 factors from 5\% it scores 0.16 (shuffled: $-0.07$). Hence the 5\% band
+for image-level runs.
+
+\textbf{Loss weight.} At weight 10 the 24 MetaShift factors reached 0.72 to 0.87 explained variance on the
+training images, \emph{three times the CLIP score}, while WGA stayed at 45.5. A probe on the 24 factor values
+themselves reaches 77\% WGA. The student stored something other than the concepts.
+
+\textbf{The hold-out diagnostic.} A fixed fifth of the training images gets loss weight 0 in the concept
+loss (SimCLR still trains on them). A ridge fitted on the other images then scores the factors on these
+\emph{unseen} images. This exposes memorization in the backbone, which the cross-fit cannot see.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/memorization.pdf}
+\caption{Explained variance of the factors on images inside the concept loss (seen) and outside it (unseen).
+Image-level xfit on MetaShift: 0.60 seen, 0.04 unseen, the backbone stores the targets of its 1,700 images.
+Spur-CIFAR10 (45,000 images) generalizes: 0.31 against 0.27. SCD (spatial, scored on dense responses)
+shows no gap on either dataset.}
+\label{fig:memorization}
+\end{figure}
+
+\subsection{Waterbirds with the frozen image-level configuration}
+The configuration chosen on MetaShift (meaning factors from 5\%, 70 Open Images factors, weight 10, hold-out)
+reached 55.3 WGA on the first two Waterbirds seeds and \pmsd{51.5}{5.5} on four, with accuracy 57.5 against
+52.3 for SimCLR and \pmsd{41.4}{3.0} for its shuffled control. The same configuration on Spur-CIFAR10 dropped
+to 22.7 (weight 1 gave 33.6): at weight 10 even 45,000 images are memorized. The weight grid on Spur-CIFAR10
+showed that the unseen score cannot choose the weight label-free (0.32 to 0.33 for weights 1 to 10 while WGA
+moved within noise).
+
+\subsection{Two diagnostics that ended Phase A}
+\textbf{Decoupling score.} Each factor minus its linear regression on the other factors (its \emph{residual})
+is the part a fused direction cannot predict. The student explains 0.03 to 0.04 of the residuals against
+0.15 to 0.17 for CLIP. Training directly on residual targets failed: the student could not predict them and
+Waterbirds WGA fell to \pmsd{41.7}{0.9}, the level of the shuffled control.
+
+\textbf{CLIP control.} Distilling as many principal components of the CLIP image embeddings as there are
+factors gives the same or better numbers (Waterbirds 51.0, MetaShift 54.2, Spur-CIFAR10 36.3 to 37.0). At the
+image level the concepts add nothing over generic CLIP information.
+
+\begin{verdictmixed}[Verdict on Phase A]
+Image-level concept distillation helps when the student can generalize the targets (Spur-CIFAR10: 15.6 to
+33.6; Waterbirds: 46.7 to 51.5). Cross-fitting makes the attribution clean. But (i) small datasets are
+memorized in the backbone, (ii) the student learns the part the factors share, i.e.\ the dataset's
+co-occurrence and (iii) named concepts are not better than CLIP principal components. Image-level targets
+can separate ``cat'' from ``couch'' only through the images where the two disagree; that is the dead end that
+motivated the spatial loss.
+\end{verdictmixed}
+
+%=====================================================================
+\section{Phase B: Spatial Concept Distillation (SCD), the main method}
+%=====================================================================
+
+\begin{keyidea}[Idea of SCD]
+At the image level cat and couch appear together; at the pixel level they occupy different places in every
+image. So tell the student \emph{where} each concept is: a frozen CLIP model computes a dense map of every
+concept factor over every training image and every location of the student's $7\times7$ feature map must
+predict the concept values at its place in the view, through the same cross-fitted ridge.
+\end{keyidea}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=4mm and 5mm]
+% offline teacher lane
+\node[font=\small\bfseries,anchor=west] (offl) at (-0.3,1.35) {Offline, once per dataset (frozen CLIP ViT-B/32)};
+\node[tbox] (t1) at (0.9,0) {training\\images};
+\node[tbox,right=of t1] (t2) {SpLiCE\\concepts};
+\node[tbox,right=of t2] (t3) {meaning\\grouping\\$K$ factors};
+\node[tbox,right=of t3] (t4) {ClearCLIP\\dense patches\\(448 px, windows)};
+\node[tbox,right=of t4] (t5) {concept maps\\$14{\times}14{\times}K$\\softmax, standardized};
+\draw[arr] (t1)--(t2); \draw[arr] (t2)--(t3); \draw[arr] (t3)--(t4); \draw[arr] (t4)--(t5);
+% online student lane
+\node[font=\small\bfseries,anchor=west] (onl) at (-0.3,-1.6) {Online, every SimCLR step};
+\node[sbox] (s1) at (0.9,-4.0) {image};
+\node[sbox,right=of s1] (s2) {two views\\+ crop box\\+ flip};
+\node[sbox,right=of s2] (s3) {ResNet-18};
+\node[sbox,right=of s3] (s4) {\texttt{layer4}\\$7{\times}7{\times}512$};
+\node[lbox,right=of s4] (s5) {per-location\\cross-fitted ridge\\$\mathcal L_{\text{spatial}}$};
+\node[gbox,below=5mm of s4] (s6) {avg pool $\to$ MLP\\$\mathcal L_{\text{SimCLR}}$};
+\node[lbox,above=5mm of s5] (warp) {RoIAlign warp\\to the view: $7{\times}7{\times}K$};
+\draw[arr] (s1)--(s2); \draw[arr] (s2)--(s3); \draw[arr] (s3)--(s4); \draw[arr] (s4)--(s5); \draw[arr] (s4)--(s6);
+\draw[arr] (t5)--(warp); \draw[arr] (warp)--(s5);
+\draw[darr] (s2.north) |- node[above,font=\scriptsize,pos=0.75]{crop box and flip} (warp.west);
+\begin{scope}[on background layer]
+\node[fill=cgreen!3,draw=cgreen!30,rounded corners,fit=(offl)(t1)(t5)] {};
+\node[fill=cblue!3,draw=cblue!30,rounded corners,fit=(onl)(s1)(s5)(s6)(warp)] {};
+\end{scope}
+\end{tikzpicture}
+\caption{SCD. The teacher branch runs once (40 seconds on one GPU for MetaShift) and stores the maps. The
+student branch adds one loss to unchanged SimCLR. At inference only the student backbone and the probe
+remain; teacher, maps and heads are discarded.}
+\label{fig:scd}
+\end{figure}
+
+\subsection{Step 1: dense concept maps from CLIP}
+Plain CLIP patch tokens of the last layer do not align with text, because the final attention pools global
+information into every token. ClearCLIP (Lan et al., ECCV 2024) fixes this in the last transformer block:
+query--query attention in place of query--key attention and no residual and feed-forward branches. With
+$X$ the tokens entering that block,
+\begin{equation}
+P=\operatorname{norm}\Big(\operatorname{LN}\big(\operatorname{softmax}(QQ^\top/\sqrt{d_h})\,V W_O\big)W_{\text{proj}}\Big),\qquad Q=XW_Q,\ V=XW_V .
+\end{equation}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=3.5mm]
+\node[gbox,minimum width=20mm,minimum height=20mm] (img) {};
+\foreach \i in {0,1,2} \foreach \j in {0,1,2} {
+  \draw[cblue!60,thin] ($(img.south west)+(0.1+\i*0.45,0.1+\j*0.45)$) rectangle ++(0.9,0.9);
+}
+\node[below=1mm of img,font=\scriptsize,align=center] {image at 448 px,\\9 windows of 224 px,\\stride 112};
+\node[box,right=of img] (vit) {ViT-B/32 (ClearCLIP)\\per window: $7{\times}7$\\patches of 32 px};
+\node[box,right=of vit] (grid) {average onto\\16-px cells ($28{\times}28$)\\pool to $14{\times}14$};
+\node[box,right=of grid] (cos) {cosine with $K$\\factor directions $d_F$\\softmax, $T=0.01$};
+\node[box,right=of cos] (std) {standardize\\per factor\\store float16};
+\draw[arr] (img)--(vit); \draw[arr] (vit)--(grid); \draw[arr] (grid)--(cos); \draw[arr] (cos)--(std);
+\end{tikzpicture}
+\caption{Map construction. Code: \texttt{cospro/pipeline/concept\_maps.py}; launcher:
+\texttt{scripts/build\_concept\_maps.sbatch}.}
+\label{fig:maps}
+\end{figure}
+
+At every cell $u$ the map is a softmax over the factors,
+\begin{equation}
+M_{iF}(u)=\frac{\exp(\cos(p_i(u),d_F)/T)}{\sum_G\exp(\cos(p_i(u),d_G)/T)},\qquad \tilde M_{iF}=(M_{iF}-m_F)/s_F .
+\end{equation}
+
+\begin{whynum}[{Why 448 pixels, windows, $14\times14$ and $T=0.01$}]
+\begin{itemize}[leftmargin=*]
+\item \textbf{448 px through 224-px windows.} ViT-B/32 sees 224-pixel inputs as only $7\times7$ patches of 32
+pixels, too coarse to separate a cat from its cushion. Nine overlapping windows (stride 112) at 448 pixels
+give an effective 16-pixel grid while each window stays at the resolution CLIP was trained on.
+\item \textbf{$14\times14$, twice the student's $7\times7$.} A SimCLR crop covers 20\% to 100\% of the image;
+a 20\% crop still spans about $6\times6$ map cells, so RoIAlign has real content to resample into the
+$7\times7$ target.
+\item \textbf{Softmax with $T=0.01$.} Cosines of a patch with different text directions differ by a few
+hundredths; $T=0.01$ turns them into a peaked distribution, so each cell distributes one unit of mass over
+the factors and mostly picks a winner.
+\item \textbf{Standardized per factor.} Every factor then has unit variance, so frequent factors (blanket,
+lawn) do not dominate the squared error.
+\end{itemize}
+\end{whynum}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{figures/spatial_map_examples.pdf}
+\caption{MetaShift concept maps. Top: image and one SimCLR crop (dashed). Middle: the winning factor of each
+of the $14\times14$ cells (the three most frequent factors coloured). Bottom: the crop's $7\times7$ targets after
+warping. The animal factors cover the animal, the scene factors its surroundings. The teacher is imperfect:
+in the cat-outdoor image part of the black cat is labelled ``puppies''.}
+\label{fig:mapexamples}
+\end{figure}
+
+\subsection{Step 2: warping the maps onto each view}
+The SSL transform records the crop box and flip of every view. RoIAlign cuts the view's box out of
+$\tilde M_i$ (a $2\times2$ sampling grid per output bin), resizes it to $7\times7$ and flips it with the view.
+Each view thus gets targets $Y_i^{(v)}\in\mathbb R^{K\times7\times7}$ that describe exactly the pixels it shows.
+
+\subsection{Step 3: the per-location cross-fitted ridge}
+Every location $u$ of the feature map gives a unit-norm row $r=\operatorname{norm}(H_i^{(v)}(u))\in\mathbb
+R^{512}$ and a target $y=Y_i^{(v)}(u)\in\mathbb R^K$. The batch splits into halves $A$ and $B$ (both views of an
+image in one half). The ridge is fitted on all locations of $A$,
+\begin{equation}
+W_A=\big(\bar R_A^\top\Omega_A\bar R_A+\rho I\big)^{-1}\bar R_A^\top\Omega_A(Y_A-\bar y_A),
+\end{equation}
+predicts every location of $B$ and vice versa. Here the primal form is cheaper: one $512\times512$ solve over
+$64\cdot2\cdot49=6{,}272$ rows. The loss is the held-out squared error, averaged over both directions; it runs in
+float32 outside autocast. The full objective is
+\begin{equation}
+\mathcal L=\mathcal L_{\text{SimCLR}}+\lambda(t)\,\mathcal L_{\text{spatial}},\qquad \lambda(t)=0 \text{ until epoch 10, linear to } \lambda_{\max}=5 \text{ at epoch 20.}
+\end{equation}
+
+\begin{whynum}[Why these SCD settings]
+\begin{itemize}[leftmargin=*]
+\item \textbf{Cross-fit instead of a trained head}: the lesson of Phase A; a trained head stores per-image
+targets on small datasets.
+\item \textbf{$\lambda_{\max}=5$}: from the weight grid 1, 3, 5 and 10 of the image-level loss; spatial weight 10
+adds nothing (Waterbirds 53.5, MetaShift 48.3, two seeds).
+\item \textbf{Start at epoch 10, warm-up 10 epochs}: SimCLR forms features before the concept loss acts;
+inherited from F2, where starting at epoch 0 changed nothing.
+\item \textbf{20\% hold-out}: introduced as a diagnostic (unseen images); the arm with the hold-out scored
+higher than the arm without it (Waterbirds 52.8 vs.\ 49.5, MetaShift 51.1 vs.\ 46.7, six seeds) and became the
+main arm. The difference lies within the seed spread and has no explanation yet.
+\item \textbf{Batch 128}: 6,272 rows per half against 512 dimensions keeps the fit well posed.
+\end{itemize}
+\end{whynum}
+
+\subsection{Results}
+\begin{table}[H]
+\centering
+\caption{SCD against SimCLR and the shuffled-map control. Waterbirds and MetaShift: seeds 1--6; Spur-CIFAR10:
+seeds 1--2. Validation, mean of the last four probes.}
+\label{tab:scd}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{2}{c}{Waterbirds} & \multicolumn{2}{c}{MetaShift} & \multicolumn{2}{c}{Spur-CIFAR10} \\
+Method & Avg. & WGA & Avg. & WGA & Avg. & WGA \\
+\midrule
+SimCLR & 52.4 & \pmsd{46.7}{1.9} & 55.2 & \pmsd{44.3}{7.3} & 59.6 & \pmsd{15.6}{1.0} \\
+Shuffled maps & 52.8 & \pmsd{47.5}{2.5} & 56.1 & \pmsd{45.1}{2.9} & 55.9 & \pmsd{17.3}{2.0} \\
+\textbf{SCD} & \textbf{60.3} & \textbf{\pmsd{52.8}{4.7}} & \textbf{61.2} & \textbf{\pmsd{51.1}{5.4}} & \textbf{69.3} & \textbf{\pmsd{38.1}{0.5}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SCD beats SimCLR by 6.1 (Waterbirds), 6.8 (MetaShift) and 22.5 (Spur-CIFAR10) points of WGA and by 7.9, 6.0 and
+9.8 points of average accuracy. It is ahead on five of six paired seeds on Waterbirds and MetaShift and on
+both Spur-CIFAR10 seeds. The shuffled control stays within one point of SimCLR on Waterbirds and MetaShift and
+1.6 points on Spur-CIFAR10, so the gain comes from the content of each image's own maps.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{figures/paired_seeds.pdf}
+\caption{Per-seed WGA. MetaShift seeds spread by more than 20 points for SimCLR (31.6 to 52.1), which is why
+we report six seeds and paired differences. Seed 6 is hard for every method on Waterbirds.}
+\label{fig:seeds}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth]{figures/spur_cifar10.pdf}
+\caption{Spur-CIFAR10, where the spurious feature is a thin coloured line. Every real-target method roughly
+doubles WGA and every shuffled control stays near SimCLR. SCD gives the best result of the branch.}
+\label{fig:cifar}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/spatial_training_curves.pdf}
+\caption{Validation accuracy during SSL training (seeds 1--4, 3-point smoothing). On MetaShift SCD leads every
+method from epoch 100 onward; on Waterbirds it leads SimCLR and the shuffled control from epoch 100 and the
+PCA-map control follows the same path.}
+\label{fig:curves}
+\end{figure}
+
+\subsection{Controls: is it the concepts, CLIP or the location?}
+\begin{table}[H]
+\centering
+\caption{Controls of SCD, seeds 1--4 (image-level row on MetaShift: seeds 1--2).}
+\label{tab:controls}
+\small
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{Waterbirds} & \multicolumn{2}{c}{MetaShift} \\
+Method & Avg. & WGA & Avg. & WGA \\
+\midrule
+SimCLR & 52.3 & \pmsd{45.8}{1.7} & 54.8 & \pmsd{44.8}{9.4} \\
+Shuffled maps & 52.6 & \pmsd{46.7}{2.7} & 55.6 & \pmsd{45.3}{3.4} \\
+CLIP principal-component maps & 58.1 & \pmsd{53.6}{1.9} & 56.3 & \pmsd{44.4}{7.4} \\
+Image-level factor regression & 58.0 & \pmsd{50.4}{9.0} & 61.7 & \pmsd{47.2}{3.9} \\
+SCD & 60.2 & \pmsd{53.0}{3.0} & 62.2 & \pmsd{53.0}{5.8} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{itemize}[leftmargin=*]
+\item \textbf{PCA maps} keep the dense CLIP information of the teacher and drop the concept names (as many
+principal components of the ClearCLIP patch embeddings as there are factors). On MetaShift SCD wins on all
+four seeds ($+16.0, +1.4, +4.2, +12.9$); the PCA maps stay at the SimCLR level. On Waterbirds the two tie:
+birds against land and water are among the strongest directions of CLIP's patch space, so the leading
+components carry them; cats against dogs and couches against lawns are weaker directions that only the
+named concepts single out.
+\item \textbf{Image-level regression} keeps the concepts and drops their locations; SCD is ahead by 2.7 WGA on
+Waterbirds, 8.3 on the two paired MetaShift seeds and 8.7 on Spur-CIFAR10.
+\item \textbf{Concept ablation} on MetaShift (seeds 1--4): without the 21 animal factors \pmsd{46.6}{5.8},
+without the 20 scene factors \pmsd{47.9}{2.8}, all factors \pmsd{53.0}{5.8}. Both ablations lose most of the
+gain: it needs the full concept set.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/group_accuracies.pdf}
+\caption{Accuracy per group (six seeds for SimCLR and SCD; compositing six seeds on Waterbirds, four on
+MetaShift; mixing four). SCD raises every group, the minority groups included; compositing flattens the
+Waterbirds groups at 61 to 68.}
+\label{fig:groups}
+\end{figure}
+
+\subsection{What the student learns: the audit}
+\label{sec:audit}
+\textbf{It generalizes.} On the held-out fifth the student's pooled features explain 0.22 (MetaShift) and 0.26
+(Waterbirds) of the image-level factor responses, against 0.13 and 0.17 with shuffled maps; scores on images
+inside the loss agree (0.23 and 0.26). The memorization of Phase A is gone (Figure~\ref{fig:memorization}).
+
+\textbf{It does not decouple.} With labels used only for this audit, the student's \emph{cat} factor scores 0.47
+on unseen cats indoors and 0.07 on unseen cats outdoors; CLIP scores 0.92 and 0.88 (Figure~\ref{fig:decoupling}).
+The factor residuals score 0.00 in the student against 0.15 to 0.17 for CLIP. A background probe on the frozen
+features reaches 90.5\% WGA for SCD against 89.5\% for SimCLR: SCD erases no background.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/decoupling.pdf}
+\caption{How well the \emph{cat} factor is predicted on unseen MetaShift images, per group. CLIP sees cats
+everywhere; every student sees cats where cat and scene agree (cat indoors) and fails on the minority groups.}
+\label{fig:decoupling}
+\end{figure}
+
+\begin{verdictgood}[Verdict on SCD]
+SCD is the first method of the project that beats its own control on every dataset tested and generalizes
+its concepts to unseen images. It raises WGA because the balanced probe gains a usable core feature that
+SimCLR from scratch lacks; the spurious attribute stays as readable as before. The student still predicts
+``cat here'' from local evidence \emph{plus} scene, because each $7\times7$ location sees most of the view and
+the scene agrees with the cat on 88\% of the training images. This is the prior-free method of the thesis.
+\end{verdictgood}
+
+%=====================================================================
+\section{Phase C: making the student separate object and context}
+%=====================================================================
+Every loss so far is an expectation over the natural training images, where cats sit indoors. Phase C tried
+to change that distribution or to demand that a concept keeps its identity in other surroundings. All four
+variants run on top of SCD (weight 5, 20\% hold-out).
+
+\subsection{Region contrast (DetCon-style)}
+\textbf{Idea.} Pool each view's feature map inside its two dominant concept regions (warped map probability as
+weight, mean probability at least 0.1), project with a small head and contrast regions across the batch:
+regions of the same concept in other images are positives, weighted towards pairs whose images' concept mixes
+differ. A cat region on a lawn must resemble a cat region on a couch. About 335 regions per MetaShift batch,
+94\% of them with positives.
+
+\begin{verdictmixed}
+Waterbirds \pmsd{55.3}{3.1} (SCD 53.0), MetaShift \pmsd{50.0}{6.5} (SCD 51.1, below on three of four seeds). The
+concept scores on unseen images rise on every seed (MetaShift 0.22 $\to$ 0.29) and the cat factor on cats
+outdoors from 0.05 to 0.12, yet the probe gain goes to the majority groups. On Waterbirds the shuffled region
+arm gains as much over shuffled SCD as the real one over SCD: part of the gain is region pooling itself.
+\end{verdictmixed}
+
+\subsection{Concept compositing (with the object prior)}
+\textbf{Idea.} Change the training distribution itself. For 30\% of the qualifying images, cut the
+\emph{object} region out of the second view and paste it onto another image's view whose own objects are
+painted over (normalized convolution from their surroundings). The composite replaces the second SimCLR view,
+and its concept targets are composited with the same mask. With a random donor, object and context become
+independent in the composites: they sample the interventional distribution in which the context carries no
+information about the object, the content--style condition under which contrastive learning isolates content
+(von K\"ugelgen et al., NeurIPS 2021).
+
+\textbf{Which concepts are ``objects''} is decided by text alone (\texttt{cospro/pipeline/concept\_type.py}): CLIP
+text similarity to scene prompts minus similarity to object prompts; factors below the median count as objects.
+No label enters, but the step \emph{types} concepts. On MetaShift the 65 object factors hold every animal and
+breed (and also verbs and people); lawn, couch, bed, desk, window, beach and snow are context.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{figures/composites_metashift.png}
+\caption{Real MetaShift composites. Row 3: the object of image A on donor B (the training input). Row 4: the
+``context kept'' control, which pastes A's surroundings instead. Seams are half a map cell wide.}
+\label{fig:composites}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/concept_maps_metashift.png}
+\caption{The object mass that compositing cuts (row 2) and the three leading concepts per cell (row 3) on
+one MetaShift image per group. The teacher often names the context well (windshield, driving, lawn) and
+the animal in broad strokes.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Compositing and its controls (validation WGA / Avg.). Waterbirds seeds 1--6 for compositing and the
+silhouette control, 1--4 otherwise; MetaShift seeds 1--4.}
+\small
+\begin{tabular}{lcc}
+\toprule
+Arm & Waterbirds & MetaShift \\
+\midrule
+SCD & 52.8 / 60.3 & 51.1 / 61.2 \\
+\textbf{Compositing, object regions} & \textbf{\pmsd{59.1}{7.1}} / 64.7 & \pmsd{52.3}{1.9} / 63.3 \\
+\quad control: another image's object silhouette & \pmsd{54.2}{6.1} / 62.5 & \pmsd{50.6}{3.7} / 60.0 \\
+\quad control: context region pasted instead & \pmsd{52.7}{2.1} / 60.0 & \pmsd{49.3}{1.9} / 60.1 \\
+\quad control: shuffled maps & \pmsd{52.9}{1.0} / 57.2 & \pmsd{48.4}{3.1} / 56.6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{verdictmixed}[{Verdict: strongest result, but it uses a prior}]
+On Waterbirds compositing beats SCD on all six seeds (6.3 WGA on average), the context and shuffled controls on
+all four paired seeds and the silhouette control on four of six; its groups flatten to 61--68. On MetaShift it
+gives the steadiest WGA of the branch (sd 1.9). The arms order as the concept hypothesis predicts: object
+regions $>$ random silhouettes $>$ context regions. The gain rests on the object prior (target = object,
+spurious attribute = surroundings), which the restriction excludes and which CelebA breaks. Compositing
+therefore serves as the measure of what a correct prior adds.
+\end{verdictmixed}
+
+\subsection{Symmetric concept mixing (no prior)}
+\textbf{Idea.} Treat every concept alike. Keep each concept region of view A with probability one half (kept
+area 25--75\%), fill the rest from a random donor B: $x=M\odot A+(1-M)\odot B$. The mixed view is a third
+encoder pass. Its feature map pooled inside $M$ is a positive of A, pooled outside a positive of B (RegionCL),
+and its global embedding is a soft positive of A and B in proportion to their areas (Un-Mix). Under mixing the
+twelve strongest animal-by-scene correlations on MetaShift fall from mean $|\phi|=0.33$ to 0.19 (object pasting:
+0.17).
+
+\begin{verdictbad}
+Waterbirds \pmsd{49.2}{2.5} (below SCD on all four seeds), MetaShift \pmsd{51.0}{8.5}; it ties its rectangle control
+on both datasets (49.0 and 51.8), so concept boundaries make no difference. Typing no concept leaves an
+augmentation that behaves like CutMix and weakens the majority group landbird-on-land (49 vs.\ 55).
+\end{verdictbad}
+
+\subsection{Per-group projection heads (LooC-style, no prior)}
+\textbf{Idea.} Symmetric mixing asked one embedding to stay the same whatever part was replaced, sometimes the
+scene and sometimes the cat; the demands may cancel. LooC (Xiao et al., ICLR 2021) gives each invariance its own
+embedding space. Factors are clustered into 12 groups by the pixels they share in the maps (spectral clustering
+of map co-activation, no label or prompt). For half of the images one group is kept on a donor; the mix is a
+positive of its image only in that group's own projection head.
+
+\begin{verdictbad}
+Waterbirds \pmsd{52.4}{2.9} (ties SCD, beats the single-head control by 9.5); MetaShift \pmsd{46.9}{3.3} (loses to the
+single head by 5.2, to SCD by 6.2 and to its shuffled control). The head effect flips sign between datasets.
+The heads trained well (highest unseen concept scores of all arms, 0.28 and 0.32), so concept scores do not
+predict WGA. The cat and dog groups were kept in only 21\% of the mixes: a draw that favours the class needs to
+know the class, which is the prior again. The prior-free mixing line ended on 1 November.
+\end{verdictbad}
+
+%=====================================================================
+\section{The scoreboard, row by row}
+\label{sec:scoreboard}
+%=====================================================================
+\begin{table}[H]
+\centering
+\caption{All architectures with their idea, outcome and the lesson they taught. WGA on Waterbirds / MetaShift
+(validation).}
+\small
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}X c >{\raggedright\arraybackslash}X}
+\toprule
+Architecture & Idea & WGA (WB / MS) & Lesson \\
+\midrule
+F1 batches & condition batches on one factor of an entangled pair & not trained & phi ranks synonyms and within-scene pairs first \\
+F2 trained head & regress factor values from the pooled feature & 41.6 / 46.6 & per-image targets are memorized on small datasets \\
+F3 concept blocks & SupCon per factor, cross-context positives & -- / 43.8 & shuffled concept sets fit as well \\
+xfit & ridge fitted on one half, tested on the other & 51.5 / 47.6 & removes head memorization; backbone still memorizes; CLIP PCA as good \\
+\textbf{SCD} & per-location cross-fit on dense concept maps & \textbf{52.8 / 51.1} & location helps; generalizes; does not decouple \\
+Region contrast & DetCon over concept regions & 55.3 / 50.0 & raises concept scores, not minority groups \\
+\textbf{Compositing} & paste object on another scene & \textbf{59.1 / 52.3} & works, needs object-vs-scene prior \\
+Symmetric mixing & keep random concept regions, soft positives & 49.2 / 51.0 & equals CutMix with rectangles \\
+Per-group heads & one embedding space per concept group & 52.4 / 46.9 & sign flips; drawing the class needs the prior \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%=====================================================================
+\section{What to say about the bigger picture}
+%=====================================================================
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Concepts help a from-scratch SSL student when they are delivered where they are.} Image-level
+distillation is limited by memorization and by co-occurrence; spatial distillation generalizes and lifts every
+group.
+\item \textbf{Every claim stands on a matched control.} Shuffled targets for content, PCA maps for named
+concepts versus generic CLIP, image-level regression for location, ablations for which concepts.
+\item \textbf{The core feature becomes stronger, but it is not separated from its context.} DFR needs separate
+directions; SCD supplies a stronger core direction, still fused with the scene. Breaking the fusion worked only
+with an object prior.
+\item \textbf{The decision for the thesis.} The prior-free method is SCD. Compositing reports what a correct
+assumption about the spurious attribute adds, stated openly, as the background-augmentation literature does.
+\end{enumerate}
+
+%=====================================================================
+\section{Limitations and open items}
+%=====================================================================
+\begin{itemize}[leftmargin=*]
+\item \textbf{Validation only.} \texttt{FINAL\_TEST=1 bash scripts/submit\_factor\_study.sh <dataset>} runs the same
+arms once on the locked test split (Waterbirds test: 642 images per minority group against 133 in validation);
+no test results are in the repository yet. The SCD settings (weight 5, hold-out) were chosen on validation of
+MetaShift and Waterbirds seeds 1--4; seeds 5 and 6 ran with the settings fixed.
+\item \textbf{Noise.} MetaShift's seed spread (5.4 WGA) is as large as the gain on single seeds.
+\item \textbf{The hold-out effect} (higher WGA with 20\% of images out of the concept loss) has no explanation.
+\item \textbf{LateTVG matched comparison}: one seed under our protocol (47.9); the six-seed test run is predeclared.
+\item \textbf{CelebA}: concept maps for 162,770 images do not fit the loader's float32 copies in 40\,GB; image-level
+xfit gives 85.9 against 84.9 for SimCLR.
+\item \textbf{Teacher limits}: CLIP's vocabulary and $32$-pixel patches; Spur-CIFAR10 images are upsampled from 32 to
+448 pixels for the maps.
+\item \textbf{Infrastructure}: several jobs stalled without an error on dgx nodes; at most eight jobs run at once.
+\end{itemize}
+
+\textbf{Proposed next steps} (to agree on in the meeting):
+\begin{enumerate}[leftmargin=*]
+\item Locked test for SimCLR, shuffled maps, SCD and compositing on Waterbirds and MetaShift, six seeds.
+\item Matched LateTVG on Waterbirds (predeclared) and MetaShift (prune rate chosen on validation first).
+\item CelebA concept maps with a memory-lean loader, then SCD on CelebA as the held-out dataset whose spurious
+attribute is no background.
+\item Decide how the thesis frames compositing: as an ablation that quantifies the object prior.
+\end{enumerate}
+
+%=====================================================================
+\section{Questions the supervisor may ask}
+%=====================================================================
+\newcommand{\qa}[2]{\par\textbf{Q: #1}\par\nopagebreak A: #2\par\smallskip}
+
+\qa{Why train from scratch and use ResNet-18 instead of a pretrained model?}{The protocol is inherited from
+CoSpRo and SpurSSL-style studies so that every method sees the same images and budget. A pretrained backbone
+already encodes birds and cats from ImageNet and would mask what the SSL objective learns from the dataset.
+The cost is low absolute accuracy (52--61\%).}
+
+\qa{Is this not just CLIP distillation?}{At the image level it is: CLIP principal components match the concepts.
+At the spatial level the concept maps beat PCA maps of the same width on MetaShift on all four seeds and tie on
+Waterbirds, where bird-versus-background is already a leading CLIP direction.}
+
+\qa{Where do labels enter?}{Only in the group-balanced probe (224 / 400 / 1,400 images) and the post-hoc audit,
+identically for every method. Concept discovery, grouping, maps and SSL use none. Hyperparameters were chosen on
+validation of MetaShift and Waterbirds, which is the main caveat.}
+
+\qa{Why not use the pooled feature for the concept loss?}{Pooling fuses co-occurring concepts into one vector;
+at $7\times7$ they occupy different locations (Section~\ref{sec:resnet}).}
+
+\qa{Why does SCD not separate cat from indoor?}{Each $7\times7$ location's receptive field covers most of the
+view and the scene predicts the cat on 88\% of the training images, so the cheapest predictor of ``cat here''
+uses the scene. The loss localizes concepts but keeps the training joint distribution.}
+
+\qa{Why is compositing not the main method?}{It needs a text prior that types concepts as objects or scenes.
+That prior holds for Waterbirds and MetaShift and fails for CelebA; the thesis restriction excludes it.}
+
+\qa{How do you know the gain is not noise?}{Six seeds, paired differences (SCD ahead on five of six on both
+datasets) and controls that share every statistic but the content, which stay at the SimCLR level.}
+
+\qa{Why the last four probes?}{One MetaShift validation image is 1.4 points of a group's accuracy; averaging the
+probes at epochs 425--500 damps that noise. For SCD, SimCLR and compositing the final-probe numbers differ
+from these means by less than one point.}
+
+\qa{Why did F2 work on Spur-CIFAR10 but not MetaShift?}{45,000 images cannot be memorized (shuffled targets reach
+0.02 explained variance), 1,700 can (0.33).}
+
+%=====================================================================
+\appendix
+\section{Arm name decoder}
+%=====================================================================
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{l X}
+\toprule
+Arm & Meaning \\
+\midrule
+\arm{simclr} & plain SimCLR; \arm{simclr\_lt}: LateTVG's SSL hyperparameters \\
+\arm{f2\_std}, \arm{f2\_w3}, \arm{f2\_w10} & F2 trained head, standardized targets, weight 1 / 3 / 10 \\
+\arm{f2\_white*}, \arm{*\_atyp}, \arm{*\_balanced} & whitened targets; atypicality weights; balancing weights \\
+\arm{cbc}, \arm{cbc\_plain} & F3 concept blocks; with uniform positive weights \\
+\arm{xfit}, \arm{xfit\_norm} & cross-fit; \arm{\_norm} = repaired (unit rows, absolute ridge) \\
+\arm{xfit\_meaning\_w10\_holdout} & meaning factors from 5\%, weight 10, 20\% hold-out \\
+\arm{*\_clippca}, \arm{*\_response}, \arm{*\_residual} & targets: CLIP principal components; dense image responses; residuals \\
+\arm{spatial\_w5\_holdout} & \textbf{SCD} (spatial weight 5, 20\% hold-out); \arm{spatial\_w5}: without hold-out \\
+\arm{spatial\_pca\_w5\_holdout} & PCA-map control; \arm{\_noanimals}, \arm{\_noscenes}: concept ablations \\
+\arm{region\_w1\_holdout} & SCD + region contrast weight 1 \\
+\arm{comp\_w5\_holdout} & SCD + compositing; \arm{comp\_random}, \arm{comp\_context}: silhouette and context controls \\
+\arm{mix\_w5\_holdout} & symmetric mixing; \arm{mix\_box}: rectangles; \arm{mix\_hard}: hard positive; \arm{mix\_noregion}: no region term \\
+\arm{heads\_w5\_holdout} & per-group heads; \arm{heads\_single}: one head; \arm{heads\_random}: random head \\
+\arm{*\_shuffled*} & same loss on another image's targets or maps \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Where things live}
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}X}
+\toprule
+What & Path \\
+\midrule
+Research log (dated, every round) & \texttt{docs/notes/CONCEPT\_FACTORS\_2026\_09\_26.md} \\
+Phase A history (LaTeX) & \texttt{docs/xfit/xfit\_history.tex} \\
+SCD paper draft & \texttt{paper/SpatialConcepts.tex} \\
+Method code (F2, xfit, SCD, region, compositing, mixing, heads) & \texttt{cospro/methods/concept\_factors.py} \\
+Concept maps (ClearCLIP) & \texttt{cospro/pipeline/concept\_maps.py}, \texttt{scripts/build\_concept\_maps.sbatch} \\
+Meaning grouping & \texttt{cospro/cli/build\_meaning\_groups.py} \\
+Object/scene text scores & \texttt{cospro/pipeline/concept\_type.py} \\
+Study launcher (arms, at most 8 jobs) & \texttt{scripts/submit\_factor\_study.sh} \\
+Result tables per dataset & \texttt{outputs/reports/factors\_<dataset>/summary.md} \\
+Figures of this report & \texttt{docs/meeting\_2026\_11\_10/make\_figures.py} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{References used in this report}
+\small
+\begin{itemize}[leftmargin=*,itemsep=0pt]
+\item Bhalla et al., Interpreting CLIP with Sparse Linear Concept Embeddings (SpLiCE), NeurIPS 2024.
+\item Kirichenko, Izmailov and Wilson, Last Layer Re-Training is Sufficient for Robustness to Spurious Correlations (DFR), ICLR 2023.
+\item Chen et al., A Simple Framework for Contrastive Learning (SimCLR), ICML 2020.
+\item Hamidieh et al., Views Can Be Deceiving: Improved SSL Through Feature Space Augmentation (LateTVG), ICLR 2024.
+\item Zhu et al., Learning-speed Aware Sampling (LA-SSL), 2023.
+\item Lan et al., ClearCLIP, ECCV 2024; Zhou et al., MaskCLIP, ECCV 2022.
+\item Bertinetto et al., R2D2, ICLR 2019; Lee et al., MetaOptNet, CVPR 2019.
+\item Tsai et al., Conditional Contrastive Learning, 2021; Zhang et al., Deep Stable Learning, CVPR 2021.
+\item H\'enaff et al., DetCon, ICCV 2021; Xu et al., RegionCL, ECCV 2022; Shen et al., Un-Mix, AAAI 2022.
+\item Xiao et al., What Should Not Be Contrastive in Contrastive Learning (LooC), ICLR 2021.
+\item von K\"ugelgen et al., SSL with Data Augmentations Provably Isolates Content from Style, NeurIPS 2021.
+\item Ryali, Schwab and Morcos, Background Augmentations, 2021; Zhao et al., DiLo, AAAI 2021.
+\item Zhang et al., Understanding Deep Learning Requires Rethinking Generalization, ICLR 2017.
+\end{itemize}
+
+\end{document}
