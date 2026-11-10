@@ -38,10 +38,10 @@
 \author{}
 \begin{document}
 \maketitle
-\lhead{Technical report on the \texttt{concept-factors} branch}
+\lhead{}
 
 \begin{abstract}
-Self-supervised representations inherit the co-occurrences of their unlabeled training images: when cats appear mostly indoors, an encoder trained from scratch learns indoor scenes as evidence for cats. We introduce Spatial Concept Distillation (SCD), which tells the encoder \emph{where} each named concept sits in an image. A frozen CLIP/SpLiCE teacher names the concepts of the training set, groups synonyms into concept factors and computes, once and before training, a $14\times14$ map of every factor for every training image. During SimCLR pretraining every location of the student's last feature map has to predict the concept values at its place in the view. The prediction runs through a ridge regression fitted on one half of the batch and scored on the other half, so a student that memorizes individual images lowers no part of the loss. Every concept enters the loss in the same way: no step decides which concept is the class and which the spurious attribute and no target or group annotation enters pretraining. Only the student encoder is needed at inference. On Waterbirds and MetaShift (six seeds) and Spur-CIFAR10 (two seeds), SCD raises validation worst-group accuracy over SimCLR by 6.1, 6.8 and 22.5 points, while the same loss with another image's maps stays at the SimCLR level. Under the matched Waterbirds protocol of our earlier relational method CoSpRo, SCD reaches 53.1 worst-group accuracy against 50.0 for CoSpRo and 45.5 for SimCLR. It also gains on MetaShift and Spur-CIFAR10, where CoSpRo stays at the SimCLR level. The student's concept scores still follow the training co-occurrence, so SCD strengthens the core feature and keeps it tied to its usual context.
+Self-supervised representations inherit the co-occurrences of their unlabeled training images: when cats appear mostly indoors, an encoder trained from scratch learns indoor scenes as evidence for cats and fails on cats outdoors. Methods that counter this usually assume which feature is spurious, such as the background or the easiest feature. We introduce Spatial Concept Distillation (SCD), which makes no such assumption and tells the encoder \emph{where} each named concept sits in an image. Before training, a frozen vision-language teacher (CLIP with a sparse concept decomposition) names the concepts of the training set and computes a dense map of every concept for every training image. During self-supervised pretraining, every location of the student's last feature map has to predict the concepts at its place in the view. At the level of whole images an object and its usual surroundings arrive together; at the level of locations they occupy different places, so the student needs a separate code for each. The prediction runs through a linear readout fitted on one half of the batch and scored on the other half, so memorizing individual images earns nothing and only concept codes shared across images lower the loss. No class label, group annotation or concept type enters pretraining and only the student encoder is kept for inference. We evaluate SCD against SimCLR and against our earlier relational method CoSpRo on three benchmarks of spurious correlations, with controls that separate the content of the maps, the role of concept names and the role of location.
 \end{abstract}
 
 \section{Introduction}
@@ -93,7 +93,9 @@ Concept discovery, map construction and SSL use images and frozen representation
 \paragraph{Notation.} Throughout this report $y$ denotes a class label and appears only in evaluation. The values that the student learns to predict during pretraining are \emph{concept targets}, written $t$: soft scores of named concepts computed by the frozen teacher from the image pixels. They are neither class labels nor pseudo-labels of the class.
 
 \section{Method}
-SCD has three stages (Figure~\ref{fig:architecture}). Stage~1 runs once per dataset before training: a frozen CLIP model names the concepts of the training images, groups synonyms into concept factors and computes a dense map of every factor for every image. Stage~2 is ordinary SimCLR training of a ResNet-18 from random weights with one additional loss: the student's last feature map predicts the part of the concept map that each view shows. Stage~3 evaluates the frozen student with a linear probe. CLIP runs only in Stage~1; training reads the stored maps.
+\paragraph{The method in plain words.} Before training starts, a large pretrained model that knows many words, CLIP, goes through every training photo once and colours it in like a colouring book: these squares are cat, these are couch, these are window. To make the squares small enough, each photo is first enlarged to $448\times448$ pixels and read through nine overlapping windows of the size CLIP was trained on, so every square of the final $14\times14$ grid covers one fourteenth of the photo's width and height. CLIP is then put away and never runs during training. Training is ordinary SimCLR: the student network sees two randomly cut, mirrored and recoloured pieces of each photo and learns to recognize that both pieces come from the same photo. In addition, for every piece we know exactly which rectangle of the photo it shows, so we cut the same rectangle out of the photo's colouring page and shrink it to the student's own $7\times7$ grid. Every one of the 49 squares of the student now gets a question: ``which concepts are here?''. The student answers through a simple linear rule. The rule is learned on one half of the photos in the batch and checked on the other half, so a student that memorizes the answers of individual photos gains nothing; only a student that represents a cat in the same way in every photo can answer for photos the rule has not seen. Because the cat and the couch sit in different squares of every photo, the student has to learn what a cat looks like by itself and what a couch looks like by itself, although the two almost always appear together. The colouring pages are concept scores computed from the pixels, not class labels: nobody tells the student which concept is the class, and every concept is treated the same way. After training only the student is kept and a simple classifier on its features is evaluated on the hardest group of photos, such as cats outdoors.
+
+\paragraph{The three stages.} SCD has three stages (Figure~\ref{fig:architecture}). Stage~1 runs once per dataset before training: a frozen CLIP model names the concepts of the training images, groups synonyms into concept factors and computes a dense map of every factor for every image. Stage~2 is ordinary SimCLR training of a ResNet-18 from random weights with one additional loss: the student's last feature map predicts the part of the concept map that each view shows. Stage~3 evaluates the frozen student with a linear probe. CLIP runs only in Stage~1; training reads the stored maps.
 
 \begin{figure}[htbp]
 \centering
@@ -108,7 +110,7 @@ SCD has three stages (Figure~\ref{fig:architecture}). Stage~1 runs once per data
 \node[font=\small\bfseries,anchor=west] (h2) at (0,-3.0) {Stage 2. Training, every step (no CLIP)};
 \node[box,below=3mm of h2.south west,anchor=north west] (t1) {batch of\\128 images};
 \node[box,right=of t1] (t2) {2 views each,\\crop boxes\\and flips kept};
-\node[box,right=of t2] (t3) {ResNet-18\\\texttt{layer4}\\$512{\times}7{\times}7$};
+\node[box,right=of t2] (t3) {ResNet-18\\last stage\\$512{\times}7{\times}7$};
 \node[box,right=of t3] (t4) {SimCLR loss\\$+\,\lambda\cdot$ spatial\\concept loss};
 \node[box,right=of t4] (t5) {update the\\student};
 \draw[arr] (t1)--(t2); \draw[arr] (t2)--(t3); \draw[arr] (t3)--(t4); \draw[arr] (t4)--(t5);
@@ -187,17 +189,15 @@ $448\times448$, nine 224-px windows & $9\times(7\times7)$ & $\tfrac1{14}$ of the
 \begin{tikzpicture}
 \begin{scope}[scale=0.0085]
 \draw[thick] (0,0) rectangle (448,448);
-\foreach \x in {0,112,224} {
-  \draw[black!45,thin] (\x,0) rectangle ++(224,224);
-  \draw[black!45,thin] (\x,112) rectangle ++(224,224);
-  \draw[black!45,thin] (\x,224) rectangle ++(224,224);
+\draw[very thick,couchc] (4,228) rectangle (220,444);
+\draw[very thick,windowc] (228,4) rectangle (444,220);
+\foreach \i in {1,...,6} {
+  \draw[catc!60,thin] (112+\i*32,112) -- ++(0,224);
+  \draw[catc!60,thin] (112,112+\i*32) -- ++(224,0);
 }
 \draw[very thick,catc] (112,112) rectangle ++(224,224);
-\foreach \i in {1,...,6} {
-  \draw[catc!70,thin] (112+\i*32,112) -- ++(0,224);
-  \draw[catc!70,thin] (112,112+\i*32) -- ++(224,0);
-}
-\node[font=\scriptsize,align=center,below] at (224,0) {image resized to $448\times448$;\\9 windows of 224 px, stride 112;\\one window (blue): $7\times7$ patches of 32 px};
+\foreach \x in {0,112,224} { \foreach \y in {224,336,448} { \fill[black] (\x,\y) circle (9); } }
+\node[font=\scriptsize,align=center,below] at (224,0) {image resized to $448\times448$; 9 windows\\of 224 px start at the dots (3 shown);\\blue window: $7\times7$ patches of 32 px};
 \end{scope}
 \begin{scope}[xshift=4.9cm,scale=0.0085]
 \draw[thick] (0,0) rectangle (448,448);
@@ -212,7 +212,7 @@ $448\times448$, nine 224-px windows & $9\times(7\times7)$ & $\tfrac1{14}$ of the
 \draw[arr] (3.95,1.9) -- (4.75,1.9);
 \draw[arr] (8.85,1.9) -- (9.65,1.9);
 \end{tikzpicture}
-\caption{From windows to the $14\times14$ map. The windows start at pixels 0, 112 and 224 in each direction, so their patches fall on a 16-pixel grid and a cell is covered by one, two or four windows.}
+\caption{From windows to the $14\times14$ map. Left: the nine windows have their top-left corners at pixels 0, 112 and 224 in each direction (dots); three of them are drawn, the top-left (orange), the centre (blue, with its $7\times7$ patches) and the bottom-right (grey). Neighbouring windows overlap by half, so their patches fall on a 16-pixel grid (middle) and a cell is covered by one, two or four windows. Right: the averaged scores pooled to the $14\times14$ map.}
 \label{fig:windows}
 \end{figure}
 
@@ -243,7 +243,7 @@ The temperature is CLIP's own scale: CLIP multiplies its cosines by a learned lo
 \label{sec:views}
 Training is ordinary SimCLR on a ResNet-18 from random weights. Every image of a batch of 128 gives two views. The transform of a view applies a random crop of 20\% to 100\% of the image area with aspect ratio between 3:4 and 4:3, resized to $224\times224$; a horizontal flip with probability 0.5; colour jitter with probability 0.8 and greyscale with probability 0.2. Crop and flip are the only operations that move pixels, so the transform records for every view its crop box as fractions of the image (top $a$, left $b$, height $\eta$, width $\omega$) and its flip flag. These records tell which part of the concept map each view shows.
 
-The ResNet-18 \citep{he2016resnet} halves the resolution five times and maps a view to $H\in\mathbb{R}^{512\times7\times7}$ at the output of \texttt{layer4}, since $224/2^5=7$. Global average pooling gives the 512-dimensional feature $h$ that the probe reads after training and an MLP head maps $h$ to the 128-dimensional input of the SimCLR loss. A forward hook keeps a copy of $H$ for the concept loss. Location $(r,c)$ of $H$ lies over the 32-pixel square $(r,c)$ of the view, so each of the 49 vectors can be asked about its own part of the view; class activation maps rest on the same property of the last feature map \citep{zhou2016cam}. After pooling, a cat and a couch in the same view become one vector; before pooling they still occupy different locations. This is why the concept loss reads \texttt{layer4} and leaves the pooled feature to SimCLR. The probe reads the pooled feature of the same backbone that the loss shapes.
+The ResNet-18 \citep{he2016resnet} halves the resolution five times and maps a view to $H\in\mathbb{R}^{512\times7\times7}$ at the output of its last residual stage, since $224/2^5=7$. Global average pooling gives the 512-dimensional feature $h$ that the probe reads after training and an MLP head maps $h$ to the 128-dimensional input of the SimCLR loss. The concept loss reads $H$ before pooling. Location $(r,c)$ of $H$ lies over the 32-pixel square $(r,c)$ of the view, so each of the 49 vectors can be asked about its own part of the view; class activation maps rest on the same property of the last feature map \citep{zhou2016cam}. After pooling, a cat and a couch in the same view become one vector; before pooling they still occupy different locations. This is why the concept loss reads the feature map and leaves the pooled feature to SimCLR. The probe reads the pooled feature of the same backbone that the loss shapes.
 
 The student's $7\times7$ grid and the $7\times7$ patch grid of a CLIP window have the same size for different reasons ($224/2^5$ and $224/32$). The two grids never meet: CLIP's grids are assembled into the $14\times14$ map of the whole image and the warping below resamples that map to the student's grid of each view.
 
@@ -370,33 +370,12 @@ The SimCLR term is unchanged. With $g_v$ the normalized projection of view $v$, 
 \begin{equation}
  \mathcal{L}_{\mathrm{SimCLR}}=-\frac{1}{2B}\sum_{v=1}^{2B}\log\frac{\exp(g_v^\top g_{v^+}/\tau)}{\sum_{w\neq v}\exp(g_v^\top g_w/\tau)}.
 \end{equation}
-Each view has one positive, the other view of its image and 254 negatives, including views of other cats. SimCLR rewards every feature that separates images and has no reason to separate a cat from the couch it usually sits on; the spatial loss adds that reason. The training objective is
+Each view has one positive (the other view of its image) and 254 negatives, among them views of other cats. SimCLR rewards every feature that separates images and has no reason to separate a cat from the couch it usually sits on; the spatial loss adds that reason. The training objective is
 \begin{equation}
- \mathcal{L}=\mathcal{L}_{\mathrm{SimCLR}}+\lambda(t)\,\mathcal{L}_{\mathrm{spatial}},\qquad
- \lambda(t)=\begin{cases}0,& t\le10,\\ 5\,(t-10)/10,& 10<t<20,\\ 5,& t\ge20,\end{cases}
+ \mathcal{L}=\mathcal{L}_{\mathrm{SimCLR}}+\lambda(e)\,\mathcal{L}_{\mathrm{spatial}},\qquad
+ \lambda(e)=\begin{cases}0,& e\le10,\\ 5\,(e-10)/10,& 10<e<20,\\ 5,& e\ge20,\end{cases}
 \end{equation}
-with $t$ the epoch. SimCLR first forms usable features, then the concept loss rises to its full weight.
-
-\subsection{What runs when}
-Table~\ref{tab:when} summarizes the components. The teacher runs once; the cost of a training step grows by two $512\times512$ solves and one RoIAlign over the batch.
-
-\begin{table}[htbp]
-\centering\small
-\caption{Components of SCD, when they run and what they use.}
-\label{tab:when}
-\begin{tabularx}{\linewidth}{lllX}
-\toprule
-Component & When & Trained & Uses \\
-\midrule
-CLIP image embedding, SpLiCE, factors & once, before training & no & training images, a word list \\
-ClearCLIP maps, $K\times14\times14$ per image & once, before training & no & training images, factor directions \\
-Warping (RoIAlign, flip) & every step & no & stored map, crop box, flip flag \\
-Ridge readouts $W_A$, $W_B$ & every step, then discarded & solved & student features, warped maps \\
-ResNet-18 and MLP head & every step & yes & views; SimCLR and spatial loss \\
-Linear probe & after training & yes & pooled features, class and group labels \\
-\bottomrule
-\end{tabularx}
-\end{table}
+with $e$ the epoch. SimCLR first forms usable features, then the concept loss rises to its full weight.
 
 \section{SCD and CoSpRo}
 \label{sec:cospro}
@@ -465,12 +444,12 @@ Shuffled maps & $52.79\pm2.71$ & $47.50\pm2.49$ & $56.08\pm2.23$ & $45.08\pm2.91
 \label{tab:main}
 \end{table}
 
-SCD achieves higher mean WGA than SimCLR by 6.10 points on Waterbirds, 6.77 on MetaShift and 22.50 on Spur-CIFAR10 (Table~\ref{tab:main}). The corresponding average-accuracy differences are $+7.88$, $+5.99$ and $+9.77$ points. SCD is ahead of SimCLR on five of six paired seeds on Waterbirds and MetaShift and on both Spur-CIFAR10 seeds (Figure~\ref{fig:paired}). The shuffled-map control trains the same loss on maps of other images: it keeps the statistics of the targets and removes their link to the image content, in the manner of the control tasks of the probing literature \citep{hewitt2019control}. It stays within one point of SimCLR's WGA on Waterbirds and MetaShift and within 1.6 points on Spur-CIFAR10, so the gain comes from the content of each image's own maps. Seed variation is large on MetaShift, whose validation groups hold 72 images each. The weight $\lambda_{\max}=5$ and the hold-out were chosen on the validation splits of MetaShift and Waterbirds with seeds 1--4; seeds 5 and 6 ran afterwards with the settings fixed.
+SCD achieves higher mean WGA than SimCLR by 6.10 points on Waterbirds, 6.77 on MetaShift and 22.50 on Spur-CIFAR10 (Table~\ref{tab:main}). The corresponding average-accuracy differences are $+7.88$, $+5.99$ and $+9.77$ points. SCD is ahead of SimCLR on five of six paired seeds on Waterbirds and MetaShift and on both Spur-CIFAR10 seeds (Figure~\ref{fig:paired}, which also shows CoSpRo). The shuffled-map control trains the same loss on maps of other images: it keeps the statistics of the targets and removes their link to the image content, in the manner of the control tasks of the probing literature \citep{hewitt2019control}. It stays within one point of SimCLR's WGA on Waterbirds and MetaShift and within 1.6 points on Spur-CIFAR10, so the gain comes from the content of each image's own maps. Seed variation is large on MetaShift, whose validation groups hold 72 images each. The weight $\lambda_{\max}=5$ and the hold-out were chosen on the validation splits of MetaShift and Waterbirds with seeds 1--4; seeds 5 and 6 ran afterwards with the settings fixed.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/paired_seeds.pdf}
-\caption{Validation WGA per student seed, mean of the last four probes. Methods with the same seed share the initialization and the batch order.}
+\includegraphics[width=\linewidth]{figures/scd_paired_seeds.pdf}
+\caption{Validation WGA per student seed for SimCLR, CoSpRo and SCD, mean of the last four probes. CoSpRo has seeds 1--4 on Waterbirds; on MetaShift seeds 1--6 of its ten are shown.}
 \label{fig:paired}
 \end{figure}
 
@@ -493,18 +472,18 @@ CoSpRo + KL & $53.46$ & $50.00\pm3.23$ & 51.61 & 50.00 & 45.49 & 52.89 \\
 \end{tabular}
 \end{table}
 
-Across datasets the difference is larger (Table~\ref{tab:cospro_all}). CoSpRo stayed at the SimCLR level on MetaShift over ten seeds ($42.9$ against $44.6$) and reached $19.6$ WGA on one Spur-CIFAR10 seed, while SCD gains 6.8 and 22.5 points there. On the held-out Waterbirds test split CoSpRo reached $50.64\pm1.97$ against $46.82\pm3.65$ for SimCLR; the matched test runs of SCD are in progress, so the test comparison remains open.
+Across datasets the difference is larger (Table~\ref{tab:cospro_all}). CoSpRo stayed at the SimCLR level on MetaShift over ten seeds ($42.9$ against $44.4$) and reached $19.6$ WGA on one Spur-CIFAR10 seed, while SCD gains 6.8 and 22.5 points there. On the held-out Waterbirds test split CoSpRo reached $50.64\pm1.97$ against $46.82\pm3.65$ for SimCLR; the matched test runs of SCD are in progress, so the test comparison remains open.
 
 \begin{table}[htbp]
 \centering\small
-\caption{Validation WGA of SimCLR, CoSpRo and SCD on the three datasets, mean of the last four probes. Seeds in brackets. The MetaShift CoSpRo study ran its own ten SimCLR seeds, which reach 44.6 WGA.}
+\caption{Validation WGA of SimCLR, CoSpRo and SCD on the three datasets, mean of the last four probes. Seeds in brackets. The MetaShift CoSpRo study ran its own ten SimCLR seeds, which reach 44.41 WGA.}
 \label{tab:cospro_all}
 \begin{tabular}{lrrr}
 \toprule
 Method & Waterbirds & MetaShift & Spur-CIFAR10 \\
 \midrule
 SimCLR & $46.66\pm1.89$ (6) & $44.33\pm7.31$ (6) & $15.63\pm1.04$ (2) \\
-CoSpRo + KL & $50.0\pm3.2$ (4) & $42.9\pm2.7$ (10) & $19.6$ (1) \\
+CoSpRo + KL & $50.14\pm3.25$ (4) & $42.92\pm2.62$ (10) & $19.6$ (1) \\
 \textbf{SCD} & $\textbf{52.76}\pm\textbf{4.68}$ (6) & $\textbf{51.10}\pm\textbf{5.44}$ (6) & $\textbf{38.13}\pm\textbf{0.51}$ (2) \\
 \bottomrule
 \end{tabular}
@@ -538,21 +517,21 @@ On MetaShift, SCD has 8.59-point higher mean WGA than the principal-component ma
 A concept ablation tests which concepts carry the MetaShift gain. It uses word lists we chose and lies outside the method. Over seeds 1--4, leaving out the 21 animal factors (cat, dog, breeds, pet, paws, fur) gives $46.61\pm5.75$ WGA and leaving out the 20 scene factors (couch, lawn, bed, window, desk, bench and others) $47.92\pm2.81$, against $53.04\pm5.75$ with all factors and $45.31\pm3.38$ with shuffled maps. Both ablations lose most of the gain and differ by less than the seed noise: the gain needs the object and the scene concepts together, which is what lets the student tell them apart.
 
 \subsection{Training dynamics and groups}
-The worst-group advantage of SCD over SimCLR and the shuffled control holds across training (Figure~\ref{fig:curves}). On MetaShift its smoothed mean WGA leads all other methods at every probe from epoch 100 onward; from epoch 200 its margin over the closest method ranges from 3.4 to 8.0 points. On Waterbirds SCD leads SimCLR and the shuffled control from epoch 100 onward and the principal-component maps follow the same path. Average accuracy separates earlier: SCD leads all methods on both datasets from epoch 125 onward.
+The worst-group advantage of SCD holds across training (Figure~\ref{fig:curves}). On MetaShift its smoothed mean WGA leads SimCLR and CoSpRo at every probe, while CoSpRo falls below SimCLR from epoch 175 onward. On Waterbirds CoSpRo rises first and leads from epoch 50 to 125; the two alternate up to epoch 200 and from epoch 225 SCD stays ahead to the end of training. SCD leads both methods in average accuracy at every probe on both datasets, while CoSpRo stays within two points of SimCLR.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{figures/spatial_training_curves.pdf}
-\caption{Validation accuracy during SSL training for SimCLR, shuffled maps, principal-component maps and SCD. Each line is the mean over seeds 1--4 of the periodic linear probes, run every 25 epochs, smoothed with a three-point moving average. Top: worst-group accuracy. Bottom: average accuracy.}
+\includegraphics[width=\linewidth]{figures/scd_training_curves.pdf}
+\caption{Validation accuracy during SSL training for SimCLR, CoSpRo and SCD. Each line is the mean over seeds 1--4 of the periodic linear probes, run every 25 epochs, smoothed with a three-point moving average. Top: worst-group accuracy. Bottom: average accuracy.}
 \label{fig:curves}
 \end{figure}
 
-The gain extends to the minority groups (Figure~\ref{fig:groups}): on MetaShift cats outdoors rise from 47.0 to 51.2 and dogs indoors from 52.8 to 57.2; on Waterbirds landbirds on water rise from 53.6 to 65.1. SCD raises every group on both datasets.
+The gain extends to the minority groups (Figure~\ref{fig:groups}): on MetaShift cats outdoors rise from 47.0 to 51.2 and dogs indoors from 52.8 to 57.2; on Waterbirds landbirds on water rise from 53.6 to 65.1. SCD raises every group on both datasets. CoSpRo raises the land groups of Waterbirds (landbirds on land 47.6 to 51.0, waterbirds on land 53.8 to 56.6) and leaves landbirds on water at 52.3; on MetaShift its groups stay within the seed spread of SimCLR.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{../../paper/figures/spatial_group_accuracies.pdf}
-\caption{Validation accuracy per (class, attribute) group, mean of the last four probes over seeds 1--6, with sample standard deviation across seeds. Labels are used only for evaluation.}
+\includegraphics[width=\linewidth]{figures/scd_group_accuracies.pdf}
+\caption{Validation accuracy per (class, attribute) group at the epoch-500 probe, mean and sample standard deviation over seeds (SimCLR and SCD: 6; CoSpRo: 4 on Waterbirds, 10 on MetaShift). Labels are used only for evaluation.}
 \label{fig:groups}
 \end{figure}
 
@@ -562,7 +541,7 @@ The maps place the animal factors on the animal and the scene factors on its sur
 
 \paragraph{Concepts transfer to unseen images.} After training, a ridge regression from the pooled student features to each factor's image-level response explains, on the held-out fifth of the training images, 0.22 of the variance on MetaShift and 0.26 on Waterbirds, against 0.13 and 0.17 with shuffled maps (Table~\ref{tab:audit}). The scores on images inside the concept loss agree (0.23 and 0.26), so the spatial loss learns shared concepts and stores no per-image answers. During training the held-out explained variance $1-\mathcal{L}_{\mathrm{spatial}}$ starts near 0.4, since maps are smooth and partly predictable from position and low-level statistics and ends at 0.44 to 0.48 for real maps against 0.39 to 0.41 for shuffled maps; only its rise above the shuffled control reflects concepts.
 
-\paragraph{Concepts stay tied to their context.} Post-hoc labels show that the student strengthens the core feature without separating it from its usual context. The student's \emph{cat} factor scores 0.47 on unseen cats indoors and 0.07 on unseen cats outdoors, where CLIP features score 0.92 and 0.88. The \emph{water bird} factor drops in the same way on waterbirds on land. Each factor's residual on the other factors, the part a fused direction cannot predict, scores 0.00 in the student against 0.15 to 0.17 for CLIP. A probe for the spurious attribute reaches $90.50\pm0.79$ WGA on Waterbirds for SCD against $89.50\pm1.05$ for SimCLR, so the background stays as readable as before.
+\paragraph{Concepts stay tied to their context.} Post-hoc labels show that the student strengthens the core feature without separating it from its usual context. The student's \emph{cat} factor scores 0.47 on unseen cats indoors and 0.07 on unseen cats outdoors, where CLIP features score 0.92 and 0.88. The \emph{water bird} factor drops in the same way on waterbirds on land. Each factor's residual on the other factors, the part a fused direction cannot predict, scores 0.00 in the student against 0.15 to 0.17 for CLIP. A probe for the spurious attribute reaches $90.50\pm0.79$ WGA on Waterbirds for SCD against $89.50\pm1.05$ for SimCLR, so the background stays as readable as before. A location of the $7\times7$ feature map is computed from a large part of the view \citep{luo2016erf}, so the location over the cat also sees the couch; the cheapest predictor of ``cat here'' combines local evidence with the scene, which agrees with the cat on 88\% of the MetaShift training images. SCD therefore raises WGA through a stronger core feature that the balanced probe can use \citep{kirichenko2023dfr}, while the spurious attribute stays readable.
 
 \begin{table}[htbp]
 \centering\small
@@ -585,11 +564,6 @@ Waterbirds & SCD student & 0.26 & 0.00 & 0.29 & 0.14 & $-$0.05 & 0.23 \\
 \end{tabular}
 \label{tab:audit}
 \end{table}
-
-\section{Discussion}
-\paragraph{Why SCD raises worst-group accuracy.} SimCLR from scratch on 1,700 to 4,795 images learns whatever separates images and the scene separates them well. SCD adds a second task in which the cat and the couch must be predicted at different locations by one readout that works across images. The student thereby gains a cat code that SimCLR lacks. The balanced probe finds this code and uses it on the minority groups, which is the mechanism deep feature reweighting relies on \citep{kirichenko2023dfr}. The shuffled control rules out regularization by the extra loss alone and the principal-component control on MetaShift shows that the names matter where the relevant contrast is a weak direction of CLIP.
-
-\paragraph{Why the student keeps the context.} A location of the $7\times7$ feature map is computed from a large part of the view \citep{luo2016erf}, so the location over the cat also sees the couch. The cheapest predictor of ``cat here'' combines local evidence with the scene, which agrees with the cat on 88\% of the MetaShift training images. The loss localizes concepts and keeps the training joint distribution: the student's cat score is high where cat and scene agree and low on cats outdoors. SCD therefore raises WGA through a stronger core feature, while the spurious attribute stays readable. Separating the two further needs a signal that shows the cat in other surroundings, which the maps alone do not provide.
 
 \section{Limitations}
 All SCD results are validation results with the probe selected on the same split; held-out test runs with a locked probe are in progress, so the test comparison with CoSpRo remains open. The study uses one concept vocabulary per dataset, one map construction and six (two on Spur-CIFAR10) student seeds; MetaShift's seed spread (5.4 WGA points) is as large as the gain over its controls on single seeds. The configuration with the 20\% hold-out scored above the same loss with every image in it (Waterbirds 49.53, MetaShift 46.70 WGA); the difference lies within the seed spread and has no explanation yet. The group-balanced probe uses labels and group annotations, so only concept discovery, map construction and SSL are label-free.
@@ -788,19 +762,18 @@ Learning-speed Aware Sampling. \emph{arXiv:2311.16361}, 2023.
 \toprule
 Component & Setting \\
 \midrule
-CLIP teacher & OpenCLIP ViT-B/32, LAION-2B weights (\texttt{laion2b\_s34b\_b79k}) \\
+CLIP teacher & OpenCLIP ViT-B/32 with LAION-2B weights \\
 SpLiCE & L1 penalty 0.25 on whole-image embeddings; LAION 10k vocabulary (MetaShift), Open Images v7 vocabulary (Waterbirds, Spur-CIFAR10) \\
 Concept groups & Average linkage on raw text embeddings, text cosine 0.85; response correlation at least 0.5; words active on $[0.002,0.95]$ of images \\
 Concept factors & Groups active on $[0.02,0.90]$ of images: 242 (Waterbirds), 130 (MetaShift), 147 (Spur-CIFAR10) \\
 Concept maps & Bicubic resize to $448\times448$; nine 224-pixel windows at offsets $\{0,112,224\}$; ClearCLIP last block; 16-pixel cells averaged over windows; average-pooled to $14\times14$; softmax over factors at $\tau_M=0.01$; float16 \\
 Targets & Standardized per factor over all images and cells; RoIAlign with $2\times2$ samples per bin over the view's crop box; mirrored for flipped views \\
-Student features & ResNet-18 \texttt{layer4}: $512\times7\times7$ (224-pixel views), $512\times4\times4$ (Spur-CIFAR10, 32-pixel views) \\
+Student features & Last residual stage of ResNet-18: $512\times7\times7$ (224-pixel views), $512\times4\times4$ (Spur-CIFAR10, 32-pixel views) \\
 Cross-fit & First and second half of the batch's images, both views of an image in one half; unit-norm rows; absolute ridge $\rho=1$; float32 solve \\
 Loss weight & 0 up to epoch 10, linear warm-up to $\lambda_{\max}=5$ by epoch 20 (chosen from 1, 3, 5 and 10) \\
 Hold-out & 20\% of training images with loss weight 0, the same images in every method and seed \\
 SSL & SimCLR, 500 epochs, batch 128, SGD with learning rate 0.01 decayed by 0.1 at epochs 350, 400 and 450, weight decay $10^{-4}$, temperature 0.05, float16 autocast, crop scale $[0.2,1]$ \\
 Probe & Logistic regression with L2 coefficient 0.001 every 25 epochs on a group-balanced training subset (224 / 400 / 1,400 images) \\
-Code & \texttt{cospro/cli/build\_concept\_maps.py} (maps), \texttt{cospro/pipeline/concept\_maps.py} (windows, warping, loss), \texttt{cospro/methods/concept\_factors.py} (training) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -810,7 +783,7 @@ Code & \texttt{cospro/cli/build\_concept\_maps.py} (maps), \texttt{cospro/pipeli
 \begin{table}[htbp]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\caption{Waterbirds validation, mean of the last four probes. Groups $(y,a)$: landbird on land, landbird on water, waterbird on land and waterbird on water. Values are percentages.}
+\caption{Waterbirds validation. Avg.\ and WGA: mean of the last four probes; group columns: probe at epoch 500. Groups $(y,a)$: landbird on land, landbird on water, waterbird on land and waterbird on water. Values are percentages.}
 \begin{tabular}{lrrrrrrr}
 \toprule
 Method & Seed & Avg. & WGA & (0,0) & (0,1) & (1,0) & (1,1) \\
@@ -842,7 +815,7 @@ SCD & 6 & 57.78 & 45.82 & 45.61 & 64.38 & 64.66 & 73.68 \\
 \begin{table}[htbp]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\caption{MetaShift validation, mean of the last four probes. Groups $(y,a)$: cat indoors, cat outdoors, dog indoors and dog outdoors. Values are percentages.}
+\caption{MetaShift validation. Avg.\ and WGA: mean of the last four probes; group columns: probe at epoch 500. Groups $(y,a)$: cat indoors, cat outdoors, dog indoors and dog outdoors. Values are percentages.}
 \begin{tabular}{lrrrrrrr}
 \toprule
 Method & Seed & Avg. & WGA & (0,0) & (0,1) & (1,0) & (1,1) \\
@@ -893,71 +866,5 @@ Mean & +7.88 & +6.10 & +7.53 & +5.26 & +5.99 & +6.77 & +5.08 & +6.02 \\
 \end{table}
 
 On Spur-CIFAR10, SCD reaches $70.03/37.77$ and $68.61/38.49$ Avg./WGA on seeds 1 and 2, SimCLR $59.39/16.36$ and $59.71/14.89$ and the shuffled maps $56.41/15.84$ and $55.39/18.65$. Its 100 groups pair each class with each line colour.
-
-\section{The Algorithm as Pseudocode}
-\label{app:code}
-{\scriptsize
-\begin{verbatim}
-# ---------- Stage 1: once per dataset (frozen CLIP, no labels) ----------
-z      = clip.encode_image(images_224)               # N x 512, whole images
-codes  = splice(z, vocabulary, l1=0.25)              # ~9 non-zero words per image
-factors, d = group_synonyms(codes, text_emb)         # K factors, d: K x 512
-for image in dataset:
-    big   = resize(image, 448, 448)                  # any size -> 448 x 448
-    score = zeros(K, 28, 28); count = zeros(28, 28)
-    for top in (0, 112, 224):
-        for left in (0, 112, 224):
-            p = clearclip_patches(big[top:top+224, left:left+224])  # 7x7x512
-            s = p @ d.T                                              # 7x7xK
-            score += s spread to 2x2 cells of 16 px; count += 1
-    maps[image] = softmax(avgpool(score / count, 14) / 0.01, dim=K) # Kx14x14
-maps = standardize_per_factor(maps)
-
-# ---------- Stage 2: every training step (CLIP is not run) ----------
-for images in batches_of_128:
-    v1, box1 = augment(images); v2, box2 = augment(images)  # crop+flip kept
-    H = resnet.layer4(cat(v1, v2))             # 256 x 512 x 7 x 7 (hook)
-    g = mlp(avgpool(H))                        # 256 x 128
-    loss_ssl = nt_xent(g, temperature=0.05)
-    T = roi_align(maps[images], cat(box1, box2), 7x7); flip flipped views
-    R = normalize(H per location)              # rows of 512
-    A, B = halves of the 128 images (both views together)
-    W_A = ridge(R[A], T[A], weights, rho=1); W_B = ridge(R[B], T[B], ...)
-    loss_spatial = (mse(R[B] @ W_A, T[B]) + mse(R[A] @ W_B, T[A])) / 2
-    loss = loss_ssl + lambda(epoch) * loss_spatial
-    loss.backward(); sgd.step()                # gradients pass the solve
-
-# ---------- Stage 3: evaluation (labels enter here) ----------
-probe = logistic_regression(avgpool(resnet(balanced_images)), labels)
-report worst_group_accuracy(probe, validation)
-\end{verbatim}
-}
-
-\section{Glossary}
-\label{app:glossary}
-\begin{table}[ht]
-\centering\small
-\begin{tabularx}{\linewidth}{lX}
-\toprule
-Term & Meaning \\
-\midrule
-View & One randomly augmented copy of an image (crop, flip, colour); SimCLR uses two per image \\
-Crop box & The rectangle a view was cut from, stored as fractions of the image side \\
-Positive / negative & In SimCLR: the other view of the same image / every view of another image \\
-Patch & A $32\times32$-pixel square that CLIP ViT-B/32 turns into one token \\
-Window & A $224\times224$ part of the $448\times448$ image, read by CLIP in one pass \\
-ClearCLIP & CLIP with a modified last block whose patch embeddings match text locally \\
-Concept factor & A group of synonyms, such as \{cat, kitten, kitty\}, with one text direction \\
-Concept map & For one image: $14\times14$ cells, each with shares of the $K$ factors summing to one \\
-Concept target $t$ & The $K$ standardized map values at one location of a view; neither a class label nor a pseudo-label \\
-Warping & Cutting a view's crop box out of the map and resampling it to the student's grid (RoIAlign) \\
-Feature map & The student's \texttt{layer4} output, $7\times7$ locations of 512 numbers \\
-Readout & The ridge regression $W$ from feature rows to concept targets, solved in every step \\
-Cross-fit & Fitting the readout on one half of the batch and scoring it on the other half \\
-Hold-out & The 20\% of training images that never enter the concept loss \\
-WGA & Worst-group accuracy: accuracy on the hardest (class, attribute) group \\
-\bottomrule
-\end{tabularx}
-\end{table}
 
 \end{document}
