@@ -22,14 +22,12 @@
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\Prob}{\mathbb{P}}
 \newcommand{\wga}{\mathrm{WGA}}
-\newcommand{\code}[1]{\texttt{\small #1}}
-\newcommand{\brk}{\allowbreak}
 \emergencystretch=4em
 
 \title{Concept Learning Curves and Early Concept Swap\\[2pt]
-\large Theory companion to \texttt{docs/PROJECT\_PLAN.md}: method, model, theorems and proofs}
-\author{Master's thesis working document, repository \code{Spur\_SpLiCE}}
-\date{Version 2, 2026-11-16}
+\large Theory companion to \texttt{docs/PROJECT\_PLAN.md}: model, theorems and proofs for the self-supervised setting}
+\author{Master's thesis working document, repository \texttt{Spur\_SpLiCE}}
+\date{Version 3, 2026-11-16}
 
 \begin{document}
 \maketitle
@@ -37,442 +35,313 @@
 \section*{How to read this document}
 
 The project plan \texttt{docs/PROJECT\_PLAN.md} is the single source of truth for goals, decisions, architecture,
-commands and the kill test. This document is its theory companion: Section~\ref{sec:method} restates the method in
-mathematical form, Section~\ref{sec:theory} holds the model, the theorems and their proofs, and
-Section~\ref{sec:kill} points to the experiments. Where the two files differ, the plan holds and this file gets
-corrected.
+commands and the kill test. This document is its theory companion. Where the two files differ, the plan holds and this
+file gets corrected.
 
-Three conventions hold throughout.
-\begin{itemize}[nosep]
-\item \textbf{Status tags.} \textsc{[fixed]} marks a decision that implementers follow. \textsc{[default]} marks a
-starting value that experiments may change. \textsc{[open]} marks a decision the student and the supervisor still take.
-\item \textbf{Scope of the proofs.} Every theorem is proven inside the stylized model of Section~\ref{sec:model}. The
-theorems show that the method is correct when Assumptions~\ref{as:sep} to~\ref{as:lin} hold. Whether real images
-satisfy the assumptions is an empirical question, and Section~\ref{sec:kill} tests each assumption. A proof that the
-method succeeds on real data does not exist for this method or for any published competitor; Section~\ref{sec:scope}
-states the exact boundary.
-\item \textbf{Language.} The confounding factor is the \emph{spurious attribute} or \emph{spurious concept}. Lists read
-``A, B and C''.
-\end{itemize}
+The setting is the one of the whole thesis: a ResNet-18 trained from scratch with SimCLR on the training images,
+without class labels and without any information about the spurious attribute, and evaluated by a linear probe that
+is trained on a group-balanced subset. The theorems are proven inside the stylized model of
+Section~\ref{sec:model}. They show that the method is correct when Assumptions~\ref{as:sep} to~\ref{as:lin} hold.
+Whether real images satisfy the assumptions is an empirical question, which the kill test of the plan measures. A
+proof that the method succeeds on real data does not exist for this method or for any published competitor;
+Section~\ref{sec:scope} states the boundary.
 
-\section{Problem and motivation}
+\section{The method in mathematical form}\label{sec:method}
 
-A classifier trained on data where a spurious attribute $a$ correlates with the label $y$ relies on $a$ and fails on
-the groups that break the correlation. Worst-group accuracy (WGA), the lowest accuracy over the groups $(y,a)$, measures
-this failure. Networks pick up the feature that is easiest to fit first (simplicity bias), and on Waterbirds and
-MetaShift that feature is the surroundings of the object.
+\textbf{Inputs.} Training images $x_1,\dots,x_n$ and, for each image, a patch-wise concept map from frozen CLIP and
+SpLiCE. The map assigns every cell of a $14\times14$ grid to one of $K$ concept units; the cells of unit $k$ in image
+$i$ form its region, with pixel mask $m_{ik}$. Unit $k$ is present in the images $\mathcal{I}_k$. No label enters.
 
-The earlier project line, Spatial Concept Distillation, used patch-wise concept maps from CLIP and SpLiCE as regression
-targets for the student. Its weakness is conceptual: the student copies CLIP, so the method is knowledge distillation
-and the explanation tool explains the teacher. The present method keeps the patch-wise concept maps and changes their
-role.
+\textbf{Occlusion.} $O_k(x_i)$ replaces the pixels of $x_i$ under $m_{ik}$ by a smooth fill from their surroundings.
 
-\begin{quote}
-\textbf{Thesis statement.} Patch-wise concept maps turn the simplicity bias of the model under training into a
-readable record: one learning curve per named concept. The concepts the model relies on first are flagged, and during
-training their image regions are exchanged between images, which removes the correlation between those concepts and
-the label. CLIP and SpLiCE supply names and locations. They supply no training target.
-\end{quote}
-
-The three components answer three questions.
-\begin{itemize}[nosep]
-\item \emph{Why SpLiCE?} The audit reports named concepts (``forest'', ``sofa''), which a human reads in seconds.
-\item \emph{Why patches?} The intervention needs the location of a concept inside each image.
-\item \emph{Why does it help on small datasets?} Methods that reweight examples (JTT, LfF, SPARE) depend on the few
-images of the minority groups. A patch-level swap builds a counterfactual from every image
-(Proposition~\ref{prop:ess}).
-\end{itemize}
-
-\section{Notation}
-
-\begin{center}
-\begin{tabular}{lp{0.68\linewidth}}
-\toprule
-Symbol & Meaning \\
-\midrule
-$x_i$, $y_i$, $a_i$ & image, class label, spurious attribute (hidden, evaluation only) of training example $i$ \\
-$n$ & number of training images (MetaShift: about 1{,}700) \\
-$K$ & number of concept units (single factors or groups of factors) \\
-$M_i \in [0,1]^{K\times H\times W}$ & concept map of image $i$: per cell a distribution over the $K$ units, $H=W=14$ \\
-$m_{ik}\in[0,1]^{H\times W}$ & region mask of unit $k$ in image $i$ (Definition~\ref{def:region}) \\
-$\mathcal{I}_k$ & set of images in which unit $k$ is present \\
-$f_t$ & model after $t$ epochs; $f_t(x)_y$ is the logit of class $y$ \\
-$O_k$ & occlusion operator of unit $k$ (Definition~\ref{def:occ}) \\
-$D_k(t)$, $S_k(t)$ & reliance of the model on unit $k$ at epoch $t$ and its share \\
-$T_0$ & length of the early window in epochs \\
-$\mathcal{F}$ & set of flagged concept units \\
-$q$ & probability that a training image receives a swap \\
-$p$, $\rho$ & $p=\Prob(a=y)$ and $\rho = 2p-1$, the correlation of $a$ and $y$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\section{The method, step by step}\label{sec:method}
-
-The method has an offline stage (Step 0), an audit stage (Steps 1 to 3) and a training stage (Step 4).
-
-\subsection*{Step 0: patch-wise concept maps \textsc{[fixed]}, existing code}
-
-For every training image the frozen CLIP ViT-B/32 reads the image at 448 pixels through 224-pixel windows. The last
-block uses query-query attention without the residual and feed-forward branch (ClearCLIP), which yields text-aligned
-patch embeddings on a $14\times14$ grid. The SpLiCE concept dictionary, grouped into factors by the existing grouping
-stage, supplies $K$ text directions. $M_i[k,h,w]$ is the softmax over the units of the cosine between the patch
-embedding at $(h,w)$ and the direction of unit $k$. The maps are computed once and cached. No label enters.
-
-\textsc{[default]} The concept unit is a \emph{group of factors that share pixels} (the 12 co-activation groups of
-MetaShift obtained by spectral clustering of the factor maps), which keeps the audit cheap and its curves stable.
-Single factors (130 on MetaShift) are the fine-grained variant.
-
-\begin{definition}[Region and presence]\label{def:region}
-The hard region of unit $k$ in image $i$ is the set of cells where $k$ has the largest map value. Unit $k$ is present in
-image $i$ when its hard region holds at least three cells. The mask $m_{ik}$ is the hard region upsampled to the image
-resolution with a soft border half a map cell wide.
-\end{definition}
-
-\subsection*{Step 1: occlusion and reliance \textsc{[fixed]}}
-
-\begin{definition}[Occlusion operator]\label{def:occ}
-$O_k(x_i)$ replaces the pixels of $x_i$ under $m_{ik}$ and leaves the other pixels unchanged. Two fillings exist.
-\emph{Paint-over} fills the region by normalized convolution from its surroundings. \emph{Donor fill} takes the pixels
-at the same positions from a random other training image. \textsc{[default]} The audit uses paint-over, which is
-deterministic and already implemented.
-\end{definition}
-
-\begin{definition}[Reliance]\label{def:rel}
-The margin of a model $f$ on $(x,y)$ is $M_f(x,y)=f(x)_y-\max_{c\ne y}f(x)_c$. The margin drop of image $i$ under
-occlusion of unit $k$ at epoch $t$ is $d_{ik}(t)=M_{f_t}(x_i,y_i)-M_{f_t}(O_k(x_i),y_i)$. The reliance on unit $k$ is
-the mean margin drop over the images that show it,
-\begin{equation}\label{eq:rel}
-D_k(t) \;=\; \frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k} d_{ik}(t),
+\textbf{Reliance.} Let $h_t$ be the encoder after epoch $t$ and $\cos$ the cosine similarity. The embedding shift of
+unit $k$ is
+\begin{equation}\label{eq:shift}
+R_k(t)=\frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k}\Big(1-\cos\big(h_t(x_i),\,h_t(O_k(x_i))\big)\Big),
 \end{equation}
-and its share is $S_k(t)=\max(D_k(t),0)\big/\sum_{j}\max(D_j(t),0)$ over the audited units. The secondary statistic
-is the mean squared drop $R_k(t)=\frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k}d_{ik}(t)^2$.
-\end{definition}
+and the reliance acquired through training is $D_k(t)=R_k(t)-R_k(0)$. A randomly initialized encoder already moves
+under any occlusion, more for larger regions; the difference keeps what training added. The share of unit $k$ is
+$S_k(t)=\max(D_k(t),0)/\sum_j\max(D_j(t),0)$.
 
-Reliance is an explanation of the model under training: a positive $D_k$ says that the pixels of concept $k$ support
-the correct class in the model's output. CLIP appears only inside $m_{ik}$.
-
-\textsc{[fixed]} $D_k$ is the primary statistic. A randomly initialized network has $R_k>0$, since every occlusion
-moves its output, while its $D_k$ is zero in expectation; $D_k$ therefore starts at zero as the theory assumes.
-
-\textsc{[default]} Reliance is \emph{not divided by the region area}. Remark~\ref{rem:area} shows that area is part of
-what makes a concept simple; the area-normalized score is an ablation.
-
-\subsection*{Step 2: concept learning curves \textsc{[fixed]}}
-
-Train the model with plain ERM for $T_0$ epochs. After every epoch $t\le T_0$ compute $D_k(t)$ for all units on the whole
-training split, in evaluation mode and without augmentation. The $K$ sequences
-$t\mapsto S_k(t)$ are the concept learning curves. \textsc{[default]} $T_0=20$ epochs for a network trained from scratch.
-
-Cost per audit: one forward pass of the probe subset per unit, so $K+1$ passes. With $K=12$ and 1{,}700 images this is
-below ten seconds on one V100.
-
-\subsection*{Step 3: flagging \textsc{[default]}}
-
-The onset score of unit $k$ is its mean early share,
+\textbf{Curves and flags.} The sequences $t\mapsto S_k(t)$ are the concept learning curves. With an early window of
+$T_0$ epochs, the onset score is the mean share over the audits of that window,
 \begin{equation}\label{eq:onset}
-s_k \;=\; \frac{1}{T_0}\sum_{t=1}^{T_0} S_k(t).
+s_k=\frac{1}{|\mathcal{T}|}\sum_{t\in\mathcal{T}}S_k(t),\qquad \mathcal{T}\subseteq\{1,\dots,T_0\}.
 \end{equation}
-Sort the units by decreasing $s_k$. The flagged set $\mathcal{F}$ is the shortest prefix whose scores sum to at least
-$\tau$, restricted so that the flagged regions cover at most 75 percent of the area of an average image.
-\textsc{[default]} $\tau=0.5$.
+The flagged set $\mathcal{F}$ is the shortest prefix of the units, sorted by decreasing $s_k$, whose onset scores reach
+the share $\tau$.
 
-The audit report lists every unit with its words, its onset score, its curve and its flag. The report is the xAI
-deliverable of the thesis, and a human can overrule a flag before training continues (optional human-in-the-loop arm).
-
-\subsection*{Step 4: early concept swap \textsc{[fixed]} structure, \textsc{[default]} values}
-
-Restart training from the initial weights. For each training image $x_i$ in a batch, with probability $q$:
-\begin{enumerate}[nosep]
-\item compute the kept mask $\kappa_i = 1-\max_{k\in\mathcal{F}} m_{ik}$, the part of the image outside all flagged
-regions;
-\item draw a donor $x_j$ from the batch and paint over the donor's own kept-type content, so that the donor contributes
-flagged-type content only;
-\item form $\tilde x_i = \kappa_i\, x_i + (1-\kappa_i)\,\tilde x_j$ and train on $(\tilde x_i, y_i)$.
-\end{enumerate}
-The label stays $y_i$: the kept part decides the class. An image qualifies when its kept mask covers between 5 and 95
-percent of the view. \textsc{[default]} $q=0.5$ for the whole run; the schedule ``$q$ high in the first third of
-training, then decaying'' is the \emph{early-only} variant. The self-supervised variant uses $\tilde x_i$ as the second
-view of $x_i$ in the SimCLR loss.
-
-Step 4 reuses the existing compositing code with one change: the object mask of the earlier method, which came from
-text prompts for objects and scenes, is replaced by the kept mask $\kappa_i$, which comes from the audit of the model.
-The asymmetry ``keep this, exchange that'' now originates in the learning dynamics of the model.
-
-\subsection*{Step 5: evaluation \textsc{[fixed]}}
-
-Report test and validation WGA and average accuracy, per-group accuracy, the audit report and the detection quality of
-Section~\ref{sec:kill}. Group labels are used for evaluation and for model selection at the level the baselines use
-them.
+\textbf{Swap.} From epoch $T_0+1$ on, each of the two SimCLR views of an image is swapped with probability $q$: the
+pixels inside its flagged regions are replaced by the flagged-type content of another image of the batch, and the
+pixels outside stay. The two views of an image then agree only on the content outside the flagged regions. The
+SimCLR objective, the loader order and the probe are unchanged.
 
 \section{Theory}\label{sec:theory}
 
 \subsection{Model and assumptions}\label{sec:model}
 
 \begin{assumption}[Spatial separability]\label{as:sep}
-Each image decomposes into concept regions, and the feature of a concept depends only on the pixels of its region. For
-$K$ concepts the pooled feature is $z=(z_1,\dots,z_K)\in\R^K$, and occluding region $k$ replaces $z_k$ and leaves the
-other coordinates unchanged.
+Each image decomposes into concept regions, and the feature of a concept depends only on the pixels of its region.
+The pooled features are $z=(z_c,z_s)$ for a core and a spurious concept, and occluding or swapping a region replaces
+its coordinate and leaves the other unchanged.
 \end{assumption}
 
 \begin{assumption}[Two-concept Gaussian data]\label{as:data}
-The label is $y\in\{-1,+1\}$ with $\Prob(y=1)=\tfrac12$. The spurious attribute is $a\in\{-1,+1\}$ with
-$\Prob(a=y\mid y)=p\in(\tfrac12,1)$, so $\E[ya]=\rho=2p-1\in(0,1)$. There are a core concept and a spurious concept
-with features
+The class is $y\in\{-1,+1\}$ with $\Prob(y=1)=\tfrac12$ and the spurious attribute is $a\in\{-1,+1\}$ with
+$\Prob(a=y\mid y)=p\in(\tfrac12,1)$, so $\E[ya]=\rho=2p-1\in(0,1)$. The features are
 \[
 z_c=\mu_c\,y+\sigma_c\,\xi_c,\qquad z_s=\mu_s\,a+\sigma_s\,\xi_s ,
 \]
-where $\mu_c,\mu_s,\sigma_c,\sigma_s>0$ and $\xi_c,\xi_s$ are independent standard normal variables, independent of
-$(y,a)$. Write $m_c=\mu_c^2+\sigma_c^2$ and $m_s=\mu_s^2+\sigma_s^2$.
+with $\mu_c,\mu_s,\sigma_c,\sigma_s>0$ and independent standard normal $\xi_c,\xi_s$, independent of $(y,a)$. Write
+$m_c=\mu_c^2+\sigma_c^2$, $m_s=\mu_s^2+\sigma_s^2$ and $\kappa=\rho\,\mu_c\mu_s>0$. The encoder never observes $y$ or $a$.
 \end{assumption}
 
 \begin{assumption}[Simplicity]\label{as:simple}
-The spurious concept has the larger covariance with the label: $\rho\,\mu_s>\mu_c$, that is, $b_s>b_c$ in
-\eqref{eq:moments}.
+The spurious concept carries the larger second moment: $m_s>m_c$.
 \end{assumption}
 
-\begin{assumption}[Linear readout and squared loss]\label{as:lin}
-The model is $f_w(z)=w^\top z$, trained by gradient flow on $L(w)=\tfrac12\,\E\big[(y-w^\top z)^2\big]$ from $w(0)=0$.
-\end{assumption}
-
-Under Assumption~\ref{as:data} a direct computation gives
-\begin{equation}\label{eq:moments}
-\Sigma=\E[zz^\top]=\begin{pmatrix} m_c & \rho\mu_c\mu_s\\ \rho\mu_c\mu_s & m_s\end{pmatrix},\qquad
-b=\E[yz]=\begin{pmatrix}\mu_c\\ \rho\mu_s\end{pmatrix},
+\begin{assumption}[Linear contrastive model]\label{as:lin}
+The encoder is linear, $f(z)=Wz$ with $W\in\R^{k\times2}$, and minimizes
+\begin{equation}\label{eq:loss}
+L(W)=-\,\E\big[f(z)^\top f(z^+)\big]+\tfrac12\,\big\|WW^\top\big\|_F^2 ,
 \end{equation}
-using $\E[z_c]=\E[z_s]=0$, $\E[z_cz_s]=\mu_c\mu_s\E[ya]$ and $\E[yz_s]=\mu_s\E[ya]$. Since $\rho<1$,
-$\det\Sigma=m_cm_s-\rho^2\mu_c^2\mu_s^2>0$.
-
-\subsection{Reliance measures the weight of a concept}
-
-\begin{lemma}[Occlusion reliance]\label{lem:occ}
-Let $z\in\R^K$ have $\E[z_k]=0$, $\E[z_k^2]=m_k$ and $b_k=\E[yz_k]$ with $y\in\{-1,+1\}$, and let $f_w(z)=w^\top z$,
-whose margin is $y\,f_w(z)$. Under Assumption~\ref{as:sep}, let occlusion replace $z_k$ either by its mean $0$ or by
-an independent copy $z_k'$ with the same distribution. Then
+where $(z,z^+)$ are the features of the two views of one image. With the symmetric positive-pair matrix
+$A=\tfrac12\,\E\big[z\,z^{+\top}+z^{+}z^\top\big]$,
 \[
-D_k=\E\big[y\,(f_w(z)-f_w(O_kz))\big]=w_k\,b_k
-\qquad\text{and}\qquad
-R_k=\E\big[(f_w(z)-f_w(O_kz))^2\big]=c\,w_k^2\,m_k ,
+L(W)=-\operatorname{tr}\big(WAW^\top\big)+\tfrac12\big\|W^\top W\big\|_F^2
+=\tfrac12\big\|W^\top W-A\big\|_F^2-\tfrac12\|A\|_F^2 .
 \]
-with $c=1$ for the mean and $c=2$ for the independent copy.
-\end{lemma}
+\end{assumption}
 
-\begin{proof}
-By Assumption~\ref{as:sep}, $f_w(z)-f_w(O_kz)=w_k(z_k-\bar z_k)$, where $\bar z_k$ is the replacement. For the mean,
-$\bar z_k=0$, so $D_k=w_k\E[yz_k]=w_kb_k$ and $R_k=w_k^2m_k$. For the copy, $z_k'$ is independent of $y$ with mean
-zero, so $\E[yz_k']=0$ and $D_k=w_kb_k$ again, and
-$\E[(z_k-z_k')^2]=\E[z_k^2]+\E[z_k'^2]-2\E[z_k]\E[z_k']=2m_k$.
-\end{proof}
+The first term of \eqref{eq:loss} aligns the two views of an image and the second keeps the features from growing
+and from collapsing onto one another; it is the matrix-factorization form of contrastive learning studied by HaoChen
+et al.\ (2021) and Simon et al.\ (2023). SimCLR's standard augmentations are idealized as leaving the concept features
+unchanged, so without a swap $z^+=z$ and
+\begin{equation}\label{eq:A}
+A=\Sigma=\E[zz^\top]=\begin{pmatrix}m_c&\kappa\\ \kappa&m_s\end{pmatrix},
+\end{equation}
+using $\E[z_cz_s]=\mu_c\mu_s\E[ya]=\kappa$. $\Sigma$ is positive definite because $\rho<1$.
 
-\subsection{The concept with the larger label covariance is learned first}
+\subsection{Worst-group accuracy of a linear probe}
 
-\begin{theorem}[Early dynamics]\label{thm:early}
-Let $z\in\R^K$ with $\Sigma=\E[zz^\top]$, $b=\E[yz]$ and $\lambda=\lambda_{\max}(\Sigma)$. Under
-Assumption~\ref{as:lin} the gradient flow satisfies
+\begin{theorem}[WGA decreases in the spurious ratio]\label{thm:wga}
+Under Assumption~\ref{as:data}, classify by the sign of $w_cz_c+w_sz_s$ with $w_c>0$ and let $r=w_s/w_c$. Then
 \[
-w(t)=\int_0^t e^{-\Sigma s}\,b\,\mathrm{d}s
-\qquad\text{and}\qquad
-\big\|w(t)-t\,b\big\|_2\;\le\;\tfrac12\,\lambda\,\|b\|_2\,t^2\quad\text{for all }t\ge0 .
+\wga(r)=\Phi\big(g(|r|)\big),\qquad g(u)=\frac{\mu_c-u\,\mu_s}{\sqrt{\sigma_c^2+u^2\sigma_s^2}},
 \]
+where $\Phi$ is the standard normal distribution function. $g$ is strictly decreasing on $[0,\infty)$, so $\wga$ is
+maximal at $r=0$ with value $\Phi(\mu_c/\sigma_c)$ and decreases strictly as $|r|$ grows, down to the limit
+$\Phi(-\mu_s/\sigma_s)<\tfrac12$.
 \end{theorem}
 
 \begin{proof}
-$\nabla L(w)=\Sigma w-b$, so the flow is the linear equation $\dot w=b-\Sigma w$ with $w(0)=0$. Its unique solution is
-$w(t)=\int_0^te^{-\Sigma s}b\,\mathrm{d}s$, as differentiation confirms:
-$\dot w=e^{-\Sigma t}b$ and $b-\Sigma w(t)=b-\big(I-e^{-\Sigma t}\big)b=e^{-\Sigma t}b$. Hence
-$w(t)-tb=\int_0^t\big(e^{-\Sigma s}-I\big)b\,\mathrm{d}s$. $\Sigma$ is symmetric positive semidefinite with
-eigenvalues $\lambda_i\in[0,\lambda]$, so $I-e^{-\Sigma s}$ has eigenvalues $1-e^{-\lambda_is}\in[0,\lambda s]$
-because $1-e^{-u}\le u$ for $u\ge0$. Therefore $\|(e^{-\Sigma s}-I)b\|_2\le\lambda s\|b\|_2$, and integrating over
-$[0,t]$ gives the bound.
+Given $(y,a)$, $y\,(w_cz_c+w_sz_s)$ is normal with mean $w_c(\mu_c+r\mu_s\,ya)$ and variance
+$w_c^2(\sigma_c^2+r^2\sigma_s^2)$, so the accuracy on the group is
+$\Phi\big((\mu_c+r\mu_s\,ya)/\sqrt{\sigma_c^2+r^2\sigma_s^2}\big)$. The groups with $ya=-\mathrm{sign}(r)$ have the
+smaller mean at equal variance, hence $\wga(r)=\Phi(g(|r|))$. For $u\ge0$,
+\[
+g'(u)=\frac{-\mu_s(\sigma_c^2+u^2\sigma_s^2)-(\mu_c-u\mu_s)\,u\,\sigma_s^2}{(\sigma_c^2+u^2\sigma_s^2)^{3/2}}
+=\frac{-\mu_s\sigma_c^2-\mu_c\,u\,\sigma_s^2}{(\sigma_c^2+u^2\sigma_s^2)^{3/2}}<0,
+\]
+and $g(u)\to-\mu_s/\sigma_s$ as $u\to\infty$.
 \end{proof}
 
-\begin{corollary}[Order of the learning curves]\label{cor:order}
-Let reliance be given by Lemma~\ref{lem:occ} and write $m_k=\Sigma_{kk}$.
-\begin{enumerate}[nosep,label=(\roman*)]
-\item If $|b_j|>|b_k|$, then $D_j(t)>D_k(t)$ for every
-$0<t<t^\star_{jk}=\dfrac{2\,(|b_j|-|b_k|)}{\lambda\,\|b\|_2}$.
-\item If $|b_j|\sqrt{m_j}>|b_k|\sqrt{m_k}$, then $R_j(t)>R_k(t)$ for every
-$0<t<\dfrac{2\,(|b_j|\sqrt{m_j}-|b_k|\sqrt{m_k})}{\lambda\,\|b\|_2\,(\sqrt{m_j}+\sqrt{m_k})}$.
-\end{enumerate}
+\begin{corollary}[Probe on a one-dimensional feature]\label{cor:probe}
+Let the encoder output the single feature $u=v^\top z$ with $v=(\cos\theta,\sin\theta)$ and $\theta\in[0,\tfrac\pi2)$.
+A linear probe trained on group-balanced data classifies by the sign of $u$, and its worst-group accuracy is
+$\Phi(g(\tan\theta))$, strictly decreasing in $\theta$.
 \end{corollary}
 
 \begin{proof}
-Let $\varepsilon=\tfrac12\lambda\|b\|_2t^2$. Theorem~\ref{thm:early} gives $|w_k(t)-t\,b_k|\le\varepsilon$ for every
-coordinate.
-
-(i) Multiplying by $b_k$ gives $t\,b_k^2-\varepsilon|b_k|\le w_k(t)\,b_k\le t\,b_k^2+\varepsilon|b_k|$, and
-$D_k(t)=w_k(t)b_k$ by Lemma~\ref{lem:occ}. Hence
-\[
-D_j(t)-D_k(t)\;\ge\;t\,(b_j^2-b_k^2)-\varepsilon\,(|b_j|+|b_k|)
-=(|b_j|+|b_k|)\,\Big(t\,(|b_j|-|b_k|)-\tfrac12\lambda\|b\|_2t^2\Big),
-\]
-which is positive exactly when $0<t<t^\star_{jk}$.
-
-(ii) $|w_j(t)|\ge t|b_j|-\varepsilon$ and $|w_k(t)|\le t|b_k|+\varepsilon$, so
-$|w_j(t)|\sqrt{m_j}-|w_k(t)|\sqrt{m_k}\ge t\,(|b_j|\sqrt{m_j}-|b_k|\sqrt{m_k})-\varepsilon(\sqrt{m_j}+\sqrt{m_k})$,
-which is positive on the stated interval. By Lemma~\ref{lem:occ}, $R$ is an increasing function of $|w|\sqrt{m}$ with
-the same constant for all concepts.
+On group-balanced data $a$ is independent of $y$, so $\E[yu]=\cos\theta\,\mu_c>0$ and, by the symmetry of the model
+under $(y,a,\xi)\mapsto(-y,-a,-\xi)$, the optimal threshold is $0$. The classifier $\mathrm{sign}(u)$ has
+$w_c=\cos\theta>0$ and $r=\tan\theta$, and Theorem~\ref{thm:wga} applies.
 \end{proof}
 
-In the two-concept model, $b_s=\rho\mu_s$ and $b_c=\mu_c$ by \eqref{eq:moments}. Assumption~\ref{as:simple} is
-$b_s>b_c$, so Corollary~\ref{cor:order} states: \emph{throughout the early window $(0,t^\star_{sc})$ the spurious
-concept has the larger reliance, and the onset score \eqref{eq:onset} computed inside this window ranks the spurious
-concept first.} This is the guarantee behind Steps 2 and 3. For the squared statistic the same holds under
-$\rho\mu_s\sqrt{m_s}>\mu_c\sqrt{m_c}$.
+\subsection{SimCLR learns a fused direction first}
 
-\begin{remark}[Area is part of simplicity]\label{rem:area}
-Let concept $k$ cover $n_k$ cells, each with signal $\nu_k$ and independent noise of variance $\tau_k^2$, and let the
-feature be the sum over its cells. Then $\mu_k=n_k\nu_k$, so the label covariance $b_k$ grows in proportion to the area
-$n_k$, and $m_k=n_k^2\nu_k^2+n_k\tau_k^2$. A large region is learned early because it is large. Dividing the reliance
-by the area would remove a real part of the effect, which is why the unnormalized score is the default.
-\end{remark}
-
-\subsection{ERM keeps the spurious concept and loses worst-group accuracy}
-
-\begin{proposition}[Limit of ERM]\label{prop:erm}
-Under Assumptions~\ref{as:data} and~\ref{as:lin}, $w(t)\to w^\ast=\Sigma^{-1}b$ with
-\[
-w_c^\ast=\frac{\mu_c\big(\sigma_s^2+(1-\rho^2)\mu_s^2\big)}{\det\Sigma}>0,\qquad
-w_s^\ast=\frac{\rho\,\mu_s\,\sigma_c^2}{\det\Sigma}>0,
-\qquad
-r^\ast(\rho)=\frac{w_s^\ast}{w_c^\ast}=\frac{\rho\,\mu_s\,\sigma_c^2}{\mu_c\big(\sigma_s^2+(1-\rho^2)\mu_s^2\big)} .
-\]
-\end{proposition}
+\begin{lemma}[Rank-one minimizer]\label{lem:rank1}
+Let $A$ be a symmetric $2\times2$ matrix with eigenvalues $\lambda_1>\lambda_2$, $\lambda_1>0$, and unit top eigenvector
+$v_1$. For $k=1$ the minimizers of \eqref{eq:loss} are exactly $W=\pm\sqrt{\lambda_1}\,v_1^\top$.
+\end{lemma}
 
 \begin{proof}
-$\Sigma$ is positive definite, so $e^{-\Sigma t}\to0$ and $w(t)=(I-e^{-\Sigma t})\Sigma^{-1}b\to\Sigma^{-1}b$. With
-$\Sigma^{-1}=\frac{1}{\det\Sigma}\begin{pmatrix}m_s&-\rho\mu_c\mu_s\\-\rho\mu_c\mu_s&m_c\end{pmatrix}$ and
-\eqref{eq:moments},
-$w_c^\ast\det\Sigma=m_s\mu_c-\rho^2\mu_c\mu_s^2=\mu_c(\sigma_s^2+(1-\rho^2)\mu_s^2)$ and
-$w_s^\ast\det\Sigma=m_c\rho\mu_s-\rho\mu_c^2\mu_s=\rho\mu_s\sigma_c^2$.
+Write $W=n\,u^\top$ with $n\ge0$ and a unit vector $u$. Then
+$\|W^\top W-A\|_F^2=n^4-2n^2\,u^\top Au+\|A\|_F^2$. For every $n>0$ the expression is smallest when $u^\top Au$ is
+largest, which happens exactly at $u=\pm v_1$ with value $\lambda_1$. The remaining function $n^4-2\lambda_1n^2$ is
+minimal at $n^2=\lambda_1>0$, with a value below the one at $n=0$.
 \end{proof}
 
-The spurious weight is positive whenever the core feature is noisy ($\sigma_c>0$) and the correlation is positive: the
-model stays reliant on the spurious concept at convergence.
-
-\begin{theorem}[Worst-group accuracy decreases in the spurious ratio]\label{thm:wga}
-Under Assumption~\ref{as:data}, classify by the sign of $w^\top z$ with $w_c>0$ and let $r=w_s/w_c$. The accuracy on
-group $(y,a)$ is $\Phi\!\big((\mu_c+r\mu_s\,ya)/\sqrt{\sigma_c^2+r^2\sigma_s^2}\big)$, where $\Phi$ is the standard
-normal distribution function, and
+\begin{theorem}[Fused direction]\label{thm:fused}
+Under Assumptions~\ref{as:data} and~\ref{as:lin} without a swap, the top eigenvector of $A=\Sigma$ is
+$v_1=(\cos\theta_0,\sin\theta_0)$ with
 \[
-\wga(r)=\Phi\big(g(|r|)\big),\qquad g(u)=\frac{\mu_c-u\,\mu_s}{\sqrt{\sigma_c^2+u^2\sigma_s^2}} .
+\theta_0=\tfrac12\,\operatorname{atan2}\big(2\kappa,\;m_c-m_s\big)\in\big(0,\tfrac\pi2\big).
 \]
-The function $g$ is strictly decreasing on $[0,\infty)$. Consequently $\wga$ is maximal at $r=0$ with value
-$\Phi(\mu_c/\sigma_c)$, and it decreases strictly as $|r|$ grows.
+Both components are positive: the direction fuses the core and the spurious concept. Under
+Assumption~\ref{as:simple}, $\theta_0>\tfrac\pi4$, so the spurious component is the larger one. A rank-one encoder
+learns exactly this direction, and a balanced linear probe on it reaches the worst-group accuracy
+$\Phi(g(\tan\theta_0))<\Phi(\mu_c/\sigma_c)$.
 \end{theorem}
 
 \begin{proof}
-Given $(y,a)$, $y\,w^\top z=w_c\mu_c+w_s\mu_s\,ya+w_c\sigma_cy\xi_c+w_s\sigma_sy\xi_s$ is normal with mean
-$w_c(\mu_c+r\mu_s\,ya)$ and variance $w_c^2(\sigma_c^2+r^2\sigma_s^2)$. The prediction is correct when this variable
-is positive, which has probability $\Phi(\text{mean}/\text{standard deviation})$; dividing by $w_c>0$ gives the group
-accuracy. The groups with $ya=-\mathrm{sign}(r)$ have the smaller mean $\mu_c-|r|\mu_s$ at equal variance, so they
-form the worst group and $\wga(r)=\Phi(g(|r|))$. For $u\ge0$,
-\[
-g'(u)=\frac{-\mu_s(\sigma_c^2+u^2\sigma_s^2)-(\mu_c-u\mu_s)\,u\,\sigma_s^2}{(\sigma_c^2+u^2\sigma_s^2)^{3/2}}
-=\frac{-\mu_s\sigma_c^2-\mu_c\,u\,\sigma_s^2}{(\sigma_c^2+u^2\sigma_s^2)^{3/2}}<0 .
-\]
-$\Phi$ is strictly increasing, which completes the proof.
+For a unit vector $(\cos\theta,\sin\theta)$ the quadratic form of \eqref{eq:A} is
+$\tfrac12(m_c+m_s)+\tfrac12(m_c-m_s)\cos2\theta+\kappa\sin2\theta$, which is maximal when $(\cos2\theta,\sin2\theta)$
+points along $(m_c-m_s,\,2\kappa)$, that is, at $2\theta=\operatorname{atan2}(2\kappa,m_c-m_s)$. Since $\kappa>0$,
+$2\theta_0\in(0,\pi)$, and $m_s>m_c$ gives $2\theta_0>\tfrac\pi2$. The maximum is unique up to sign, so
+$\lambda_1>\lambda_2$, and $\lambda_1>0$ because $\Sigma$ is positive definite. Lemma~\ref{lem:rank1} gives the
+encoder and Corollary~\ref{cor:probe} the probe accuracy; $\theta_0>0$ makes it strictly smaller than the value at
+$\theta=0$.
 \end{proof}
 
-Proposition~\ref{prop:erm} and Theorem~\ref{thm:wga} together give
-$\wga_{\mathrm{ERM}}=\Phi(g(r^\ast(\rho)))<\Phi(\mu_c/\sigma_c)$: ERM is strictly below the best worst-group accuracy
-a linear classifier reaches.
+\begin{theorem}[Learning order]\label{thm:order}
+Let $k=2$ and let $v_1,v_2$ be the unit eigenvectors of a symmetric positive definite $A$ with eigenvalues
+$\lambda_1>\lambda_2>0$. Start the gradient flow of \eqref{eq:loss} at $W(0)=\sqrt{p_0}\,(e_1v_1^\top+e_2v_2^\top)$
+with orthonormal $e_1,e_2$ and $0<p_0<\lambda_2$. Then $W(t)=\sqrt{p_1(t)}\,e_1v_1^\top+\sqrt{p_2(t)}\,e_2v_2^\top$ with
+\[
+p_i(t)=\frac{\lambda_i}{1+\big(\lambda_i/p_0-1\big)\,e^{-4\lambda_it}},
+\]
+both $p_i$ increase, and $p_1(t)>p_2(t)$ for every $t>0$. Mode $i$ reaches half of its final strength at
+$t_i=\ln(\lambda_i/p_0-1)/(4\lambda_i)$, and $t_1<t_2$ whenever $p_0\le\lambda_2/9$.
+\end{theorem}
+
+\begin{proof}
+$\nabla L(W)=2W(W^\top W-A)$. For $W=\sum_is_ie_iv_i^\top$ we have $W^\top W=\sum_is_i^2v_iv_i^\top$ and
+$W(W^\top W-A)=\sum_is_i(s_i^2-\lambda_i)e_iv_i^\top$, so the flow keeps this form with
+$\dot s_i=2s_i(\lambda_i-s_i^2)$. For $p_i=s_i^2$ this is the logistic equation $\dot p_i=4p_i(\lambda_i-p_i)$ with
+the stated solution, which increases because $p_0<\lambda_i$. The right-hand side $4p(\lambda-p)$ increases in
+$\lambda$, so the solution with the larger $\lambda$ stays above the other one from a common start:
+$p_1(t)>p_2(t)$ for $t>0$. Setting $p_i(t_i)=\lambda_i/2$ gives $t_i$. For $h(\lambda)=\ln(\lambda/p_0-1)/(4\lambda)$
+and $x=\lambda/p_0$,
+$h'(\lambda)=\big(\tfrac{x}{x-1}-\ln(x-1)\big)/(4\lambda^2)$, which is negative for $x\ge9$ because
+$\tfrac{x}{x-1}\le\tfrac98<\ln8\le\ln(x-1)$. Hence $t_1<t_2$ when $\lambda_2/p_0\ge9$.
+\end{proof}
+
+\subsection{The audit ranks the spurious concept first}
+
+In the linear model the unnormalized counterpart of the embedding shift \eqref{eq:shift} is the mean squared change of
+the feature, $R_k=\E\|f(z)-f(O_kz)\|^2$, where occlusion replaces $z_k$ by its mean $0$ or by an independent copy.
+
+\begin{lemma}[Occlusion reliance]\label{lem:occ}
+Under Assumption~\ref{as:sep}, $R_k=c\,m_k\,(W^\top W)_{kk}$ with $c=1$ for the mean and $c=2$ for the independent
+copy.
+\end{lemma}
+
+\begin{proof}
+$f(z)-f(O_kz)=W_{\cdot k}(z_k-\bar z_k)$ with the replacement $\bar z_k$, so
+$R_k=\|W_{\cdot k}\|^2\,\E[(z_k-\bar z_k)^2]$. The second factor is $m_k$ for $\bar z_k=0$ and $2m_k$ for an
+independent copy with mean zero, and $\|W_{\cdot k}\|^2=(W^\top W)_{kk}$.
+\end{proof}
+
+\begin{theorem}[Order of the learning curves]\label{thm:audit}
+Under Assumptions~\ref{as:sep} to~\ref{as:lin} without a swap and with the initialization of
+Theorem~\ref{thm:order}, the acquired reliance $D_k(t)=R_k(t)-R_k(0)$ satisfies $D_s(t)>D_c(t)>0$ for every $t>0$.
+The onset score \eqref{eq:onset} therefore ranks the spurious concept first for every choice of the early window.
+\end{theorem}
+
+\begin{proof}
+With $v_1=(\cos\theta_0,\sin\theta_0)$ and $v_2=(-\sin\theta_0,\cos\theta_0)$, Theorem~\ref{thm:order} gives
+$(W^\top W)_{cc}=p_1\cos^2\theta_0+p_2\sin^2\theta_0$ and $(W^\top W)_{ss}=p_1\sin^2\theta_0+p_2\cos^2\theta_0$.
+By Lemma~\ref{lem:occ}, $D_k(t)=c\,m_k\,X_k(t)$ with
+\[
+X_c=(p_1-p_0)\cos^2\theta_0+(p_2-p_0)\sin^2\theta_0,\qquad
+X_s=(p_1-p_0)\sin^2\theta_0+(p_2-p_0)\cos^2\theta_0 .
+\]
+Both are positive for $t>0$ since $p_i(t)>p_0$. Their difference is
+$X_s-X_c=(p_1-p_2)(\sin^2\theta_0-\cos^2\theta_0)$, which is non-negative because $p_1>p_2$ and
+$\theta_0>\tfrac\pi4$ under Assumption~\ref{as:simple}. Together with $m_s>m_c$ this gives $D_s>D_c$.
+\end{proof}
+
+\begin{remark}[Area is part of simplicity]\label{rem:area}
+Let concept $k$ cover $n_k$ cells, each with signal $\nu_k$ and independent noise of variance $\tau_k^2$, and let the
+feature be the sum over its cells. Then $m_k=n_k^2\nu_k^2+n_k\tau_k^2$ grows with the area. A large region is learned
+early because it is large, which is why the reliance is left unnormalized by area in the default setting.
+\end{remark}
 
 \subsection{Swapping the flagged concept restores worst-group accuracy}
 
 \begin{definition}[Swap in the model]\label{def:swap}
-A swap of the spurious concept replaces $z_s$ by the spurious feature $z_s'$ of an independent training example and
-keeps $(y,z_c)$. Each training example is swapped independently with probability $q\in[0,1]$.
+A swap of concept $k$ in a view replaces $z_k$ by the feature $z_k'$ of an independent training image and keeps the
+other coordinate. Each view is swapped independently with probability $q$, with independent donors.
 \end{definition}
 
 \begin{theorem}[Early concept swap]\label{thm:swap}
-Under Assumptions~\ref{as:sep}, \ref{as:data} and~\ref{as:lin}, train on the distribution obtained by swapping the
-spurious concept with probability $q$. Then:
+Under Assumptions~\ref{as:sep}, \ref{as:data} and~\ref{as:lin}, swap the spurious concept in both views with
+probability $q$ and let $\beta=1-q$. Then:
 \begin{enumerate}[nosep,label=(\roman*)]
-\item the swapped distribution is the distribution of Assumption~\ref{as:data} with the correlation
-$\rho_q=(1-q)\rho$ and all other parameters unchanged;
-\item the trained predictor has the spurious ratio $r^\ast(\rho_q)$, which is strictly decreasing in $q$ with
-$r^\ast(\rho_1)=0$;
-\item the worst-group accuracy on the \emph{original} test distribution, $\Phi(g(r^\ast(\rho_q)))$, is strictly
-increasing in $q$ and reaches $\Phi(\mu_c/\sigma_c)$ at $q=1$, the maximum over all linear classifiers with $w_c>0$.
+\item the positive-pair matrix is $A_q=\begin{pmatrix}m_c&\beta\kappa\\ \beta\kappa&\beta^2m_s\end{pmatrix}$;
+\item a rank-one encoder learns the direction $(\cos\theta_q,\sin\theta_q)$ with
+$\theta_q=\tfrac12\operatorname{atan2}\big(2\beta\kappa,\;m_c-\beta^2m_s\big)$, which is strictly decreasing in $q$
+with $\theta_1=0$;
+\item the worst-group accuracy of a balanced linear probe on the learned feature, $\Phi(g(\tan\theta_q))$, is
+strictly increasing in $q$ and reaches $\Phi(\mu_c/\sigma_c)$ at $q=1$, the maximum over all linear classifiers.
 \end{enumerate}
 \end{theorem}
 
 \begin{proof}
-(i) The donor attribute $a'$ is independent of $(y,\xi_c)$, and $\Prob(a'=1)=\tfrac12$ because the classes are
-balanced and the attribute is symmetric. The attribute after the swap equals $a$ with probability $1-q$ and $a'$ with
-probability $q$, so it equals $y$ with probability $(1-q)p+\tfrac q2$, independently of the noise. The correlation is
-$2\big((1-q)p+\tfrac q2\big)-1=(1-q)(2p-1)=(1-q)\rho$. The donor noise is standard normal and independent, so the
-feature after the swap has the form $\mu_s\tilde a+\sigma_s\tilde\xi_s$ required by Assumption~\ref{as:data}.
+(i) The core coordinate is shared by the views: $\E[z_cz_c^+]=m_c$. The spurious coordinate of a view is the image's
+own with probability $\beta$ and otherwise an independent variable with mean zero, so
+$\E[z_c\tilde z_s^+]=\E[\tilde z_sz_c^+]=\beta\kappa$. The product $\tilde z_s\tilde z_s^+$ has mean $m_s$ when both
+views keep the image's own feature, which has probability $\beta^2$, and mean zero otherwise, because at least one
+factor is then an independent variable with mean zero.
 
-(ii) By (i) and Proposition~\ref{prop:erm} the limit has ratio
-$r^\ast(\rho_q)=\rho_q\mu_s\sigma_c^2/\big(\mu_c(\sigma_s^2+(1-\rho_q^2)\mu_s^2)\big)$. The numerator increases
-strictly in $\rho_q$ and the denominator decreases in $\rho_q$, so $r^\ast$ increases strictly in $\rho_q$ and
-decreases strictly in $q$. At $q=1$, $\rho_q=0$ and $r^\ast=0$.
+(ii) As in Theorem~\ref{thm:fused}, the top eigenvector of $A_q$ has $2\theta_q=\operatorname{atan2}(Y,X)$ with
+$Y=2\beta\kappa\ge0$ and $X=m_c-\beta^2m_s$; $(X,Y)\ne(0,0)$ for every $\beta\in[0,1]$, so the top eigenvalue is
+simple, and it is at least $m_c>0$. Lemma~\ref{lem:rank1} applies. The derivative of the angle with respect to $\beta$
+has the sign of
+$X\,\tfrac{\mathrm{d}Y}{\mathrm{d}\beta}-Y\,\tfrac{\mathrm{d}X}{\mathrm{d}\beta}
+=2\kappa(m_c-\beta^2m_s)+4\beta^2\kappa m_s=2\kappa(m_c+\beta^2m_s)>0$, so $\theta_q$ increases strictly in $\beta$
+and decreases strictly in $q$. At $q=1$, $A_1=\operatorname{diag}(m_c,0)$ and $\theta_1=0$.
 
-(iii) The test distribution is unchanged by the training intervention, so Theorem~\ref{thm:wga} applies with
-$r=r^\ast(\rho_q)\ge0$. Since $g$ is strictly decreasing and $r^\ast(\rho_q)$ is strictly decreasing in $q$, the
-composition is strictly increasing in $q$, and the value at $r=0$ is the maximum by Theorem~\ref{thm:wga}.
+(iii) $\theta_q\in[0,\tfrac\pi2)$, so Corollary~\ref{cor:probe} gives the probe accuracy $\Phi(g(\tan\theta_q))$,
+strictly decreasing in $\theta_q$. The value at $\theta=0$ is the maximum by Theorem~\ref{thm:wga}.
 \end{proof}
 
-\begin{remark}[Imperfect masks]\label{rem:imperfect}
-If the flagged regions cover the spurious concept in a fraction $\pi$ of the swapped images, the effective swap
-probability is $q\pi$ and Theorem~\ref{thm:swap} holds with $\rho_{q\pi}$. The gain degrades smoothly with the mask
-quality and stays positive for every $\pi>0$.
+\begin{remark}[Swapping one view only]\label{rem:oneview}
+If only the second view is swapped, $A=\begin{pmatrix}m_c&(1-\tfrac q2)\kappa\\(1-\tfrac q2)\kappa&\beta m_s\end{pmatrix}$:
+the unswapped view still pairs its spurious feature with the core feature of the other view. At $q=1$ the learned
+angle is $\tfrac12\operatorname{atan2}(\kappa,m_c)>0$, a remaining share of the spurious concept. The method
+therefore swaps both views.
 \end{remark}
 
-\subsection{Why the swap needs the audit: an untyped swap can lower WGA}
+\begin{remark}[Imperfect masks]\label{rem:imperfect}
+If the flagged regions cover the spurious concept in a fraction $\pi$ of the swapped views, the effective swap
+probability is $q\pi$ and Theorem~\ref{thm:swap} holds with $\beta=1-q\pi$. The gain degrades smoothly with the mask
+quality.
+\end{remark}
 
-\begin{proposition}[Swapping both concepts]\label{prop:sym}
-Under Assumptions~\ref{as:sep}, \ref{as:data} and~\ref{as:lin}, let each training example have its core concept
-swapped with probability $q_c$, its spurious concept swapped with probability $q_s$ (disjoint events,
-$q_c+q_s\le1$ and $q_c<1$), and keep its label. With $\alpha=1-q_c$, $\beta=1-q_s$ and $\gamma=1-q_c-q_s$, the trained predictor
-has the ratio
-\[
-r(q_c,q_s)=\frac{\rho\,\mu_s\,\big(\beta\,m_c-\alpha\gamma\,\mu_c^2\big)}
-{\mu_c\,\big(\alpha\,m_s-\beta\gamma\,\rho^2\mu_s^2\big)} .
-\]
-For the symmetric swap $q_c=q_s=q/2$,
-\[
-r_{\mathrm{sym}}(q)=\frac{\rho\,\mu_s\,\big(\sigma_c^2+q\,\mu_c^2\big)}
-{\mu_c\,\big(\sigma_s^2+\mu_s^2(1-(1-q)\rho^2)\big)},
-\]
-which is strictly increasing in $q$ if and only if
-$\mu_c^2\big(\sigma_s^2+(1-\rho^2)\mu_s^2\big)>\rho^2\mu_s^2\sigma_c^2$, that is, if and only if
-$w_c^\ast\mu_c>w_s^\ast\rho\mu_s$. In that regime the symmetric swap lowers the worst-group accuracy below ERM.
+\subsection{Why the swap needs the audit}
+
+\begin{proposition}[Swapping the core concept]\label{prop:wrong}
+Under the assumptions of Theorem~\ref{thm:swap}, swap the \emph{core} concept in both views with probability $q$. A
+rank-one encoder then learns the angle
+$\tfrac12\operatorname{atan2}\big(2\beta\kappa,\;\beta^2m_c-m_s\big)$, which is strictly increasing in $q$ and
+reaches $\tfrac\pi2$ at $q=1$. The worst-group accuracy of the probe is strictly decreasing in $q$ and tends to
+$\Phi(-\mu_s/\sigma_s)<\tfrac12$.
 \end{proposition}
 
 \begin{proof}
-On a core swap, $z_c$ is independent of $(y,z_s)$; on a spurious swap, $z_s$ is independent of $(y,z_c)$. The marginal
-distributions of $z_c$ and $z_s$ are unchanged, so the diagonal of $\Sigma$ is unchanged. Averaging over the three
-events gives $\E[yz_c]=\alpha\mu_c$, $\E[yz_s]=\beta\rho\mu_s$ and $\E[z_cz_s]=\gamma\rho\mu_c\mu_s$. Solving
-$\Sigma w=b$ as in Proposition~\ref{prop:erm},
-$w_s\propto m_c\beta\rho\mu_s-\gamma\rho\mu_c\mu_s\cdot\alpha\mu_c$ and
-$w_c\propto m_s\alpha\mu_c-\gamma\rho\mu_c\mu_s\cdot\beta\rho\mu_s$ with the same positive factor, which gives
-$r(q_c,q_s)$. For $q_c=q_s=q/2$ we have $\alpha=\beta$ and $\gamma=1-q$, so
-$m_c-\gamma\mu_c^2=\sigma_c^2+q\mu_c^2$ and $m_s-\gamma\rho^2\mu_s^2=\sigma_s^2+\mu_s^2(1-(1-q)\rho^2)$. Writing
-$N_0=\sigma_c^2$ and $D_0=\sigma_s^2+(1-\rho^2)\mu_s^2$, $r_{\mathrm{sym}}(q)$ is a positive constant times
-$(N_0+q\mu_c^2)/(D_0+q\rho^2\mu_s^2)$, whose derivative has the sign of $\mu_c^2D_0-\rho^2\mu_s^2N_0$. By
-Proposition~\ref{prop:erm} this is the sign of $w_c^\ast\mu_c-w_s^\ast\rho\mu_s$. The last claim follows from
-Theorem~\ref{thm:wga}.
+By the argument of Theorem~\ref{thm:swap} with the roles exchanged,
+$A=\begin{pmatrix}\beta^2m_c&\beta\kappa\\ \beta\kappa&m_s\end{pmatrix}$, so $X=\beta^2m_c-m_s$ and $Y=2\beta\kappa$.
+The derivative of the angle with respect to $\beta$ has the sign of
+$2\kappa(\beta^2m_c-m_s)-4\beta^2\kappa m_c=-2\kappa(\beta^2m_c+m_s)<0$: the angle decreases in $\beta$ and increases
+in $q$. At $q=1$, $A=\operatorname{diag}(0,m_s)$ and the angle is $\tfrac\pi2$. Corollary~\ref{cor:probe} and the
+limit in Theorem~\ref{thm:wga} give the accuracy.
 \end{proof}
 
-Proposition~\ref{prop:sym} explains why the swap must be typed. Exchanging every concept alike weakens the core signal
-as much as the spurious one and raises the relative weight of the spurious concept whenever the core concept carries
-the larger share of the ERM margin. The earlier experiments with symmetric concept mixing, which tied their rectangle
-control on MetaShift and lost to spatial maps on Waterbirds, agree with this result. The audit of Steps 1 to 3 supplies
-the type without a text prior.
+Proposition~\ref{prop:wrong} states the cost of a wrong flag, and it explains why an untyped exchange of regions
+cannot work in general: exchanging core regions pushes the encoder towards the spurious concept as surely as
+exchanging spurious regions pushes it away. The earlier experiments agree: compositing gained only with the prior
+``keep the object, exchange the surroundings'', and symmetric mixing, which typed no concept, tied its rectangle
+control. The audit supplies the type from the encoder's own learning order.
 
 \subsection{Why a swap suits small datasets}
 
 \begin{proposition}[Effective sample size]\label{prop:ess}
-Consider $n$ examples of which a fraction $p$ belongs to the majority groups. Reweighting that gives the majority and
-the minority groups equal total weight uses the weights $1/(2p)$ and $1/(2(1-p))$ and has the Kish effective sample
-size
-\[
-n_{\mathrm{eff}}=\frac{(\sum_iw_i)^2}{\sum_iw_i^2}=4\,p\,(1-p)\,n .
-\]
-A swap with $q=1$ gives every example the weight $1$ and has $n_{\mathrm{eff}}=n$.
+Consider $n$ images of which a fraction $p$ belongs to the majority groups. Sampling or weighting that gives the
+majority and the minority groups equal total weight uses the weights $1/(2p)$ and $1/(2(1-p))$ and has the Kish
+effective sample size $n_{\mathrm{eff}}=(\sum_iw_i)^2/\sum_iw_i^2=4p(1-p)\,n$. A swap with $q=1$ gives every image
+the weight $1$ and has $n_{\mathrm{eff}}=n$.
 \end{proposition}
 
 \begin{proof}
@@ -480,131 +349,80 @@ $\sum_iw_i=n\big(p\cdot\tfrac{1}{2p}+(1-p)\cdot\tfrac{1}{2(1-p)}\big)=n$ and
 $\sum_iw_i^2=n\big(\tfrac{1}{4p}+\tfrac{1}{4(1-p)}\big)=\tfrac{n}{4p(1-p)}$.
 \end{proof}
 
-For a weighted mean of independent observations with common variance $v$, the variance is $v/n_{\mathrm{eff}}$. Both
-routes decorrelate $a$ and $y$ in expectation; the swap does so at the full sample size. MetaShift with $p=0.88$ keeps
-$42$ percent of its sample under reweighting (about 720 of 1{,}700 images) and Waterbirds with $p=0.95$ keeps $19$
-percent. Reweighting by inferred groups (JTT, LfF, SPARE) inherits this bound at best.
+Methods that decorrelate the attribute by resampling images depend on the few images of the minority groups:
+MetaShift with $p=0.88$ keeps 42 percent of its sample and Waterbirds with $p=0.95$ keeps 19 percent, and a method
+without group labels reaches this bound at best. The swap builds a counterfactual view from every image.
 
 \subsection{What the theory establishes and where it stops}\label{sec:scope}
 
-Inside the model the chain is complete: the spurious concept leads the learning curves in an explicit time window
-(Corollary~\ref{cor:order}), reliance reads this order from occlusions (Lemma~\ref{lem:occ}), ERM converges to a
-predictor with a positive spurious weight and a suboptimal WGA (Proposition~\ref{prop:erm}, Theorem~\ref{thm:wga}),
-and the swap of the flagged concept raises WGA monotonically to the optimum (Theorem~\ref{thm:swap}).
-
-Four gaps separate the model from a ResNet on photographs. Each is an assumption with an empirical test.
+Inside the model the chain is complete. SimCLR's surrogate learns a direction that fuses the core and the spurious
+concept, and learns it first (Theorems~\ref{thm:fused} and~\ref{thm:order}). The audit reads the larger share of the
+spurious concept from occlusions at every time (Theorem~\ref{thm:audit}). Swapping the flagged concept in both views
+turns the learned direction monotonically towards the core concept and raises the probe's worst-group accuracy to
+the optimum (Theorem~\ref{thm:swap}), while a wrong flag lowers it (Proposition~\ref{prop:wrong}).
 
 \begin{center}
-\begin{tabular}{p{0.20\linewidth}p{0.40\linewidth}p{0.30\linewidth}}
+\begin{tabular}{p{0.20\linewidth}p{0.42\linewidth}p{0.28\linewidth}}
 \toprule
-Assumption & Risk on real data & Test \\
+Assumption & Risk on real data & Test in the plan \\
 \midrule
-\ref{as:sep} separability & CLIP maps at $14\times14$ are coarse; a receptive field of the student covers several
-regions; hair colour and gender (CelebA) share pixels & map quality check and mask-quality ablation
-(Remark~\ref{rem:imperfect}) \\
-\ref{as:data} data model & more than two concepts, non-Gaussian features, donor fills leave seams & random-region
-control with equal area \\
-\ref{as:simple} simplicity & the core concept may have the larger label covariance; then the audit flags the core concept and
-Proposition~\ref{prop:sym} with $q_s=0$ predicts harm & kill test, stage K1 \\
-\ref{as:lin} linear model & deep networks learn features; a shortcut learned early can persist & restart-versus-continue
-ablation; curves on the real network \\
+\ref{as:sep} separability & CLIP maps at $14\times14$ are coarse; a receptive field of the ResNet covers several
+regions; hair colour and gender (CelebA) share pixels & oracle arm; shuffled-maps control \\
+\ref{as:data} data model & more than two concepts, non-Gaussian features, seams of the swap & random-units control \\
+\ref{as:simple} simplicity & the core concept may carry the larger second moment, as a large animal does; the audit
+then flags the core concept and Proposition~\ref{prop:wrong} predicts harm & detection AUROC of stage K1 \\
+\ref{as:lin} linear model & a ResNet has more capacity than one direction; a direction learned in the early window can
+persist after the swap starts & comparison with SimCLR; curves after the swap \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Assumption~\ref{as:simple} cannot be derived. From the training distribution alone, the core and the spurious concept
-play symmetric roles: both are features correlated with the label. Every method without group labels adds an assumption
-that breaks this symmetry, and ``the spurious feature is the one learned first'' is the assumption shared with LfF, JTT
-and SPARE. The thesis states it, measures how often it holds and reports the audit so a reader can verify the flags.
+Three points mark the boundary.
 
-Theorem~\ref{thm:early} extends to wide networks in the kernel regime, where the same linear dynamics hold in function
-space with the neural tangent kernel in place of $\Sigma$, and deep linear networks learn the directions of largest
-singular value first (Saxe et al., 2014). The cross-entropy loss has the same gradient at $w=0$ up to a constant
-factor, so the early ordering of Corollary~\ref{cor:order} carries over. These extensions are cited, and their proofs
-lie outside this document.
+\emph{Capacity.} With $k\ge2$ and an exact minimizer, the linear encoder represents both concepts
+(Theorem~\ref{thm:order} at $t\to\infty$), and a balanced probe recovers the core concept without any swap. The
+rank-one case models the regime in which the fused direction dominates what the encoder stores, the feature
+suppression that contrastive learning shows in practice (Chen et al., 2021) and that the earlier measurements of this
+project found: the student's cat feature followed the indoor scene.
 
-For the self-supervised variant the theoretical support is the identifiability result of von K\"ugelgen et al.\ (2021):
-contrastive learning recovers the block of latent factors that the augmentation leaves unchanged. A swap of the flagged
-regions moves the flagged concepts into the block that changes between the two views.
+\emph{Assumption~\ref{as:simple} cannot be derived.} Without labels, the core and the spurious concept are two
+correlated features with symmetric roles. Every label-free method adds an assumption that breaks the symmetry; here it
+is that the spurious concept is the one with the larger second moment, which the encoder therefore relies on first.
+LateTVG and LA-SSL make assumptions of the same kind. The thesis states it, measures how often it holds and reports
+the audit so that a reader can verify the flags.
 
-\section{Experiments, implementation and decisions}\label{sec:kill}\label{sec:plan}\label{sec:impl}
+\emph{Idealized augmentations and loss.} The standard augmentations change colour statistics, which weakens some
+concepts in $A$, and SimCLR's InfoNCE loss differs from \eqref{eq:loss}. The identifiability result of von K\"ugelgen
+et al.\ (2021) supports the swap independently of these idealizations: contrastive learning recovers the block of
+latent factors that the augmentation leaves unchanged, and the swap moves the flagged concepts out of this block.
 
-The kill test on MetaShift with its pass and fail criteria, the experiment plan, the architecture of the code, the
-commands and all fixed decisions are specified in \texttt{docs/PROJECT\_PLAN.md}, Sections 3 to 8. In short: stage K1
-trains ERM with the audit and scores how well the onset score separates attribute units from class units (detection
-AUROC from hidden labels); stage K2 compares the swap under the audit's flags with ERM and with four controls (random
-units, last-ranked units, shuffled maps and oracle units).
+\section{Numerical verification}\label{sec:kill}
 
-Two checks tie the experiments to the theory. Theorem~\ref{thm:swap} predicts that WGA rises monotonically in the
-swap probability $q$, which a sweep over $q$ tests. A synthetic two-concept dataset that satisfies
-Assumptions~\ref{as:sep} to~\ref{as:lin} allows an end-to-end numerical check of Proposition~\ref{prop:erm},
-Theorem~\ref{thm:swap} and Proposition~\ref{prop:sym}; the closed forms were verified numerically on 2{,}000 random
-parameter sets on 2026-11-14.
-
-\section{Position against prior work}
-
-A literature search on 2026-11-14 (about 16 queries) found no work that combines named patch-level concepts, the
-timing of their reliance as the signal for spuriousness and a region-level intervention. The search was not exhaustive;
-repeat it before submission. The closest works are listed with their difference.
-
-\begin{center}
-\begin{tabular}{p{0.27\linewidth}p{0.30\linewidth}p{0.33\linewidth}}
-\toprule
-Work & Shared element & Difference \\
-\midrule
-DISC (Wu et al., 2023) & concept sensitivity at every epoch & image-level concepts, a concept image bank and
-environments \\
-Decompose-and-Compose (Noohdani et al., 2024) & attribution-based parts recombined across images & unnamed parts;
-group-labelled validation selects the causal part \\
-MaskTune (Asgari et al., 2022) & masks what the model relies on & after training, one epoch, masks all salient input \\
-JTT, LfF, SPARE & early-training signal & example-level reweighting \\
-GALS (Petryk et al., 2022) & CLIP attention guides a classifier & fixed class prompt as the prior \\
-RaVL (Varma et al., 2024) & region-level discovery & fine-tuned vision-language models, region clusters \\
-SpLiCE (Bhalla et al., 2024) & sparse named concepts & image-level, explains CLIP itself \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\section{Alternative thesis topics}\label{sec:alt}
-
-Section 10 of the project plan describes three alternatives that reuse the concept maps and the audit: a
-concept-localized attribution penalty, a patch-concept bottleneck classifier and a diagnostic study of concept learning
-curves across training methods. For the attribution penalty the linear model gives a direct argument: a ridge term
-$\tfrac{\eta}{2}w_s^2$ on the spurious weight leaves the numerator of $r^\ast$ in Proposition~\ref{prop:erm} unchanged
-and raises $w_c$ to $\mu_c\big(\sigma_s^2+\eta+(1-\rho^2)\mu_s^2\big)/\det$, so the ratio falls monotonically in $\eta$
-and Theorem~\ref{thm:wga} yields a rising WGA. Retraining only the last layer on swapped images is covered by
-Decompose-and-Compose and serves as an ablation.
+The closed forms of Theorems~\ref{thm:fused}, \ref{thm:order}, \ref{thm:audit} and~\ref{thm:swap} and of
+Proposition~\ref{prop:wrong} were checked on 2026-11-16 against eigen-decompositions, a numerical integration of the
+gradient flow and Monte Carlo estimates of the positive-pair matrices, on random parameter sets. The experiments on
+real data are specified in the project plan, Sections 6 to 8.
 
 \begin{thebibliography}{99}\small
-\bibitem{asgari} Asgari, Khani, Khasahmadi, Aminbeidokhti et al. MaskTune: Mitigating Spurious Correlations by Forcing
-to Explore. NeurIPS 2022.
 \bibitem{bhalla} Bhalla, Oesterling, Srinivas, Calmon and Lakkaraju. Interpreting CLIP with Sparse Linear Concept
 Embeddings (SpLiCE). NeurIPS 2024.
-\bibitem{kalimeris} Kalimeris et al. SGD on Neural Networks Learns Functions of Increasing Complexity. NeurIPS 2019.
+\bibitem{chen} Chen, Luo and Li. Intriguing Properties of Contrastive Losses. NeurIPS 2021.
+\bibitem{hamidieh} Hamidieh, Zhang and Ghassemi. Views Can Be Deceiving: Improved SSL Through Feature Space
+Augmentation (LateTVG). ICLR 2024.
+\bibitem{haochen} HaoChen, Wei, Gaidon and Ma. Provable Guarantees for Self-Supervised Deep Learning with Spectral
+Contrastive Loss. NeurIPS 2021.
 \bibitem{kirichenko} Kirichenko, Izmailov and Wilson. Last Layer Re-Training is Sufficient for Robustness to Spurious
 Correlations. ICLR 2023.
 \bibitem{lan} Lan et al. ClearCLIP: Decomposing CLIP Representations for Dense Vision-Language Inference. ECCV 2024.
-\bibitem{liu} Liu et al. Just Train Twice: Improving Group Robustness without Training Group Information. ICML 2021.
-\bibitem{nam} Nam, Cha, Ahn, Lee and Shin. Learning from Failure: Training Debiased Classifier from Biased Classifier.
-NeurIPS 2020.
-\bibitem{noohdani} Noohdani et al. Decompose-and-Compose: A Compositional Approach to Mitigating Spurious Correlation.
-CVPR 2024.
-\bibitem{petryk} Petryk et al. On Guiding Visual Attention with Language Specification. CVPR 2022.
-\bibitem{ross} Ross, Hughes and Doshi-Velez. Right for the Right Reasons. IJCAI 2017.
-\bibitem{sagawa} Sagawa, Raghunathan, Koh and Liang. An Investigation of Why Overparameterization Exacerbates Spurious
-Correlations. ICML 2020.
-\bibitem{saxe} Saxe, McClelland and Ganguli. Exact Solutions to the Nonlinear Dynamics of Learning in Deep Linear
-Neural Networks. ICLR 2014.
-\bibitem{shah} Shah, Tamuly, Raghunathan, Jain and Netrapalli. The Pitfalls of Simplicity Bias in Neural Networks.
-NeurIPS 2020.
-\bibitem{varma} Varma et al. RaVL: Discovering and Mitigating Spurious Correlations in Fine-Tuned Vision-Language
-Models. NeurIPS 2024.
+\bibitem{robinson} Robinson, Sun, Yu, Batmanghelich, Jegelka and Sra. Can Contrastive Learning Avoid Shortcut
+Solutions? NeurIPS 2021.
+\bibitem{ryali} Ryali, Schwab and Morcos. Characterizing and Improving the Robustness of Self-Supervised Learning
+through Background Augmentations. arXiv 2103.12719, 2021.
+\bibitem{simon} Simon, Knutins, Ziyin, Geisz, Fetterman and Albrecht. On the Stepwise Nature of Self-Supervised
+Learning. ICML 2023.
 \bibitem{vonk} von K\"ugelgen et al. Self-Supervised Learning with Data Augmentations Provably Isolates Content from
 Style. NeurIPS 2021.
-\bibitem{wu} Wu, Yuksekgonul, Zhang and Zou. Discover and Cure: Concept-aware Mitigation of Spurious Correlation.
-ICML 2023.
-\bibitem{yang} Yang, Gan, Dziugaite and Mirzasoleiman. Identifying Spurious Biases Early in Training through the Lens
-of Simplicity Bias. AISTATS 2024.
+\bibitem{zhu} Zhu et al. Learning-speed-aware sampling for self-supervised learning (LA-SSL). arXiv 2311.16361, 2023.
 \end{thebibliography}
 
 \end{document}

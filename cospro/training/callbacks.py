@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from cospro.tracking import canonical_train_metrics, epoch_payload
+from cospro.tracking.artifacts import atomic_write_json
 from cospro.training.state import TrainingState
 from cospro.training.storage import StoragePolicy
 from cospro.metrics import entropy_effective_rank
@@ -244,6 +245,75 @@ class WandbLogger(Callback):
             self.status.update({
                 "finish_called": True, "finish_succeeded": False, "finish_error": repr(finish_error),
             })
+
+
+class ConceptAudit(Callback):
+    """Concept learning curves of a ``concept_curves`` run: audit, score, flag and persist.
+
+    Before training and after every due epoch the method measures the encoder's reliance on each concept
+    unit. After the last epoch of the early window the method flags units, and the swap starts with the
+    next epoch. ``concept_curves.json`` and ``flagged_units.json`` land beside the run's other JSON files
+    and are read back when a run resumes. Hidden labels enter only the ``evaluation_only`` block of the
+    curves and the ``oracle`` control rule.
+    """
+
+    def __init__(self, state: TrainingState, args) -> None:
+        self.state = state
+        self.args = args
+        self.method = state.method if hasattr(state.method, "audit_due") else None
+        self.folder = Path(args.save_folder)
+        self._labels: tuple | None = None
+
+    def _hidden_labels(self) -> tuple | None:
+        """Class and attribute of every training image, for scoring the audit only."""
+
+        if self._labels is None:
+            self._labels = ()
+            try:
+                from cospro.diagnostics.labels import load_labels
+
+                labels = load_labels(self.args.dataset, self.args.data_folder)
+                self._labels = labels.for_ids([f"{labels.dataset}:{index}" for index in self.method.source_indices])
+            except Exception as error:  # the audit runs without its score
+                print(f"[WARNING] Concept audit without hidden-label scores: {error}", flush=True)
+        return self._labels or None
+
+    def _write(self) -> None:
+        self.folder.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(self.folder / "concept_curves.json", self.method.curves)
+        if self.method.flags is not None:
+            atomic_write_json(self.folder / "flagged_units.json", self.method.flags)
+
+    def _audit(self, epoch: int) -> dict[str, float]:
+        method = self.method
+        diagnostics = method.audit(self.state.model, self.args.device, self.args.amp, epoch)
+        labels = self._hidden_labels()
+        if labels is not None:
+            method.score_audit(*labels)
+            score = method.curves["evaluation_only"].get("detection_auroc")
+            if score is not None:
+                diagnostics["Concept audit detection AUROC"] = score
+        if epoch == method.early_epochs:
+            method.decide_flags()
+        self._write()
+        return diagnostics
+
+    def on_train_start(self) -> None:
+        if self.method is None:
+            return
+        curves_path, flags_path = self.folder / "concept_curves.json", self.folder / "flagged_units.json"
+        if self.args.resume and curves_path.is_file():
+            self.method.curves = json.loads(curves_path.read_text(encoding="utf-8"))
+            if flags_path.is_file():
+                self.method.restore_flags(json.loads(flags_path.read_text(encoding="utf-8")))
+            return
+        with preserve_rng_state():
+            self._audit(0)
+
+    def on_epoch_end(self, report: EpochReport) -> None:
+        if self.method is None or not self.method.audit_due(report.epoch):
+            return
+        report.diagnostics.update(self._audit(report.epoch))
 
 
 class PeriodicProbe(Callback):

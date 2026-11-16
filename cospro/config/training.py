@@ -27,7 +27,8 @@ from cospro.compat import LEGACY_RELATIONAL_MODE
 from cospro.config.settings import wandb_entity
 
 RELATIONAL_GRAPH_MODES = frozenset({"cospro_relational", LEGACY_RELATIONAL_MODE})
-TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill", "concept_factors")
+TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill", "concept_factors",
+                  "concept_curves")
 LINEAR_TRAIN_SPLITS = ("train", "ds_train", "us_train", "balanced_train", "val")
 DEFAULT_PERIODIC_PROBE_FREQ = 25
 
@@ -403,6 +404,43 @@ class ConceptFactorOptions:
     factor_warmup_epochs: int = option(10, parse=int, help="Linear warm-up of the F2 weight; 0 disables it.")
 
 
+@dataclass(frozen=True)
+class ConceptCurveOptions:
+    curve_concept_maps: str = option(
+        "", help="Concept maps of the training images (cospro.cli.build_concept_maps); required by concept_curves.",
+    )
+    curve_unit_count: int = option(
+        12, parse=int, help="Concept units: groups of factors that share pixels; 0 audits single factors.",
+    )
+    curve_early_epochs: int = option(
+        50, parse=int, help="Early window T0: its audits give the onset scores, and units are flagged after it.",
+    )
+    curve_audit_every: int = option(5, parse=int, help="Audit interval in epochs inside the early window.")
+    curve_late_audit_every: int = option(50, parse=int, help="Audit interval after the early window; 0 disables it.")
+    curve_statistic: str = option(
+        "shift", choices=("shift", "margin"),
+        help="Reliance statistic: embedding shift under occlusion, or the drop of the instance-discrimination margin.",
+    )
+    curve_flag_rule: str = option(
+        "top", choices=("none", "top", "bottom", "random", "units", "oracle"),
+        help="Which units are flagged after the early window: the leaders of the curves (top), the controls bottom "
+        "and random, an explicit list (units), the hidden-label attribute units (oracle, upper-bound control) or "
+        "none (audit only, training equals SimCLR).",
+    )
+    curve_tau: float = option(0.5, parse=float, help="Share of the onset scores the flagged units reach together.")
+    curve_max_flagged_area: float = option(0.75, parse=float, help="Largest expected image share of the flagged regions.")
+    curve_flag_units: str = option("", help="Comma-separated unit ids for --curve_flag_rule units.")
+    curve_flag_seed: int = option(0, parse=int, help="Seed of the random flag rule.")
+    curve_swap_probability: float = option(0.5, parse=float, help="Share of eligible views whose flagged regions are swapped.")
+    curve_swap_warmup_epochs: int = option(10, parse=int, help="Epochs over which the swap probability ramps up.")
+    curve_swap_views: str = option(
+        "both", choices=("both", "second"), help="Swap in both views independently, or in the second view only.",
+    )
+    curve_shuffle_maps: bool = option(
+        False, style="switch", help="Control: the swap uses another image's regions for every image.",
+    )
+
+
 # (section, argparse group title) in --help order.
 TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (LoggingOptions, "logging"),
@@ -421,6 +459,7 @@ TRAINING_SECTIONS: tuple[tuple[type, str], ...] = (
     (LaSSLOptions, "LA-SSL"),
     (LateTVGOptions, "LateTVG late-layer pruned view"),
     (ConceptFactorOptions, "concept factors (F1 conditioned batches, F2 factor distillation)"),
+    (ConceptCurveOptions, "concept learning curves and early concept swap"),
 )
 
 # Standalone linear-probe option -> trainer ProbeOptions field it shares its default with.
@@ -563,6 +602,18 @@ def normalize_training_options(args: argparse.Namespace) -> argparse.Namespace:
     _require(not args.latetvg_prune_rate or args.simclr_weight > 0,
              "LateTVG builds its pruned view inside the SimCLR objective, so --simclr_weight must be positive.")
     _require(not (args.latetvg_prune_rate and args.la_ssl), "LA-SSL uses the unchanged SimCLR objective.")
+    if args.splice_mode == "concept_curves":
+        _require(bool(args.curve_concept_maps), "concept_curves needs --curve_concept_maps.")
+        _require(1 <= args.curve_early_epochs <= args.epochs, "--curve_early_epochs lies between 1 and --epochs.")
+        _require(args.curve_audit_every >= 1 and args.curve_late_audit_every >= 0,
+                 "--curve_audit_every must be positive and --curve_late_audit_every non-negative.")
+        _require(0 < args.curve_tau <= 1 and 0 < args.curve_max_flagged_area <= 1,
+                 "--curve_tau and --curve_max_flagged_area lie in (0, 1].")
+        _require(0 <= args.curve_swap_probability <= 1 and args.curve_swap_warmup_epochs >= 0,
+                 "--curve_swap_probability lies in [0, 1] and --curve_swap_warmup_epochs is non-negative.")
+        _require(args.curve_flag_rule != "units" or bool(args.curve_flag_units),
+                 "--curve_flag_rule units needs --curve_flag_units.")
+        _require(not args.latetvg_prune_rate, "The concept swap does not combine with LateTVG pruning.")
     if args.splice_mode == "concept_factors":
         _require(args.factor_condition_fraction > 0 or args.factor_distill_weight > 0 or args.factor_block_weight > 0
                  or args.factor_spatial_weight > 0 or args.factor_region_weight > 0,
@@ -673,6 +724,7 @@ class TrainingConfig:
     la_ssl: LaSSLOptions
     latetvg: LateTVGOptions
     concept_factors: ConceptFactorOptions
+    concept_curves: ConceptCurveOptions
 
     @classmethod
     def from_namespace(cls, namespace: argparse.Namespace) -> "TrainingConfig":

@@ -11,6 +11,7 @@ from __future__ import annotations
 from cospro.training.callbacks import (
     Callback,
     CheckpointPolicy,
+    ConceptAudit,
     EpochReport,
     FactorLearnability,
     PeriodicProbe,
@@ -23,6 +24,6 @@ from cospro.training.storage import StoragePolicy, artifact_identity
 from cospro.training.trainer import Trainer
 
 __all__ = [
-    "Callback", "CheckpointPolicy", "EpochReport", "FactorLearnability", "PeriodicProbe", "RankMetrics", "RunRecordLogger",
+    "Callback", "CheckpointPolicy", "ConceptAudit", "EpochReport", "FactorLearnability", "PeriodicProbe", "RankMetrics", "RunRecordLogger",
     "StoragePolicy", "Trainer", "TrainingState", "WandbLogger", "artifact_identity",
 ]

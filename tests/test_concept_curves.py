@@ -1,4 +1,4 @@
-"""Concept learning curves and the early concept swap: units, reliance, flagging, the swap and both CLIs."""
+"""Concept learning curves and the early concept swap: units, the audit, flagging, the swap and the method."""
 
 from __future__ import annotations
 
@@ -7,28 +7,35 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import torch
 from PIL import Image
 
-from cospro.cli import summarize_concept_curves, train_concept_curves
+import spur_splice
+from cospro.cli import summarize_concept_curves
 from cospro.curves.core import (
+    acquired,
     auroc,
     build_units,
     concept_shares,
     describe_units,
     detection_auroc,
+    embedding_audit,
     flag_units,
     hard_regions,
-    margins,
     onset_scores,
-    reliance_audit,
     spearman,
-    unit_presence,
     unit_typing,
 )
 from cospro.curves.swap import flagged_masks, swap_flagged
+from cospro.data.base import build_loader
+from cospro.data.metashift import MetaShiftDataset
+from cospro.methods import LoaderContext, build_method
+from cospro.methods.concept_curves import ConceptCurves
+from cospro.models.simclr import SimCLRModel
+from cospro.training.callbacks import ConceptAudit, EpochReport
 
 
 def left_right_maps(images: int) -> torch.Tensor:
@@ -40,12 +47,17 @@ def left_right_maps(images: int) -> torch.Tensor:
     return maps
 
 
-class LeftMean(torch.nn.Module):
-    """Logits that read only the mean of the left half of the image."""
+class LeftReader(torch.nn.Module):
+    """An encoder and head that read only the left half of the image: two features per image."""
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
-        value = images[:, :, :, : images.shape[-1] // 2].mean(dim=(1, 2, 3))
-        return torch.stack([-value, value], dim=1)
+    def __init__(self) -> None:
+        super().__init__()
+        self.head = torch.nn.Identity()
+
+    def encoder(self, images: torch.Tensor) -> torch.Tensor:
+        left = images[:, :, :, : images.shape[-1] // 2]
+        return torch.stack([left[:, :, : left.shape[2] // 2].mean(dim=(1, 2, 3)),
+                            left[:, :, left.shape[2] // 2:].mean(dim=(1, 2, 3))], dim=1)
 
 
 class UnitTests(unittest.TestCase):
@@ -71,24 +83,22 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(described[0]["name"], "left")
 
 
-class RelianceTests(unittest.TestCase):
-    def test_margin_is_correct_logit_minus_best_other(self):
-        logits = torch.tensor([[2.0, 0.5, 1.0], [0.0, 3.0, 1.0]])
-        self.assertEqual(margins(logits, torch.tensor([0, 2])).tolist(), [1.0, -2.0])
-
-    def test_reliance_finds_the_region_the_model_reads(self):
-        labels = torch.tensor([0, 1] * 4)
+class AuditTests(unittest.TestCase):
+    def test_audit_finds_the_region_the_encoder_reads(self):
+        generator = torch.Generator().manual_seed(0)
         images = torch.zeros(8, 3, 56, 56)
-        images[:, :, :, :28] = (2.0 * labels.float() - 1.0)[:, None, None, None]  # the left half carries the class
+        images[:, :, :28, :28] = torch.randn(8, 1, 1, 1, generator=generator)  # the left half carries the content
+        images[:, :, 28:, :28] = torch.randn(8, 1, 1, 1, generator=generator)
+        images[:, :, :, 28:] = torch.randn(8, 1, 1, 1, generator=generator)
         maps = left_right_maps(8)
         regions = hard_regions(maps, build_units(maps, 0))
-        loader = [(images, torch.arange(8), labels)]
-        result = reliance_audit(LeftMean(), loader, regions, [0, 1], torch.device("cpu"))
-        self.assertGreater(result["reliance"][0], 0.5)
-        self.assertAlmostEqual(result["reliance"][1], 0.0, places=2)
+        result = embedding_audit(LeftReader(), [(images, torch.arange(8))], regions, [0, 1], torch.device("cpu"))
+        self.assertGreater(result["shift"][0], 10 * abs(result["shift"][1]) + 0.05)
+        self.assertGreater(result["margin"][0], 10 * abs(result["margin"][1]) + 0.05)
         self.assertEqual(result["images"], [8.0, 8.0])
-        shares = concept_shares(result["reliance"], [0, 1])
-        self.assertAlmostEqual(shares[0], 1.0, places=2)
+
+    def test_acquired_subtracts_the_initial_value(self):
+        self.assertEqual(acquired([0.5, 0.25], [0.25, 0.5]), [0.25, -0.25])
 
     def test_shares_ignore_negative_reliance_and_unaudited_units(self):
         self.assertEqual(concept_shares([1.0, -2.0, 3.0, 4.0], [0, 1, 2]), [0.25, 0.0, 0.75, 0.0])
@@ -201,50 +211,112 @@ def write_synthetic_metashift(root: Path, per_group: int = 6) -> None:
                     Image.fromarray(pixels).save(directory / f"{index:03d}.jpg")
 
 
-class EndToEndTests(unittest.TestCase):
-    def test_erm_audit_then_swap_then_summary(self):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            write_synthetic_metashift(root / "data")
-            from cospro.data.metashift import MetaShiftDataset
+def synthetic_maps(root: Path, dataset: MetaShiftDataset) -> Path:
+    """Maps with two factors for the synthetic tree: "centre" wins the centre cells and "border" the rest."""
 
-            dataset = MetaShiftDataset(str(root / "data"))
-            train = dataset.get_subset("train").indices
-            maps = torch.zeros(len(train), 2, 14, 14)
-            maps[:, 1] = 1.0
-            maps[:, 0, 4:10, 4:10] = 2.0  # factor "centre" wins the centre cells, "border" the rest
-            maps = maps / maps.sum(dim=1, keepdim=True)
-            maps_path = root / "concept_maps.pt"
-            torch.save({"sample_ids": [f"metashift:{int(index)}" for index in train],
-                        "factor_names": ["centre", "border"], "maps": maps.half(), "kind": "concepts"}, maps_path)
-            common = ["--dataset", "metashift", "--data-folder", str(root / "data"), "--concept-maps", str(maps_path),
-                      "--seed", "1", "--study", "curves_test", "--output-root", str(root / "outputs"),
-                      "--model", "resnet18", "--epochs", "2", "--early-epochs", "2", "--eval-every", "1",
-                      "--batch-size", "16", "--unit-count", "0", "--num-workers", "0", "--device", device,
-                      "--learning-rate", "0.01"]
-            erm = train_concept_curves.main([*common, "--mode", "erm", "--arm", "erm"])
-            curves = json.loads((erm / "concept_curves.json").read_text(encoding="utf-8"))
-            self.assertEqual(curves["epochs"], [0, 1, 2])
-            self.assertEqual(len(curves["onset"]), 2)
-            self.assertEqual([unit["name"] for unit in curves["units"]], ["centre", "border"])
-            self.assertEqual([entry["type"] for entry in curves["evaluation_only"]["typing"]], ["untyped", "untyped"])
-            run = json.loads((erm / "run.json").read_text(encoding="utf-8"))
-            self.assertEqual(run["status"], "complete")
-            self.assertEqual(len(run["final"]["val_group_acc"]), 4)
+    train = dataset.get_subset("train").indices
+    maps = torch.ones(len(train), 2, 14, 14)
+    maps[:, 0] = 0.0
+    maps[:, 0, 4:10, 4:10] = 2.0
+    maps = maps / maps.sum(dim=1, keepdim=True)
+    path = root / "concept_maps.pt"
+    torch.save({"sample_ids": [f"metashift:{int(index)}" for index in train], "factor_names": ["centre", "border"],
+                "maps": maps.half(), "kind": "concepts"}, path)
+    return path
 
-            swap = train_concept_curves.main([*common, "--mode", "swap", "--arm", "swap_units", "--flag-rule", "units",
-                                              "--flag-units", "1", "--swap-probability", "1.0"])
-            flags = json.loads((swap / "flagged_units.json").read_text(encoding="utf-8"))
-            self.assertEqual(flags["names"], ["border"])
-            swapped = json.loads((swap / "run.json").read_text(encoding="utf-8"))
-            self.assertEqual(swapped["status"], "complete")
-            self.assertGreater(swapped["training"][0]["swapped_fraction"], 0.5)
 
-            summary = summarize_concept_curves.main(["--study", "curves_test", "--output-root", str(root / "outputs")])
-            text = summary.read_text(encoding="utf-8")
-            self.assertIn("| swap_units | 1 |", text)
-            self.assertIn("## Audit of `erm`", text)
+class MethodTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.root = Path(self.folder.name)
+        write_synthetic_metashift(self.root / "data")
+        self.dataset = MetaShiftDataset(str(self.root / "data"))
+        self.maps = synthetic_maps(self.root, self.dataset)
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def build(self, **options):
+        method = ConceptCurves(concept_maps=str(self.maps), seed=1, unit_count=0, early_epochs=2, audit_every=1,
+                               late_audit_every=0, total_epochs=4, swap_warmup_epochs=0, image_size=64, **options)
+        loader = build_loader(MetaShiftDataset, "ssl", MetaShiftDataset.Config(root_dir=str(self.root / "data"), image_size=64),
+                              16, dataset=self.dataset, num_workers=0, generator=torch.Generator().manual_seed(1))
+        wrapped = method.wrap_loader(loader, LoaderContext(dataset="metashift", batch_size=16, num_workers=0, seed=1))
+        return method, loader, wrapped
+
+    def test_loader_keeps_the_simclr_batch_order_and_adds_boxes(self):
+        method, loader, wrapped = self.build()
+        self.assertIs(wrapped.sampler, loader.sampler)
+        views, rows, boxes = next(iter(wrapped))
+        self.assertEqual(tuple(views[0].shape), (16, 3, 64, 64))
+        self.assertEqual(tuple(boxes.shape), (16, 2, 5))
+        self.assertEqual([unit["name"] for unit in method.units], ["centre", "border"])
+
+    def test_audit_flags_and_swap_follow_the_schedule(self):
+        torch.manual_seed(0)
+        method, _, wrapped = self.build(flag_rule="units", flag_units_list="1", swap_probability=1.0)
+        model = SimCLRModel(name="resnet18")
+        batch = next(iter(wrapped))
+        self.assertEqual([epoch for epoch in range(5) if method.audit_due(epoch)], [0, 1, 2, 4])
+        for epoch in (0, 1, 2):
+            method.set_epoch(epoch)
+            before = [view.clone() for view in batch[0]]
+            self.assertTrue(all(torch.equal(a, b) for a, b in zip(method.compose_views(list(batch[0]), batch), before)))
+            method.audit(model, torch.device("cpu"), False, epoch)
+        self.assertEqual(method.curves["epochs"], [0, 1, 2])
+        self.assertEqual(len(method.curves["onset"]), 2)
+        self.assertEqual(method.curves["share"][0], [0.0, 0.0])  # nothing is acquired at initialization
+        labels = self.dataset.get_subset("train").metadata_array
+        method.score_audit(labels[:, 1], labels[:, 0])
+        self.assertEqual(len(method.curves["evaluation_only"]["typing"]), 2)
+        flags = method.decide_flags()
+        self.assertEqual(flags["names"], ["border"])
+        method.set_epoch(3)
+        views = method.compose_views([view.clone() for view in batch[0]], batch)
+        self.assertGreater(method.diagnostics()["curve_swapped_fraction"], 0.3)
+        self.assertFalse(torch.equal(views[0], batch[0][0]))
+        self.assertFalse(torch.equal(views[1], batch[0][1]))
+
+    def test_rule_none_never_swaps(self):
+        method, _, wrapped = self.build(flag_rule="none")
+        batch = next(iter(wrapped))
+        model = SimCLRModel(name="resnet18")
+        for epoch in (0, 1, 2):
+            method.audit(model, torch.device("cpu"), False, epoch)
+        self.assertIsNone(method.decide_flags())
+        method.set_epoch(3)
+        self.assertEqual(method.scheduled_probability, 0.0)
+        self.assertTrue(torch.equal(method.compose_views(list(batch[0]), batch)[0], batch[0][0]))
+
+    def test_callback_writes_curves_and_flags_and_the_summary_reads_them(self):
+        method, _, _ = self.build(flag_rule="top")
+        run_folder = self.root / "outputs" / "seeds" / "study" / "seed_01" / "curves" / "attempt" / "training" / "run"
+        args = SimpleNamespace(save_folder=str(run_folder), device="cpu", amp=False, resume="", dataset="metashift",
+                               data_folder=str(self.root / "data"))
+        state = SimpleNamespace(method=method, model=SimCLRModel(name="resnet18"))
+        callback = ConceptAudit(state, args)
+        callback.on_train_start()
+        for epoch in (1, 2):
+            callback.on_epoch_end(EpochReport(epoch=epoch, train={}, learning_rate=0.1))
+        curves = json.loads((run_folder / "concept_curves.json").read_text(encoding="utf-8"))
+        self.assertEqual(curves["epochs"], [0, 1, 2])
+        self.assertIn("typing", curves["evaluation_only"])
+        # The untrained encoder acquires no reliance, so nothing is flagged and the run would continue as SimCLR.
+        flags = json.loads((run_folder / "flagged_units.json").read_text(encoding="utf-8"))
+        self.assertEqual(flags["flagged"], [])
+        self.assertEqual(method.scheduled_probability, 0.0)
+        summary = summarize_concept_curves.main(["--study", "study", "--output-root", str(self.root / "outputs")])
+        self.assertIn("## curves", summary.read_text(encoding="utf-8"))
+
+    def test_configuration_selects_the_method_and_leaves_other_storage_names_alone(self):
+        common = ["--dataset", "metashift", "--seed", "1", "--artifact_dir", str(self.root / "runs")]
+        args = spur_splice.parse_args([*common, "--splice_mode", "concept_curves", "--curve_concept_maps", str(self.maps)])
+        method = build_method(spur_splice.training_config(args), graph_fingerprint=None)
+        self.assertIsInstance(method, ConceptCurves)
+        self.assertIn("concept-curves", args.storage_name)
+        plain = spur_splice.parse_args([*common, "--splice_mode", "none"])
+        other = spur_splice.parse_args([*common, "--splice_mode", "none", "--curve_early_epochs", "7"])
+        self.assertEqual(plain.storage_name, other.storage_name)
 
 
 if __name__ == "__main__":

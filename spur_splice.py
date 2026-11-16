@@ -40,6 +40,7 @@ from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, se
 from cospro.methods import LoaderContext, build_method
 from cospro.training import (
     CheckpointPolicy,
+    ConceptAudit,
     FactorLearnability,
     PeriodicProbe,
     RankMetrics,
@@ -72,6 +73,7 @@ METHOD_INPUT_ARTIFACT_KINDS = {
     "cospro_relational": "teacher_graph",
     "frozen_concept_distill": "frozen_transfer_targets",
     "concept_factors": "concept_groups",
+    "concept_curves": "concept_maps",
 }
 
 
@@ -135,6 +137,9 @@ def format_wandb_run_name(args: argparse.Namespace) -> str:
         weighting += "_xfit" if args.factor_cross_fit else ""
         return (f"{prefix}_Factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}"
                 f"{targets}{weighting}{blocks}{suffix}")
+    if args.splice_mode == "concept_curves":
+        shuffled = "_shuffled" if args.curve_shuffle_maps else ""
+        return f"{prefix}_Curves_{args.curve_flag_rule}_q{args.curve_swap_probability:g}{shuffled}{suffix}"
     return f"{prefix}_SimCLR{suffix}"
 
 
@@ -146,6 +151,8 @@ def format_storage_name(args: argparse.Namespace) -> str:
         experiment = "la-ssl" if getattr(args, "la_ssl", False) else ("concept-transfer" if args.splice_mode == "frozen_concept_distill" else "base")
         if args.splice_mode == "concept_factors":
             experiment = "concept-factors"
+        if args.splice_mode == "concept_curves":
+            experiment = "concept-curves"
     if args.latetvg_prune_rate:
         experiment = f"{experiment}-latetvg"
 
@@ -177,6 +184,7 @@ def format_storage_name(args: argparse.Namespace) -> str:
         # Disabled LateTVG and concept-factor options leave the storage names of earlier runs unchanged.
         and not (key.startswith("latetvg_") and not args.latetvg_prune_rate)
         and not (key.startswith("factor_") and args.splice_mode != "concept_factors")
+        and not (key.startswith("curve_") and args.splice_mode != "concept_curves")
     })
     fingerprint = hashlib.sha256(
         json.dumps(fingerprint_payload, sort_keys=True, default=str).encode("utf-8")
@@ -199,6 +207,8 @@ def format_run_name(args: argparse.Namespace) -> str:
     elif args.splice_mode == "concept_factors":
         splice_name = (f"factors_c{args.factor_condition_fraction:g}_d{args.factor_distill_weight:g}_"
                        f"{args.factor_targets}_b{args.factor_block_weight:g}")
+    elif args.splice_mode == "concept_curves":
+        splice_name = f"curves_{args.curve_flag_rule}_q{args.curve_swap_probability:g}_t{args.curve_early_epochs}"
     else:
         splice_name = "nosplice"
     if args.latetvg_prune_rate:
@@ -483,6 +493,7 @@ def build_callbacks(args: argparse.Namespace, state: TrainingState, storage: Sto
     callbacks = [
         RankMetrics(state, args, every=args.rank_eval_freq),
         FactorLearnability(state, args, every=args.rank_eval_freq, total_epochs=args.epochs),
+        ConceptAudit(state, args),
         RunRecordLogger(recorder),
         wandb_logger,
         probe,

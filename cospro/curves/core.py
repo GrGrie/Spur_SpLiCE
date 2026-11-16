@@ -1,13 +1,13 @@
-"""The audit: which named concepts a model relies on, epoch by epoch, and which of them get flagged.
+"""The audit: which named concepts a self-supervised encoder relies on, epoch by epoch, and which get flagged.
 
 Patch-wise concept maps say where each concept factor sits in each training image. Factors that share
 pixels form a concept unit, and the cells a unit wins in an image are its hard region. Occluding that
-region and measuring the drop of the correct-class margin gives the model's reliance on the unit. The
-reliance of every unit over the first epochs is its learning curve; the units that lead the curves are
-flagged as spurious. Sections 4.2 to 4.5 of docs/PROJECT_PLAN.md define every quantity here.
+region and measuring how far the encoder's embedding of the image moves gives the encoder's reliance on
+the unit. The reliance of every unit over the first epochs is its learning curve; the units that lead the
+curves are flagged. Sections 4.2 to 4.5 of docs/PROJECT_PLAN.md define every quantity here.
 
-The functions are pure tensor code. Group labels enter only ``unit_typing``, which scores the audit and
-never feeds training, except for the ``oracle`` rule that is an upper-bound control by design.
+The functions are pure tensor code and read no label. Class and group labels enter only ``unit_typing``,
+which scores the audit after the fact, and the ``oracle`` flag rule, an upper-bound control by design.
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ from cospro.pipeline.concept_maps import coactivation_groups, inpaint, sharpen
 MIN_CELLS = 3
 #: A unit is audited when it is present in at least this share of the training images.
 MIN_PRESENCE = 0.02
-FLAG_RULES = ("top", "bottom", "random", "units", "oracle")
+FLAG_RULES = ("none", "top", "bottom", "random", "units", "oracle")
+STATISTICS = ("shift", "margin")
 
 
 def load_unit_maps(path: str, dataset: str, source_indices) -> tuple[torch.Tensor, list[str]]:
@@ -107,54 +108,68 @@ def occlude(images: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
     return (1.0 - masks) * images + masks * inpaint(images, masks)
 
 
-def margins(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    """Correct-class logit minus the largest other logit, one value per row."""
-
-    logits = logits.float()
-    correct = logits.gather(1, labels[:, None]).squeeze(1)
-    others = logits.scatter(1, labels[:, None], float("-inf")).max(dim=1).values
-    return correct - others
-
-
 @torch.no_grad()
-def reliance_audit(model, loader, regions: torch.Tensor, audited: list[int], device, amp: bool = False) -> dict:
-    """Mean and mean squared margin drop per unit when its region is occluded, over the images that show it.
+def embedding_audit(model, loader, regions: torch.Tensor, audited: list[int], device, amp: bool = False) -> dict:
+    """How far occluding each unit's region moves an image's embedding, over the images that show the unit.
 
-    ``loader`` yields (images, rows, labels) of unaugmented training images; ``rows`` index ``regions``.
-    Returns ``reliance`` and ``squared`` (one value per unit, 0 for units outside ``audited``) and the
-    number of images behind each value.
+    ``model`` has an ``encoder`` and a projection ``head`` (SimCLR); ``loader`` yields (images, rows) of
+    unaugmented training images and ``rows`` index ``regions``. Two statistics come back per unit, 0 for
+    units outside ``audited``:
+
+    ``shift``   mean of one minus the cosine between the encoder embeddings of the image and its occluded copy;
+    ``margin``  mean drop of the instance-discrimination margin in the projection space: the similarity of
+                a query to its own image minus its largest similarity to another image of the batch, for
+                the image as query and for its occluded copy as query.
     """
 
     units = regions.shape[1]
     present = unit_presence(regions)
-    total = torch.zeros(units, dtype=torch.float64)
-    total_squared = torch.zeros(units, dtype=torch.float64)
+    shift = torch.zeros(units, dtype=torch.float64)
+    margin = torch.zeros(units, dtype=torch.float64)
     counts = torch.zeros(units, dtype=torch.float64)
     was_training = model.training
     model.eval()
+
+    def embed(images):
+        features = model.encoder(images)
+        return F.normalize(features.float(), dim=1), F.normalize(model.head(features).float(), dim=1)
+
     try:
-        for images, rows, labels in loader:
-            images, labels = images.to(device), labels.to(device)
+        for images, rows in loader:
+            images = images.to(device)
             rows = torch.as_tensor(rows, dtype=torch.long)
             with torch.autocast(device_type="cuda", dtype=torch.float16,
                                 enabled=amp and str(device).startswith("cuda")):
-                base = margins(model(images), labels)
+                features, projections = embed(images)
+                own = torch.eye(len(images), dtype=torch.bool, device=device)
+                base = 1.0 - (projections @ projections.T).masked_fill(own, float("-inf")).max(dim=1).values
                 for unit in audited:
                     shown = present[rows, unit]
-                    if not bool(shown.any()):
+                    if not bool(shown.any()) or len(images) < 2:
                         continue
                     chosen = shown.to(device)
                     masks = pixel_masks(regions[rows[shown], unit:unit + 1].to(device), tuple(images.shape[-2:]))
-                    occluded = occlude(images[chosen].float(), masks).to(images.dtype)
-                    drop = (base[chosen] - margins(model(occluded), labels[chosen])).double().cpu()
-                    total[unit] += drop.sum()
-                    total_squared[unit] += drop.pow(2).sum()
-                    counts[unit] += len(drop)
+                    occluded_features, occluded = embed(occlude(images[chosen].float(), masks).to(images.dtype))
+                    similarity = occluded @ projections.T
+                    itself = own[chosen]
+                    after = similarity[itself] - similarity.masked_fill(itself, float("-inf")).max(dim=1).values
+                    shift[unit] += (1.0 - (occluded_features * features[chosen]).sum(dim=1)).double().sum().cpu()
+                    margin[unit] += (base[chosen] - after).double().sum().cpu()
+                    counts[unit] += int(shown.sum())
     finally:
         model.train(was_training)
     safe = counts.clamp_min(1.0)
-    return {"reliance": (total / safe).tolist(), "squared": (total_squared / safe).tolist(),
-            "images": counts.tolist()}
+    return {"shift": (shift / safe).tolist(), "margin": (margin / safe).tolist(), "images": counts.tolist()}
+
+
+def acquired(values: list[float], initial: list[float]) -> list[float]:
+    """Reliance acquired through training: the statistic minus its value at initialization.
+
+    A randomly initialized encoder already moves under any occlusion, more for larger regions; the
+    difference keeps the part that training added.
+    """
+
+    return [float(value) - float(start) for value, start in zip(values, initial)]
 
 
 def concept_shares(reliance: list[float], audited: list[int]) -> list[float]:

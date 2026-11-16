@@ -156,6 +156,20 @@ spatial_args() {
   COMPOSITE=("${SPATIAL[@]}" --factor_composite_fraction 0.3 --factor_concept_types "${types}")
   MIX=("${SPATIAL[@]}" --factor_spatial_weight 5.0 --factor_mix_fraction 0.5)
   HEADS=("${MIX[@]}" --factor_mix_mask groups --factor_mix_region false --factor_mix_weight 1.0)
+  CURVES=(--splice_mode concept_curves --curve_concept_maps "${SPATIAL_MAPS}")
+}
+# Concept learning curves and early concept swap (docs/PROJECT_PLAN.md): SimCLR with the concept audit; after
+# the early window the units that led the curves are flagged and their regions swapped between images. No label
+# and no concept loss enters training. curves_audit only audits (training equals simclr). Controls: random units
+# (curves_random), the last-ranked units (curves_bottom), shuffled maps (curves_shuffled) and the hidden-label
+# attribute units as the upper bound (curves_oracle).
+add_curve_arms() {
+  ARMS[curves_audit]="${CURVES[*]} --curve_flag_rule none"
+  ARMS[curves]="${CURVES[*]}"
+  ARMS[curves_random]="${CURVES[*]} --curve_flag_rule random"
+  ARMS[curves_bottom]="${CURVES[*]} --curve_flag_rule bottom"
+  ARMS[curves_shuffled]="${CURVES[*]} --curve_shuffle_maps true"
+  ARMS[curves_oracle]="${CURVES[*]} --curve_flag_rule oracle"
 }
 # Concept compositing arms, for datasets whose target is an object and whose spurious attribute is its surroundings.
 add_composite_arms() {
@@ -266,6 +280,7 @@ if [[ "${DATASET}" == "metashift" ]]; then
   )
   add_composite_arms
   add_mix_arms
+  add_curve_arms
 elif [[ "${DATASET}" == "spur_cifar10" ]]; then
   SPATIAL_GROUPS="${MEANING_OI_GROUPS}"
   SPATIAL_CACHE="${MEANING_OI_CACHE}"
@@ -346,6 +361,7 @@ elif [[ "${DATASET}" == "waterbirds" || "${DATASET}" == "celeba" ]]; then
   if [[ "${DATASET}" == "waterbirds" ]]; then
     add_composite_arms
     add_mix_arms
+    add_curve_arms
   fi
 else
   echo "Unknown dataset ${DATASET}; use metashift, spur_cifar10, waterbirds or celeba." >&2
@@ -408,7 +424,7 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   return 1
 }
 if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}" || needs_maps "mix_*" "${SPATIAL_MAPS}" \
-  || needs_maps "heads_*" "${SPATIAL_MAPS}"; }; then
+  || needs_maps "heads_*" "${SPATIAL_MAPS}" || needs_maps "curves*" "${SPATIAL_MAPS}"; }; then
   MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
@@ -428,7 +444,7 @@ for arm in "${SELECTED[@]}"; do
     conditions=()
     if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
-    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* || "${arm}" == heads_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* || "${arm}" == heads_* || "${arm}" == curves* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")
