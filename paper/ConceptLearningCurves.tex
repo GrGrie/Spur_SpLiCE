@@ -27,19 +27,20 @@
 \emergencystretch=4em
 
 \title{Concept Learning Curves and Early Concept Swap\\[2pt]
-\large Single source of truth for the thesis method: idea, steps, theory, kill test and alternatives}
+\large Theory companion to \texttt{docs/PROJECT\_PLAN.md}: method, model, theorems and proofs}
 \author{Master's thesis working document, repository \code{Spur\_SpLiCE}}
-\date{Version 1, 2026-11-14}
+\date{Version 2, 2026-11-16}
 
 \begin{document}
 \maketitle
 
 \section*{How to read this document}
 
-This file is the reference for every person and every coding model that works on the method. Section~\ref{sec:method}
-specifies the method, Section~\ref{sec:theory} holds the theory with full proofs, Section~\ref{sec:kill} defines the
-kill test on MetaShift, Section~\ref{sec:plan} lists the experiments, Section~\ref{sec:impl} gives implementation notes
-for this repository and Section~\ref{sec:alt} lists three alternative topics.
+The project plan \texttt{docs/PROJECT\_PLAN.md} is the single source of truth for goals, decisions, architecture,
+commands and the kill test. This document is its theory companion: Section~\ref{sec:method} restates the method in
+mathematical form, Section~\ref{sec:theory} holds the model, the theorems and their proofs, and
+Section~\ref{sec:kill} points to the experiments. Where the two files differ, the plan holds and this file gets
+corrected.
 
 Three conventions hold throughout.
 \begin{itemize}[nosep]
@@ -97,7 +98,7 @@ $m_{ik}\in[0,1]^{H\times W}$ & region mask of unit $k$ in image $i$ (Definition~
 $\mathcal{I}_k$ & set of images in which unit $k$ is present \\
 $f_t$ & model after $t$ epochs; $f_t(x)_y$ is the logit of class $y$ \\
 $O_k$ & occlusion operator of unit $k$ (Definition~\ref{def:occ}) \\
-$R_k(t)$, $S_k(t)$ & reliance of the model on unit $k$ at epoch $t$ and its share \\
+$D_k(t)$, $S_k(t)$ & reliance of the model on unit $k$ at epoch $t$ and its share \\
 $T_0$ & length of the early window in epochs \\
 $\mathcal{F}$ & set of flagged concept units \\
 $q$ & probability that a training image receives a swap \\
@@ -138,27 +139,30 @@ deterministic and already implemented.
 \end{definition}
 
 \begin{definition}[Reliance]\label{def:rel}
-For a supervised model the reliance on unit $k$ at epoch $t$ is
+The margin of a model $f$ on $(x,y)$ is $M_f(x,y)=f(x)_y-\max_{c\ne y}f(x)_c$. The margin drop of image $i$ under
+occlusion of unit $k$ at epoch $t$ is $d_{ik}(t)=M_{f_t}(x_i,y_i)-M_{f_t}(O_k(x_i),y_i)$. The reliance on unit $k$ is
+the mean margin drop over the images that show it,
 \begin{equation}\label{eq:rel}
-R_k(t) \;=\; \frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k}\Big(f_t(x_i)_{y_i}-f_t\big(O_k(x_i)\big)_{y_i}\Big)^2 ,
+D_k(t) \;=\; \frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k} d_{ik}(t),
 \end{equation}
-and its share is $S_k(t)=R_k(t)/\sum_{j=1}^{K}R_j(t)$. For a self-supervised encoder $h_t$ the squared logit change
-is replaced by $1-\cos\!\big(h_t(x_i),h_t(O_k(x_i))\big)$.
+and its share is $S_k(t)=\max(D_k(t),0)\big/\sum_{j}\max(D_j(t),0)$ over the audited units. The secondary statistic
+is the mean squared drop $R_k(t)=\frac{1}{|\mathcal{I}_k|}\sum_{i\in\mathcal{I}_k}d_{ik}(t)^2$.
 \end{definition}
 
-Reliance is an explanation of the model under training: it measures how much the output of $f_t$ depends on the pixels
-that carry concept $k$. CLIP appears only inside $m_{ik}$.
+Reliance is an explanation of the model under training: a positive $D_k$ says that the pixels of concept $k$ support
+the correct class in the model's output. CLIP appears only inside $m_{ik}$.
+
+\textsc{[fixed]} $D_k$ is the primary statistic. A randomly initialized network has $R_k>0$, since every occlusion
+moves its output, while its $D_k$ is zero in expectation; $D_k$ therefore starts at zero as the theory assumes.
 
 \textsc{[default]} Reliance is \emph{not divided by the region area}. Remark~\ref{rem:area} shows that area is part of
-what makes a concept simple; the area-normalized score is an ablation. (This corrects the first oral description of the
-idea, which proposed the normalized score as the main one.)
+what makes a concept simple; the area-normalized score is an ablation.
 
 \subsection*{Step 2: concept learning curves \textsc{[fixed]}}
 
-Train the model with plain ERM for $T_0$ epochs. After every epoch $t\le T_0$ compute $R_k(t)$ for all units on a fixed
-probe subset of the training images, in evaluation mode and without augmentation. The $K$ sequences
-$t\mapsto S_k(t)$ are the concept learning curves. \textsc{[default]} $T_0=20$ epochs and the probe subset is the full
-MetaShift training set; larger datasets use 1{,}024 fixed images.
+Train the model with plain ERM for $T_0$ epochs. After every epoch $t\le T_0$ compute $D_k(t)$ for all units on the whole
+training split, in evaluation mode and without augmentation. The $K$ sequences
+$t\mapsto S_k(t)$ are the concept learning curves. \textsc{[default]} $T_0=20$ epochs for a network trained from scratch.
 
 Cost per audit: one forward pass of the probe subset per unit, so $K+1$ passes. With $K=12$ and 1{,}700 images this is
 below ten seconds on one V100.
@@ -223,8 +227,8 @@ $(y,a)$. Write $m_c=\mu_c^2+\sigma_c^2$ and $m_s=\mu_s^2+\sigma_s^2$.
 \end{assumption}
 
 \begin{assumption}[Simplicity]\label{as:simple}
-The spurious concept has the larger initial energy:
-$\rho\,\mu_s\sqrt{m_s} \;>\; \mu_c\sqrt{m_c}$.
+The spurious concept has the larger covariance with the label: $\rho\,\mu_s>\mu_c$, that is, $b_s>b_c$ in
+\eqref{eq:moments}.
 \end{assumption}
 
 \begin{assumption}[Linear readout and squared loss]\label{as:lin}
@@ -242,21 +246,25 @@ $\det\Sigma=m_cm_s-\rho^2\mu_c^2\mu_s^2>0$.
 \subsection{Reliance measures the weight of a concept}
 
 \begin{lemma}[Occlusion reliance]\label{lem:occ}
-Let $z\in\R^K$ have $\E[z_k]=0$ and $\E[z_k^2]=m_k$, and let $f_w(z)=w^\top z$. Under Assumption~\ref{as:sep}:
-\begin{enumerate}[nosep,label=(\roman*)]
-\item if occlusion sets $z_k$ to its mean $0$, then $R_k=\E[(f_w(z)-f_w(O_kz))^2]=w_k^2\,m_k$;
-\item if occlusion replaces $z_k$ by an independent copy $z_k'$ with the same distribution, then $R_k=2\,w_k^2\,m_k$.
-\end{enumerate}
-In both cases the ranking of the concepts by $R_k$ equals their ranking by $|w_k|\sqrt{m_k}$.
+Let $z\in\R^K$ have $\E[z_k]=0$, $\E[z_k^2]=m_k$ and $b_k=\E[yz_k]$ with $y\in\{-1,+1\}$, and let $f_w(z)=w^\top z$,
+whose margin is $y\,f_w(z)$. Under Assumption~\ref{as:sep}, let occlusion replace $z_k$ either by its mean $0$ or by
+an independent copy $z_k'$ with the same distribution. Then
+\[
+D_k=\E\big[y\,(f_w(z)-f_w(O_kz))\big]=w_k\,b_k
+\qquad\text{and}\qquad
+R_k=\E\big[(f_w(z)-f_w(O_kz))^2\big]=c\,w_k^2\,m_k ,
+\]
+with $c=1$ for the mean and $c=2$ for the independent copy.
 \end{lemma}
 
 \begin{proof}
-By Assumption~\ref{as:sep}, $f_w(z)-f_w(O_kz)=w_k(z_k-\bar z_k)$, where $\bar z_k$ is the replacement. For (i),
-$\bar z_k=0$ and $\E[w_k^2z_k^2]=w_k^2m_k$. For (ii), $\E[(z_k-z_k')^2]=\E[z_k^2]+\E[z_k'^2]-2\E[z_k]\E[z_k']=2m_k$.
-The factor $2$ is common to all concepts.
+By Assumption~\ref{as:sep}, $f_w(z)-f_w(O_kz)=w_k(z_k-\bar z_k)$, where $\bar z_k$ is the replacement. For the mean,
+$\bar z_k=0$, so $D_k=w_k\E[yz_k]=w_kb_k$ and $R_k=w_k^2m_k$. For the copy, $z_k'$ is independent of $y$ with mean
+zero, so $\E[yz_k']=0$ and $D_k=w_kb_k$ again, and
+$\E[(z_k-z_k')^2]=\E[z_k^2]+\E[z_k'^2]-2\E[z_k]\E[z_k']=2m_k$.
 \end{proof}
 
-\subsection{The concept with the larger energy is learned first}
+\subsection{The concept with the larger label covariance is learned first}
 
 \begin{theorem}[Early dynamics]\label{thm:early}
 Let $z\in\R^K$ with $\Sigma=\E[zz^\top]$, $b=\E[yz]$ and $\lambda=\lambda_{\max}(\Sigma)$. Under
@@ -279,34 +287,44 @@ $[0,t]$ gives the bound.
 \end{proof}
 
 \begin{corollary}[Order of the learning curves]\label{cor:order}
-Define the initial energy of concept $k$ as $e_k=|b_k|\sqrt{m_k}$ with $m_k=\Sigma_{kk}$, and let reliance be given by
-Lemma~\ref{lem:occ}. If $e_j>e_k$, then $R_j(t)>R_k(t)$ for every
-\[
-0<t<t^\star_{jk}=\frac{2\,(e_j-e_k)}{\lambda\,\|b\|_2\,\big(\sqrt{m_j}+\sqrt{m_k}\big)} .
-\]
+Let reliance be given by Lemma~\ref{lem:occ} and write $m_k=\Sigma_{kk}$.
+\begin{enumerate}[nosep,label=(\roman*)]
+\item If $|b_j|>|b_k|$, then $D_j(t)>D_k(t)$ for every
+$0<t<t^\star_{jk}=\dfrac{2\,(|b_j|-|b_k|)}{\lambda\,\|b\|_2}$.
+\item If $|b_j|\sqrt{m_j}>|b_k|\sqrt{m_k}$, then $R_j(t)>R_k(t)$ for every
+$0<t<\dfrac{2\,(|b_j|\sqrt{m_j}-|b_k|\sqrt{m_k})}{\lambda\,\|b\|_2\,(\sqrt{m_j}+\sqrt{m_k})}$.
+\end{enumerate}
 \end{corollary}
 
 \begin{proof}
-Let $\varepsilon=\tfrac12\lambda\|b\|_2t^2$. Theorem~\ref{thm:early} gives $|w_j(t)|\ge t|b_j|-\varepsilon$ and
-$|w_k(t)|\le t|b_k|+\varepsilon$. Then
+Let $\varepsilon=\tfrac12\lambda\|b\|_2t^2$. Theorem~\ref{thm:early} gives $|w_k(t)-t\,b_k|\le\varepsilon$ for every
+coordinate.
+
+(i) Multiplying by $b_k$ gives $t\,b_k^2-\varepsilon|b_k|\le w_k(t)\,b_k\le t\,b_k^2+\varepsilon|b_k|$, and
+$D_k(t)=w_k(t)b_k$ by Lemma~\ref{lem:occ}. Hence
 \[
-|w_j(t)|\sqrt{m_j}-|w_k(t)|\sqrt{m_k}\;\ge\;t\,(e_j-e_k)-\varepsilon\big(\sqrt{m_j}+\sqrt{m_k}\big),
+D_j(t)-D_k(t)\;\ge\;t\,(b_j^2-b_k^2)-\varepsilon\,(|b_j|+|b_k|)
+=(|b_j|+|b_k|)\,\Big(t\,(|b_j|-|b_k|)-\tfrac12\lambda\|b\|_2t^2\Big),
 \]
-which is positive exactly when $t<t^\star_{jk}$. By Lemma~\ref{lem:occ}, $R$ is an increasing function of
-$|w|\sqrt{m}$ with the same constant for all concepts, so $R_j(t)>R_k(t)$.
+which is positive exactly when $0<t<t^\star_{jk}$.
+
+(ii) $|w_j(t)|\ge t|b_j|-\varepsilon$ and $|w_k(t)|\le t|b_k|+\varepsilon$, so
+$|w_j(t)|\sqrt{m_j}-|w_k(t)|\sqrt{m_k}\ge t\,(|b_j|\sqrt{m_j}-|b_k|\sqrt{m_k})-\varepsilon(\sqrt{m_j}+\sqrt{m_k})$,
+which is positive on the stated interval. By Lemma~\ref{lem:occ}, $R$ is an increasing function of $|w|\sqrt{m}$ with
+the same constant for all concepts.
 \end{proof}
 
-In the two-concept model, $e_s=\rho\mu_s\sqrt{m_s}$ and $e_c=\mu_c\sqrt{m_c}$ by \eqref{eq:moments}.
-Assumption~\ref{as:simple} is $e_s>e_c$, so Corollary~\ref{cor:order} states: \emph{throughout the early window
-$(0,t^\star_{sc})$ the spurious concept has the larger reliance, and the onset score \eqref{eq:onset} computed inside
-this window ranks the spurious concept first.} This is the guarantee behind Steps 2 and 3.
+In the two-concept model, $b_s=\rho\mu_s$ and $b_c=\mu_c$ by \eqref{eq:moments}. Assumption~\ref{as:simple} is
+$b_s>b_c$, so Corollary~\ref{cor:order} states: \emph{throughout the early window $(0,t^\star_{sc})$ the spurious
+concept has the larger reliance, and the onset score \eqref{eq:onset} computed inside this window ranks the spurious
+concept first.} This is the guarantee behind Steps 2 and 3. For the squared statistic the same holds under
+$\rho\mu_s\sqrt{m_s}>\mu_c\sqrt{m_c}$.
 
 \begin{remark}[Area is part of simplicity]\label{rem:area}
 Let concept $k$ cover $n_k$ cells, each with signal $\nu_k$ and independent noise of variance $\tau_k^2$, and let the
-feature be the sum over its cells. Then $\mu_k=n_k\nu_k$ and $\sigma_k^2=n_k\tau_k^2$, so
-$e_k=|\mathrm{corr}_k|\,n_k\nu_k\sqrt{n_k^2\nu_k^2+n_k\tau_k^2}$ grows quadratically in the area $n_k$ once
-$n_k\nu_k^2\ge\tau_k^2$. A large region is learned early because it is large. Dividing the reliance by the area would
-remove a real part of the effect, which is why the unnormalized score is the default.
+feature be the sum over its cells. Then $\mu_k=n_k\nu_k$, so the label covariance $b_k$ grows in proportion to the area
+$n_k$, and $m_k=n_k^2\nu_k^2+n_k\tau_k^2$. A large region is learned early because it is large. Dividing the reliance
+by the area would remove a real part of the effect, which is why the unnormalized score is the default.
 \end{remark}
 
 \subsection{ERM keeps the spurious concept and loses worst-group accuracy}
@@ -486,8 +504,8 @@ regions; hair colour and gender (CelebA) share pixels & map quality check and ma
 (Remark~\ref{rem:imperfect}) \\
 \ref{as:data} data model & more than two concepts, non-Gaussian features, donor fills leave seams & random-region
 control with equal area \\
-\ref{as:simple} simplicity & the core concept may have the larger energy; then the audit flags the core concept and
-Proposition~\ref{prop:sym} with $q_s=0$ predicts harm & kill test, criterion K1 \\
+\ref{as:simple} simplicity & the core concept may have the larger label covariance; then the audit flags the core concept and
+Proposition~\ref{prop:sym} with $q_s=0$ predicts harm & kill test, stage K1 \\
 \ref{as:lin} linear model & deep networks learn features; a shortcut learned early can persist & restart-versus-continue
 ablation; curves on the real network \\
 \bottomrule
@@ -509,116 +527,19 @@ For the self-supervised variant the theoretical support is the identifiability r
 contrastive learning recovers the block of latent factors that the augmentation leaves unchanged. A swap of the flagged
 regions moves the flagged concepts into the block that changes between the two views.
 
-\section{Kill test on MetaShift}\label{sec:kill}
+\section{Experiments, implementation and decisions}\label{sec:kill}\label{sec:plan}\label{sec:impl}
 
-MetaShift (cat against dog, indoor against outdoor, about 1{,}700 training images, 88 percent aligned) is the
-development dataset: one run takes minutes. The test has two stages and stops at the first failure.
+The kill test on MetaShift with its pass and fail criteria, the experiment plan, the architecture of the code, the
+commands and all fixed decisions are specified in \texttt{docs/PROJECT\_PLAN.md}, Sections 3 to 8. In short: stage K1
+trains ERM with the audit and scores how well the onset score separates attribute units from class units (detection
+AUROC from hidden labels); stage K2 compares the swap under the audit's flags with ERM and with four controls (random
+units, last-ranked units, shuffled maps and oracle units).
 
-\subsection*{Stage K1: does the audit find the spurious concept? (about one week)}
-
-\begin{enumerate}[nosep]
-\item Train ERM for $T_0=20$ epochs, seeds 1 to 4, and store $R_k(t)$ for every unit and epoch.
-\item Type every concept unit with the hidden labels through the existing diagnostic
-(\code{cospro.\brk diagnostics.\brk factor\_\brk validity}): a unit is an \emph{attribute} unit or a \emph{class} unit when its
-conditional information score reaches 0.05 and doubles the other score.
-\item Compute the AUROC of the onset score $s_k$ for separating attribute units from class units, and the Spearman
-correlation of the unit ranking between seeds.
-\end{enumerate}
-
-\textbf{Pass:} AUROC at least 0.7 on three of four seeds, the flagged set contains scene units (lawn, desks, beds) and
-excludes the cat and dog units, and the mean rank correlation between seeds reaches 0.6.
-\textbf{Fail:} AUROC near 0.5, or the animal units lead the curves. A failure ends the timing hypothesis; the fallback
-is the human-in-the-loop arm (a person ticks the spurious units in the audit report) or an alternative of
-Section~\ref{sec:alt}.
-
-Run K1 for two settings in parallel, since the outcome decides the thesis setting \textsc{[open]}: ResNet-18 from
-scratch and ImageNet-pretrained ResNet-50.
-
-\subsection*{Stage K2: does the swap raise WGA? (about two weeks)}
-
-Arms, four seeds each, all with the same schedule and model selection:
-\begin{center}
-\begin{tabular}{ll}
-\toprule
-Arm & Purpose \\
-\midrule
-ERM & reference \\
-swap, audit flags ($\mathcal{F}$) & the method \\
-swap, random units of equal area & tests whether the flagged identity matters \\
-swap, last-ranked units & tests the direction of the timing signal \\
-swap, shuffled maps & tests whether the concept maps matter \\
-swap, oracle scene units & upper bound with the correct type \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\textbf{Pass:} the method beats ERM and the random-units control on validation WGA on at least three of four seeds,
-with a mean gain of at least 5 points over ERM, and the order ``oracle $\ge$ method $>$ random $>$ last-ranked'' holds
-on average. MetaShift validation groups hold 72 images, so single-seed differences below 7 points carry no weight.
-\textbf{Fail:} the method ties its random control. Then the gain comes from mixing as such, and the thesis moves to an
-alternative.
-
-\section{Experiment plan after the kill test}\label{sec:plan}
-
-\begin{itemize}[nosep]
-\item \textbf{Datasets.} MetaShift (development), Waterbirds (locked test with 642 images per minority group),
-Spur-CIFAR10 and one further dataset with large evaluation groups. CelebA violates Assumption~\ref{as:sep} and serves
-as the stated limit.
-\item \textbf{Baselines.} ERM, JTT, LfF or SPARE, MaskTune, Decompose-and-Compose, DFR as the reference with group
-labels, and object-prior compositing from the earlier project.
-\item \textbf{Ablations.} Area-normalized reliance; single factors against groups as units; paint-over against donor
-fill in the audit; $T_0\in\{5,10,20,40\}$; $\tau\in\{0.3,0.5,0.7\}$; $q\in\{0.25,0.5,0.75,1\}$; restart against
-continue after the audit; early-only schedule; human-corrected flags.
-\item \textbf{Theory checks on real data.} WGA as a function of $q$ (Theorem~\ref{thm:swap} predicts a monotone rise);
-the spurious ratio measured by reliance at the end of training as a function of $q$; a synthetic two-concept dataset
-that satisfies the assumptions exactly, where the formulas of Section~\ref{sec:theory} are verified numerically.
-\item \textbf{Timeline (14 weeks).} Weeks 1 to 3 kill test; weeks 4 to 6 method, controls and ablations on MetaShift
-and Waterbirds; weeks 7 to 9 baselines, seeds and further datasets; weeks 10 to 14 writing.
-\end{itemize}
-
-\section{Implementation notes for this repository}\label{sec:impl}
-
-These notes are for coding models. Names of existing functions come from
-\code{docs/\brk notes/\brk CONCEPT\_\brk FACTORS\_\brk 2026\_\brk 09\_\brk 26.\brk md}; confirm each name in the code before use.
-
-\begin{itemize}[nosep]
-\item \textbf{Concept maps.} \code{cospro.\brk cli.\brk build\_\brk concept\_\brk maps} with launcher
-\code{scripts/\brk build\_\brk concept\_\brk maps.\brk sbatch} writes the $14\times14$ maps; MetaShift maps exist. Co-activation groups
-come from \code{coactivation\_\brk groups}.
-\item \textbf{Warping.} Training views are random crops and flips. The existing \code{warp\_\brk maps} maps the cached
-concept maps onto a view from its crop box and flip. The audit uses unaugmented images.
-\item \textbf{Swap.} Extend the compositing path (\code{TrainingMethod.\brk compose\_\brk views}, \code{composite\_\brk maps}): the
-object mass becomes the kept mask $\kappa_i$ built from $\mathcal{F}$. Keep the sharpening of the mask and the
-paint-over of the donor.
-\item \textbf{New code.} (a) A supervised ERM training method with a class head, mixed precision
-(\code{torch.\brk float16} autocast with a \code{GradScaler}) and W\&B logging of WGA at every evaluation; (b) a reliance
-callback that computes \eqref{eq:rel} per unit and epoch and writes \code{concept\_\brk curves.\brk json} under \code{outputs/\brk };
-(c) a flagging CLI that reads the curves and writes \code{flagged\_\brk units.\brk json} and the audit report; (d) the option
-that feeds the flagged units into the swap.
-\item \textbf{Cluster rules.} All training runs through \code{sbatch}. Every new entry point ships with a launcher in
-\code{scripts/\brk } that starts from \code{scripts/\brk \_\brk template.\brk sbatch}, sources
-\code{scripts/\brk load\_\brk splice\_\brk cluster\_\brk env.\brk sh} and calls \code{announce\_\brk results}. One V100, at most 5 CPUs and 8G of
-memory per CPU. At most 8 jobs run at once (\code{MAX\_\brk PARALLEL}).
-\item \textbf{Storage.} Result JSON under \code{outputs/\brk }; checkpoints and tensors under scratch through
-\code{cospro.\brk tracking.\brk artifacts}, written once at the end of a stage.
-\item \textbf{Tests.} Unit tests for the reliance callback on a synthetic two-concept fixture where the true weights
-are known, and for the flagging rule. \code{tests/\brk test\_\brk slurm\_\brk launchers.\brk py} covers the launchers.
-\item \textbf{Numerical check of the theory.} A short script that samples the model of Assumption~\ref{as:data},
-solves $\Sigma w=b$ under the swap and compares the ratio and the WGA with Proposition~\ref{prop:erm},
-Theorem~\ref{thm:swap} and Proposition~\ref{prop:sym}.
-\end{itemize}
-
-\section{Open decisions}
-
-\begin{enumerate}[nosep]
-\item \textsc{[open]} \textbf{Supervised or self-supervised as the main setting.} The theory, the reliance on a class
-logit and the published baselines belong to the supervised setting, which is the recommendation. The self-supervised
-variant reuses the existing SimCLR pipeline and can remain a secondary table.
-\item \textsc{[open]} \textbf{Backbone.} From scratch (stronger simplicity bias, lower absolute numbers) or
-ImageNet-pretrained ResNet-50 (the protocol of the literature). Stage K1 runs both.
-\item \textsc{[open]} \textbf{Model selection.} Validation WGA with group labels, as JTT and Decompose-and-Compose use
-it, or validation average accuracy for a fully label-free claim.
-\end{enumerate}
+Two checks tie the experiments to the theory. Theorem~\ref{thm:swap} predicts that WGA rises monotonically in the
+swap probability $q$, which a sweep over $q$ tests. A synthetic two-concept dataset that satisfies
+Assumptions~\ref{as:sep} to~\ref{as:lin} allows an end-to-end numerical check of Proposition~\ref{prop:erm},
+Theorem~\ref{thm:swap} and Proposition~\ref{prop:sym}; the closed forms were verified numerically on 2{,}000 random
+parameter sets on 2026-11-14.
 
 \section{Position against prior work}
 
@@ -646,54 +567,13 @@ SpLiCE (Bhalla et al., 2024) & sparse named concepts & image-level, explains CLI
 
 \section{Alternative thesis topics}\label{sec:alt}
 
-Each alternative reuses the cached patch-wise concept maps. Their novelty has had no dedicated literature search yet.
-
-\subsection*{Alternative A: counterfactual last-layer retraining}
-
-\textbf{Idea.} Deep feature reweighting (DFR) retrains the last layer on a small group-balanced set and needs group
-labels for it. Build that set synthetically: composite every training image with exchanged concept regions so that
-concept and class are independent, extract features with the frozen ERM backbone and retrain the last layer on them.
-
-\textbf{Why it may work.} Theorem~\ref{thm:swap} applies to the last layer exactly, since the last layer is a linear
-model on fixed features; Assumption~\ref{as:lin} holds by construction. Training takes seconds, so MetaShift allows
-hundreds of seeds and configurations.
-
-\textbf{Risk.} DFR works when the backbone already encodes the core feature; composites with seams may shift the
-features. Related work: DFR, Decompose-and-Compose.
-\textbf{Effort.} Lowest of all options, about four weeks to a full result table. It also serves as a fast first test of
-the swap before full training.
-
-\subsection*{Alternative B: concept-localized attribution penalty}
-
-\textbf{Idea.} Keep the audit of Steps 1 to 3 and replace the swap by a penalty on the model's attribution: the
-input-gradient or Grad-CAM mass inside the flagged regions is penalized during training, in the manner of ``right for
-the right reasons''.
-
-\textbf{Why it may work.} No composite images, hence no seams and no donor statistics. In the linear model the penalty
-is a ridge term on $w_s$ alone, which shrinks the ratio $r$ monotonically, so Theorem~\ref{thm:wga} gives the gain.
-
-\textbf{Risk.} GALS uses a CLIP attention map with a class prompt for the same penalty; the difference is the
-model-derived named flag set. Input-gradient penalties cost a second backward pass.
-\textbf{Effort.} Moderate; shares the audit code with the main method.
-
-\subsection*{Alternative C: patch-concept bottleneck classifier}
-
-\textbf{Idea.} Classify from the patch-wise SpLiCE codes directly: each patch is a sparse vector over named concepts,
-an attention pooling aggregates the patches and a linear layer predicts the class. The model is interpretable by
-construction, and removing a concept is an edit of one weight column. The audit decides which concepts to remove.
-
-\textbf{Why it may work.} The backbone is frozen CLIP, so 1{,}700 images suffice, and concept removal in a linear
-bottleneck is exact.
-
-\textbf{Risk.} Closest prior work is strong: spatially grounded concept bottlenecks report 87 percent WGA on
-Waterbirds (arXiv 2510.04180), and image-level concept removal on CLIP is established. The contribution would be the
-patch-wise SpLiCE codes and the label-free choice of the removed concepts.
-\textbf{Effort.} Low to moderate; no training of a backbone.
-
-\subsection*{Minimal fallback}
-
-If no intervention yields a gain, the concept learning curves remain a diagnostic contribution: a study of which named
-concepts ERM, JTT, DFR and the self-supervised methods rely on over training, on four datasets.
+Section 10 of the project plan describes three alternatives that reuse the concept maps and the audit: a
+concept-localized attribution penalty, a patch-concept bottleneck classifier and a diagnostic study of concept learning
+curves across training methods. For the attribution penalty the linear model gives a direct argument: a ridge term
+$\tfrac{\eta}{2}w_s^2$ on the spurious weight leaves the numerator of $r^\ast$ in Proposition~\ref{prop:erm} unchanged
+and raises $w_c$ to $\mu_c\big(\sigma_s^2+\eta+(1-\rho^2)\mu_s^2\big)/\det$, so the ratio falls monotonically in $\eta$
+and Theorem~\ref{thm:wga} yields a rising WGA. Retraining only the last layer on swapped images is covered by
+Decompose-and-Compose and serves as an ablation.
 
 \begin{thebibliography}{99}\small
 \bibitem{asgari} Asgari, Khani, Khasahmadi, Aminbeidokhti et al. MaskTune: Mitigating Spurious Correlations by Forcing
