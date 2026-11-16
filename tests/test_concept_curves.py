@@ -308,6 +308,28 @@ class MethodTests(unittest.TestCase):
         summary = summarize_concept_curves.main(["--study", "study", "--output-root", str(self.root / "outputs")])
         self.assertIn("## curves", summary.read_text(encoding="utf-8"))
 
+    def test_attribution_pairs_single_unit_arms_with_simclr_by_seed(self):
+        def audit(onset):
+            units = [{"unit": unit, "name": name, "presence": 0.5, "area": 0.3, "audited": unit < 3}
+                     for unit, name in enumerate(["grass", "sofa", "dog", "rare"])]
+            typing = [{"unit": unit, "type": kind} for unit, kind in enumerate(["attribute", "attribute", "class", "untyped"])]
+            return {"curves": {"onset": onset, "units": units, "evaluation_only": {"typing": typing}}, "flags": None}
+
+        onset = [0.5, 0.3, 0.2, 0.0]
+        audits = {f"curves_unit_{unit}": {1: audit(onset), 2: audit(onset)} for unit in range(4)}
+        results = {"simclr": {1: {"wga": 40.0, "acc": 80.0}, 2: {"wga": 44.0, "acc": 80.0}, 3: {"wga": 90.0, "acc": 80.0}}}
+        for unit, gain in enumerate([6.0, 2.0, -4.0, 0.0]):
+            results[f"curves_unit_{unit}"] = {1: {"wga": 40.0 + gain, "acc": 81.0}, 2: {"wga": 44.0 + gain, "acc": 81.0}}
+        result = summarize_concept_curves.attribution(audits, results)
+        self.assertEqual(result["reference_arm"], "simclr")
+        self.assertEqual([row["name"] for row in result["units"]], ["grass", "sofa", "dog"])  # the unaudited unit is left out
+        self.assertEqual([row["wga_effect"] for row in result["units"]], [6.0, 2.0, -4.0])
+        self.assertEqual(result["units"][0]["seeds"], [1, 2])
+        self.assertEqual(result["units"][2]["positive_seeds"], 0)
+        self.assertAlmostEqual(result["onset_effect_spearman"], 1.0)
+        self.assertIn("| 1 | 0 | grass |", "\n".join(summarize_concept_curves.render_attribution(result)))
+        self.assertIsNone(summarize_concept_curves.attribution(audits, {"simclr": results["simclr"]}))
+
     def test_configuration_selects_the_method_and_leaves_other_storage_names_alone(self):
         common = ["--dataset", "metashift", "--seed", "1", "--artifact_dir", str(self.root / "runs")]
         args = spur_splice.parse_args([*common, "--splice_mode", "concept_curves", "--curve_concept_maps", str(self.maps)])

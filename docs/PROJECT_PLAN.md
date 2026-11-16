@@ -1,23 +1,48 @@
-# Project plan: Concept Learning Curves and Early Concept Swap
+# Thesis plan: concept learning curves, two projects
 
-Version 3, 2026-11-16. Branch `concept-factors`.
+Version 4, 2026-11-16. Branch `concept-factors`.
 
-This file is the single source of truth for the thesis project. Every person and every coding model
-reads it first and follows it. The theory with full proofs lives in
-[`paper/ConceptLearningCurves.tex`](../paper/ConceptLearningCurves.tex); when the two files disagree,
-this file wins and the `.tex` gets corrected.
+The thesis holds **two separate projects** that share one setting, one measurement tool (the concept
+audit) and one intervention (the concept swap). Each project has its own goal, its own claim and its
+own pass and fail criteria, so one can fail while the other stands.
+
+| | Project 1 | Project 2 |
+|---|---|---|
+| Name | **Early Concept Swap (ECS)** | **Concept Shortcut Attribution (CSA)** |
+| Kind | mitigation method | explanation method |
+| Goal | raise WGA of SimCLR without labels | explain which named concepts SimCLR uses as shortcuts, with evidence from interventions |
+| Output | one trained encoder with higher WGA | one table per dataset: concept, when it is learned, how much the encoder relies on it, what swapping it does to WGA |
+| Example result | "ECS reaches 52 WGA on MetaShift against 45 for SimCLR" | "The encoder learns *sofa / indoor* within 20 epochs; swapping it alone raises WGA by 2 points, so it is a shortcut" |
+| Plan file | [`PROJECT_ECS.md`](PROJECT_ECS.md) | [`PROJECT_CSA.md`](PROJECT_CSA.md) |
+
+**Reading order for every person and every coding model:** this file first (setting, shared method
+specification, code architecture, file formats), then the file of the project being worked on. The
+project files hold the goal, the hypotheses, the experiments, the pass and fail criteria and the next
+steps. The theory with full proofs lives in
+[`paper/ConceptLearningCurves.tex`](../paper/ConceptLearningCurves.tex). Order of authority: this
+file, then the project files, then the `.tex`.
 
 Words with a fixed meaning: **must** marks a binding rule, **default** marks a starting value that an
 experiment may change through a command-line option, **later** marks work outside the current stage.
+
+**How the two projects depend on each other.**
+
+| Finding of the experiments | ECS | CSA |
+|---|---|---|
+| The audit ranks spurious concepts first and swapping them raises WGA | succeeds | succeeds, with learning order as a label-free predictor of shortcuts |
+| Swapping the right concepts raises WGA and the audit ranks them wrongly | fails as a label-free method | succeeds: the per-concept effects identify the shortcuts, and "learning order does not mark shortcuts" is a reported finding |
+| The audit ranks correctly and the gain stays below the ECS threshold | weak | succeeds when the signs of the per-concept effects follow the concept types |
+| No swap changes WGA, the oracle swap included | fails | falls back to attribution by occlusion at inference (later work in `PROJECT_CSA.md`) |
 
 ---
 
 ## 1. Goal and setting
 
-**Thesis goal.** Raise worst-group accuracy (WGA) of self-supervised representations on datasets with a
-spurious attribute, small ones included (MetaShift with 1,700 training images, Waterbirds with 4,795),
-using patch-wise concepts from CLIP and SpLiCE, in a way that is an explainability method and has a
-measurable gain.
+**Thesis goal.** Use patch-wise concepts from CLIP and SpLiCE to explain and to reduce the reliance of
+self-supervised representations on a spurious attribute, small datasets included (MetaShift with
+1,700 training images, Waterbirds with 4,795). ECS covers "reduce" and is measured by worst-group
+accuracy (WGA). CSA covers "explain" and is measured by how well its per-concept statements hold under
+intervention.
 
 **The setting is the one of Spatial Concept Distillation (SCD) and must stay unchanged.** Only the
 method idea differs.
@@ -45,7 +70,7 @@ method idea differs.
 distillation from CLIP, and its explanation describes the teacher. The new method has no concept loss
 and no CLIP target.
 
-## 2. The idea in five sentences
+## 2. The shared idea in five sentences
 
 SimCLR learns the easiest features first, and one direction that fuses an object with its usual
 surroundings serves it well; the SCD measurements showed exactly this (the student's cat feature
@@ -62,8 +87,10 @@ Roles of the components:
 - **SpLiCE and CLIP** supply the names and the locations of concepts. They supply no training target.
 - **The audit** (reliance, curves, flags) explains the encoder under training. It is the xAI
   contribution, and its report is readable by a person.
-- **The swap** is the intervention that the audit selects. It is the compositing of the SCD line with
-  one change: the text prior "objects against scenes" is replaced by the encoder's own learning order.
+- **The swap** is the intervention. ECS swaps the set of units that the audit selects. CSA swaps one
+  unit at a time and reads the effect of each. It is the compositing of the SCD line with one change:
+  the text prior "objects against scenes" is replaced by the encoder's own learning order (ECS) or by
+  one explicit unit (CSA).
 
 Relation to the SCD results: compositing with the object prior reached 62.0 WGA on Waterbirds against
 53.0 for spatial maps, and every prior-free variant (symmetric mixing, per-group heads) failed. The
@@ -128,7 +155,8 @@ Flagging happens once, right after the audit of epoch `T0`.
   summed) above 0.75 ends the prefix. One unit is always flagged and one audited unit always stays.
 - Control rules, each flagging as many units as `top` does: `bottom` takes them from the end of the
   ranking and `random` draws them uniformly from the audited units with a seed.
-- `units` flags an explicit list of unit ids (human-corrected flags).
+- `units` flags an explicit list of unit ids. CSA uses it with one unit per run; it also serves
+  human-corrected flags.
 - `oracle` flags the audited units that the hidden-label typing of Section 7 calls attribute units.
   It reads group labels by design and exists only as the upper-bound control arm.
 - `none` flags nothing: the run audits and trains exactly as SimCLR.
@@ -284,12 +312,18 @@ launcher builds them first when they are missing.
 # Kill test, both stages in one submission: 5 arms x 4 seeds = 20 jobs, at most 8 at once
 ARMS="curves curves_random curves_bottom curves_shuffled curves_oracle" bash scripts/submit_factor_study.sh metashift 1 2 3 4
 
+# CSA, one arm per concept unit: 12 arms x 4 seeds = 48 jobs, at most 8 at once
+ARMS="curves_units" bash scripts/submit_factor_study.sh metashift 1 2 3 4
+
 # Optional: the audit under plain SimCLR for all 500 epochs
 ARMS="curves_audit" bash scripts/submit_factor_study.sh metashift 1 2 3 4
 
 # Reports, on any machine after git pull
 python -m cospro.cli.summarize_concept_curves --study factors_metashift
 ```
+
+The report `outputs/reports/factors_metashift/concept_curves.md` holds the audit of every arm and,
+once `curves_unit_<k>` runs have finished, the concept attribution table of CSA at its top.
 
 WGA per arm appears in the study summary `outputs/reports/factors_metashift/summary.md`, beside the
 existing `simclr`, `spatial_w5_holdout` and `comp_*` arms.
@@ -304,20 +338,23 @@ existing `simclr`, `spatial_w5_holdout` and `comp_*` arms.
 | `curves_shuffled` | `--curve_shuffle_maps true` | tests whether the concept maps matter |
 | `curves_oracle` | `--curve_flag_rule oracle` | upper bound with the correct type (reads group labels) |
 | `curves_audit` | `--curve_flag_rule none` | audit only; training equals SimCLR |
+| `curves_unit_<k>`, `k = 0..11` | `--curve_flag_rule units --curve_flag_units <k>` | CSA: swaps unit `k` alone; `ARMS="curves_units"` selects all twelve |
+
+The arms `curves` to `curves_oracle` belong to ECS and the arms `curves_unit_<k>` to CSA. Unit ids
+come from `coactivation_groups(maps, K, seed=0)`, so they depend only on the concept maps and
+`curves_unit_<k>` names the same concept in every seed. The environment variable `CURVE_UNITS` of the
+launcher sets the number of units and unit arms (default 12).
 
 References already in the study: `simclr` (SimCLR), `spatial_w5_holdout` (SCD) and
 `comp_w5_holdout` (compositing with the object prior).
 
 All arms of one seed share the first `T0` epochs, since the swap starts after them.
 
-## 7. Kill test on MetaShift
+## 7. Evaluation-only diagnostics of the audit
 
-One submission serves both stages. Stage K1 is readable after epoch 50 of any `curves*` run; stage K2
-needs the finished runs.
-
-### Stage K1: does the audit find the spurious concept?
-
-Diagnostics from hidden labels, written into `evaluation_only` and collected by the summary:
+These diagnostics read hidden class and attribute labels. They are written into `evaluation_only`
+and collected by the summary. Both projects use them: ECS in its kill test, CSA to check its
+per-concept statements. Training and flagging never read them (the `oracle` rule excepted).
 
 - **Unit typing.** For the presence indicator `P_k` of each audited unit:
   `u_attribute = I(P_k; a | y) / H(P_k)` and `u_class = I(P_k; y | a) / H(P_k)`. A unit is an
@@ -327,44 +364,33 @@ Diagnostics from hidden labels, written into `evaluation_only` and collected by 
   units (negative).
 - **Seed agreement**: mean Spearman correlation of the onset scores between seeds.
 
-| Outcome | Condition | Consequence |
-|---|---|---|
-| Pass | AUROC at least 0.7 on three of four seeds, and the flagged set holds at least one attribute unit and no class unit on three of four seeds | the timing signal holds |
-| Weak | AUROC between 0.55 and 0.7 | try `--curve_statistic margin`, `--curve_unit_count 0`, `T0` of 20 and 100 |
-| Fail | AUROC below 0.55, or the class units lead | the timing hypothesis ends; continue with human-corrected flags (rule `units`) or an alternative of Section 10 |
-
 The typing needs both kinds of units among the 12. If the units mix animals and scenes (many untyped
 units), use `--curve_unit_count 0`.
 
-### Stage K2: does the swap raise WGA?
+Noise level on MetaShift: validation groups hold 72 images and the standard deviation of the reported
+WGA over seeds is about 4 points (`outputs/reports/factors_metashift/summary.json`). A single-seed
+difference below 7 points carries no weight. Reference values of the branch (validation WGA, seeds 1
+to 4): SimCLR 44.8, spatial maps 53.0, compositing with the object prior 52.3.
 
-| Outcome | Condition | Consequence |
-|---|---|---|
-| Pass | `curves` beats `simclr` by at least 5 points of mean validation WGA and beats both `simclr` and `curves_random` on three of four seeds | proceed to Section 8 |
-| Partial | `curves_oracle` passes and `curves` fails | the swap works and the audit needs repair |
-| Fail | `curves_oracle` ties `simclr` | the swap itself fails in this setting; move to an alternative |
+The pass and fail criteria live in the project files: the kill test of ECS in `PROJECT_ECS.md`,
+Section 3, and the hypotheses of CSA in `PROJECT_CSA.md`, Section 4.
 
-Reference values of the branch on MetaShift (validation WGA, seeds 1 to 4): SimCLR 44.8, spatial
-maps 53.0, compositing with the object prior 52.3. MetaShift validation groups hold 72 images, so a
-single-seed difference below 7 points carries no weight; extend to seeds 5 to 8 before any claim.
+## 8. Order of work and timeline
 
-## 8. Plan after the kill test (later)
+1. **Weeks 1 and 2, both projects.** Submit the ECS kill test (20 jobs) and the CSA unit arms for
+   seeds 1 and 2 (24 jobs). All arms of a seed share the first 50 epochs, so the audit verdict is
+   common to both projects.
+2. **Week 3.** Read both reports and decide per project with its own criteria. Extend the promising
+   project to more seeds first.
+3. **Weeks 4 to 9.** Waterbirds, baselines and ablations of the projects that passed.
+4. **Weeks 10 to 14.** Writing.
 
-1. Waterbirds (locked test split with 642 images per minority group) and Spur-CIFAR10. CelebA
-   violates spatial separability and serves as the stated limit.
-2. Baselines of the setting: SimCLR, LateTVG, LA-SSL, SCD spatial maps and compositing with the
-   object prior.
-3. Ablations: `K`, `T0`, `tau`, `q`, statistic, one view against both views, area-normalized
-   reliance, human-corrected flags, swap from epoch 1 with oracle flags (tests whether the early
-   window costs anything).
-4. Theory checks: WGA as a function of `q`; the curves after the swap starts (the reliance on the
-   flagged units has to fall).
-
-Timeline, 14 weeks from 2026-11-16: weeks 1 to 3 kill test; weeks 4 to 6 method and ablations on
-MetaShift and Waterbirds; weeks 7 to 9 baselines and further datasets; weeks 10 to 14 writing.
+Both projects run in parallel while both stand. If one fails its criteria, its remaining budget moves
+to the other.
 
 ## 9. Prior work and novelty
 
+The table below covers ECS; the prior work of CSA is in `PROJECT_CSA.md`, Section 7.
 Searches on 2026-11-14 and 2026-11-16 (about 20 queries) found no work that combines these three
 elements: named patch-level concepts, the timing of the model's reliance on them as the signal for
 spuriousness and a region-level swap chosen by that signal. None of the related works below operates
@@ -386,7 +412,9 @@ non-exhaustive; repeat it before submission.
 
 ## 10. Alternative thesis topics
 
-Each alternative keeps the setting of Section 1 and reuses the concept maps and the audit code.
+Fallbacks if both projects fail. Each alternative keeps the setting of Section 1 and reuses the
+concept maps and the audit code. The former alternative C (a diagnostic study with the audit) became
+Project 2, CSA.
 
 **A. Concept-conditioned negatives.** Keep the audit and change the negatives of SimCLR: for a share
 of the batch, the negatives of an image are images that show the same flagged concept, as the F1
@@ -401,11 +429,6 @@ flagged units directly: the embedding of a view and of the same view with its fl
 occluded are pulled together. This is an invariance to the flagged concept without donor content.
 Closest prior work: background removal augmentations (Ryali et al., 2021) with a saliency model.
 Risk: occlusion fills are out of distribution. Effort: low, the occlusion operator exists.
-
-**C. Concept learning curves as a diagnostic study.** No new training method: measure with the audit
-which named concepts SimCLR, LateTVG, LA-SSL, SCD and compositing rely on over training, on four
-datasets, and relate the curves to WGA. The safe fallback if no intervention yields a gain, since
-the audit code exists. Risk: a thesis without a method gain. Effort: low.
 
 ## 11. Risks
 
@@ -422,10 +445,10 @@ the audit code exists. Risk: a thesis without a method gain. Effort: low.
 ## 12. Implementation status
 
 Implemented and tested locally on 2026-11-16: the audit, the flag rules, the swap, the training
-method, the callback, the options, the study arms and the summary. `tests/test_concept_curves.py`
-holds 23 tests; the whole suite passes. One end-to-end run of `spur_splice.py` on a synthetic
+method, the callback, the options, the study arms of both projects and the summary with the
+attribution table of CSA. `tests/test_concept_curves.py` holds 24 tests; the whole suite passes. One end-to-end run of `spur_splice.py` on a synthetic
 MetaShift tree completed with audits, flagging, the swap and the linear probe. No run on real data
-has happened yet; the kill test of Section 5 is the next action.
+has happened yet; the submissions of Section 8, step 1, are the next action.
 
 Not verified yet: that a `curves_audit` run reproduces the `simclr` run of the same seed number for
 number. The loader keeps SimCLR's sampler and generator and the recorded transform draws as the plain
@@ -442,6 +465,9 @@ one does, so the design aims at equality; the first cluster runs confirm or refu
 - **Acquired reliance** `D_k(t)`: the embedding shift minus its value before training.
 - **Share** `S_k(t)`: acquired reliance normalized over the audited units.
 - **Onset score** `s_k`: mean share over the early window.
-- **Flagged set**: the units the audit marks; their regions are swapped.
+- **Flagged set**: the units whose regions are swapped: chosen by the audit in ECS, one explicit
+  unit in CSA.
+- **WGA effect** `E_k` (CSA): WGA of the run that swaps unit `k` alone minus WGA of SimCLR, paired by
+  seed.
 - **Swap**: exchange of the flagged regions of a view with those of another image.
 - **WGA**: the lowest accuracy of the linear probe over the four groups (class, attribute).

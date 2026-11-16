@@ -4,7 +4,7 @@ Patch-wise concept maps say where each concept factor sits in each training imag
 pixels form a concept unit, and the cells a unit wins in an image are its hard region. Occluding that
 region and measuring how far the encoder's embedding of the image moves gives the encoder's reliance on
 the unit. The reliance of every unit over the first epochs is its learning curve; the units that lead the
-curves are flagged. Sections 4.2 to 4.5 of docs/PROJECT_PLAN.md define every quantity here.
+curves are flagged. Sections 3.2 to 3.5 of docs/PROJECT_PLAN.md define every quantity here.
 
 The functions are pure tensor code and read no label. Class and group labels enter only ``unit_typing``,
 which scores the audit after the fact, and the ``oracle`` flag rule, an upper-bound control by design.
@@ -191,7 +191,7 @@ def onset_scores(epochs: list[int], shares: list[list[float]], early_epochs: int
 
 def flag_units(onset: list[float], units: list[dict], rule: str = "top", tau: float = 0.5,
                max_area: float = 0.75, seed: int = 0, explicit: list[int] | None = None) -> list[int]:
-    """The flagged unit ids under one rule (Section 4.5 of the plan).
+    """The flagged unit ids under one rule (Section 3.5 of the plan).
 
     ``top`` takes the shortest prefix of the audited units by decreasing onset score whose scores reach
     the share ``tau`` of the total. A unit that lifts the expected flagged area of an image (presence

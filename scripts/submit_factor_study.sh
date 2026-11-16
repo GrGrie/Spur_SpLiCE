@@ -7,6 +7,8 @@
 #   bash scripts/submit_factor_study.sh spur_cifar10 [SEED ...]
 #   bash scripts/submit_factor_study.sh waterbirds|celeba [SEED ...]   (held-out datasets)
 #   ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4   (only these arms)
+#   ARMS="curves_units" bash scripts/submit_factor_study.sh metashift 1 2 3 4   (one arm per concept unit,
+#   curves_unit_0 to curves_unit_11; CURVE_UNITS sets the unit count)
 #   SBATCH_PARTITION=gpuidle bash scripts/submit_factor_study.sh ...   (another partition: sbatch reads
 #   SBATCH_PARTITION and it overrides the #SBATCH --partition line of every launcher)
 #   FINAL_TEST=1 bash scripts/submit_factor_study.sh waterbirds 1 2   (locked test: the same arms probed once on
@@ -163,6 +165,7 @@ spatial_args() {
 # and no concept loss enters training. curves_audit only audits (training equals simclr). Controls: random units
 # (curves_random), the last-ranked units (curves_bottom), shuffled maps (curves_shuffled) and the hidden-label
 # attribute units as the upper bound (curves_oracle).
+CURVE_UNITS="${CURVE_UNITS:-12}"
 add_curve_arms() {
   ARMS[curves_audit]="${CURVES[*]} --curve_flag_rule none"
   ARMS[curves]="${CURVES[*]}"
@@ -170,6 +173,13 @@ add_curve_arms() {
   ARMS[curves_bottom]="${CURVES[*]} --curve_flag_rule bottom"
   ARMS[curves_shuffled]="${CURVES[*]} --curve_shuffle_maps true"
   ARMS[curves_oracle]="${CURVES[*]} --curve_flag_rule oracle"
+  # Concept Shortcut Attribution (docs/PROJECT_CSA.md): one arm per concept unit, swapping that unit alone after
+  # the early window. Unit ids depend only on the concept maps, so curves_unit_<k> names one concept in every seed.
+  # ARMS="curves_units" selects all of them.
+  local unit
+  for ((unit = 0; unit < CURVE_UNITS; unit++)); do
+    ARMS[curves_unit_${unit}]="${CURVES[*]} --curve_unit_count ${CURVE_UNITS} --curve_flag_rule units --curve_flag_units ${unit}"
+  done
 }
 # Concept compositing arms, for datasets whose target is an object and whose spurious attribute is its surroundings.
 add_composite_arms() {
@@ -370,6 +380,10 @@ fi
 
 SELECTED=()
 if [[ -n "${SELECTED_ARMS}" ]]; then
+  if [[ " ${SELECTED_ARMS} " == *" curves_units "* ]]; then
+    UNIT_ARMS="$(for ((unit = 0; unit < CURVE_UNITS; unit++)); do printf 'curves_unit_%d ' "${unit}"; done)"
+    SELECTED_ARMS="${SELECTED_ARMS//curves_units/${UNIT_ARMS}}"
+  fi
   for arm in ${SELECTED_ARMS}; do
     if [[ -z "${ARMS[${arm}]+set}" ]]; then
       echo "Unknown arm ${arm} for ${DATASET}; known: $(printf '%s ' "${!ARMS[@]}")" >&2

@@ -32,7 +32,7 @@ training images
 | Graph sampler and relational KL | `cospro/methods/relational_graph.py` |
 | Top SpLiCE concepts of chosen or random images as one HTML page (local) | `cospro/cli/show_splice_concepts.py` |
 | Concept factors, F1 conditioned batches, F2 factor distillation | `cospro/pipeline/concept_factors.py`, `cospro/methods/concept_factors.py`, `cospro/cli/inspect_concept_factors.py` |
-| Concept learning curves and early concept swap, a label-free SimCLR method (plan: `docs/PROJECT_PLAN.md`) | `cospro/curves/`, `cospro/methods/concept_curves.py`, `ConceptAudit` in `cospro/training/callbacks.py`, `cospro/cli/summarize_concept_curves.py`, arms `curves*` in `scripts/submit_factor_study.sh` |
+| Concept learning curves: Early Concept Swap (ECS) and Concept Shortcut Attribution (CSA), label-free SimCLR (plans: `docs/PROJECT_PLAN.md`, `docs/PROJECT_ECS.md`, `docs/PROJECT_CSA.md`) | `cospro/curves/`, `cospro/methods/concept_curves.py`, `ConceptAudit` in `cospro/training/callbacks.py`, `cospro/cli/summarize_concept_curves.py`, arms `curves*` in `scripts/submit_factor_study.sh` |
 | LateTVG pruned second view (combines with any method) | `cospro/training/late_pruning.py`, `experiments/manifests/waterbirds_latetvg.yaml` |
 | Typed training configuration, presets, sweeps | `cospro/config/` |
 | Training methods behind one interface | `cospro/methods/` |

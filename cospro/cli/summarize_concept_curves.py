@@ -3,8 +3,10 @@
 Reads every ``concept_curves.json`` and ``flagged_units.json`` under ``outputs/seeds/<study>/`` and writes
 ``outputs/reports/<study>/concept_curves.json`` and ``concept_curves.md``: per arm and seed the detection
 AUROC of the onset scores and the flagged units with their hidden-label types, the agreement of the onset
-scores between seeds and the audit report (every unit with its words, onset score and type). Worst-group
-accuracy per arm stays in the study summary of ``cospro.cli.summarize_study``. This command reads JSON
+scores between seeds and the audit report (every unit with its words, onset score and type). When the study
+holds the single-unit arms ``curves_unit_<k>``, the report opens with the concept attribution table of
+docs/PROJECT_CSA.md: per unit the onset rank and the paired change of validation WGA against SimCLR.
+Worst-group accuracy per arm stays in the study summary of ``cospro.cli.summarize_study``. This command reads JSON
 only, so it runs on any machine after ``git pull``.
 
     python -m cospro.cli.summarize_concept_curves --study factors_metashift
@@ -15,11 +17,17 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 from pathlib import Path
 
+from cospro.cli.summarize_study import run_row
 from cospro.curves.core import spearman
 from cospro.tracking.artifacts import atomic_write_json, report, resolve_output_root
+
+# Arms that train as plain SimCLR, in order of preference as the reference of the attribution table.
+REFERENCE_ARMS = ("simclr", "curves_audit")
+UNIT_ARM = re.compile(r"curves_unit_\d+")
 
 
 def newest_audits(study_root: Path) -> dict[str, dict[int, dict]]:
@@ -73,13 +81,83 @@ def summarize_arm(seeds: dict[int, dict]) -> dict:
             "seed_agreement": statistics.fmean(agreement) if agreement else None, "units": units}
 
 
-def render(study: str, arms: dict[str, dict]) -> str:
+def probe_results(study_root: Path) -> dict[str, dict[int, dict]]:
+    """Per arm and seed the validation probe of the newest complete run: ``{"wga", "acc"}`` (last four probes)."""
+
+    results: dict[str, dict[int, dict]] = {}
+    for path in sorted(study_root.glob("seed_*/*/*/run.json")):
+        row = run_row(path, study_root)
+        if row["status"] == "complete" and row["val_wga_last4"] is not None:
+            results.setdefault(row["arm"], {})[row["seed"]] = {"wga": row["val_wga_last4"], "acc": row["val_acc_last4"]}
+    return results
+
+
+def attribution(audits: dict[str, dict[int, dict]], results: dict[str, dict[int, dict]]) -> dict | None:
+    """Concept Shortcut Attribution (docs/PROJECT_CSA.md): the effect of swapping one unit on the probe.
+
+    Every arm ``curves_unit_<k>`` is compared with the reference arm on the seeds both finished. The effect of
+    unit ``k`` is the mean paired difference of validation WGA. ``onset_effect_spearman`` relates the onset
+    score of a unit to its effect across units.
+    """
+
+    reference_arm = next((arm for arm in REFERENCE_ARMS if arm in results), None)
+    unit_arms = {int(arm.rsplit("_", 1)[1]): arm for arm in results if UNIT_ARM.fullmatch(arm)}
+    if reference_arm is None or not unit_arms:
+        return None
+    reference, rows = results[reference_arm], []
+    for unit, arm in sorted(unit_arms.items()):
+        seeds = sorted(set(results[arm]) & set(reference))
+        entries = [audits[arm][seed]["curves"] for seed in seeds if seed in audits.get(arm, {})]
+        entries = [curves for curves in entries if curves.get("onset") is not None and unit < len(curves["units"])]
+        if not seeds or not entries or not entries[0]["units"][unit]["audited"]:
+            continue
+        gains = [results[arm][seed]["wga"] - reference[seed]["wga"] for seed in seeds]
+        typing = entries[0]["evaluation_only"].get("typing")
+        rows.append({
+            "unit": unit, "name": entries[0]["units"][unit]["name"], "seeds": seeds,
+            "presence": entries[0]["units"][unit]["presence"], "area": entries[0]["units"][unit]["area"],
+            "onset": statistics.fmean(curves["onset"][unit] for curves in entries),
+            "type": "n/a" if typing is None else typing[unit]["type"],
+            "wga_effect": statistics.fmean(gains),
+            "wga_effect_sd": statistics.stdev(gains) if len(gains) > 1 else None,
+            "positive_seeds": sum(gain > 0 for gain in gains),
+            "accuracy_effect": statistics.fmean(results[arm][seed]["acc"] - reference[seed]["acc"] for seed in seeds),
+        })
+    if not rows:
+        return None
+    rows.sort(key=lambda row: -row["onset"])
+    for rank, row in enumerate(rows, start=1):
+        row["onset_rank"] = rank
+    correlation = spearman([row["onset"] for row in rows], [row["wga_effect"] for row in rows]) if len(rows) > 2 else None
+    return {"reference_arm": reference_arm, "units": rows,
+            "onset_effect_spearman": None if correlation is None or math.isnan(correlation) else correlation}
+
+
+def render_attribution(result: dict) -> list[str]:
+    correlation = result["onset_effect_spearman"]
+    lines = ["## Concept attribution", "",
+             f"Each row swaps one concept unit alone after the early window (arm `curves_unit_<k>`) and reports the "
+             f"paired change of validation WGA against `{result['reference_arm']}`, in points. Spearman correlation of "
+             f"onset score and WGA effect across units: {'n/a' if correlation is None else f'{correlation:.2f}'}.", "",
+             "| onset rank | unit | words | onset | area | hidden-label type | WGA effect | sd | seeds up | accuracy effect |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
+    for row in result["units"]:
+        deviation = "n/a" if row["wga_effect_sd"] is None else f"{row['wga_effect_sd']:.1f}"
+        lines.append(f"| {row['onset_rank']} | {row['unit']} | {row['name']} | {row['onset']:.3f} | {row['area']:.2f} | "
+                     f"{row['type']} | {row['wga_effect']:+.1f} | {deviation} | {row['positive_seeds']}/{len(row['seeds'])} | "
+                     f"{row['accuracy_effect']:+.1f} |")
+    return [*lines, ""]
+
+
+def render(study: str, arms: dict[str, dict], attributed: dict | None = None) -> str:
     def number(value) -> str:
         return "n/a" if value is None else f"{value:.2f}"
 
     lines = [f"# Concept audits of {study}", "",
              "Detection AUROC: how well the onset score separates attribute units from class units. Types come from "
              "hidden labels and are used for this report only.", ""]
+    if attributed is not None:
+        lines += render_attribution(attributed)
     for arm, summary in arms.items():
         if not summary["per_seed"]:
             continue
@@ -102,14 +180,16 @@ def main(argv: list[str] | None = None) -> Path:
     parser.add_argument("--study", required=True)
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args(argv)
-    audits = newest_audits(resolve_output_root(args.output_root) / "seeds" / args.study)
+    study_root = resolve_output_root(args.output_root) / "seeds" / args.study
+    audits = newest_audits(study_root)
     if not audits:
         raise SystemExit(f"No concept_curves.json under the study {args.study}.")
     arms = {arm: summarize_arm(seeds) for arm, seeds in sorted(audits.items())}
+    attributed = attribution(audits, probe_results(study_root))
     directory = report(args.study, root=args.output_root)
-    atomic_write_json(directory / "concept_curves.json", {"study": args.study, "arms": arms})
+    atomic_write_json(directory / "concept_curves.json", {"study": args.study, "arms": arms, "attribution": attributed})
     summary = directory / "concept_curves.md"
-    summary.write_text(render(args.study, arms), encoding="utf-8")
+    summary.write_text(render(args.study, arms, attributed), encoding="utf-8")
     print(f"[results] Concept audit summary: {summary}")
     return summary
 

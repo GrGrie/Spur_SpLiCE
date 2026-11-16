@@ -2,7 +2,7 @@
 
 Every image keeps the part outside its flagged regions and receives, inside them, the flagged-type
 content of a donor image; the label stays with the kept part. Flagged concepts then carry no
-information about the label (Section 4.6 of docs/PROJECT_PLAN.md, Theorem "Early concept swap" in
+information about the label (Section 3.6 of docs/PROJECT_PLAN.md, Theorem "Early concept swap" in
 paper/ConceptLearningCurves.tex).
 """
 
