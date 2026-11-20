@@ -266,6 +266,7 @@ Reused primitives (must stay unchanged): `warp_maps`, `sharpen`, `inpaint`, `com
 | `--curve_swap_warmup_epochs` | 10 | linear ramp of `q` after `T0` |
 | `--curve_swap_views` | `both` | `both` or `second` |
 | `--curve_shuffle_maps` | false | control: another image's regions |
+| `--curve_area_normalize` | false | ablation: acquired reliance divided by the unit's mean area before shares |
 
 The `curve_*` options stay out of the storage name of every other method, so existing runs keep their
 folders.
@@ -338,6 +339,7 @@ existing `simclr`, `spatial_w5_holdout` and `comp_*` arms.
 | `curves_shuffled` | `--curve_shuffle_maps true` | tests whether the concept maps matter |
 | `curves_oracle` | `--curve_flag_rule oracle` | upper bound with the correct type (reads group labels) |
 | `curves_audit` | `--curve_flag_rule none` | audit only; training equals SimCLR |
+| `curves_t20` to `curves_oracle_t1` | one option of `curves` changed each | ECS ablations, listed in `PROJECT_ECS.md`, Section 5; `ARMS="curves_ablations"` selects all eleven |
 | `curves_unit_<k>`, `k = 0..11` | `--curve_flag_rule units --curve_flag_units <k>` | CSA: swaps unit `k` alone; `ARMS="curves_units"` selects all twelve |
 
 The arms `curves` to `curves_oracle` belong to ECS and the arms `curves_unit_<k>` to CSA. Unit ids
@@ -446,13 +448,14 @@ Risk: occlusion fills are out of distribution. Effort: low, the occlusion operat
 
 Implemented and tested locally on 2026-11-16: the audit, the flag rules, the swap, the training
 method, the callback, the options, the study arms of both projects and the summary with the
-attribution table of CSA. `tests/test_concept_curves.py` holds 24 tests; the whole suite passes. One end-to-end run of `spur_splice.py` on a synthetic
-MetaShift tree completed with audits, flagging, the swap and the linear probe. No run on real data
+attribution table of CSA. `tests/test_concept_curves.py` holds 28 tests; the whole suite
+passes. One end-to-end run of `spur_splice.py` on a synthetic MetaShift tree completed with audits, flagging, the swap and the linear probe. No run on real data
 has happened yet; the submissions of Section 8, step 1, are the next action.
 
-Not verified yet: that a `curves_audit` run reproduces the `simclr` run of the same seed number for
-number. The loader keeps SimCLR's sampler and generator and the recorded transform draws as the plain
-one does, so the design aims at equality; the first cluster runs confirm or refute it.
+Verified on 2026-11-20 (branch `ECS`): a `curves_audit` run reproduces the `simclr` run of the same
+seed loss for loss on a synthetic MetaShift tree, with 0 and 2 loader workers; a swapping run departs
+only after `T0`. The ECS ablation arms, the area-normalized reliance and the automatic kill-test
+verdicts are described in `PROJECT_ECS.md`, Sections 3, 5 and 7.
 
 ## 13. Glossary
 

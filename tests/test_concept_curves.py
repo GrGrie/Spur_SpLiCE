@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 import torch
@@ -329,6 +334,95 @@ class MethodTests(unittest.TestCase):
         self.assertAlmostEqual(result["onset_effect_spearman"], 1.0)
         self.assertIn("| 1 | 0 | grass |", "\n".join(summarize_concept_curves.render_attribution(result)))
         self.assertIsNone(summarize_concept_curves.attribution(audits, {"simclr": results["simclr"]}))
+
+    def test_ecs_kill_test_verdicts(self):
+        def audit(auroc, flagged, leader_onset=0.6):
+            units = [{"unit": unit, "name": name, "presence": 0.5, "area": 0.3, "audited": True}
+                     for unit, name in enumerate(["grass", "sofa", "dog"])]
+            typing = [{"unit": 0, "type": "attribute"}, {"unit": 1, "type": "attribute"}, {"unit": 2, "type": "class"}]
+            share = [[0.0, 0.0, 0.0], [0.6, 0.2, 0.2], [0.2, 0.3, 0.5]]
+            curves = {"onset": [leader_onset, 0.3, 0.1], "units": units, "epochs": [0, 50, 500], "early_epochs": 50,
+                      "share": share, "evaluation_only": {"typing": typing, "detection_auroc": auroc}}
+            return {"curves": curves, "flags": {"flagged": flagged}}
+
+        audits = {"curves": {seed: audit(0.9, [0]) for seed in (1, 2, 3, 4)}}
+        audits["curves"][4] = audit(0.6, [0, 2])
+        k1 = summarize_concept_curves.k1_verdict(audits["curves"])
+        self.assertEqual((k1["verdict"], k1["seeds_auroc_at_least_0.7"], k1["seeds_with_clean_flags"]), ("pass", 3, 3))
+        self.assertEqual(summarize_concept_curves.k1_verdict({1: audit(0.4, [0])})["verdict"], "fail")
+        self.assertEqual(summarize_concept_curves.k1_verdict({1: audit(0.65, [0])})["verdict"], "weak")
+
+        def wga(values):
+            return {seed: {"wga": value, "acc": 80.0} for seed, value in zip((1, 2, 3, 4), values)}
+
+        results = {"simclr": wga([40, 44, 46, 48]), "curves": wga([48, 50, 52, 50]), "curves_random": wga([42, 45, 47, 51]),
+                   "curves_oracle": wga([50, 52, 54, 55])}
+        self.assertEqual(summarize_concept_curves.k2_verdict(results)["verdict"], "pass")
+        results["curves_random"] = wga([49, 51, 53, 51])
+        self.assertEqual(summarize_concept_curves.k2_verdict(results)["verdict"], "partial")
+        results["curves_oracle"] = wga([41, 44, 46, 48])
+        self.assertEqual(summarize_concept_curves.k2_verdict(results)["verdict"], "fail")
+        self.assertEqual(summarize_concept_curves.k2_verdict({"simclr": results["simclr"]})["verdict"], "pending")
+
+        change = summarize_concept_curves.flagged_share_change(audits["curves"][1])
+        self.assertEqual((change["at_early_end"], change["at_last_audit"], change["fell"]), (0.6, 0.2, True))
+        result = summarize_concept_curves.ecs_kill_test(audits, results)
+        self.assertEqual(result["flagged_share_after_swap"]["curves"]["fell"], 4)
+        text = "\n".join(summarize_concept_curves.render_kill_test(result))
+        self.assertIn("Stage K1 (audit finds the spurious concept): pass", text)
+        self.assertIn("| curves_random | 4 |", text)
+
+    def test_every_curve_arm_of_the_launcher_parses(self):
+        launcher = (Path(spur_splice.__file__).parent / "scripts" / "submit_factor_study.sh").read_text(encoding="utf-8")
+        arms = dict(re.findall(r'ARMS\[(curves[a-z0-9_]*)\]="\$\{CURVES\[\*\]\}([^"]*)"', launcher))
+        self.assertIn("curves_oracle_t1", arms)
+        self.assertGreaterEqual(len(arms), 17)
+        for arm, extra in arms.items():
+            extra = extra.replace("${CURVE_UNITS}", "12").replace("${unit}", "3")
+            args = spur_splice.parse_args(["--dataset", "metashift", "--seed", "1", "--artifact_dir", str(self.root / "runs"),
+                                           "--splice_mode", "concept_curves", "--curve_concept_maps", str(self.maps),
+                                           *extra.split()])
+            self.assertEqual(args.splice_mode, "concept_curves", arm)
+
+    def test_area_normalized_shares_divide_reliance_by_area(self):
+        method, _, _ = self.build(flag_rule="none", area_normalize=True)
+        self.assertTrue(method.curves["area_normalize"])
+        method.curves.update(epochs=[0], shift=[[0.0, 0.0]], margin=[[0.0, 0.0]], share=[[0.0, 0.0]])
+        result = {"shift": [0.1, 0.1], "margin": [0.0, 0.0], "images": [48, 48]}
+        with mock.patch("cospro.methods.concept_curves.embedding_audit", return_value=result):
+            method.audit(None, torch.device("cpu"), False, 1)
+        areas = [unit["area"] for unit in method.units]
+        expected = [0.1 / areas[0], 0.1 / areas[1]]
+        self.assertAlmostEqual(method.curves["share"][-1][0], expected[0] / sum(expected), places=6)
+
+    def test_audit_only_run_reproduces_simclr_and_the_swap_starts_after_the_window(self):
+        """The control arm curves_audit must equal simclr loss for loss; a swapping run departs only after T0."""
+
+        common = ["--dataset", "metashift", "--data_folder", str(self.root / "data"), "--model", "resnet18_large",
+                  "--epochs", "3", "--batch_size", "16", "--num_workers", "0", "--device", "cpu", "--learning_rate",
+                  "0.01", "--temp", "0.5", "--seed", "1", "--save_freq", "50"]
+        curves = ["--splice_mode", "concept_curves", "--curve_concept_maps", str(self.maps), "--curve_unit_count", "0",
+                  "--curve_early_epochs", "2", "--curve_audit_every", "1"]
+        arms = {"simclr": ["--splice_mode", "none"], "audit": [*curves, "--curve_flag_rule", "none"],
+                "swap": [*curves, "--curve_flag_rule", "units", "--curve_flag_units", "1",
+                         "--curve_swap_warmup_epochs", "0", "--curve_swap_probability", "1.0"]}
+        losses = {}
+        for arm, extra in arms.items():
+            folder = self.root / "runs" / arm
+            done = subprocess.run(
+                [sys.executable, str(Path(spur_splice.__file__)), *common, *extra, "--artifact_dir",
+                 str(folder / "training"), "--run_record", str(folder / "run.json")],
+                cwd=Path(spur_splice.__file__).parent, capture_output=True, text=True,
+                env={**os.environ, "WANDB_MODE": "disabled"},
+            )
+            self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+            record = json.loads((folder / "run.json").read_text(encoding="utf-8"))
+            losses[arm] = [event["values"]["SSL SimCLR loss"] for event in record["metrics"]
+                           if event.get("stage") == "ssl" and "SSL SimCLR loss" in event["values"]]
+        self.assertEqual(len(losses["simclr"]), 3)
+        self.assertEqual(losses["audit"], losses["simclr"])
+        self.assertEqual(losses["swap"][:2], losses["simclr"][:2])
+        self.assertNotEqual(losses["swap"][2], losses["simclr"][2])
 
     def test_configuration_selects_the_method_and_leaves_other_storage_names_alone(self):
         common = ["--dataset", "metashift", "--seed", "1", "--artifact_dir", str(self.root / "runs")]

@@ -427,6 +427,10 @@ class ConceptCurveOptions:
         "and random, an explicit list (units), the hidden-label attribute units (oracle, upper-bound control) or "
         "none (audit only, training equals SimCLR).",
     )
+    curve_area_normalize: bool = option(
+        False, style="switch",
+        help="Ablation: divide each unit's acquired reliance by its mean area before shares and flags are computed.",
+    )
     curve_tau: float = option(0.5, parse=float, help="Share of the onset scores the flagged units reach together.")
     curve_max_flagged_area: float = option(0.75, parse=float, help="Largest expected image share of the flagged regions.")
     curve_flag_units: str = option("", help="Comma-separated unit ids for --curve_flag_rule units.")

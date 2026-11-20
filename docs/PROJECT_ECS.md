@@ -1,6 +1,6 @@
 # Project 1: Early Concept Swap (ECS)
 
-Version 1, 2026-11-16. Read [`PROJECT_PLAN.md`](PROJECT_PLAN.md) first: it fixes the setting, the
+Version 2, 2026-11-20. Implementation branch `ECS`. Read [`PROJECT_PLAN.md`](PROJECT_PLAN.md) first: it fixes the setting, the
 method specification (Section 3), the code architecture (Section 4) and the file formats. This file
 holds what is specific to ECS. The sibling project is [`PROJECT_CSA.md`](PROJECT_CSA.md).
 
@@ -42,24 +42,28 @@ the finished runs.
 
 ### Stage K1: does the audit find the spurious concept?
 
-Read from `outputs/reports/factors_metashift/concept_curves.md` (diagnostics defined in Plan,
-Section 7).
+Read from the section **Early Concept Swap kill test** at the top of
+`outputs/reports/factors_metashift/concept_curves.md` (diagnostics defined in Plan, Section 7). The
+summary computes the verdict (function `k1_verdict` in `cospro/cli/summarize_concept_curves.py`) by
+these rules, with "three of four seeds" generalized to three quarters of the seeds:
 
 | Outcome | Condition | Consequence |
 |---|---|---|
 | Pass | detection AUROC at least 0.7 on three of four seeds, and the flagged set holds at least one attribute unit and no class unit on three of four seeds | the timing signal holds |
-| Weak | AUROC between 0.55 and 0.7 | try `--curve_statistic margin`, `--curve_unit_count 0`, `T0` of 20 and 100 |
-| Fail | AUROC below 0.55, or the class units lead | the timing hypothesis ends; ECS continues only with human-corrected flags (rule `units`), and the effort moves to CSA |
+| Weak | every other case with scores (mean AUROC at least 0.55 and one pass condition missed) | try `--curve_statistic margin`, `--curve_unit_count 0`, `T0` of 20 and 100 |
+| Fail | mean AUROC below 0.55, or a class unit has the highest onset score on more than half of the seeds | the timing hypothesis ends; ECS continues only with human-corrected flags (rule `units`), and the effort moves to CSA |
 
 ### Stage K2: does the swap raise WGA?
 
-Read from `outputs/reports/factors_metashift/summary.md`.
+Read from the same section of `concept_curves.md` (function `k2_verdict`). All numbers are paired
+by seed: validation WGA of the arm minus validation WGA of `simclr` on the seeds both finished, each
+WGA the mean of the last four probes. The verdict is `pending` while a needed arm is missing.
 
 | Outcome | Condition | Consequence |
 |---|---|---|
 | Pass | `curves` beats `simclr` by at least 5 points of mean validation WGA and beats both `simclr` and `curves_random` on three of four seeds | proceed to Section 5 |
-| Partial | `curves_oracle` passes and `curves` fails | the swap works and the selection needs repair; the per-unit effects of CSA show which units to flag |
-| Fail | `curves_oracle` ties `simclr` | the swap itself fails in this setting; ECS ends |
+| Partial | `curves` misses the pass and `curves_oracle` gains at least 5 points over `simclr` with a gain on three of four seeds | the swap works and the selection needs repair; the per-unit effects of CSA show which units to flag |
+| Fail | `curves` misses the pass and `curves_oracle` misses the same rule against `simclr` | the swap itself fails in this setting; ECS ends |
 
 What each control arm tells:
 
@@ -69,6 +73,16 @@ What each control arm tells:
 | `curves_bottom` | the direction of the timing signal carries no information |
 | `curves_shuffled` | the concept maps carry no information; the gain comes from the swap as an augmentation |
 | `curves_oracle` | upper bound: the audit already selects as well as hidden labels do |
+
+The same section lists every swapping ECS arm with its summed share of the flagged units at the end
+of the early window and at the last audit, and the number of seeds where it fell (theory check of
+Section 5, item 4).
+
+**Verified locally (2026-11-20):** on a synthetic MetaShift tree, an audit-only run (`curves_audit`)
+reproduces the SimCLR loss of the same seed exactly at every epoch, with 0 and with 2 loader workers,
+and a swapping run equals SimCLR through epoch `T0` and departs from it afterwards. The test
+`test_audit_only_run_reproduces_simclr_and_the_swap_starts_after_the_window` keeps this. So any
+difference between `curves*` arms and `simclr` comes from the swap alone.
 
 ## 4. Theory
 
@@ -86,11 +100,25 @@ measures it.
    violates spatial separability and serves as the stated limit.
 2. Baselines of the setting: SimCLR, LateTVG, LA-SSL, SCD spatial maps and compositing with the
    object prior.
-3. Ablations: `K`, `T0`, `tau`, `q`, statistic, one view against both views, area-normalized
-   reliance, human-corrected flags, swap from epoch 1 with oracle flags (tests whether the early
-   window costs anything).
-4. Theory checks: WGA as a function of `q`; the curves after the swap starts (the reliance on the
-   flagged units has to fall).
+3. Ablations, each one arm that changes one option of `curves`; `ARMS="curves_ablations"` submits
+   all eleven (44 jobs for four seeds):
+
+   | Arm | Change | Question |
+   |---|---|---|
+   | `curves_t20`, `curves_t100` | `--curve_early_epochs 20` or `100` | does an earlier or later flag decision help? |
+   | `curves_tau30`, `curves_tau70` | `--curve_tau 0.3` or `0.7` | fewer or more flagged units |
+   | `curves_q25`, `curves_q100` | `--curve_swap_probability 0.25` or `1.0` | WGA as a function of `q` (the theory predicts a monotone rise) |
+   | `curves_margin` | `--curve_statistic margin` | the second reliance statistic |
+   | `curves_area` | `--curve_area_normalize true` | reliance per unit of area: is the ranking more than region size? |
+   | `curves_factors` | `--curve_unit_count 0` | single factors as units |
+   | `curves_second` | `--curve_swap_views second` | one swapped view leaves a share of the spurious direction (Remark in the `.tex`) |
+   | `curves_oracle_t1` | `--curve_flag_rule oracle --curve_early_epochs 1` | swap from epoch 2 with hidden-label flags: what the early window costs |
+
+   Human-corrected flags use `--curve_flag_rule units --curve_flag_units <ids>` (the arms
+   `curves_unit_<k>` of CSA for one unit) and need no arm of their own.
+4. Theory checks: WGA as a function of `q` (arms `curves_q25`, `curves`, `curves_q100`); the curves
+   after the swap starts (the reliance on the flagged units has to fall), reported automatically by
+   the summary (Section 3).
 
 ## 6. Risks specific to ECS
 
@@ -105,7 +133,19 @@ Prior work: Plan, Section 9.
 
 ## 7. Status and next steps
 
-Implemented and tested locally: everything ECS needs. No run on real data yet.
+Implemented on branch `ECS` and tested locally (2026-11-20):
+
+| Piece | Where |
+|---|---|
+| Audit, flag rules, swap | `cospro/curves/core.py`, `cospro/curves/swap.py` |
+| Training method `concept_curves` | `cospro/methods/concept_curves.py` |
+| Audit callback, JSON files | `ConceptAudit` in `cospro/training/callbacks.py` |
+| Options, including `--curve_area_normalize` | `ConceptCurveOptions` in `cospro/config/training.py` |
+| Kill-test arms and ablation arms | `add_curve_arms` in `scripts/submit_factor_study.sh` |
+| K1 and K2 verdicts, post-swap reliance check | `cospro/cli/summarize_concept_curves.py` |
+| Tests, including the SimCLR equality run | `tests/test_concept_curves.py` |
+
+No run on real data yet.
 
 Next steps, in order:
 

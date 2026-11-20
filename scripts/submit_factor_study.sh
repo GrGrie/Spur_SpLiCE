@@ -9,6 +9,7 @@
 #   ARMS="simclr f2_w3" bash scripts/submit_factor_study.sh metashift 3 4   (only these arms)
 #   ARMS="curves_units" bash scripts/submit_factor_study.sh metashift 1 2 3 4   (one arm per concept unit,
 #   curves_unit_0 to curves_unit_11; CURVE_UNITS sets the unit count)
+#   ARMS="curves_ablations" bash scripts/submit_factor_study.sh metashift 1 2 3 4   (the ECS ablation arms)
 #   SBATCH_PARTITION=gpuidle bash scripts/submit_factor_study.sh ...   (another partition: sbatch reads
 #   SBATCH_PARTITION and it overrides the #SBATCH --partition line of every launcher)
 #   FINAL_TEST=1 bash scripts/submit_factor_study.sh waterbirds 1 2   (locked test: the same arms probed once on
@@ -173,6 +174,19 @@ add_curve_arms() {
   ARMS[curves_bottom]="${CURVES[*]} --curve_flag_rule bottom"
   ARMS[curves_shuffled]="${CURVES[*]} --curve_shuffle_maps true"
   ARMS[curves_oracle]="${CURVES[*]} --curve_flag_rule oracle"
+  # ECS ablations (docs/PROJECT_ECS.md, Section 5), each changing one option of curves. ARMS="curves_ablations"
+  # selects all of them.
+  ARMS[curves_t20]="${CURVES[*]} --curve_early_epochs 20"
+  ARMS[curves_t100]="${CURVES[*]} --curve_early_epochs 100"
+  ARMS[curves_tau30]="${CURVES[*]} --curve_tau 0.3"
+  ARMS[curves_tau70]="${CURVES[*]} --curve_tau 0.7"
+  ARMS[curves_q25]="${CURVES[*]} --curve_swap_probability 0.25"
+  ARMS[curves_q100]="${CURVES[*]} --curve_swap_probability 1.0"
+  ARMS[curves_margin]="${CURVES[*]} --curve_statistic margin"
+  ARMS[curves_area]="${CURVES[*]} --curve_area_normalize true"
+  ARMS[curves_factors]="${CURVES[*]} --curve_unit_count 0"
+  ARMS[curves_second]="${CURVES[*]} --curve_swap_views second"
+  ARMS[curves_oracle_t1]="${CURVES[*]} --curve_flag_rule oracle --curve_early_epochs 1"
   # Concept Shortcut Attribution (docs/PROJECT_CSA.md): one arm per concept unit, swapping that unit alone after
   # the early window. Unit ids depend only on the concept maps, so curves_unit_<k> names one concept in every seed.
   # ARMS="curves_units" selects all of them.
@@ -384,6 +398,9 @@ if [[ -n "${SELECTED_ARMS}" ]]; then
     UNIT_ARMS="$(for ((unit = 0; unit < CURVE_UNITS; unit++)); do printf 'curves_unit_%d ' "${unit}"; done)"
     SELECTED_ARMS="${SELECTED_ARMS//curves_units/${UNIT_ARMS}}"
   fi
+  CURVE_ABLATIONS="curves_t20 curves_t100 curves_tau30 curves_tau70 curves_q25 curves_q100 curves_margin curves_area"
+  CURVE_ABLATIONS+=" curves_factors curves_second curves_oracle_t1"
+  SELECTED_ARMS="${SELECTED_ARMS//curves_ablations/${CURVE_ABLATIONS}}"
   for arm in ${SELECTED_ARMS}; do
     if [[ -z "${ARMS[${arm}]+set}" ]]; then
       echo "Unknown arm ${arm} for ${DATASET}; known: $(printf '%s ' "${!ARMS[@]}")" >&2

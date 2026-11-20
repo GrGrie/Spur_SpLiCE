@@ -73,7 +73,7 @@ class ConceptCurves(TrainingMethod):
                  statistic: str = "shift", flag_rule: str = "top", tau: float = 0.5, max_flagged_area: float = 0.75,
                  flag_units_list: str = "", flag_seed: int = 0, swap_probability: float = 0.5,
                  swap_warmup_epochs: int = 10, swap_views: str = "both", shuffle_maps: bool = False,
-                 image_size: int | None = None) -> None:
+                 area_normalize: bool = False, image_size: int | None = None) -> None:
         self.concept_maps = concept_maps
         self.seed = int(seed)
         self.unit_count = int(unit_count)
@@ -91,6 +91,7 @@ class ConceptCurves(TrainingMethod):
         self.swap_warmup_epochs = int(swap_warmup_epochs)
         self.swap_views = swap_views
         self.shuffle_maps = bool(shuffle_maps)
+        self.area_normalize = bool(area_normalize)
         self.image_size = image_size
         self.epoch = 0
         self.regions: torch.Tensor | None = None
@@ -126,6 +127,7 @@ class ConceptCurves(TrainingMethod):
             swap_warmup_epochs=options.curve_swap_warmup_epochs,
             swap_views=options.curve_swap_views,
             shuffle_maps=options.curve_shuffle_maps,
+            area_normalize=options.curve_area_normalize,
         )
 
     # ------------------------------------------------------------------ loader
@@ -144,7 +146,7 @@ class ConceptCurves(TrainingMethod):
             self.swap_regions = self.regions[order]
         self.curves = {
             "dataset": context.dataset, "seed": self.seed, "concept_maps": str(self.concept_maps),
-            "statistic": self.statistic, "unit_count": len(self.units), "early_epochs": self.early_epochs,
+            "statistic": self.statistic, "area_normalize": self.area_normalize, "unit_count": len(self.units), "early_epochs": self.early_epochs,
             "unit_of_factor": unit_of_factor.tolist(), "units": self.units,
             "epochs": [], "shift": [], "margin": [], "share": [], "onset": None, "evaluation_only": {},
         }
@@ -186,7 +188,11 @@ class ConceptCurves(TrainingMethod):
         curves["shift"].append(result["shift"])
         curves["margin"].append(result["margin"])
         values = curves[self.statistic]
-        curves["share"].append(concept_shares(acquired(values[-1], values[0]), self.audited))
+        reliance = acquired(values[-1], values[0])
+        if self.area_normalize:
+            # Ablation: reliance per unit of image area, so a large region gains nothing from its size alone.
+            reliance = [value / max(self.units[unit]["area"], 1e-6) for unit, value in enumerate(reliance)]
+        curves["share"].append(concept_shares(reliance, self.audited))
         if any(1 <= done <= self.early_epochs for done in curves["epochs"]):
             curves["onset"] = onset_scores(curves["epochs"], curves["share"], self.early_epochs)
         share = curves["share"][-1]
