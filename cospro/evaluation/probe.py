@@ -705,8 +705,16 @@ def log_probe_result(result: ProbeResult, options: ProbeOptions, *, run, ssl_epo
 def load_probe_encoder(model: str, checkpoint: str, device: torch.device):
     """The frozen encoder a probe measures, from a checkpoint or from pretrained weights."""
 
-    encoder, feature_dim = build_resnet_encoder(model, load_pretrained_weights=not bool(checkpoint))
-    if checkpoint:
+    from cospro.models.ijepa import IJEPA_MODEL_NAMES, build_ijepa_encoder
+
+    if model in IJEPA_MODEL_NAMES:
+        # The checkpoint is the official I-JEPA release; an empty path downloads it to scratch.
+        encoder, feature_dim = build_ijepa_encoder(model, checkpoint)
+    else:
+        encoder, feature_dim = build_resnet_encoder(model, load_pretrained_weights=not bool(checkpoint))
+    if model in IJEPA_MODEL_NAMES:
+        print("[INFO] Using the frozen I-JEPA target encoder.")
+    elif checkpoint:
         print(f"[INFO] Loading encoder checkpoint from {checkpoint}")
         load_encoder_checkpoint(encoder, checkpoint)
     elif model == "resnet50_pretrained":

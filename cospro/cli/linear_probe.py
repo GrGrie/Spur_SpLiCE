@@ -16,6 +16,7 @@ from cospro.config import LINEAR_PROBE_DEFAULTS, training_defaults
 from cospro.evaluation import ProbeArtifacts, ProbeOptions, probe_checkpoint, seed_probe
 from cospro.data.registry import canonical_dataset_name, dataset_class, dataset_names
 from cospro.evaluation.protocol import resolve_evaluation_split
+from cospro.models.ijepa import IJEPA_MODEL_NAMES
 from cospro.models.resnet import RESNET_MODEL_NAMES
 from cospro.config.settings import wandb_entity
 
@@ -66,8 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Evaluate a locked final configuration on test instead of the validation default.",
     )
-    parser.add_argument("--model", default="resnet18_large", choices=RESNET_MODEL_NAMES)
-    parser.add_argument("--ckpt", default="", help="SpurSSL checkpoint containing encoder.* weights")
+    parser.add_argument("--model", default="resnet18_large", choices=(*RESNET_MODEL_NAMES, *IJEPA_MODEL_NAMES))
+    parser.add_argument(
+        "--ckpt", default="",
+        help="SpurSSL checkpoint containing encoder.* weights, or an official I-JEPA checkpoint "
+             "(empty for an I-JEPA model downloads it to scratch)",
+    )
     parser.add_argument(
         "--artifact_dir",
         default="",
@@ -95,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cosine", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--study", default=_PROGRAMMATIC_DEFAULTS["study"], help="Names the scratch feature directory")
+    parser.add_argument("--arm", default=_PROGRAMMATIC_DEFAULTS["arm"], help="Names the scratch feature directory")
+    parser.add_argument("--attempt_id", default=_PROGRAMMATIC_DEFAULTS["attempt_id"], help="Names the scratch feature directory")
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_name", default=training_defaults()["wandb_name"])
     parser.add_argument("--entity", default=wandb_entity())
@@ -118,6 +126,10 @@ def parse_args() -> argparse.Namespace:
         args.lr_decay_epochs = resolve_lr_decay_epochs(args.lr_decay_epochs, args.epochs)
     except ValueError as exc:
         parser.error(str(exc))
+    # A standalone probe has no run record and no SSL schedule.
+    for key, value in _PROGRAMMATIC_DEFAULTS.items():
+        if not hasattr(args, key):
+            setattr(args, key, value)
     return args
 
 
