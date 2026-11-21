@@ -1,0 +1,1003 @@
+{
+  "arms": [
+    {
+      "arm": "comp_w5_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "val_acc_last": {
+        "mean": 64.18996651967366,
+        "sd": 3.0116538962621404
+      },
+      "val_acc_last4": {
+        "mean": 64.18996651967366,
+        "sd": 3.0116538962621404
+      },
+      "val_group_accuracies": [
+        58.76570574442545,
+        66.86622365315755,
+        69.23675918579102,
+        68.79543113708496
+      ],
+      "val_wga_last": {
+        "mean": 58.6816077431043,
+        "sd": 6.392214740408692
+      },
+      "val_wga_last4": {
+        "mean": 58.6816077431043,
+        "sd": 6.392214740408692
+      }
+    },
+    {
+      "arm": "simclr",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "val_acc_last": {
+        "mean": 52.02508419752121,
+        "sd": 1.6285503133894135
+      },
+      "val_acc_last4": {
+        "mean": 52.02508419752121,
+        "sd": 1.6285503133894135
+      },
+      "val_group_accuracies": [
+        48.69179598490397,
+        51.2860304514567,
+        58.15160942077637,
+        60.20249239603678
+      ],
+      "val_wga_last": {
+        "mean": 47.38359202941259,
+        "sd": 3.0793752814854494
+      },
+      "val_wga_last4": {
+        "mean": 47.38359202941259,
+        "sd": 3.0793752814854494
+      }
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "dataset": "waterbirds",
+      "factor_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "factor_heldout_explained_variance": {
+        "mean": null,
+        "sd": null
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "val_acc_last": {
+        "mean": 61.29616896311442,
+        "sd": 1.3293307914469785
+      },
+      "val_acc_last4": {
+        "mean": 61.29616896311442,
+        "sd": 1.3293307914469785
+      },
+      "val_group_accuracies": [
+        55.979305267333984,
+        65.53584480285645,
+        61.47455914815267,
+        64.9013500213623
+      ],
+      "val_wga_last": {
+        "mean": 55.56973914305369,
+        "sd": 3.265132872981664
+      },
+      "val_wga_last4": {
+        "mean": 55.56973914305369,
+        "sd": 3.265132872981664
+      }
+    }
+  ],
+  "runs": [
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/comp_w5_holdout/24802871",
+      "seed": 1,
+      "spurious_probe_val_wga": 88.91352415084839,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 63.97997736930847,
+          "epoch": 500,
+          "wga": 60.04434823989868
+        }
+      ],
+      "val_acc_last": 63.97997736930847,
+      "val_acc_last4": 63.97997736930847,
+      "val_group_accuracies": [
+        60.044349670410156,
+        63.81374740600586,
+        70.56074523925781,
+        71.80685424804688
+      ],
+      "val_wga_last": 60.04434823989868,
+      "val_wga_last4": 60.04434823989868,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/9sscdfz6"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/simclr/24802865",
+      "seed": 1,
+      "spurious_probe_val_wga": 88.6292815208435,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 49.344149231910706,
+          "epoch": 500,
+          "wga": 42.17294752597809
+        }
+      ],
+      "val_acc_last": 49.344149231910706,
+      "val_acc_last4": 49.344149231910706,
+      "val_group_accuracies": [
+        42.17294692993164,
+        47.450111389160156,
+        65.57632446289062,
+        64.9532699584961
+      ],
+      "val_wga_last": 42.17294752597809,
+      "val_wga_last4": 42.17294752597809,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/9a9op7ht"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_01/spatial_w5_holdout/24802859",
+      "seed": 1,
+      "spurious_probe_val_wga": 90.80997109413147,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 60.476356744766235,
+          "epoch": 500,
+          "wga": 57.339245080947876
+        }
+      ],
+      "val_acc_last": 60.476356744766235,
+      "val_acc_last4": 60.476356744766235,
+      "val_group_accuracies": [
+        57.3392448425293,
+        59.11307907104492,
+        63.8629264831543,
+        72.8971939086914
+      ],
+      "val_wga_last": 57.339245080947876,
+      "val_wga_last4": 57.339245080947876,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/2u7vd6rs"
+    },
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/comp_w5_holdout/24802872",
+      "seed": 2,
+      "spurious_probe_val_wga": 89.25233483314514,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 62.40938901901245,
+          "epoch": 500,
+          "wga": 55.831485986709595
+        }
+      ],
+      "val_acc_last": 62.40938901901245,
+      "val_acc_last4": 62.40938901901245,
+      "val_group_accuracies": [
+        55.831485748291016,
+        66.91796112060547,
+        68.22429656982422,
+        63.8629264831543
+      ],
+      "val_wga_last": 55.831485986709595,
+      "val_wga_last4": 55.831485986709595,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/vzbk64ij"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/simclr/24802866",
+      "seed": 2,
+      "spurious_probe_val_wga": 87.07165122032166,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 51.50155425071716,
+          "epoch": 500,
+          "wga": 45.631930232048035
+        }
+      ],
+      "val_acc_last": 51.50155425071716,
+      "val_acc_last4": 51.50155425071716,
+      "val_group_accuracies": [
+        45.63193130493164,
+        56.89578628540039,
+        52.18068313598633,
+        52.49221420288086
+      ],
+      "val_wga_last": 45.631930232048035,
+      "val_wga_last4": 45.631930232048035,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/ljw91gdb"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_02/spatial_w5_holdout/24802860",
+      "seed": 2,
+      "spurious_probe_val_wga": 88.6292815208435,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 61.64998412132263,
+          "epoch": 500,
+          "wga": 54.90022301673889
+        }
+      ],
+      "val_acc_last": 61.64998412132263,
+      "val_acc_last4": 61.64998412132263,
+      "val_group_accuracies": [
+        54.90022277832031,
+        70.82039642333984,
+        57.63240051269531,
+        57.16511154174805
+      ],
+      "val_wga_last": 54.90022301673889,
+      "val_wga_last4": 54.90022301673889,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/nnziptjl"
+    },
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_03/comp_w5_holdout/24802873",
+      "seed": 3,
+      "spurious_probe_val_wga": 90.59866666793823,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 65.82671999931335,
+          "epoch": 500,
+          "wga": 60.57649850845337
+        }
+      ],
+      "val_acc_last": 65.82671999931335,
+      "val_acc_last4": 65.82671999931335,
+      "val_group_accuracies": [
+        60.576499938964844,
+        69.84478759765625,
+        67.60124206542969,
+        68.38006591796875
+      ],
+      "val_wga_last": 60.57649850845337,
+      "val_wga_last4": 60.57649850845337,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/aillklbc"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_03/simclr/24802867",
+      "seed": 3,
+      "spurious_probe_val_wga": 89.71962332725525,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 53.244733810424805,
+          "epoch": 500,
+          "wga": 49.88913536071777
+        }
+      ],
+      "val_acc_last": 53.244733810424805,
+      "val_acc_last4": 53.244733810424805,
+      "val_group_accuracies": [
+        49.889137268066406,
+        54.456764221191406,
+        56.69782257080078,
+        57.32087326049805
+      ],
+      "val_wga_last": 49.88913536071777,
+      "val_wga_last4": 49.88913536071777,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/afpjnoxu"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_03/spatial_w5_holdout/24802861",
+      "seed": 3,
+      "spurious_probe_val_wga": 91.27725958824158,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 62.09872364997864,
+          "epoch": 500,
+          "wga": 56.94013237953186
+        }
+      ],
+      "val_acc_last": 62.09872364997864,
+      "val_acc_last4": 62.09872364997864,
+      "val_group_accuracies": [
+        56.94013214111328,
+        68.1596450805664,
+        60.59189987182617,
+        60.436134338378906
+      ],
+      "val_wga_last": 56.94013237953186,
+      "val_wga_last4": 56.94013237953186,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/emykb7c6"
+    },
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_04/comp_w5_holdout/24802874",
+      "seed": 4,
+      "spurious_probe_val_wga": 86.13707423210144,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 66.8450117111206,
+          "epoch": 500,
+          "wga": 64.34589624404907
+        }
+      ],
+      "val_acc_last": 66.8450117111206,
+      "val_acc_last4": 66.8450117111206,
+      "val_group_accuracies": [
+        64.34589385986328,
+        68.42572021484375,
+        67.75701141357422,
+        69.15887451171875
+      ],
+      "val_wga_last": 64.34589624404907,
+      "val_wga_last4": 64.34589624404907,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/llzggdwv"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_04/simclr/24802868",
+      "seed": 4,
+      "spurious_probe_val_wga": 87.8935694694519,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 53.7797749042511,
+          "epoch": 500,
+          "wga": 49.57871437072754
+        }
+      ],
+      "val_acc_last": 53.7797749042511,
+      "val_acc_last4": 53.7797749042511,
+      "val_group_accuracies": [
+        53.88026809692383,
+        49.578712463378906,
+        56.38629150390625,
+        65.57632446289062
+      ],
+      "val_wga_last": 49.57871437072754,
+      "val_wga_last4": 49.57871437072754,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/0dbp8rdo"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_04/spatial_w5_holdout/24802862",
+      "seed": 4,
+      "spurious_probe_val_wga": 87.85046935081482,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 61.90887093544006,
+          "epoch": 500,
+          "wga": 57.694011926651
+        }
+      ],
+      "val_acc_last": 61.90887093544006,
+      "val_acc_last4": 61.90887093544006,
+      "val_group_accuracies": [
+        57.69401168823242,
+        63.1485595703125,
+        64.17445373535156,
+        70.09346008300781
+      ],
+      "val_wga_last": 57.694011926651,
+      "val_wga_last4": 57.694011926651,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/l11jhe3t"
+    },
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_05/comp_w5_holdout/24802875",
+      "seed": 5,
+      "spurious_probe_val_wga": 88.94081115722656,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 66.89679026603699,
+          "epoch": 500,
+          "wga": 64.01869058609009
+        }
+      ],
+      "val_acc_last": 66.89679026603699,
+      "val_acc_last4": 66.89679026603699,
+      "val_group_accuracies": [
+        64.52327728271484,
+        70.15521240234375,
+        64.01869201660156,
+        66.66667175292969
+      ],
+      "val_wga_last": 64.01869058609009,
+      "val_wga_last4": 64.01869058609009,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/5k1q49tu"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_05/simclr/24802869",
+      "seed": 5,
+      "spurious_probe_val_wga": 88.78504633903503,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 51.36348009109497,
+          "epoch": 500,
+          "wga": 47.18403518199921
+        }
+      ],
+      "val_acc_last": 51.36348009109497,
+      "val_acc_last4": 51.36348009109497,
+      "val_group_accuracies": [
+        50.73170471191406,
+        47.18403625488281,
+        57.47663497924805,
+        62.149532318115234
+      ],
+      "val_wga_last": 47.18403518199921,
+      "val_wga_last4": 47.18403518199921,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/sm3gh25j"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_05/spatial_w5_holdout/24802863",
+      "seed": 5,
+      "spurious_probe_val_wga": 89.5638644695282,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 62.633758783340454,
+          "epoch": 500,
+          "wga": 57.3208749294281
+        }
+      ],
+      "val_acc_last": 62.633758783340454,
+      "val_acc_last4": 62.633758783340454,
+      "val_group_accuracies": [
+        59.77827453613281,
+        67.62749481201172,
+        57.32087326049805,
+        60.436134338378906
+      ],
+      "val_wga_last": 57.3208749294281,
+      "val_wga_last4": 57.3208749294281,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/a2i5n52o"
+    },
+    {
+      "arm": "comp_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_06/comp_w5_holdout/24802876",
+      "seed": 6,
+      "spurious_probe_val_wga": 90.0311529636383,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 59.18191075325012,
+          "epoch": 500,
+          "wga": 47.27272689342499
+        }
+      ],
+      "val_acc_last": 59.18191075325012,
+      "val_acc_last4": 59.18191075325012,
+      "val_group_accuracies": [
+        47.272727966308594,
+        62.039913177490234,
+        77.2585678100586,
+        72.8971939086914
+      ],
+      "val_wga_last": 47.27272689342499,
+      "val_wga_last4": 47.27272689342499,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/ilxhbc85"
+    },
+    {
+      "arm": "simclr",
+      "config": {
+        "batch_size": 128,
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "whitened",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "none",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_06/simclr/24802870",
+      "seed": 6,
+      "spurious_probe_val_wga": 90.18691778182983,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 52.916812896728516,
+          "epoch": 500,
+          "wga": 49.84478950500488
+        }
+      ],
+      "val_acc_last": 52.916812896728516,
+      "val_acc_last4": 52.916812896728516,
+      "val_group_accuracies": [
+        49.84478759765625,
+        52.15077209472656,
+        60.59189987182617,
+        58.722740173339844
+      ],
+      "val_wga_last": 49.84478950500488,
+      "val_wga_last4": 49.84478950500488,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/2wktf9kz"
+    },
+    {
+      "arm": "spatial_w5_holdout",
+      "config": {
+        "batch_size": 128,
+        "concept_factor_count": 242,
+        "concept_factor_groups": "project://outputs/shared/waterbirds/graphs/concept_groups_meaning/openimages_v7_text_0p85_response_0p50/concept_groups.json",
+        "dataset": "waterbirds",
+        "epochs": 500,
+        "factor_condition_fraction": 0.0,
+        "factor_distill_weight": 0.0,
+        "factor_merge_similarity": 0.0,
+        "factor_min_frequency": 0.02,
+        "factor_start_epoch": 10,
+        "factor_targets": "response",
+        "latetvg_layers": 5,
+        "latetvg_prune_rate": 0.0,
+        "learning_rate": 0.01,
+        "linear_eval_split": "test",
+        "model": "resnet18_large",
+        "splice_mode": "concept_factors",
+        "splice_weight": 0.0,
+        "temp": 0.05,
+        "weight_decay": 0.0001
+      },
+      "factor_explained_variance": null,
+      "factor_heldout_explained_variance": null,
+      "run": "seed_06/spatial_w5_holdout/24802864",
+      "seed": 6,
+      "spurious_probe_val_wga": 92.05607771873474,
+      "status": "complete",
+      "trajectory": [
+        {
+          "acc": 59.0093195438385,
+          "epoch": 500,
+          "wga": 49.223947525024414
+        }
+      ],
+      "val_acc_last": 59.0093195438385,
+      "val_acc_last4": 59.0093195438385,
+      "val_group_accuracies": [
+        49.22394561767578,
+        64.34589385986328,
+        65.26480102539062,
+        68.38006591796875
+      ],
+      "val_wga_last": 49.223947525024414,
+      "val_wga_last4": 49.223947525024414,
+      "wandb": "https://wandb.ai/gsgrechkin-rptu/CoSpRo/runs/o0cc87uw"
+    }
+  ],
+  "study": "factors_waterbirds_test"
+}
