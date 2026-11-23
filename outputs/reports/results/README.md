@@ -10,7 +10,7 @@ One page per dataset and method, built from every run record by `python -m cospr
 | metashift | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](metashift/concept_factors.md) | 1 | 205 | factors_metashift / xfit_meaning_w5_clippca_holdout | 54.2 ± 5.4 | 65.9 ± 4.5 |
 | metashift | [CoSpRo (teacher graph: sampler and relational KL)](metashift/cospro.md) | 2 | 44 | metashift_cospro / cospro_laion | 47.7 ± 4.3 | 55.5 ± 2.5 |
 | metashift | [LateTVG](metashift/latetvg.md) | 1 | 2 |  | | |
-| metashift | [SimCLR](metashift/simclr.md) | 2 | 46 | factors_metashift / simclr_lt | 51.4 ± 1.5 | 55.3 ± 0.1 |
+| metashift | [SimCLR](metashift/simclr.md) | 2 | 82 | factors_metashift / simclr_lt | 51.4 ± 1.5 | 55.3 ± 0.1 |
 | spur_cifar10 | [Concept factors (F1 conditioned batches, F2 factor distillation, F3 concept blocks)](spur_cifar10/concept_factors.md) | 1 | 38 | factors_spur_cifar10 / spatial_w5_holdout | 38.1 ± 0.5 | 69.3 ± 1.0 |
 | spur_cifar10 | [CoSpRo (teacher graph: sampler and relational KL)](spur_cifar10/cospro.md) | 1 | 1 |  | | |
 | spur_cifar10 | [SimCLR](spur_cifar10/simclr.md) | 1 | 2 | factors_spur_cifar10 / simclr | 15.6 ± 1.0 | 59.5 ± 0.2 |
