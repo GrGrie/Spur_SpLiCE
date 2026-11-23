@@ -24,8 +24,11 @@ class LogisticEpoch:
 
 
 def fit_logistic_probe(train_x, train_y, eval_x, eval_y, *, num_classes,
-                       l2=1e-3, tolerance=1e-6, max_epochs=200):
+                       l2=1e-3, tolerance=1e-6, max_epochs=200, parameters=None):
     """Fit mean CE + l2/2 * ||W||²; do not penalize the intercept.
+
+    A ``parameters`` dict, when given, receives the fitted ``weight`` and ``bias`` together with the
+    standardization ``mean`` and ``scale`` they act after.
 
     Center and standardize each feature using training statistics only. This
     affine transform preserves the linear hypothesis class. CPU float64 avoids
@@ -80,6 +83,9 @@ def fit_logistic_probe(train_x, train_y, eval_x, eval_y, *, num_classes,
         stable = stable + 1 if grad <= tolerance else 0
         print(f"Logistic epoch {epoch}: objective={objective:.8f}, gradient_max={grad:.3g}, stable={stable}/10", flush=True)
         if stable >= 10:
+            if parameters is not None:
+                parameters.update(weight=weight.detach().clone(), bias=bias.detach().clone(),
+                                  mean=mean.clone(), scale=scale.clone())
             return list(history), {
                 "converged": True, "epochs": epoch, "gradient_max": grad,
                 "objective": objective, "l2": l2, "tolerance": tolerance,
