@@ -26,8 +26,8 @@ from cospro.data.base import dataset_transforms
 from cospro.data.registry import dataset_class
 from cospro.evaluation.logistic_probe import fit_logistic_probe
 from cospro.evaluation.patch_concept_readout import (
-    concept_decision_shares, cross_fit_readout, image_folds, margin_direction, mean_pool, pooled_control,
-    predict_concepts, resize_maps, shuffled_control,
+    concept_evidence, cross_fit_readout, evidence_density, image_folds, margin_direction, mean_pool,
+    pooled_control, predict_concepts, resize_maps, shuffled_control,
 )
 from cospro.evaluation.protocol import resolve_evaluation_split
 from cospro.metrics import compute_group_metrics
@@ -47,9 +47,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="concept_maps.pt of the training images (cospro.cli.build_concept_maps).")
     parser.add_argument("--final_test", action="store_true", help="Evaluate on test instead of val.")
     parser.add_argument("--folds", type=int, default=5)
-    parser.add_argument("--ridges", default="1,10,100,1000,10000", help="Comma-separated ridge strengths to compare.")
+    parser.add_argument("--ridges", default="0.01,0.1,1,10,100", help="Comma-separated ridge strengths to compare.")
     parser.add_argument("--l2", type=float, default=1e-3, help="L2 of the logistic probes.")
     parser.add_argument("--top", type=int, default=15, help="Concepts listed per ranking.")
+    parser.add_argument("--min_mass", type=float, default=1.0,
+                        help="Patches per image a concept must cover on average to be ranked.")
     parser.add_argument("--skip_controls", action="store_true")
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -89,12 +91,13 @@ def aligned_maps(payload: dict, indices) -> torch.Tensor:
 
 
 def probe(train_x, train_y, eval_x, eval_y, eval_metadata, l2: float) -> tuple[dict, dict]:
-    """Group metrics of a converged logistic probe and its fitted parameters."""
+    """Group metrics of a converged logistic probe and its fitted parameters and eval predictions."""
 
     parameters: dict = {}
     records, convergence = fit_logistic_probe(train_x, train_y, eval_x, eval_y, num_classes=2, l2=l2,
                                               parameters=parameters)
     metrics = compute_group_metrics(records[-1].eval_predictions, eval_y, eval_metadata, n_groups=4)
+    parameters["predictions"] = records[-1].eval_predictions
     return {
         "accuracy": round(100 * metrics.average, 2),
         "worst_group_accuracy": round(100 * metrics.worst_group, 2),
@@ -104,9 +107,18 @@ def probe(train_x, train_y, eval_x, eval_y, eval_metadata, l2: float) -> tuple[d
     }, parameters
 
 
-def ranked(names: list[str], values: torch.Tensor, top: int) -> dict[str, list]:
-    order = values.argsort(descending=True)
-    entry = lambda index: {"concept": names[index], "value": round(float(values[index]), 5)}
+def ranked(names: list[str], values: torch.Tensor, top: int, mass: torch.Tensor | None = None) -> dict[str, list]:
+    """The ``top`` highest and lowest finite values, with the concept's patches per image when given."""
+
+    finite = torch.nonzero(torch.isfinite(values)).flatten()
+    order = finite[values[finite].argsort(descending=True)]
+
+    def entry(index: int) -> dict:
+        item = {"concept": names[index], "value": round(float(values[index]), 5)}
+        if mass is not None:
+            item["patches_per_image"] = round(float(mass[index]), 2)
+        return item
+
     return {"highest": [entry(int(i)) for i in order[:top]], "lowest": [entry(int(i)) for i in order.flip(0)[:top]]}
 
 
@@ -171,23 +183,28 @@ def main(argv: list[str] | None = None) -> Path:
     eval_concepts = eval_concepts_per_patch.mean(dim=1)
     bottleneck_metrics, bottleneck_parameters = probe(readout["oof_concept_vectors"][balanced], train_y[balanced],
                                                       eval_concepts, eval_y, eval_metadata, args.l2)
-    concept_weight = ((bottleneck_parameters["weight"][1] - bottleneck_parameters["weight"][0])
-                      / bottleneck_parameters["scale"]).float()
+    eval_mass = eval_concepts.clamp_min(0.0) * eval_tokens.shape[1]
+    present = eval_mass.mean(dim=0) >= args.min_mass
+    # Standardized weights: the change in the waterbird margin per standard deviation of the concept.
+    concept_weight = (bottleneck_parameters["weight"][1] - bottleneck_parameters["weight"][0]).float()
+    concept_weight = torch.where(present, concept_weight, torch.full_like(concept_weight, float("nan")))
 
-    # Decision shares of the mean-pool probe: positive means evidence for the image's true class.
+    # Concept evidence of the mean-pool probe, per patch of each concept and signed towards the true class.
     direction, offset = margin_direction(mean_parameters["weight"].float(), mean_parameters["scale"].float(),
                                          mean_parameters["mean"].float())
-    shares = torch.cat([
-        concept_decision_shares(eval_tokens[start:start + 256], eval_concepts_per_patch[start:start + 256],
-                                direction, offset)
-        for start in range(0, len(eval_tokens), 256)
-    ])
-    signed = shares * (2.0 * eval_y.float() - 1.0)[:, None]
+    parts = [concept_evidence(eval_tokens[start:start + 256], eval_concepts_per_patch[start:start + 256],
+                              direction, offset) for start in range(0, len(eval_tokens), 256)]
+    evidence, mass = torch.cat([part[0] for part in parts]), torch.cat([part[1] for part in parts])
+    sign = 2.0 * eval_y.float() - 1.0
     groups = eval_metadata[:, 0].long() + 2 * eval_metadata[:, 1].long()
-    present = eval_concepts.mean(dim=0) > 1.0 / len(names)
+    wrong = mean_parameters["predictions"].cpu() != eval_y
+
+    def evidence_of(mask: torch.Tensor) -> dict:
+        density = evidence_density(evidence[mask], mass[mask], sign[mask], args.min_mass)
+        return {"images": int(mask.sum()), **ranked(names, density, args.top, mass[mask].mean(dim=0))}
 
     result = {
-        "schema": "ijepa-concept-readout-v1",
+        "schema": "ijepa-concept-readout-v2",
         "model": args.model,
         "eval_split": eval_split,
         "concept_maps": str(args.concept_maps),
@@ -205,15 +222,17 @@ def main(argv: list[str] | None = None) -> Path:
             "worst_read_factors": ranked(names, torch.nan_to_num(readable, nan=1e9), args.top)["lowest"],
         },
         "probes": {"mean_pool": mean_metrics, "concept_bottleneck": bottleneck_metrics},
-        "bottleneck_weights_towards_waterbird": ranked(names, concept_weight, args.top),
-        "decision_shares": {
-            "meaning": "mean share of the mean-pool probe margin per concept region, signed towards the "
-                       "true class; negative pushes towards the wrong class",
-            "all_images": ranked(names, torch.where(present, signed.mean(dim=0), torch.zeros(len(names))), args.top),
-            "per_group": {
-                name: ranked(names, signed[groups == group].mean(dim=0), args.top)
-                for group, name in enumerate(GROUP_NAMES) if bool((groups == group).any())
-            },
+        "bottleneck_standardized_weights_towards_waterbird": ranked(names, concept_weight, args.top,
+                                                                     eval_mass.mean(dim=0)),
+        "concept_evidence": {
+            "meaning": "mean-pool probe margin per patch of each concept, measured from the training-average "
+                       "image and signed towards the true class; negative argues for the wrong class",
+            "all_images": evidence_of(torch.ones_like(wrong)),
+            "per_group": {name: evidence_of(groups == group)
+                          for group, name in enumerate(GROUP_NAMES) if bool((groups == group).any())},
+            "misclassified_per_group": {name: evidence_of((groups == group) & wrong)
+                                        for group, name in enumerate(GROUP_NAMES)
+                                        if bool(((groups == group) & wrong).sum() >= 5)},
         },
         "notes": "Ridge chosen by held-out explained variance among the listed strengths on the same folds. "
                  "Concept maps exist for training images only; val and test concepts come from the ridge.",

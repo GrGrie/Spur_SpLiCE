@@ -8,14 +8,16 @@ Three measurements on frozen patch tokens [images, patches, dim] and CLIP concep
    it: the same ridge on the image's mean-pooled token (image-level information only) and the ridge on
    maps shuffled across images (the marginal map alone).
 2. **Concept bottleneck.** The ridge turns any image into predicted concept maps; their patch mean is
-   a concept vector that a group-balanced linear probe classifies. Its weights name the concepts the
-   decision uses.
-3. **Decision shares.** A linear probe on mean-pooled tokens has a per-patch contribution to its
-   margin. Weighting each patch by its predicted concept probabilities splits the margin over the
-   concepts: a concept with a negative share pushes the image towards the wrong class.
+   a concept vector that a group-balanced linear probe classifies. Its standardized weights name the
+   concepts the decision uses.
+3. **Concept evidence.** A linear probe on mean-pooled tokens gives every patch an evidence value, the
+   margin of that patch alone. Averaging it over each concept's patches, weighted by the predicted
+   probabilities, gives the evidence per patch of the concept, independent of the area it covers.
+   Signed towards the true class, a negative value means the concept's regions argue for the wrong
+   class; on misclassified images it names the concepts behind the errors.
 
 The ridge has an intercept and the maps sum to one over the factors at every patch, so the predicted
-concepts also sum to one and the shares add up to the margin without the bias.
+concepts also sum to one.
 """
 
 from __future__ import annotations
@@ -196,13 +198,29 @@ def margin_direction(weight: torch.Tensor, scale: torch.Tensor, mean: torch.Tens
     return direction, float(direction @ mean)
 
 
-def concept_decision_shares(tokens: torch.Tensor, concepts: torch.Tensor, direction: torch.Tensor,
-                            offset: float) -> torch.Tensor:
-    """Each concept's share of an image's probe margin, [images, factors].
+def concept_evidence(tokens: torch.Tensor, concepts: torch.Tensor, direction: torch.Tensor,
+                     offset: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Probe evidence and mass of every concept region per image, both [images, factors].
 
-    The margin of mean-pooled tokens, ``d @ mean_p(z_p) - c``, is the patch mean of
-    ``d @ z_p - c``; each patch passes its contribution to the factors by its predicted probabilities.
+    A patch's evidence is ``d @ z_p - c``: the margin the probe would give an image made of that patch
+    alone, measured from the training-average image. The image margin without bias is its patch mean.
+    Each patch passes its evidence to the concepts by its predicted probabilities, clipped at zero;
+    dividing summed evidence by summed mass gives the evidence per patch of a concept, free of its area.
     """
 
-    contributions = (tokens.float() @ direction.float() - offset) / tokens.shape[1]
-    return torch.einsum("ip,ipk->ik", contributions, concepts.float())
+    weights = concepts.float().clamp_min(0.0)
+    evidence = tokens.float() @ direction.float() - offset
+    return torch.einsum("ip,ipk->ik", evidence, weights), weights.sum(dim=1)
+
+
+def evidence_density(evidence: torch.Tensor, mass: torch.Tensor, sign: torch.Tensor,
+                     min_mass: float) -> torch.Tensor:
+    """Mean evidence per patch of each concept over a set of images, signed towards the true class.
+
+    ``sign`` is +1 where the true class is class 1, -1 otherwise. Concepts whose total mass stays below
+    ``min_mass`` patches per image return NaN: too rare in the set to say anything.
+    """
+
+    total = mass.sum(dim=0)
+    density = (sign[:, None] * evidence).sum(dim=0) / total.clamp_min(1e-12)
+    return torch.where(total >= min_mass * len(mass), density, torch.full_like(density, float("nan")))

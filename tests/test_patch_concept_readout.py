@@ -1,4 +1,4 @@
-"""The patch-concept readout recovers planted concepts, keeps probabilities summing to one and splits margins."""
+"""The patch-concept readout recovers planted concepts, keeps probabilities summing to one and finds evidence."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from cospro.evaluation.logistic_probe import fit_logistic_probe
 from cospro.evaluation.patch_concept_readout import (
-    Moments, concept_decision_shares, cross_fit_readout, image_folds, margin_direction, mean_pool,
+    Moments, concept_evidence, cross_fit_readout, evidence_density, image_folds, margin_direction, mean_pool,
     pooled_control, predict_concepts, resize_maps, shuffled_control,
 )
 
@@ -62,7 +62,7 @@ class PatchConceptReadoutTests(unittest.TestCase):
         predicted = predict_concepts(tokens, readout["full_fit"])
         torch.testing.assert_close(predicted.sum(-1), torch.ones(60, 16), atol=1e-4, rtol=0)
 
-    def test_shares_add_up_to_the_margin(self):
+    def test_evidence_adds_up_to_the_margin(self):
         tokens, _ = planted()
         pooled = mean_pool(tokens)
         labels = (pooled[:, 0] > pooled[:, 0].median()).long()
@@ -71,10 +71,23 @@ class PatchConceptReadoutTests(unittest.TestCase):
         direction, offset = margin_direction(parameters["weight"].float(), parameters["scale"].float(),
                                              parameters["mean"].float())
         concepts = torch.rand(60, 16, 3).softmax(dim=-1)
-        shares = concept_decision_shares(tokens, concepts, direction, offset)
+        evidence, mass = concept_evidence(tokens, concepts, direction, offset)
+        torch.testing.assert_close(mass.sum(-1), torch.full((60,), 16.0))
         weight = parameters["weight"].float()
         logits = ((pooled - parameters["mean"].float()) / parameters["scale"].float()) @ weight.T
-        torch.testing.assert_close(shares.sum(-1), logits[:, 1] - logits[:, 0], atol=1e-3, rtol=1e-3)
+        torch.testing.assert_close(evidence.sum(-1) / 16, logits[:, 1] - logits[:, 0], atol=1e-3, rtol=1e-3)
+
+    def test_evidence_density_ignores_area_and_flags_rare_concepts(self):
+        # Concept 0 covers 15 patches with evidence +1, concept 1 one patch with -2, concept 2 nothing.
+        tokens = torch.tensor([[[1.0]] * 15 + [[-2.0]]]).expand(4, -1, -1)
+        concepts = torch.zeros(4, 16, 3)
+        concepts[:, :15, 0] = 1.0
+        concepts[:, 15, 1] = 1.0
+        evidence, mass = concept_evidence(tokens, concepts, torch.tensor([1.0]), 0.0)
+        sign = torch.tensor([1.0, 1.0, -1.0, 1.0])
+        density = evidence_density(evidence, mass, sign, min_mass=0.5)
+        torch.testing.assert_close(density[:2], torch.tensor([0.5, -1.0]))
+        self.assertTrue(torch.isnan(density[2]))
 
 
 if __name__ == "__main__":
