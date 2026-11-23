@@ -15,6 +15,7 @@ fitted ridge under ``<scratch>/features/Spur_SpLiCE/<study>/``.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ from cospro.data.registry import dataset_class
 from cospro.evaluation.logistic_probe import fit_logistic_probe
 from cospro.evaluation.patch_concept_readout import (
     concept_evidence, cross_fit_readout, evidence_density, image_folds, margin_direction, mean_pool,
-    pooled_control, predict_concepts, resize_maps, shuffled_control,
+    pooled_control, predict_concepts, resize_maps, shuffled_control, typed_evidence,
 )
 from cospro.evaluation.protocol import resolve_evaluation_split
 from cospro.metrics import compute_group_metrics
@@ -35,6 +36,8 @@ from cospro.models.ijepa import IJEPA_MODEL_NAMES, build_ijepa_encoder
 from cospro.tracking.artifacts import atomic_write_json, run_directory, scratch_root
 
 DATASET = "waterbirds"
+DEFAULT_TYPES = Path("outputs/shared/waterbirds/graphs/concept_types/ijepa_readout_factor_types.json")
+CONCEPT_TYPES = ("bird", "land", "water", "other")
 GROUP_NAMES = ("landbird on land", "landbird on water", "waterbird on land", "waterbird on water")
 
 
@@ -52,6 +55,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=15, help="Concepts listed per ranking.")
     parser.add_argument("--min_mass", type=float, default=1.0,
                         help="Patches per image a concept must cover on average to be ranked.")
+    parser.add_argument("--concept_types", type=Path, default=DEFAULT_TYPES,
+                        help="JSON mapping factor names to bird, land or water; unlisted factors count as other.")
+    parser.add_argument("--bootstrap", type=int, default=1000, help="Resamples for the typed evidence intervals.")
     parser.add_argument("--skip_controls", action="store_true")
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -199,12 +205,27 @@ def main(argv: list[str] | None = None) -> Path:
     groups = eval_metadata[:, 0].long() + 2 * eval_metadata[:, 1].long()
     wrong = mean_parameters["predictions"].cpu() != eval_y
 
+    typed = json.loads(args.concept_types.read_text(encoding="utf-8"))["types"]
+    unknown = sorted(set(typed) - set(names))
+    if unknown:
+        raise ValueError(f"{args.concept_types} types factors these maps lack, e.g. {unknown[:3]}.")
+    if set(typed.values()) - set(CONCEPT_TYPES):
+        raise ValueError(f"Concept types must be among {CONCEPT_TYPES}.")
+    type_columns = {kind: torch.tensor([typed.get(name, "other") == kind for name in names])
+                    for kind in CONCEPT_TYPES}
+    contrasts = [("bird", "land"), ("bird", "water")]
+
+    def typed_of(mask: torch.Tensor) -> dict:
+        return {"images": int(mask.sum()),
+                **typed_evidence(evidence[mask], mass[mask], sign[mask], type_columns, contrasts,
+                                 args.bootstrap, args.seed)}
+
     def evidence_of(mask: torch.Tensor) -> dict:
         density = evidence_density(evidence[mask], mass[mask], sign[mask], args.min_mass)
         return {"images": int(mask.sum()), **ranked(names, density, args.top, mass[mask].mean(dim=0))}
 
     result = {
-        "schema": "ijepa-concept-readout-v2",
+        "schema": "ijepa-concept-readout-v3",
         "model": args.model,
         "eval_split": eval_split,
         "concept_maps": str(args.concept_maps),
@@ -224,6 +245,18 @@ def main(argv: list[str] | None = None) -> Path:
         "probes": {"mean_pool": mean_metrics, "concept_bottleneck": bottleneck_metrics},
         "bottleneck_standardized_weights_towards_waterbird": ranked(names, concept_weight, args.top,
                                                                      eval_mass.mean(dim=0)),
+        "typed_evidence": {
+            "meaning": "evidence per patch of bird, land-scene, water-scene and other concepts, signed towards "
+                       "the true class, with 95% percentile bootstrap intervals over images",
+            "concept_types": str(args.concept_types),
+            "factors_per_type": {kind: int(column.sum()) for kind, column in type_columns.items()},
+            "all_images": typed_of(torch.ones_like(wrong)),
+            "per_group": {name: typed_of(groups == group)
+                          for group, name in enumerate(GROUP_NAMES) if bool((groups == group).any())},
+            "misclassified_per_group": {name: typed_of((groups == group) & wrong)
+                                        for group, name in enumerate(GROUP_NAMES)
+                                        if bool(((groups == group) & wrong).sum() >= 5)},
+        },
         "concept_evidence": {
             "meaning": "mean-pool probe margin per patch of each concept, measured from the training-average "
                        "image and signed towards the true class; negative argues for the wrong class",

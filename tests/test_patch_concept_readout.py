@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from cospro.evaluation.logistic_probe import fit_logistic_probe
 from cospro.evaluation.patch_concept_readout import (
     Moments, concept_evidence, cross_fit_readout, evidence_density, image_folds, margin_direction, mean_pool,
-    pooled_control, predict_concepts, resize_maps, shuffled_control,
+    pooled_control, predict_concepts, resize_maps, shuffled_control, typed_evidence,
 )
 
 
@@ -88,6 +88,24 @@ class PatchConceptReadoutTests(unittest.TestCase):
         density = evidence_density(evidence, mass, sign, min_mass=0.5)
         torch.testing.assert_close(density[:2], torch.tensor([0.5, -1.0]))
         self.assertTrue(torch.isnan(density[2]))
+
+
+    def test_typed_evidence_pools_types_and_brackets_the_point(self):
+        generator = torch.Generator().manual_seed(0)
+        mass = torch.rand(40, 4, generator=generator) * 10
+        # Factors 0 and 1 are birds with +2 per patch; factor 2 is land with -1 per patch; factor 3 other.
+        evidence = mass * torch.tensor([2.0, 2.0, -1.0, 0.5])
+        types = {"bird": torch.tensor([True, True, False, False]), "land": torch.tensor([False, False, True, False]),
+                 "other": torch.tensor([False, False, False, True])}
+        result = typed_evidence(evidence, mass, torch.ones(40), types, [("bird", "land")], resamples=200)
+        self.assertAlmostEqual(result["bird"]["evidence_per_patch"], 2.0, places=4)
+        self.assertAlmostEqual(result["land"]["evidence_per_patch"], -1.0, places=4)
+        self.assertAlmostEqual(result["bird_minus_land"]["evidence_per_patch"], 3.0, places=4)
+        low, high = result["bird_minus_land"]["ci95"]
+        self.assertLessEqual(low, 3.0 + 1e-4)
+        self.assertGreaterEqual(high, 3.0 - 1e-4)
+        flipped = typed_evidence(evidence, mass, -torch.ones(40), types, [], resamples=10)
+        self.assertAlmostEqual(flipped["bird"]["evidence_per_patch"], -2.0, places=4)
 
 
 if __name__ == "__main__":

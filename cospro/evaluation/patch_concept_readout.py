@@ -224,3 +224,42 @@ def evidence_density(evidence: torch.Tensor, mass: torch.Tensor, sign: torch.Ten
     total = mass.sum(dim=0)
     density = (sign[:, None] * evidence).sum(dim=0) / total.clamp_min(1e-12)
     return torch.where(total >= min_mass * len(mass), density, torch.full_like(density, float("nan")))
+
+
+def typed_evidence(evidence: torch.Tensor, mass: torch.Tensor, sign: torch.Tensor, types: dict[str, torch.Tensor],
+                   contrasts: list[tuple[str, str]], resamples: int = 1000, seed: int = 0) -> dict:
+    """Evidence per patch of each concept type over a set of images, with percentile bootstrap intervals.
+
+    ``types`` maps a type name to a boolean column mask over the factors. A type's density is its signed
+    evidence summed over its factors and images, divided by its summed mass. ``contrasts`` lists
+    (a, b) pairs whose difference ``a - b`` gets a paired interval from the same resampled images.
+    """
+
+    columns = torch.stack([types[name] for name in types], dim=1).double()  # [factors, types]
+    signed = (sign[:, None].double() * evidence.double()) @ columns  # [images, types]
+    weights = mass.double() @ columns
+    names = list(types)
+    position = {name: index for index, name in enumerate(names)}
+
+    def densities(rows: torch.Tensor) -> torch.Tensor:
+        return signed[rows].sum(dim=0) / weights[rows].sum(dim=0).clamp_min(1e-12)
+
+    point = densities(torch.arange(len(signed)))
+    generator = torch.Generator().manual_seed(seed)
+    draws = torch.stack([densities(torch.randint(len(signed), (len(signed),), generator=generator))
+                         for _ in range(resamples)]) if len(signed) else torch.zeros(0, len(names))
+    low, high = (draws.quantile(0.025, dim=0), draws.quantile(0.975, dim=0)) if len(draws) else (point, point)
+    result = {
+        name: {"evidence_per_patch": round(float(point[index]), 4),
+               "ci95": [round(float(low[index]), 4), round(float(high[index]), 4)],
+               "patches_per_image": round(float(weights[:, index].mean()), 2) if len(weights) else 0.0}
+        for name, index in position.items()
+    }
+    for first, second in contrasts:
+        a, b = position[first], position[second]
+        difference = draws[:, a] - draws[:, b]
+        result[f"{first}_minus_{second}"] = {
+            "evidence_per_patch": round(float(point[a] - point[b]), 4),
+            "ci95": [round(float(difference.quantile(0.025)), 4), round(float(difference.quantile(0.975)), 4)],
+        }
+    return result
