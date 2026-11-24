@@ -145,11 +145,8 @@ Implemented on branch `ECS` and tested locally (2026-11-20):
 | K1 and K2 verdicts, post-swap reliance check | `cospro/cli/summarize_concept_curves.py` |
 | Tests, including the SimCLR equality run | `tests/test_concept_curves.py` |
 
-No run on real data yet.
-
-Next steps, in order:
-
-1. Submit the kill test of Section 3 on the cluster.
-2. After epoch 50 of the first runs, read stage K1.
-3. After the runs finish, read stage K2 and record both verdicts in a dated note under `docs/notes/`.
-4. On a pass, continue with Section 5. On a fail, follow the consequence column.
+**Result on MetaShift (2026-11-24, seeds 1 to 4): K1 fail, K2 fail, so ECS ends.** The onset score follows
+region area (Pearson 0.99), so detection AUROC is 0.50. `curves` gains +5.0 and `curves_oracle` +2.9 over
+`simclr`, both carried by one low `simclr` seed. Every swap lowers the measured reliance on its units on 4 of 4
+seeds. Details and numbers: [`notes/ECS_CSA_RESULTS_2026_11_24.md`](notes/ECS_CSA_RESULTS_2026_11_24.md). Under
+the consequence column of Section 3 the effort moves to CSA. The ablation arms of Section 5 stay unrun.

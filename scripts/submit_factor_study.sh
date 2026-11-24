@@ -10,6 +10,8 @@
 #   ARMS="curves_units" bash scripts/submit_factor_study.sh metashift 1 2 3 4   (one arm per concept unit,
 #   curves_unit_0 to curves_unit_11; CURVE_UNITS sets the unit count)
 #   ARMS="curves_ablations" bash scripts/submit_factor_study.sh metashift 1 2 3 4   (the ECS ablation arms)
+#   ARMS="csa_audit" bash scripts/submit_factor_study.sh metashift 1 2 3 4 5 6 7 8   (CSA: audit-only SimCLR runs that
+#   keep their final encoder for scripts/submit_concept_attribution.sh)
 #   SBATCH_PARTITION=gpuidle bash scripts/submit_factor_study.sh ...   (another partition: sbatch reads
 #   SBATCH_PARTITION and it overrides the #SBATCH --partition line of every launcher)
 #   FINAL_TEST=1 bash scripts/submit_factor_study.sh waterbirds 1 2   (locked test: the same arms probed once on
@@ -194,6 +196,10 @@ add_curve_arms() {
   for ((unit = 0; unit < CURVE_UNITS; unit++)); do
     ARMS[curves_unit_${unit}]="${CURVES[*]} --curve_unit_count ${CURVE_UNITS} --curve_flag_rule units --curve_flag_units ${unit}"
   done
+  # CSA attribution at inference: the audit-only run (training equals simclr) that keeps its final encoder, which
+  # scripts/submit_concept_attribution.sh then occludes concept by concept. save_freq 500 writes one recovery
+  # checkpoint at the end, so scratch sees two writes per run.
+  ARMS[csa_audit]="${CURVES[*]} --curve_unit_count ${CURVE_UNITS} --curve_flag_rule none --keep_checkpoints --save_freq 500"
 }
 # Concept compositing arms, for datasets whose target is an object and whose spurious attribute is its surroundings.
 add_composite_arms() {
@@ -455,7 +461,7 @@ needs_maps() {  # needs_maps <pattern> <maps file>
   return 1
 }
 if [[ -n "${SPATIAL_MAPS:-}" ]] && { needs_maps "spatial_w*" "${SPATIAL_MAPS}" || needs_maps "region_*" "${SPATIAL_MAPS}"   || needs_maps "comp_*" "${SPATIAL_MAPS}" || needs_maps "mix_*" "${SPATIAL_MAPS}" \
-  || needs_maps "heads_*" "${SPATIAL_MAPS}" || needs_maps "curves*" "${SPATIAL_MAPS}"; }; then
+  || needs_maps "heads_*" "${SPATIAL_MAPS}" || needs_maps "curves*" "${SPATIAL_MAPS}" || needs_maps "csa_*" "${SPATIAL_MAPS}"; }; then
   MAPS_JOB=$(sbatch --parsable --partition "${MAPS_PARTITION:-informatik-mind}" scripts/build_concept_maps.sbatch --dataset "${DATASET}"     --concept-groups "${SPATIAL_GROUPS}" --splice-cache "${SPATIAL_CACHE}" --factor-min-frequency 0.02)
   MAPS_DEPENDENCY=(--dependency="afterok:${MAPS_JOB%%;*}")
   echo "concept_maps_job=${MAPS_JOB%%;*}"
@@ -475,7 +481,7 @@ for arm in "${SELECTED[@]}"; do
     conditions=()
     if [[ "${arm}" == spatial_pca* && "${#PCA_MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${PCA_MAPS_DEPENDENCY[0]#--dependency=}")
-    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* || "${arm}" == heads_* || "${arm}" == curves* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
+    elif [[ ( "${arm}" == spatial_w* || "${arm}" == region_* || "${arm}" == comp_* || "${arm}" == mix_* || "${arm}" == heads_* || "${arm}" == curves* || "${arm}" == csa_* ) && "${#MAPS_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MAPS_DEPENDENCY[0]#--dependency=}")
     elif [[ "${arm}" == *meaning* && "${#MEANING_GROUP_DEPENDENCY[@]}" -gt 0 ]]; then
       conditions+=("${MEANING_GROUP_DEPENDENCY[0]#--dependency=}")

@@ -434,6 +434,174 @@ class MethodTests(unittest.TestCase):
         other = spur_splice.parse_args([*common, "--splice_mode", "none", "--curve_early_epochs", "7"])
         self.assertEqual(plain.storage_name, other.storage_name)
 
+    def test_csa_audit_arm_of_the_launcher_parses_and_keeps_the_encoder(self):
+        launcher = (Path(spur_splice.__file__).parent / "scripts" / "submit_factor_study.sh").read_text(encoding="utf-8")
+        extra = re.search(r'ARMS\[csa_audit\]="\$\{CURVES\[\*\]\}([^"]*)"', launcher).group(1).replace("${CURVE_UNITS}", "12")
+        args = spur_splice.parse_args(["--dataset", "metashift", "--seed", "1", "--artifact_dir", str(self.root / "runs"),
+                                       "--splice_mode", "concept_curves", "--curve_concept_maps", str(self.maps),
+                                       *extra.split()])
+        self.assertEqual(args.curve_flag_rule, "none")
+        self.assertTrue(args.keep_checkpoints)
+
+    def test_attribution_at_inference_end_to_end(self):
+        """Train an audit-only run that keeps its encoder, attribute its concepts at inference and summarize."""
+
+        from cospro.cli import attribute_concepts
+        from cospro.cli.build_concept_maps import split_maps_path
+
+        maps_folder = self.root / "maps" / "synthetic"
+        maps_folder.mkdir(parents=True)
+        training_maps = maps_folder / "concept_maps.pt"
+        training_maps.write_bytes(self.maps.read_bytes())
+        validation = self.dataset.get_subset("val").indices
+        maps = torch.ones(len(validation), 2, 14, 14)
+        maps[:, 0] = 0.0
+        maps[:, 0, 4:10, 4:10] = 2.0
+        maps = maps / maps.sum(dim=1, keepdim=True)
+        validation_maps = split_maps_path(training_maps, "val")
+        validation_maps.parent.mkdir(parents=True)
+        torch.save({"sample_ids": [f"metashift:{int(index)}" for index in validation], "factor_names": ["centre", "border"],
+                    "maps": maps.half(), "kind": "concepts"}, validation_maps)
+        outputs = self.root / "outputs"
+        attempt = outputs / "seeds" / "study" / "seed_01" / "csa_audit" / "attempt"
+        environment = {**os.environ, "WANDB_MODE": "disabled", "SPUR_SPLICE_SCRATCH_ROOT": str(self.root / "scratch")}
+        done = subprocess.run(
+            [sys.executable, str(Path(spur_splice.__file__)), "--dataset", "metashift", "--data_folder",
+             str(self.root / "data"), "--model", "resnet18_large", "--epochs", "2", "--batch_size", "16", "--num_workers",
+             "0", "--device", "cpu", "--learning_rate", "0.01", "--temp", "0.5", "--seed", "1", "--study", "study",
+             "--arm", "csa_audit", "--attempt_id", "attempt", "--splice_mode", "concept_curves", "--curve_concept_maps",
+             str(training_maps), "--curve_unit_count", "0", "--curve_flag_rule", "none", "--curve_early_epochs", "1",
+             "--curve_audit_every", "1", "--keep_checkpoints", "--save_freq", "500",
+             "--artifact_dir", str(attempt / "training"), "--run_record", str(attempt / "run.json")],
+            cwd=Path(spur_splice.__file__).parent, capture_output=True, text=True, env=environment,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr[-3000:])
+        with mock.patch.dict(os.environ, {"SPUR_SPLICE_SCRATCH_ROOT": str(self.root / "scratch")}):
+            output = attribute_concepts.main(["--study", "study", "--arm", "csa_audit", "--seed", "1", "--output-root",
+                                              str(outputs), "--data_folder", str(self.root / "data"), "--device", "cpu",
+                                              "--num_workers", "0", "--batch_size", "16"])
+        record = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(output, attempt / "concept_attribution_val.json")
+        self.assertEqual([unit["name"] for unit in record["units"]], ["centre", "border"])
+        self.assertEqual(record["units"][0]["images"], len(validation))
+        self.assertLess(record["probe"]["clean_feature_max_difference"], 1e-3)
+        self.assertEqual(len(record["clean"]["group_acc"]), 4)
+        for unit in record["units"]:
+            self.assertGreater(unit["embedding_shift"], 0.0)
+            self.assertAlmostEqual(unit["net_change"]["wga"], unit["occluded"]["wga"] - unit["control"]["wga"])
+        summary = summarize_concept_curves.main(["--study", "study", "--output-root", str(outputs)])
+        self.assertIn("## Concept attribution at inference (`csa_audit`, 1 seeds)", summary.read_text(encoding="utf-8"))
+
+
+class InferenceAttributionTests(unittest.TestCase):
+    def test_control_donors_borrow_from_another_image_that_shows_the_unit(self):
+        from cospro.curves.attribution import control_donors
+
+        present = torch.tensor([[True, False], [True, True], [False, True], [True, False]])
+        donors = control_donors(present)
+        for unit in range(2):
+            shown = present[:, unit].nonzero().view(-1).tolist()
+            self.assertEqual(sorted(donors[shown, unit].tolist()), shown)
+            self.assertTrue(all(int(donors[row, unit]) != row for row in shown))
+            self.assertTrue(all(int(donors[row, unit]) == -1 for row in range(4) if row not in shown))
+
+    def test_occlusion_moves_only_the_features_of_images_that_show_the_unit(self):
+        from cospro.curves.attribution import occlusion_features
+
+        generator = torch.Generator().manual_seed(0)
+        images = torch.zeros(6, 3, 56, 56)
+        images[:, :, :28, :28] = torch.randn(6, 1, 1, 1, generator=generator)  # the left half carries the content
+        images[:, :, 28:, :28] = torch.randn(6, 1, 1, 1, generator=generator)
+        images[:, :, :, 28:] = torch.randn(6, 1, 1, 1, generator=generator)
+        maps = left_right_maps(6)
+        maps[0, 0] = 0.0  # image 0 shows no left unit
+        maps[0, 1] = 1.0
+        regions = hard_regions(maps, build_units(maps, 0))
+        class Encoder(torch.nn.Module):
+            def forward(self, batch):
+                return LeftReader().encoder(batch)
+
+        features = occlusion_features(Encoder(), [(images, torch.arange(6))], regions, [0, 1], torch.device("cpu"))
+        clean = features["clean"]
+        self.assertTrue(torch.equal(features["occluded"][0][0], clean[0]))
+        left_shift = (features["occluded"][0][1:] - clean[1:]).abs().sum()
+        # Image 0 is all "right" unit, so occluding it hides everything; the other images keep their left half.
+        right_shift = (features["occluded"][1][1:] - clean[1:]).abs().sum()
+        self.assertGreater(float(left_shift), 10 * float(right_shift) + 0.01)
+        self.assertFalse(bool(features["present"][0, 0]))
+
+    def test_verdicts_contrast_and_hypotheses(self):
+        verdict = summarize_concept_curves.effect_verdict
+        self.assertEqual(verdict([3.0, 2.5, 3.5, 2.0])["verdict"], "shortcut")
+        self.assertEqual(verdict([-3.0, -2.5, -3.5, -2.0])["verdict"], "needed")
+        self.assertEqual(verdict([5.0, -4.0, 6.0, -5.0])["verdict"], "neutral")
+        results = {f"curves_unit_{unit}": {seed: {"wga": 40.0 + 10 * seed + offset + (seed % 2) * 0.5, "acc": 70.0}
+                                          for seed in (1, 2, 3, 4)}
+                   for unit, offset in enumerate([4.0, 0.0, -4.0])}
+        contrast = summarize_concept_curves.unit_contrast(results, {unit: f"curves_unit_{unit}" for unit in range(3)})
+        self.assertAlmostEqual(contrast["units"][0]["mean"], 4.0)
+        self.assertEqual(contrast["units"][2]["verdict"], "needed")
+        self.assertEqual(contrast["seeds"], [1, 2, 3, 4])
+        rows = [{"type": "attribute", "verdict": "shortcut", "seeds": [1, 2, 3, 4], "reliance": {"holds": True}},
+                {"type": "class", "verdict": "needed", "seeds": [1, 2, 3, 4], "reliance": {"holds": True}}]
+        hypotheses = summarize_concept_curves.csa_hypotheses(rows, 0.8)
+        self.assertEqual((hypotheses["h1"], hypotheses["h2"], hypotheses["h3"], hypotheses["outcome"]),
+                         (True, True, True, "pass"))
+        neutral = [{**row, "verdict": "neutral", "seeds": list(range(8))} for row in rows]
+        self.assertEqual(summarize_concept_curves.csa_hypotheses(neutral, 0.1)["outcome"], "fail")
+
+    def test_unit_share_falls_against_the_audit_only_arm(self):
+        def entry(late):
+            return {"curves": {"epochs": [0, 50, 500], "early_epochs": 50, "share": [[0.0, 0.0], [0.5, 0.5], late]}}
+
+        swapped = {seed: entry([0.6, 0.1]) for seed in (1, 2)}
+        plain = {seed: entry([0.4, 0.6]) for seed in (1, 2)}
+        alone = summarize_concept_curves.unit_share_change(swapped, 1)
+        self.assertEqual((alone["fell"], alone["against"]), (2, "early window"))
+        against = summarize_concept_curves.unit_share_change(swapped, 0, plain)
+        self.assertEqual((against["fell"], against["reference"]), (0, 0.4))
+
+    def test_inference_summary_nets_the_control_over_seeds(self):
+        def record(net):
+            unit = {"unit": 3, "name": "lawn", "type": "attribute", "eval_presence": 0.3, "images": 10,
+                    "embedding_shift": 0.2, "control_shift": 0.1,
+                    "change": {"wga": net + 1.0, "acc": 0.0, "group_acc": [0.0] * 4},
+                    "control_change": {"wga": 1.0, "acc": 0.0, "group_acc": [0.0] * 4},
+                    "net_change": {"wga": net, "acc": 0.5, "group_acc": [net, 0.0, 0.0, 0.0]}}
+            return {"group_names": [f"(target,context)=({g // 2},{g % 2})" for g in range(4)], "clean": {"wga": 40.0},
+                    "units": [unit]}
+
+        seeds = {seed: record(net) for seed, net in zip((1, 2, 3, 4), (3.0, 2.0, 4.0, 3.0))}
+        result = summarize_concept_curves.summarize_inference("csa_audit", seeds, {}, None)
+        self.assertAlmostEqual(result["units"][0]["net_wga_change"], 3.0)
+        self.assertEqual(result["units"][0]["verdict"], "shortcut")
+        self.assertIn("| 3 | lawn | attribute |", "\n".join(summarize_concept_curves.render_inference(result)))
+
+    def test_split_maps_sit_beside_the_training_maps(self):
+        from cospro.cli.build_concept_maps import maps_name, split_maps_path
+
+        self.assertEqual(split_maps_path(Path("/s/maps/name/concept_maps.pt"), "val"),
+                         Path("/s/maps/name_val/concept_maps.pt"))
+        groups = Path("outputs/groups/laion_text/concept_groups.json")
+        self.assertEqual(maps_name(groups, 0.02, 0, "qq", 448, split="val"), "laion_text_min0.02_merge0_qq448_val")
+        self.assertEqual(maps_name(groups, 0.02, 0, "qq", 448), "laion_text_min0.02_merge0_qq448")
+
+    def test_like_copies_groups_cache_and_settings_of_stored_maps(self):
+        from cospro.cli.build_concept_maps import apply_like, parse_args
+
+        with tempfile.TemporaryDirectory() as folder:
+            stored = Path(folder) / "concept_maps.pt"
+            config = {"factor_min_frequency": 0.02, "merge_similarity": 0.0, "attention": "qq", "resolution": 448,
+                      "stride": 112, "temperature": 0.01, "targets": "concepts"}
+            torch.save({"maps": torch.zeros(1, 2, 14, 14).half(), "config": config, "concept_groups": "g/groups.json",
+                        "splice_cache": "c/cache.pt"}, stored)
+            args = parse_args(["--dataset", "metashift", "--like", str(stored), "--split", "val"])
+            apply_like(args)
+            self.assertEqual((args.concept_groups, args.splice_cache), (Path("g/groups.json"), Path("c/cache.pt")))
+            self.assertEqual((args.factor_min_frequency, args.resolution, args.split), (0.02, 448, "val"))
+        with self.assertRaises(SystemExit):
+            parse_args(["--dataset", "metashift"])
+
 
 if __name__ == "__main__":
     unittest.main()

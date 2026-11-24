@@ -32,7 +32,7 @@ experiment may change through a command-line option, **later** marks work outsid
 | The audit ranks spurious concepts first and swapping them raises WGA | succeeds | succeeds, with learning order as a label-free predictor of shortcuts |
 | Swapping the right concepts raises WGA and the audit ranks them wrongly | fails as a label-free method | succeeds: the per-concept effects identify the shortcuts, and "learning order does not mark shortcuts" is a reported finding |
 | The audit ranks correctly and the gain stays below the ECS threshold | weak | succeeds when the signs of the per-concept effects follow the concept types |
-| No swap changes WGA, the oracle swap included | fails | falls back to attribution by occlusion at inference (later work in `PROJECT_CSA.md`) |
+| No swap changes WGA, the oracle swap included | fails | falls back to attribution by occlusion at inference (`PROJECT_CSA.md`, Section 6); **this is the MetaShift result of 2026-11-24** |
 
 ---
 
@@ -392,7 +392,7 @@ to the other.
 
 ## 9. Prior work and novelty
 
-The table below covers ECS; the prior work of CSA is in `PROJECT_CSA.md`, Section 7.
+The table below covers ECS; the prior work of CSA is in `PROJECT_CSA.md`, Section 8.
 Searches on 2026-11-14 and 2026-11-16 (about 20 queries) found no work that combines these three
 elements: named patch-level concepts, the timing of the model's reliance on them as the signal for
 spuriousness and a region-level swap chosen by that signal. None of the related works below operates
@@ -456,6 +456,11 @@ Verified on 2026-11-20 (branch `ECS`): a `curves_audit` run reproduces the `simc
 seed loss for loss on a synthetic MetaShift tree, with 0 and 2 loader workers; a swapping run departs
 only after `T0`. The ECS ablation arms, the area-normalized reliance and the automatic kill-test
 verdicts are described in `PROJECT_ECS.md`, Sections 3, 5 and 7.
+
+Results on MetaShift (2026-11-24): the ECS kill test fails at both stages, and the CSA unit arms stay neutral
+(F test p = 0.64). See [`notes/ECS_CSA_RESULTS_2026_11_24.md`](notes/ECS_CSA_RESULTS_2026_11_24.md). CSA continues
+with the attribution at inference, `PROJECT_CSA.md`, Section 6 (implemented, arm `csa_audit`,
+`cospro/cli/attribute_concepts.py`).
 
 ## 13. Glossary
 

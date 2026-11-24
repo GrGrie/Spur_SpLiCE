@@ -12,6 +12,12 @@ groups, SpLiCE cache and factor band, so the map channels match the factor colum
 Outputs: the maps under ``<scratch>/features/Spur_SpLiCE/<dataset>/concept_maps/<name>/concept_maps.pt``
 and a compact summary under ``outputs/shared/<dataset>/graphs/concept_maps/<name>/summary.json``, where
 ``<name>`` is ``<groups folder>_min<band>_merge<merge>_<attention><resolution>``.
+
+``--split val`` (or ``test``) builds the same maps for the evaluation images, which the concept attribution at
+inference occludes (``cospro.cli.attribute_concepts``). ``--like <training maps>`` copies every setting from a
+stored maps file, so the channels match it exactly, and writes next to it under ``<name>_<split>``:
+
+    python -m cospro.cli.build_concept_maps --dataset metashift --like <scratch>/.../<name>/concept_maps.pt --split val
 """
 
 from __future__ import annotations
@@ -38,9 +44,35 @@ CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
 
 
 def maps_name(concept_groups: Path, min_frequency: float, merge: float, attention: str, resolution: int,
-              targets: str = "concepts") -> str:
+              targets: str = "concepts", split: str = "train") -> str:
     name = f"{Path(concept_groups).parent.name}_min{min_frequency:g}_merge{merge:g}_{attention}{resolution}"
-    return name if targets == "concepts" else f"{name}_{targets}"
+    name = name if targets == "concepts" else f"{name}_{targets}"
+    return name if split == "train" else f"{name}_{split}"
+
+
+def split_maps_path(training_maps: str | Path, split: str) -> Path:
+    """Where the maps of ``split`` sit beside the training maps they were built like."""
+
+    folder = Path(training_maps).parent
+    return folder.with_name(f"{folder.name}_{split}") / "concept_maps.pt"
+
+
+#: Settings ``--like`` copies from a stored maps file.
+LIKE_SETTINGS = ("factor_min_frequency", "merge_similarity", "attention", "resolution", "stride", "temperature", "targets")
+
+
+def apply_like(args: argparse.Namespace) -> None:
+    """Take the concept groups, SpLiCE cache and map settings from the stored maps ``args.like``."""
+
+    try:
+        # Memory-mapped, so reading the settings leaves the large map tensor on disk.
+        stored = torch.load(args.like, map_location="cpu", weights_only=False, mmap=True)
+    except (TypeError, RuntimeError):
+        stored = torch.load(args.like, map_location="cpu", weights_only=False)
+    args.concept_groups = Path(stored["concept_groups"])
+    args.splice_cache = Path(stored["splice_cache"])
+    for key in LIKE_SETTINGS:
+        setattr(args, key, stored["config"][key])
 
 
 def principal_maps(dense: torch.Tensor, width: int, sample_rows: int = 200_000, seed: int = 0) -> torch.Tensor:
@@ -81,8 +113,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dataset", required=True, type=canonical_dataset_name, choices=dataset_names())
     parser.add_argument("--data-folder", default=os.environ.get("DATA_FOLDER", ""))
-    parser.add_argument("--concept-groups", required=True, type=Path)
-    parser.add_argument("--splice-cache", required=True, type=Path)
+    parser.add_argument("--concept-groups", type=Path, default=None)
+    parser.add_argument("--splice-cache", type=Path, default=None)
+    parser.add_argument("--split", choices=("train", "val", "test"), default="train",
+                        help="Images to map. The factors always come from the training images.")
+    parser.add_argument("--like", type=Path, default=None,
+                        help="Stored maps file whose concept groups, cache and settings this build copies.")
     parser.add_argument("--factor-min-frequency", type=float, default=0.05)
     parser.add_argument("--merge-similarity", type=float, default=0.0)
     parser.add_argument("--attention", choices=("qq", "value"), default="qq")
@@ -98,16 +134,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--output", type=Path, default=None, help="Default: see the module docstring.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.like is None and (args.concept_groups is None or args.splice_cache is None):
+        parser.error("--concept-groups and --splice-cache are required without --like.")
+    return args
 
 
 def main(argv: list[str] | None = None) -> Path:
     args = parse_args(argv)
+    if args.like is not None:
+        apply_like(args)
     args.cache_device = args.device
     feature_root = args.feature_root or scratch_root() / "features" / "Spur_SpLiCE"
     name = maps_name(args.concept_groups, args.factor_min_frequency, args.merge_similarity, args.attention,
-                     args.resolution, args.targets)
-    output = args.output or feature_root / args.dataset / "concept_maps" / name / "concept_maps.pt"
+                     args.resolution, args.targets, args.split)
+    output = args.output or (split_maps_path(args.like, args.split) if args.like is not None
+                             else feature_root / args.dataset / "concept_maps" / name / "concept_maps.pt")
 
     factors, _, cache_path = load_concept_factors(
         args.dataset, FactorConfig(min_frequency=args.factor_min_frequency, merge_similarity=args.merge_similarity),
@@ -128,9 +170,13 @@ def main(argv: list[str] | None = None) -> Path:
 
     model, _, _ = open_clip.create_model_and_transforms(SPLICE_MODEL.split(":", 1)[1], pretrained=SPLICE_PRETRAINED)
     model = model.to(args.device).eval()
-    sample_ids = factors["sample_ids"]
     adapter = dataset_class(args.dataset)(str(args.data_folder))
-    indices = [int(sample_id.rpartition(":")[2]) for sample_id in sample_ids]
+    if args.split == "train":
+        sample_ids = factors["sample_ids"]
+        indices = [int(sample_id.rpartition(":")[2]) for sample_id in sample_ids]
+    else:
+        indices = [int(index) for index in adapter.get_subset(args.split).indices]
+        sample_ids = [f"{args.dataset}:{index}" for index in indices]
     loader = DataLoader(_Images(adapter, indices, args.resolution), batch_size=args.batch_size,
                         num_workers=args.num_workers, shuffle=False)
     offsets = window_offsets(args.resolution, args.stride)
@@ -161,7 +207,7 @@ def main(argv: list[str] | None = None) -> Path:
         maps = principal_maps(maps, len(names))
         names = [f"principal component {index + 1}" for index in range(len(names))]
     config = {key: getattr(args, key) for key in ("factor_min_frequency", "merge_similarity", "attention",
-                                                   "resolution", "stride", "temperature", "targets")}
+                                                   "resolution", "stride", "temperature", "targets", "split")}
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"sample_ids": sample_ids, "factor_names": names, "maps": maps, "config": config,
                 "kind": args.targets,
