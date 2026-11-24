@@ -8,6 +8,8 @@
 #   sbatch scripts/probe_ijepa.sbatch                      # ViT-H/14 IN-1k, val split
 #   sbatch scripts/probe_ijepa.sbatch --final_test         # test split
 #   MODEL=ijepa_vith14_in22k sbatch scripts/probe_ijepa.sbatch
+#   sbatch scripts/probe_ijepa.sbatch --final_test --train_set_linear_layer cb_train
+#       # probe on equal classes with train's background correlation (1057/56/56/1057 images)
 #
 # Further options after the script name go to cospro.cli.linear_probe.
 

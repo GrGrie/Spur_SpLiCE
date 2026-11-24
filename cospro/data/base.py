@@ -25,6 +25,7 @@ from cospro.data.augmentation import build_ssl_transform
 from cospro.data.transforms import TwoCropTransform
 from third_party.wilds_compat import (
     WILDSDataset,
+    WILDSSubset,
     get_eval_loader,
     get_ssl_train_loader,
     get_train_loader,
@@ -36,6 +37,8 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 #: The image size above which a model may use the 224-pixel ResNet stem.
 LARGE_INPUT_SIZE = 224
 LOADER_ROLES = ("ssl", "rank", "probe_train", "probe_eval")
+#: Train split with equal class counts that keeps each class's spurious-attribute mix from train.
+CLASS_BALANCED_TRAIN = "cb_train"
 
 #: Registered adapters, keyed by canonical name and by every historical spelling.
 DATASETS: dict[str, type["SpuriousDataset"]] = {}
@@ -99,6 +102,20 @@ class SpuriousDataset(WILDSDataset):
             "choose --model resnet18 or --model resnet50."
         )
 
+    def get_subset(self, split: str, frac: float = 1.0, transform=None, ordering=None):
+        """A named split. ``cb_train`` is this project's; the rest follow the vendored WILDS code."""
+
+        if split != CLASS_BALANCED_TRAIN:
+            return super().get_subset(split, frac=frac, transform=transform, ordering=ordering)
+        if frac != 1.0 or ordering is not None:
+            raise ValueError(f"{CLASS_BALANCED_TRAIN} takes neither frac nor ordering.")
+        train = torch.as_tensor(self.split_array == self.split_dict["train"]).reshape(-1)
+        metadata = self.metadata_array
+        indices = class_balanced_indices(
+            metadata[:, self.target_metadata_index], metadata[:, self.spurious_metadata_index], train,
+        )
+        return WILDSSubset(self, indices.numpy(), transform)
+
     @property
     def grouper(self):
         """The grouper that turns metadata into the (attribute, label) groups results report on."""
@@ -116,6 +133,32 @@ class SpuriousDataset(WILDSDataset):
         lines.append(f"Worst-group acc: {metrics.worst_group:.3f}")
         lines.append(f"Best-group  acc: {metrics.best_group:.3f}")
         return metrics.as_spurssl_dict(), "\n".join(lines)
+
+
+def class_balanced_indices(labels: torch.Tensor, spurious: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+    """Sorted indices with every class cut to the smallest class among ``keep``.
+
+    Each class keeps the spurious-attribute proportions it has among ``keep``; rounding goes to the
+    largest remainders so a class sums exactly to the target. Within a group the first samples in
+    index order are retained, as for ``ds_train``. On Waterbirds this gives 1057/56/56/1057 for the
+    groups landbird on land, landbird on water, waterbird on land and waterbird on water.
+    """
+
+    labels, spurious, keep = labels.long(), spurious.long(), keep.bool()
+    classes = labels[keep].unique()
+    size = min(int(((labels == c) & keep).sum()) for c in classes)
+    selected: list[torch.Tensor] = []
+    for c in classes:
+        in_class = (labels == c) & keep
+        values = spurious[in_class].unique()
+        counts = torch.stack([((spurious == v) & in_class).sum() for v in values]).double()
+        exact = counts * size / counts.sum()
+        quota = exact.floor().long()
+        shortfall = size - int(quota.sum())
+        quota[torch.argsort(exact - quota, descending=True)[:shortfall]] += 1
+        for value, count in zip(values, quota.tolist()):
+            selected.append(torch.nonzero((spurious == value) & in_class).reshape(-1)[:count])
+    return torch.cat(selected).sort().values
 
 
 def register_dataset(cls: type[SpuriousDataset]) -> type[SpuriousDataset]:

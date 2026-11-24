@@ -54,7 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data_folder", default="./datasets")
     parser.add_argument(
         "--train_set_linear_layer", default=defaults["train_set_linear_layer"],
-        choices=["train", "val", "ds_train", "us_train", "balanced_train"],
+        choices=["train", "val", "ds_train", "us_train", "balanced_train", "cb_train"],
+        help="ds_train balances the four groups; cb_train balances the classes and keeps the "
+             "train split's spurious correlation",
     )
     parser.add_argument(
         "--eval_split",

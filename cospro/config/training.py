@@ -28,7 +28,7 @@ from cospro.config.settings import wandb_entity
 
 RELATIONAL_GRAPH_MODES = frozenset({"cospro_relational", LEGACY_RELATIONAL_MODE})
 TRAINING_MODES = ("none", "cospro_relational", LEGACY_RELATIONAL_MODE, "frozen_concept_distill")
-LINEAR_TRAIN_SPLITS = ("train", "ds_train", "us_train", "balanced_train", "val")
+LINEAR_TRAIN_SPLITS = ("train", "ds_train", "us_train", "balanced_train", "cb_train", "val")
 DEFAULT_PERIODIC_PROBE_FREQ = 25
 
 
