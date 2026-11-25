@@ -1,17 +1,23 @@
-"""Fine-tune the last blocks of an official I-JEPA encoder on Waterbirds and refit its head.
+"""Fine-tune the last blocks of a pretrained encoder on Waterbirds and refit its head.
 
     python -m cospro.cli.finetune_ijepa --model ijepa_vith14_in1k --data_folder ~/Datasets --use_wandb
 
-Two heads are evaluated on the same fine-tuned encoder:
+The encoder is an official I-JEPA ViT-H/14 or, as the non-JEPA reference, the torchvision ImageNet
+ResNet-50 (``--model resnet50_pretrained``). Two heads are evaluated on the same fine-tuned encoder:
 
-``finetuned``  the linear head trained jointly with the last blocks on ``--train_split`` (default
-               ``cb_train``: equal classes, 95% background correlation), with cross-entropy
-``dfr``        a logistic head refitted on the frozen fine-tuned features of the group-balanced
-               ``--dfr_split`` (default ``ds_train``), as in deep feature reweighting
-               (Kirichenko et al., ICLR 2023)
+``finetuned_head``  the linear head trained jointly with the last blocks on ``--train_split``
+                    (default ``cb_train``: equal classes, 95% background correlation)
+``dfr_head``        a logistic head refitted on frozen fine-tuned features of group-balanced images,
+                    as in deep feature reweighting (Kirichenko et al., ICLR 2023)
 
-Validation group accuracy is measured after every epoch; the run reports the last epoch and selects
-nothing on the evaluation split. ``--final_test`` evaluates the final model on test as well.
+``--dfr_split val_half`` (default) refits on a group-balanced half of the validation set and
+evaluates both heads on the held-out other half, so no evaluated image has trained a head.
+``--dfr_split ds_train`` refits on the balanced training subset and evaluates on the whole
+validation set. Validation accuracy of the fine-tuned head is measured after every epoch. In the last
+``--report_last`` epochs both heads are evaluated on validation and, with ``--final_test``, on test;
+the run reports their mean and standard deviation over those epochs next to the last epoch and selects
+nothing on the evaluation split.
+
 Outputs: ``outputs/seeds/<study>/seed_<NN>/<model>/<attempt>/run.json`` and, unless
 ``--no-save_checkpoint``, the trained parameters under
 ``<scratch>/checkpoints/Spur_SpLiCE/<study>/seed_<NN>/<model>/<attempt>/finetuned.pt``.
@@ -34,26 +40,36 @@ from cospro.config.settings import wandb_entity
 from cospro.data.base import dataset_transforms
 from cospro.data.registry import dataset_class
 from cospro.evaluation.logistic_probe import fit_logistic_probe
-from cospro.methods.ijepa_finetune import PartialFineTune, parameter_groups, trainable_state, warmup_cosine
-from cospro.metrics import compute_group_metrics
+from cospro.methods.partial_finetune import (
+    IJEPABackbone, PartialFineTune, ResNetBackbone, held_out_halves, logistic_logits, mean_and_spread,
+    parameter_groups, trainable_state, warmup_cosine,
+)
+from cospro.metrics import compute_group_metrics, spurious_group_ids
 from cospro.models.ijepa import IJEPA_MODEL_NAMES, build_ijepa_encoder
+from cospro.models.resnet import build_resnet_encoder
 from cospro.tracking.artifacts import atomic_write_json, run_directory, scratch_binary_directory
+from third_party.wilds_compat import WILDSSubset
 
 DATASET = "waterbirds"
 GROUP_NAMES = ("landbird on land", "landbird on water", "waterbird on land", "waterbird on water")
 TRAIN_SPLITS = ("cb_train", "train", "ds_train")
+REFERENCE_MODELS = ("resnet50_pretrained",)
+#: Seed of the validation split into head-fitting and held-out halves, shared by every run.
+HALVES_SEED = 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", default="ijepa_vith14_in1k", choices=IJEPA_MODEL_NAMES)
+    parser.add_argument("--model", default="ijepa_vith14_in1k", choices=(*IJEPA_MODEL_NAMES, *REFERENCE_MODELS))
     parser.add_argument("--ckpt", default="", help="Official I-JEPA checkpoint; empty downloads it to scratch.")
     parser.add_argument("--data_folder", default=os.environ.get("DATA_FOLDER", ""))
     parser.add_argument("--train_split", default="cb_train", choices=TRAIN_SPLITS)
-    parser.add_argument("--dfr_split", default="ds_train", choices=("ds_train",))
-    parser.add_argument("--final_test", action="store_true", help="Also evaluate the final model on test.")
-    parser.add_argument("--trainable_blocks", type=int, default=8, help="Last encoder blocks that train (of 32).")
+    parser.add_argument("--dfr_split", default="val_half", choices=("val_half", "ds_train"))
+    parser.add_argument("--final_test", action="store_true", help="Also evaluate on test in the last epochs.")
+    parser.add_argument("--trainable_blocks", type=int, default=8,
+                        help="Last blocks that train: of 32 for I-JEPA, of 16 bottlenecks for ResNet-50.")
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--report_last", type=int, default=5, help="Epochs at the end whose metrics are averaged.")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-5, help="Peak AdamW learning rate of the encoder blocks.")
     parser.add_argument("--head_lr", type=float, default=1e-3, help="Peak AdamW learning rate of the head.")
@@ -73,8 +89,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--entity", default=wandb_entity())
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
-    if args.epochs < 1 or args.batch_size < 1:
-        parser.error("--epochs and --batch_size must be positive.")
+    if args.epochs < 1 or args.batch_size < 1 or args.report_last < 1:
+        parser.error("--epochs, --batch_size and --report_last must be positive.")
+    args.report_last = min(args.report_last, args.epochs)
     return args
 
 
@@ -83,6 +100,14 @@ def seed_everything(seed: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def build_backbone(model: str, checkpoint: str) -> IJEPABackbone | ResNetBackbone:
+    if model in IJEPA_MODEL_NAMES:
+        encoder, _ = build_ijepa_encoder(model, checkpoint)
+        return IJEPABackbone(encoder)
+    encoder, dim = build_resnet_encoder(model)
+    return ResNetBackbone(encoder, dim)
 
 
 def group_report(predictions: torch.Tensor, labels: torch.Tensor, metadata: torch.Tensor) -> dict:
@@ -94,8 +119,27 @@ def group_report(predictions: torch.Tensor, labels: torch.Tensor, metadata: torc
         "worst_group_accuracy": round(100 * metrics.worst_group, 2),
         "group_accuracy": {name: round(100 * float(value), 2)
                            for name, value in zip(GROUP_NAMES, metrics.group_accuracy)},
-        "group_count": {name: int(count) for name, count in zip(GROUP_NAMES, metrics.group_counts)},
     }
+
+
+def evaluation_sets(dataset, eval_transform, args) -> tuple[WILDSSubset, dict[str, WILDSSubset], dict]:
+    """The head-refitting images, the evaluated splits and a description of both."""
+
+    validation = dataset.get_subset("val", transform=eval_transform)
+    if args.dfr_split == "val_half":
+        groups = spurious_group_ids(dataset.metadata_array[torch.as_tensor(validation.indices)])
+        fit, holdout = held_out_halves(groups, HALVES_SEED)
+        dfr_train = WILDSSubset(dataset, validation.indices[fit.numpy()], eval_transform)
+        validation = WILDSSubset(dataset, validation.indices[holdout.numpy()], eval_transform)
+        description = {"dfr": f"group-balanced half of val (seed {HALVES_SEED})", "val": "held-out half of val"}
+    else:
+        dfr_train = dataset.get_subset("ds_train", transform=eval_transform)
+        description = {"dfr": "ds_train", "val": "val"}
+    evaluation = {"val": validation}
+    if args.final_test:
+        evaluation["test"] = dataset.get_subset("test", transform=eval_transform)
+    description.update(dfr_images=len(dfr_train), **{f"{split}_images": len(s) for split, s in evaluation.items()})
+    return dfr_train, evaluation, description
 
 
 @torch.no_grad()
@@ -108,7 +152,7 @@ def extract(model: PartialFineTune, subset, args) -> tuple[torch.Tensor, torch.T
     for images, batch_labels, batch_metadata in loader:
         batch_features = model.features(images.to(args.device, non_blocking=True))
         features.append(batch_features.cpu())
-        logits.append(model.head(batch_features).cpu())
+        logits.append(model.head(batch_features).float().cpu())
         labels.append(batch_labels)
         metadata.append(batch_metadata)
     return torch.cat(features), torch.cat(logits), torch.cat(labels), torch.cat(metadata)
@@ -136,16 +180,38 @@ def train_epoch(model, loader, optimizer, scaler, schedule, step: int, args) -> 
     return {"loss": round(total_loss / seen, 5), "accuracy": round(100 * correct / seen, 2)}, step
 
 
-def dfr_head(train_features, train_labels, eval_sets: dict, l2: float) -> dict:
-    """Logistic heads refitted on ``train_features``, reported on every evaluation set."""
+def evaluate_heads(model, dfr_train, evaluation: dict, args) -> dict:
+    """Both heads on every evaluated split, with the DFR head refitted on the current features."""
 
-    reports = {}
-    for split, (features, _, labels, metadata) in eval_sets.items():
-        records, convergence = fit_logistic_probe(train_features, train_labels, features, labels,
-                                                  num_classes=2, l2=l2)
-        reports[split] = {**group_report(records[-1].eval_predictions, labels, metadata),
-                          "converged": convergence["converged"]}
+    sets = {split: extract(model, subset, args) for split, subset in evaluation.items()}
+    dfr_features, _, dfr_labels, _ = extract(model, dfr_train, args)
+    parameters: dict = {}
+    val_features, _, val_labels, _ = sets["val"]
+    _, convergence = fit_logistic_probe(dfr_features, dfr_labels, val_features, val_labels, num_classes=2,
+                                        l2=args.dfr_l2, parameters=parameters)
+    reports: dict = {"finetuned_head": {}, "dfr_head": {}, "dfr_converged": convergence["converged"]}
+    for split, (features, logits, labels, metadata) in sets.items():
+        reports["finetuned_head"][split] = group_report(logits.argmax(dim=1), labels, metadata)
+        reports["dfr_head"][split] = group_report(logistic_logits(parameters, features).argmax(dim=1),
+                                                  labels, metadata)
     return reports
+
+
+def summarize(records: list[dict]) -> dict:
+    """Mean and standard deviation of every head's accuracy and WGA over the reported epochs."""
+
+    summary: dict = {}
+    for head in ("finetuned_head", "dfr_head"):
+        for split in records[0][head]:
+            summary.setdefault(head, {})[split] = {
+                metric: mean_and_spread([record[head][split][metric] for record in records])
+                for metric in ("accuracy", "worst_group_accuracy")
+            }
+            summary[head][split]["group_accuracy"] = {
+                name: mean_and_spread([record[head][split]["group_accuracy"][name] for record in records])["mean"]
+                for name in GROUP_NAMES
+            }
+    return summary
 
 
 def main(argv: list[str] | None = None) -> Path:
@@ -160,18 +226,17 @@ def main(argv: list[str] | None = None) -> Path:
     _, train_transform, eval_transform = dataset_transforms(adapter_class.image_size, adapter_class.mean,
                                                             adapter_class.std)
     train = dataset.get_subset(args.train_split, transform=train_transform)
-    dfr_train = dataset.get_subset(args.dfr_split, transform=eval_transform)
-    eval_splits = ["val", "test"] if args.final_test else ["val"]
-    evaluation = {split: dataset.get_subset(split, transform=eval_transform) for split in eval_splits}
+    dfr_train, evaluation, description = evaluation_sets(dataset, eval_transform, args)
     generator = torch.Generator().manual_seed(args.seed)
     loader = DataLoader(train, batch_size=args.batch_size, shuffle=True, drop_last=True, generator=generator,
                         num_workers=args.num_workers, pin_memory=args.device.startswith("cuda"))
 
-    encoder, _ = build_ijepa_encoder(args.model, args.ckpt)
-    model = PartialFineTune(encoder, num_classes=2, trainable_blocks=args.trainable_blocks,
+    model = PartialFineTune(build_backbone(args.model, args.ckpt), num_classes=2,
+                            trainable_blocks=args.trainable_blocks,
                             gradient_checkpointing=args.gradient_checkpointing).to(args.device)
     trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
-    print(f"[INFO] {trainable / 1e6:.1f}M trainable parameters; {len(train)} {args.train_split} images", flush=True)
+    print(f"[INFO] {trainable / 1e6:.1f}M trainable parameters; {len(train)} {args.train_split} images; "
+          f"{description}", flush=True)
     groups = parameter_groups(model, args.lr, args.head_lr, args.weight_decay)
     for group in groups:
         group["base_lr"] = group["lr"]
@@ -186,29 +251,37 @@ def main(argv: list[str] | None = None) -> Path:
         import wandb
 
         run = wandb.init(project=args.wandb_name, entity=args.entity, config=vars(args),
-                         name=f"{args.model}_ft{args.trainable_blocks}_{args.train_split}_S{args.seed}",
-                         tags=["ijepa_finetune", args.train_split])
+                         name=f"{args.model}_ft{args.trainable_blocks}_e{args.epochs}_lr{args.lr:g}_S{args.seed}",
+                         tags=["ijepa_finetune", args.train_split, f"dfr_{args.dfr_split}"])
 
-    history, step, start = [], 0, time.time()
+    history, reported, step, start = [], [], 0, time.time()
+    first_reported = args.epochs - args.report_last + 1
     for epoch in range(1, args.epochs + 1):
         train_stats, step = train_epoch(model, loader, optimizer, scaler, schedule, step, args)
-        _, logits, labels, metadata = extract(model, evaluation["val"], args)
-        val = group_report(logits.argmax(dim=1), labels, metadata)
-        history.append({"epoch": epoch, "train": train_stats, "val": val})
-        print(f"[epoch {epoch}/{args.epochs}] loss {train_stats['loss']:.4f} train acc {train_stats['accuracy']:.2f} "
-              f"| val acc {val['accuracy']:.2f} WGA {val['worst_group_accuracy']:.2f} "
-              f"| {time.time() - start:.0f} s", flush=True)
+        record = {"epoch": epoch, "train": train_stats}
+        if epoch >= first_reported:
+            heads = evaluate_heads(model, dfr_train, evaluation, args)
+            record.update(heads)
+            reported.append(heads)
+            val = heads["finetuned_head"]["val"]
+        else:
+            _, logits, labels, metadata = extract(model, evaluation["val"], args)
+            val = group_report(logits.argmax(dim=1), labels, metadata)
+            record["finetuned_head"] = {"val": val}
+        history.append(record)
+        line = (f"[epoch {epoch}/{args.epochs}] loss {train_stats['loss']:.4f} train acc {train_stats['accuracy']:.2f} "
+                f"| val acc {val['accuracy']:.2f} WGA {val['worst_group_accuracy']:.2f}")
+        if "dfr_head" in record:
+            line += f" | DFR val WGA {record['dfr_head']['val']['worst_group_accuracy']:.2f}"
+        print(f"{line} | {time.time() - start:.0f} s", flush=True)
         if run is not None:
-            run.log({"epoch": epoch, "train/loss": train_stats["loss"], "train/accuracy": train_stats["accuracy"],
-                     "val/accuracy": val["accuracy"], "val/worst_group_accuracy": val["worst_group_accuracy"],
-                     **{f"val/group/{name}": value for name, value in val["group_accuracy"].items()}}, step=epoch)
-
-    print("[INFO] Evaluating the fine-tuned head and refitting a DFR head", flush=True)
-    eval_sets = {split: extract(model, subset, args) for split, subset in evaluation.items()}
-    finetuned = {split: group_report(logits.argmax(dim=1), labels, metadata)
-                 for split, (_, logits, labels, metadata) in eval_sets.items()}
-    dfr_features, _, dfr_labels, _ = extract(model, dfr_train, args)
-    dfr = dfr_head(dfr_features, dfr_labels, eval_sets, args.dfr_l2)
+            log = {"epoch": epoch, "train/loss": train_stats["loss"], "train/accuracy": train_stats["accuracy"]}
+            for head in ("finetuned_head", "dfr_head"):
+                for split, report in record.get(head, {}).items():
+                    log[f"{split}/{head}/accuracy"] = report["accuracy"]
+                    log[f"{split}/{head}/worst_group_accuracy"] = report["worst_group_accuracy"]
+            log["val/worst_group_accuracy"] = val["worst_group_accuracy"]
+            run.log(log, step=epoch)
 
     checkpoint_path = None
     if args.save_checkpoint:
@@ -218,31 +291,34 @@ def main(argv: list[str] | None = None) -> Path:
                     "state_dict": trainable_state(model)}, checkpoint_path)
         print(f"[INFO] Saved trained parameters to {checkpoint_path}", flush=True)
 
+    summary = summarize(reported)
     headline = "test" if args.final_test else "val"
     payload = {
-        "schema": "ijepa-finetune-v1",
-        "config": {key: value for key, value in vars(args).items() if key not in {"entity"}},
+        "schema": "ijepa-finetune-v2",
+        "config": {key: value for key, value in vars(args).items() if key != "entity"},
+        "evaluation": description,
         "train_images": len(train),
-        "dfr_images": len(dfr_train),
         "trainable_parameters": trainable,
         "history": history,
-        "final": {"finetuned_head": finetuned, "dfr_head": dfr},
+        "final": {head: reported[-1][head] for head in ("finetuned_head", "dfr_head")},
+        "last_epochs": {"epochs": args.report_last, **summary},
         "headline_split": headline,
-        "worst_group_accuracy": {"finetuned_head": finetuned[headline]["worst_group_accuracy"],
-                                 "dfr_head": dfr[headline]["worst_group_accuracy"]},
+        "worst_group_accuracy": {head: summary[head][headline]["worst_group_accuracy"]
+                                 for head in ("finetuned_head", "dfr_head")},
         "checkpoint": str(checkpoint_path) if checkpoint_path else None,
         "seconds": round(time.time() - start, 1),
     }
     path = atomic_write_json(output_dir / "run.json", payload)
-    for head, reports in payload["final"].items():
-        for split, report in reports.items():
-            print(f"[final] {head} on {split}: acc {report['accuracy']:.2f} WGA {report['worst_group_accuracy']:.2f} "
-                  f"{report['group_accuracy']}", flush=True)
+    for head in ("finetuned_head", "dfr_head"):
+        for split, report in summary[head].items():
+            print(f"[last {args.report_last}] {head} on {split}: acc {report['accuracy']['mean']:.2f} "
+                  f"± {report['accuracy']['std']:.2f}, WGA {report['worst_group_accuracy']['mean']:.2f} "
+                  f"± {report['worst_group_accuracy']['std']:.2f}", flush=True)
     if run is not None:
-        run.summary.update({f"final/{head}/{split}/{key}": report[key]
-                            for head, reports in payload["final"].items() for split, report in reports.items()
-                            for key in ("accuracy", "worst_group_accuracy")})
-        run.summary.update({f"worst_group_accuracy/{head}": value
+        run.summary.update({f"last{args.report_last}/{head}/{split}/{metric}": report[metric]["mean"]
+                            for head in ("finetuned_head", "dfr_head") for split, report in summary[head].items()
+                            for metric in ("accuracy", "worst_group_accuracy")})
+        run.summary.update({f"worst_group_accuracy/{head}": value["mean"]
                             for head, value in payload["worst_group_accuracy"].items()})
         run.finish()
     print(f"[results] Wrote {path}", flush=True)

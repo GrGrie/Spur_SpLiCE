@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Fine-tune the last blocks of an official I-JEPA ViT-H/14 on Waterbirds with a linear head, then
-# refit the head on the group-balanced subset (DFR). Trains on cb_train by default: equal bird types,
-# 95% of each on its usual background.
+# Fine-tune the last blocks of a pretrained encoder on Waterbirds with a linear head, then refit the
+# head on group-balanced images (DFR). Trains on cb_train by default: equal bird types, 95% of each on
+# its usual background. The encoder is an official I-JEPA ViT-H/14 or the ImageNet ResNet-50 reference.
+# Both heads are averaged over the last 5 epochs; the DFR head refits on half of val by default.
 #
 #   sbatch scripts/finetune_ijepa.sbatch                                  # IN-1k, val only
 #   sbatch scripts/finetune_ijepa.sbatch --final_test                     # also evaluate on test
 #   MODEL=ijepa_vith14_in22k SEED=1 sbatch scripts/finetune_ijepa.sbatch --final_test
-#   sbatch scripts/finetune_ijepa.sbatch --trainable_blocks 4 --gradient_checkpointing   # 16 GB V100
+#   MODEL=resnet50_pretrained sbatch scripts/finetune_ijepa.sbatch --trainable_blocks 16 --lr 1e-4
+#   sbatch scripts/finetune_ijepa.sbatch --trainable_blocks 16 --gradient_checkpointing   # less memory
+#   bash scripts/submit_finetune_sweep.sh ijepa_vith14_in1k              # the sweep, see that script
 #
 # Further options after the script name go to cospro.cli.finetune_ijepa.
 
