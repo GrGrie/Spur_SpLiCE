@@ -63,10 +63,10 @@ class Attention(nn.Module):
         self.qkv = nn.Linear(dim, dim * 3, bias=True)
         self.proj = nn.Linear(dim, dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
         batch, tokens, dim = x.shape
         qkv = self.qkv(x).reshape(batch, tokens, 3, self.num_heads, dim // self.num_heads).permute(2, 0, 3, 1, 4)
-        x = F.scaled_dot_product_attention(qkv[0], qkv[1], qkv[2])
+        x = F.scaled_dot_product_attention(qkv[0], qkv[1], qkv[2], attn_mask=mask)
         return self.proj(x.transpose(1, 2).reshape(batch, tokens, dim))
 
 
@@ -89,8 +89,8 @@ class Block(nn.Module):
         self.norm2 = nn.LayerNorm(dim, eps=1e-6)
         self.mlp = MLP(dim, int(dim * mlp_ratio))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.norm1(x))
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x), mask)
         return x + self.mlp(self.norm2(x))
 
 
@@ -107,13 +107,21 @@ class IJEPAEncoder(nn.Module):
         self.blocks = nn.ModuleList([Block(spec.embed_dim, spec.num_heads, spec.mlp_ratio) for _ in range(spec.depth)])
         self.norm = nn.LayerNorm(spec.embed_dim, eps=1e-6)
 
-    def patch_tokens(self, images: torch.Tensor) -> torch.Tensor:
+    def patch_tokens(self, images: torch.Tensor, keep: torch.Tensor | None = None) -> torch.Tensor:
+        """Last-layer patch tokens [batch, patches, dim].
+
+        ``keep`` [batch, patches] (boolean) removes the other patches from the image: no token attends to
+        them, so the kept tokens equal those of an encoder that never received the removed patches, as the
+        I-JEPA context encoder sees a masked image. The removed positions hold values without meaning.
+        """
+
         expected = (self.spec.image_size, self.spec.image_size)
         if tuple(images.shape[-2:]) != expected:
             raise ValueError(f"I-JEPA {self.spec.filename} expects {expected} inputs; got {tuple(images.shape[-2:])}.")
         x = self.patch_embed(images) + self.pos_embed
+        mask = None if keep is None else keep[:, None, None, :].to(x.device)
         for block in self.blocks:
-            x = block(x)
+            x = block(x, mask)
         return self.norm(x)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
