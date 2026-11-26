@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Concept shortcut attribution at inference for a frozen I-JEPA encoder on Waterbirds: remove the patches
-# of one CSA concept unit at a time, encode again and read the WGA change of fixed linear probes
-# (ds_train and cb_train). Reuses the Waterbirds concept maps built on the concept-factors branch.
+# of one CSA concept unit at a time, encode again and read the shortcut index and the WGA change of fixed
+# linear probes (ds_train and cb_train). Reuses the Waterbirds concept maps built on the concept-factors branch.
 #
 #   sbatch scripts/ijepa_token_drop.sbatch                          # IN-1k, val split
 #   sbatch scripts/ijepa_token_drop.sbatch --final_test             # test split
 #   MODEL=ijepa_vith14_in22k sbatch scripts/ijepa_token_drop.sbatch --final_test
+#   sbatch scripts/ijepa_token_drop.sbatch --final_test --units 24  # finer units: water apart from waterbirds
 #   sbatch scripts/ijepa_token_drop.sbatch --final_test --units 0   # single factors instead of 12 units
+#
+# Verdicts come from the shortcut index: the accuracy gain of the conflict groups over the aligned groups
+# when a unit's patches are removed, minus the same for a shuffled region of equal size.
 #
 # Further options after the script name go to cospro.cli.ijepa_token_drop.
 

@@ -1,9 +1,15 @@
 """Concept shortcut attribution at inference for a frozen I-JEPA encoder on Waterbirds.
 
 For each concept unit: remove the patches the unit wins in every evaluation image from the encoder's input,
-encode again and classify with fixed linear probes. The change of worst-group accuracy is the unit's WGA
-effect; a positive effect marks a shortcut the probe relied on, a negative one a concept it needed. See
+encode again and classify with fixed linear probes. The verdict comes from the shortcut index: how much the
+removal helps the conflict groups (landbird on water, waterbird on land) over the aligned groups, minus the
+same index for removing as many patches elsewhere (the shuffled control). A positive net index marks a
+shortcut the probe relied on, a negative one a concept it needed. The WGA change is reported beside it; it
+hides the shortcut whenever the worst group loses a little while the other conflict group gains. See
 ``cospro.evaluation.token_drop_attribution``.
+
+Unit granularity: 12 units match the CSA arms; ``--units 24`` or ``--units 0`` (single factors) separate
+scene concepts such as water from the birds they appear with.
 
     python -m cospro.cli.ijepa_token_drop --model ijepa_vith14_in1k --data_folder ~/Datasets \\
         --concept_maps <scratch>/features/Spur_SpLiCE/waterbirds/concept_maps/<name>/concept_maps.pt --final_test
@@ -39,7 +45,7 @@ from cospro.evaluation.patch_concept_readout import (
 from cospro.evaluation.protocol import resolve_evaluation_split
 from cospro.evaluation.token_drop_attribution import (
     MIN_PRESENCE, concept_units, drop_masks, group_accuracy, hard_regions, keep_pooled, paired_effect, presence,
-    region_agreement, shuffled_regions, spearman, unit_maps, unit_typing,
+    region_agreement, shortcut_index, shuffled_regions, spearman, unit_maps, unit_typing,
 )
 from cospro.methods.partial_finetune import logistic_logits
 from cospro.models.ijepa import IJEPA_MODEL_NAMES, build_ijepa_encoder
@@ -47,6 +53,8 @@ from cospro.tracking.artifacts import atomic_write_json, run_directory
 
 DATASET = "waterbirds"
 PROBE_SPLITS = ("ds_train", "cb_train", "train")
+#: Groups where class and background disagree: landbird on water and waterbird on land.
+CONFLICT_GROUPS = (1, 2)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -225,7 +233,7 @@ def main(argv: list[str] | None = None) -> Path:
     intact = cached["pooled"]
     intact_logits = {split: logistic_logits(probe["parameters"], intact).float() for split, probe in probes.items()}
 
-    def measure(region_of_unit: torch.Tensor, unit: int) -> tuple[dict, dict]:
+    def measure(region_of_unit: torch.Tensor, unit: int) -> tuple[dict, dict, dict]:
         keep, valid = drop_masks(region_of_unit, shown[:, unit])
         rows = torch.nonzero(valid).flatten()
         occluded = intact.clone()
@@ -234,10 +242,11 @@ def main(argv: list[str] | None = None) -> Path:
         shift = 1 - torch.nn.functional.cosine_similarity(intact[rows], occluded[rows], dim=1)
         statistics = {"images": len(rows), "embedding_shift": round(float(shift.mean()) if len(rows) else 0.0, 5),
                       "removed_share": round(float((~keep[rows]).float().mean()) if len(rows) else 0.0, 4)}
-        effects = {split: paired_effect(intact_logits[split], logistic_logits(probe["parameters"], occluded).float(),
-                                        eval_y, groups, args.bootstrap, args.seed + unit)
-                   for split, probe in probes.items()}
-        return statistics, effects
+        logits = {split: logistic_logits(probe["parameters"], occluded).float() for split, probe in probes.items()}
+        effects = {split: paired_effect(intact_logits[split], logits[split], eval_y, groups, args.bootstrap,
+                                        args.seed + unit)
+                   for split in probes}
+        return statistics, effects, logits
 
     rows_out = []
     for unit in range(units):
@@ -248,23 +257,41 @@ def main(argv: list[str] | None = None) -> Path:
                  "typing": typing[unit], "attributed": rate >= MIN_PRESENCE}
         if entry["attributed"]:
             start = time.time()
-            entry["removal"], entry["effects"] = measure(regions[:, :, unit], unit)
+            entry["removal"], entry["effects"], removed_logits = measure(regions[:, :, unit], unit)
+            control_logits = {split: None for split in probes}
             if not args.skip_shuffled:
-                entry["shuffled_removal"], entry["shuffled_effects"] = measure(
+                entry["shuffled_removal"], entry["shuffled_effects"], control_logits = measure(
                     shuffled_regions(regions, unit, args.seed), unit)
             for split, effect in entry["effects"].items():
                 low, high = effect["wga_effect_ci95"]
-                effect["verdict"] = "shortcut" if low > 0 else "needed" if high < 0 else "neutral"
-            summary = ", ".join(f"{split} {effect['wga_effect']:+.2f}" for split, effect in entry["effects"].items())
+                effect["wga_verdict"] = "raises WGA" if low > 0 else "lowers WGA" if high < 0 else "neutral"
+            entry["shortcut_index"] = {
+                split: shortcut_index(intact_logits[split], removed_logits[split], control_logits[split], eval_y,
+                                      groups, CONFLICT_GROUPS, args.bootstrap, args.seed + unit)
+                for split in probes}
+            summary = ", ".join(f"{split} WGA {entry['effects'][split]['wga_effect']:+.2f} index "
+                                f"{index[index['verdict_from']]:+.2f} {index['verdict']}"
+                                for split, index in entry["shortcut_index"].items())
             print(f"[INFO] unit {unit} ({entry['name']}, {typing[unit]['type']}): shift "
-                  f"{entry['removal']['embedding_shift']:.4f}, WGA effect {summary}, {time.time() - start:.0f} s",
-                  flush=True)
+                  f"{entry['removal']['embedding_shift']:.4f}, {summary}, {time.time() - start:.0f} s", flush=True)
         rows_out.append(entry)
 
     attributed = [entry for entry in rows_out if entry["attributed"]]
-    correlation = {split: round(spearman([entry["removal"]["embedding_shift"] for entry in attributed],
-                                         [entry["effects"][split]["wga_effect"] for entry in attributed]), 4)
-                   for split in probes}
+    shifts = [entry["removal"]["embedding_shift"] for entry in attributed]
+    correlation = {split: {
+        "wga_effect": round(spearman(shifts, [entry["effects"][split]["wga_effect"] for entry in attributed]), 4),
+        "shortcut_index": round(spearman(shifts, [entry["shortcut_index"][split][entry["shortcut_index"][split]
+                                                                                ["verdict_from"]]
+                                                  for entry in attributed]), 4),
+    } for split in probes}
+    ranking = {split: [{"unit": entry["unit"], "name": entry["name"], "type": entry["typing"]["type"],
+                        "index": entry["shortcut_index"][split][entry["shortcut_index"][split]["verdict_from"]],
+                        "ci95": entry["shortcut_index"][split][entry["shortcut_index"][split]["verdict_from"] + "_ci95"],
+                        "verdict": entry["shortcut_index"][split]["verdict"]}
+                       for entry in sorted(attributed, reverse=True,
+                                           key=lambda item: item["shortcut_index"][split][
+                                               item["shortcut_index"][split]["verdict_from"]])]
+               for split in probes}
     baseline = {}
     for split, logits in intact_logits.items():
         accuracy = group_accuracy(logits.argmax(dim=1), eval_y, groups)
@@ -273,7 +300,7 @@ def main(argv: list[str] | None = None) -> Path:
                            "worst_group_accuracy": round(float(accuracy.nan_to_num(nan=float("inf")).min()), 2),
                            "group_accuracy": [round(float(value), 2) for value in accuracy]}
     result = {
-        "schema": "ijepa-token-drop-v1",
+        "schema": "ijepa-token-drop-v2",
         "model": args.model,
         "eval_split": eval_split,
         "eval_images": len(eval_y),
@@ -287,12 +314,18 @@ def main(argv: list[str] | None = None) -> Path:
         "ridge": {"best_ridge": readout["best_ridge"], "explained_variance": round(readout["explained_variance"], 4),
                   "heldout_region_agreement_with_clip": agreement},
         "probes": baseline,
-        "spearman_shift_vs_wga_effect": correlation,
+        "spearman_shift_vs": correlation,
+        "shortcut_ranking": ranking,
         "attribution": rows_out,
         "meaning": {
             "wga_effect": "WGA after removing the unit's patches minus WGA of the intact images, in points; "
                           "the interval is a paired bootstrap over images within groups",
-            "verdict": "shortcut when the interval lies above 0, needed when below, neutral otherwise",
+            "wga_verdict": "from the WGA-effect interval",
+            "shortcut_index": "mean accuracy change (points) over the conflict groups (landbird on water, waterbird on "
+                              "land) minus that over the aligned groups; net subtracts the same index of the "
+                              "shuffled control; also for the true-class margin",
+            "verdict": "shortcut when the net accuracy index interval lies above 0, needed when below, neutral "
+                       "otherwise (the removed index when the control is skipped)",
             "embedding_shift": "mean 1 - cos between intact and removed features over the images that show the unit; "
                                "label-free reliance",
             "shuffled_effects": "control: each image loses another image's region of the unit",

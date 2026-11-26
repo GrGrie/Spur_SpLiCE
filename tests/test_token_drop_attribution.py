@@ -8,7 +8,7 @@ import torch
 
 from cospro.evaluation.token_drop_attribution import (
     concept_units, drop_masks, group_accuracy, hard_regions, keep_pooled, paired_effect, presence,
-    region_agreement, shuffled_regions, spearman, unit_maps, unit_typing,
+    region_agreement, shortcut_index, shuffled_regions, spearman, unit_maps, unit_typing,
 )
 from cospro.models.ijepa import IJEPAEncoder, IJEPASpec
 
@@ -102,6 +102,36 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(effect["changed_predictions"], 1)
         self.assertLess(effect["true_class_margin_change"][1], 0)
         self.assertEqual(effect["true_class_margin_change"][0], 0)
+
+    def test_shortcut_index_rewards_freeing_conflict_groups(self):
+        # Groups 0..3, ten images each; class is group // 2, conflict groups 1 and 2.
+        groups = torch.arange(4).repeat_interleave(10)
+        labels = groups // 2
+        right = torch.stack([1 - labels, labels], dim=1).float() * 2 - 1
+        intact = right.clone()
+        intact[groups == 1] *= -1  # the shortcut fools the conflict images
+        intact[groups == 2] *= -1
+        removed = right.clone()  # removal frees them...
+        removed[torch.tensor([0, 1, 30, 31])] *= -1  # ...and costs a few aligned ones
+        control = intact.clone()
+        result = shortcut_index(intact, removed, control, labels, groups, (1, 2), resamples=200)
+        self.assertEqual(result["aligned_groups"], [0, 3])
+        self.assertAlmostEqual(result["removed_accuracy"], 100.0 + 20.0)
+        self.assertAlmostEqual(result["net_accuracy"], 120.0)
+        self.assertGreater(result["net_accuracy_ci95"][0], 0)
+        self.assertEqual(result["verdict"], "shortcut")
+        self.assertEqual(result["verdict_from"], "net_accuracy")
+        # A core concept is what the conflict images get right with: removing it costs them first.
+        core = right.clone()
+        core[groups == 1] *= -1
+        core[groups == 2] *= -1
+        needed = shortcut_index(right, core, None, labels, groups, (1, 2), resamples=50)
+        self.assertLess(needed["removed_accuracy"], 0)
+        self.assertEqual(needed["verdict"], "needed")
+        self.assertNotIn("net_accuracy", needed)
+        same = shortcut_index(intact, removed, removed, labels, groups, (1, 2), resamples=50)
+        self.assertEqual(same["net_accuracy"], 0.0)
+        self.assertEqual(same["verdict"], "neutral")
 
     def test_typing_spearman_and_agreement(self):
         labels = torch.tensor([0, 0, 1, 1] * 25)

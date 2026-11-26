@@ -193,6 +193,73 @@ def paired_effect(intact_logits: torch.Tensor, occluded_logits: torch.Tensor, la
     }
 
 
+def _signed_margin(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    return (logits[:, 1] - logits[:, 0]).double() * (2.0 * labels.double() - 1.0)
+
+
+def _interval(draws: torch.Tensor) -> list[float]:
+    return [round(value, 4) for value in
+            torch.quantile(draws, torch.tensor([0.025, 0.975], dtype=torch.float64)).tolist()]
+
+
+def shortcut_index(intact_logits: torch.Tensor, removed_logits: torch.Tensor, control_logits: torch.Tensor | None,
+                   labels: torch.Tensor, groups: torch.Tensor, conflict: tuple[int, ...],
+                   resamples: int = 1000, seed: int = 0) -> dict:
+    """How much removing a concept helps the images where class and spurious attribute disagree.
+
+    The index is the mean change over the ``conflict`` groups minus the mean change over the other
+    (aligned) groups, once for accuracy in points and once for the true-class margin of the probe. It
+    is positive when the removed patches carried evidence for the class the spurious attribute usually
+    comes with: removal then frees the conflict images and costs the aligned ones. A core concept gives
+    a negative index: the conflict images depend on it the most, since their background argues for the
+    other class. ``control_logits`` (the shuffled
+    regions) give the same index for removing as many patches elsewhere; the net index subtracts it.
+    The intervals come from one paired bootstrap of images within every group, shared by all indices.
+    """
+
+    count = int(groups.max()) + 1
+    aligned = tuple(group for group in range(count) if group not in conflict and bool((groups == group).any()))
+    conflict = tuple(group for group in conflict if bool((groups == group).any()))
+    if not conflict or not aligned:
+        raise ValueError("The shortcut index needs at least one conflict and one aligned group.")
+    correct = (intact_logits.argmax(dim=1) == labels).double()
+    margin = _signed_margin(intact_logits, labels)
+    changes = {"removed": ((removed_logits.argmax(dim=1) == labels).double() - correct,
+                           _signed_margin(removed_logits, labels) - margin)}
+    if control_logits is not None:
+        changes["control"] = ((control_logits.argmax(dim=1) == labels).double() - correct,
+                              _signed_margin(control_logits, labels) - margin)
+
+    def index(per_group: torch.Tensor) -> torch.Tensor:
+        return per_group[..., list(conflict)].mean(dim=-1) - per_group[..., list(aligned)].mean(dim=-1)
+
+    generator = torch.Generator().manual_seed(seed)
+    picks = {group: torch.nonzero(groups == group).flatten() for group in (*conflict, *aligned)}
+    picks = {group: rows[torch.randint(len(rows), (resamples, len(rows)), generator=generator)]
+             for group, rows in picks.items()}
+    result: dict = {"conflict_groups": list(conflict), "aligned_groups": list(aligned)}
+    draws: dict = {}
+    for name, (accuracy_change, margin_change) in changes.items():
+        for metric, values, scale in (("accuracy", accuracy_change, 100.0), ("margin", margin_change, 1.0)):
+            point = torch.full((count,), float("nan"), dtype=torch.float64)
+            sampled = torch.full((resamples, count), float("nan"), dtype=torch.float64)
+            for group, rows in picks.items():
+                point[group] = scale * values[groups == group].mean()
+                sampled[:, group] = scale * values[rows].mean(dim=1)
+            draws[name, metric] = index(sampled)
+            result[f"{name}_{metric}"] = round(float(index(point)), 4)
+            result[f"{name}_{metric}_ci95"] = _interval(draws[name, metric])
+    if control_logits is not None:
+        for metric in ("accuracy", "margin"):
+            result[f"net_{metric}"] = round(result[f"removed_{metric}"] - result[f"control_{metric}"], 4)
+            result[f"net_{metric}_ci95"] = _interval(draws["removed", metric] - draws["control", metric])
+    key = "net_accuracy" if control_logits is not None else "removed_accuracy"
+    low, high = result[f"{key}_ci95"]
+    result["verdict"] = "shortcut" if low > 0 else "needed" if high < 0 else "neutral"
+    result["verdict_from"] = key
+    return result
+
+
 def _entropy(counts: torch.Tensor) -> float:
     probabilities = counts[counts > 0].double() / counts.sum().clamp_min(1)
     return float(-(probabilities * probabilities.log()).sum())
