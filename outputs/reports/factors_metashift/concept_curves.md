@@ -45,15 +45,42 @@ Does the swapped unit matter? Unit-by-seed F test over 4 seeds: F = 0.76, p = 0.
 
 | onset rank | unit | words | onset | area | hidden-label type | WGA effect | sd | seeds up | verdict | vs unit arms | accuracy effect | own share, epoch 50 to last, and its reference (seeds below it) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 0 | blankets | blanket / seaside | coastal | ocean (+1) / farm | field | 0.347 | 0.61 | untyped | +5.2 | 12.4 | 2/4 | neutral | +1.8 (2/4 up) | +6.9 | 0.330 to 0.188, reference 0.330 (4/4) |
-| 2 | 2 | swim | swimming / boating | boats | boat / fishermen | fisherman | fishing | 0.134 | 0.24 | untyped | +3.7 | 8.1 | 3/4 | neutral | +0.3 (2/4 up) | +2.6 | 0.137 to 0.089, reference 0.137 (4/4) |
-| 3 | 3 | lawn / surfers | surfer | surfing (+1) / pasture | 0.133 | 0.22 | attribute | +5.2 | 9.4 | 2/4 | neutral | +1.8 (4/4 up) | +2.3 | 0.137 to 0.055, reference 0.137 (4/4) |
-| 4 | 10 | chats | chat | cats / kitty | kitten | cat / kittens | 0.100 | 0.19 | class | +4.5 | 7.9 | 2/4 | neutral | +1.1 (2/4 up) | +2.5 | 0.094 to 0.034, reference 0.094 (4/4) |
-| 5 | 7 | drove | drivers | driving (+1) / bicycles | biking | biker (+5) / motorbike | motorcycles | motorcycle | 0.093 | 0.21 | untyped | +2.7 | 10.9 | 2/4 | neutral | -0.8 (2/4 up) | +1.3 | 0.088 to 0.054, reference 0.088 (4/4) |
-| 6 | 11 | beaches | 0.087 | 0.22 | untyped | -0.6 | 10.9 | 1/4 | neutral | -4.1 (1/4 up) | -1.0 | 0.100 to 0.084, reference 0.100 (4/4) |
-| 7 | 4 | pups | pup | puppies (+2) / goats | goat / sheep | 0.049 | 0.11 | class | +3.8 | 8.8 | 2/4 | neutral | +0.4 (1/4 up) | +1.0 | 0.051 to 0.023, reference 0.051 (4/4) |
-| 8 | 5 | laptops | laptop / desks | desk / beds | bed | 0.046 | 0.15 | attribute | +2.9 | 7.7 | 2/4 | neutral | -0.6 (1/4 up) | +1.2 | 0.050 to 0.036, reference 0.050 (4/4) |
-| 9 | 1 | canine | dog / husky / retriever | 0.011 | 0.05 | untyped | +3.6 | 7.8 | 3/4 | neutral | +0.1 (2/4 up) | +1.7 | 0.012 to 0.011, reference 0.012 (3/4) |
+| 1 | 0 | blankets | blanket / seaside | coastal | ocean (+1) / farm | field | 0.347 | 0.61 | untyped | +5.2 | 12.4 | 2/4 | neutral | +1.8 (2/4 up) | +6.9 | 0.330 to 0.188, reference 0.315 (4/4) |
+| 2 | 2 | swim | swimming / boating | boats | boat / fishermen | fisherman | fishing | 0.134 | 0.24 | untyped | +3.7 | 8.1 | 3/4 | neutral | +0.3 (2/4 up) | +2.6 | 0.137 to 0.089, reference 0.142 (4/4) |
+| 3 | 3 | lawn / surfers | surfer | surfing (+1) / pasture | 0.133 | 0.22 | attribute | +5.2 | 9.4 | 2/4 | neutral | +1.8 (4/4 up) | +2.3 | 0.137 to 0.055, reference 0.133 (4/4) |
+| 4 | 10 | chats | chat | cats / kitty | kitten | cat / kittens | 0.100 | 0.19 | class | +4.5 | 7.9 | 2/4 | neutral | +1.1 (2/4 up) | +2.5 | 0.094 to 0.034, reference 0.090 (4/4) |
+| 5 | 7 | drove | drivers | driving (+1) / bicycles | biking | biker (+5) / motorbike | motorcycles | motorcycle | 0.093 | 0.21 | untyped | +2.7 | 10.9 | 2/4 | neutral | -0.8 (2/4 up) | +1.3 | 0.088 to 0.054, reference 0.081 (4/4) |
+| 6 | 11 | beaches | 0.087 | 0.22 | untyped | -0.6 | 10.9 | 1/4 | neutral | -4.1 (1/4 up) | -1.0 | 0.100 to 0.084, reference 0.123 (4/4) |
+| 7 | 4 | pups | pup | puppies (+2) / goats | goat / sheep | 0.049 | 0.11 | class | +3.8 | 8.8 | 2/4 | neutral | +0.4 (1/4 up) | +1.0 | 0.051 to 0.023, reference 0.048 (4/4) |
+| 8 | 5 | laptops | laptop / desks | desk / beds | bed | 0.046 | 0.15 | attribute | +2.9 | 7.7 | 2/4 | neutral | -0.6 (1/4 up) | +1.2 | 0.050 to 0.036, reference 0.054 (4/4) |
+| 9 | 1 | canine | dog / husky / retriever | 0.011 | 0.05 | untyped | +3.6 | 7.8 | 3/4 | neutral | +0.1 (2/4 up) | +1.7 | 0.012 to 0.011, reference 0.014 (4/4) |
+
+## csa_audit
+
+Mean detection AUROC 0.50, seed agreement of the onset scores (mean Spearman) 0.99.
+
+| seed | audited to epoch | detection AUROC | rule | flagged units | types |
+|---|---|---|---|---|---|
+| 1 | 500 | 0.50 |  |  |  |
+| 2 | 500 | 0.50 |  |  |  |
+| 3 | 500 | 0.50 |  |  |  |
+| 4 | 500 | 0.50 |  |  |  |
+| 5 | 500 | 0.50 |  |  |  |
+| 6 | 500 | 0.50 |  |  |  |
+| 7 | 500 | 0.50 |  |  |  |
+| 8 | 500 | 0.50 |  |  |  |
+
+| unit | words | presence | area | mean onset | hidden-label type |
+|---|---|---|---|---|---|
+| 0 | blankets | blanket / seaside | coastal | ocean (+1) / farm | field | 1.00 | 0.61 | 0.350 | untyped |
+| 3 | lawn / surfers | surfer | surfing (+1) / pasture | 0.31 | 0.22 | 0.134 | attribute |
+| 2 | swim | swimming / boating | boats | boat / fishermen | fisherman | fishing | 0.12 | 0.24 | 0.134 | untyped |
+| 10 | chats | chat | cats / kitty | kitten | cat / kittens | 0.48 | 0.19 | 0.099 | class |
+| 7 | drove | drivers | driving (+1) / bicycles | biking | biker (+5) / motorbike | motorcycles | motorcycle | 0.20 | 0.21 | 0.093 | untyped |
+| 11 | beaches | 0.07 | 0.22 | 0.086 | untyped |
+| 4 | pups | pup | puppies (+2) / goats | goat / sheep | 0.52 | 0.11 | 0.048 | class |
+| 5 | laptops | laptop / desks | desk / beds | bed | 0.42 | 0.15 | 0.046 | attribute |
+| 1 | canine | dog / husky / retriever | 0.33 | 0.05 | 0.010 | untyped |
 
 ## curves
 

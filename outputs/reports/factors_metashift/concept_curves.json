@@ -1,5 +1,149 @@
 {
   "arms": {
+    "csa_audit": {
+      "mean_detection_auroc": 0.5,
+      "per_seed": [
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 1
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 2
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 3
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 4
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 5
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 6
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 7
+        },
+        {
+          "detection_auroc": 0.5,
+          "flagged": [],
+          "flagged_types": [],
+          "last_audit_epoch": 500,
+          "rule": null,
+          "seed": 8
+        }
+      ],
+      "seed_agreement": 0.9944275582573454,
+      "units": [
+        {
+          "area": 0.6081,
+          "name": "blankets | blanket / seaside | coastal | ocean (+1) / farm | field",
+          "onset": 0.3496556325792373,
+          "presence": 0.9976,
+          "type": "untyped",
+          "unit": 0
+        },
+        {
+          "area": 0.2234,
+          "name": "lawn / surfers | surfer | surfing (+1) / pasture",
+          "onset": 0.13437811481676024,
+          "presence": 0.3112,
+          "type": "attribute",
+          "unit": 3
+        },
+        {
+          "area": 0.2365,
+          "name": "swim | swimming / boating | boats | boat / fishermen | fisherman | fishing",
+          "onset": 0.13395115478694622,
+          "presence": 0.12,
+          "type": "untyped",
+          "unit": 2
+        },
+        {
+          "area": 0.1937,
+          "name": "chats | chat | cats / kitty | kitten | cat / kittens",
+          "onset": 0.09869735677047745,
+          "presence": 0.4847,
+          "type": "class",
+          "unit": 10
+        },
+        {
+          "area": 0.2082,
+          "name": "drove | drivers | driving (+1) / bicycles | biking | biker (+5) / motorbike | motorcycles | motorcycle",
+          "onset": 0.09272760915950204,
+          "presence": 0.2047,
+          "type": "untyped",
+          "unit": 7
+        },
+        {
+          "area": 0.2173,
+          "name": "beaches",
+          "onset": 0.08575941481169447,
+          "presence": 0.0682,
+          "type": "untyped",
+          "unit": 11
+        },
+        {
+          "area": 0.1076,
+          "name": "pups | pup | puppies (+2) / goats | goat / sheep",
+          "onset": 0.048168292934033,
+          "presence": 0.5165,
+          "type": "class",
+          "unit": 4
+        },
+        {
+          "area": 0.1536,
+          "name": "laptops | laptop / desks | desk / beds | bed",
+          "onset": 0.046179677710861,
+          "presence": 0.4241,
+          "type": "attribute",
+          "unit": 5
+        },
+        {
+          "area": 0.0523,
+          "name": "canine | dog / husky / retriever",
+          "onset": 0.010482746430488285,
+          "presence": 0.3312,
+          "type": "untyped",
+          "unit": 1
+        }
+      ]
+    },
     "curves": {
       "mean_detection_auroc": 0.5,
       "per_seed": [
@@ -1911,12 +2055,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.3301534845168327,
           "at_last_audit": 0.18758892582952216,
           "fell": 4,
           "holds": true,
-          "reference": 0.3301534845168327,
+          "reference": 0.31513952457559613,
           "seeds": 4
         },
         "seeds": [
@@ -1953,12 +2097,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.13715313693548767,
           "at_last_audit": 0.08919814045659381,
           "fell": 4,
           "holds": true,
-          "reference": 0.13715313693548767,
+          "reference": 0.1418383943842368,
           "seeds": 4
         },
         "seeds": [
@@ -1995,12 +2139,12 @@
           "verdict": "shortcut"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.1369665541302385,
           "at_last_audit": 0.055347131761147604,
           "fell": 4,
           "holds": true,
-          "reference": 0.1369665541302385,
+          "reference": 0.13305367994582978,
           "seeds": 4
         },
         "seeds": [
@@ -2037,12 +2181,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.09424466806672738,
           "at_last_audit": 0.03382397261179337,
           "fell": 4,
           "holds": true,
-          "reference": 0.09424466806672738,
+          "reference": 0.09032149761792796,
           "seeds": 4
         },
         "seeds": [
@@ -2079,12 +2223,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.08822985065621901,
           "at_last_audit": 0.05376083953768473,
           "fell": 4,
           "holds": true,
-          "reference": 0.08822985065621901,
+          "reference": 0.08053466674155346,
           "seeds": 4
         },
         "seeds": [
@@ -2121,12 +2265,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.1003954690218522,
           "at_last_audit": 0.0838126253242811,
           "fell": 4,
           "holds": true,
-          "reference": 0.1003954690218522,
+          "reference": 0.12313460790345813,
           "seeds": 4
         },
         "seeds": [
@@ -2163,12 +2307,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.05085537798624819,
           "at_last_audit": 0.02328226438150529,
           "fell": 4,
           "holds": true,
-          "reference": 0.05085537798624819,
+          "reference": 0.04847774572375875,
           "seeds": 4
         },
         "seeds": [
@@ -2205,12 +2349,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.04989758232716843,
           "at_last_audit": 0.0356366289874028,
           "fell": 4,
           "holds": true,
-          "reference": 0.04989758232716843,
+          "reference": 0.05381718946425555,
           "seeds": 4
         },
         "seeds": [
@@ -2247,12 +2391,12 @@
           "verdict": "neutral"
         },
         "reliance": {
-          "against": "early window",
+          "against": "audit-only arm",
           "at_early_end": 0.012103876359225926,
           "at_last_audit": 0.011321947359642058,
-          "fell": 3,
+          "fell": 4,
           "holds": true,
-          "reference": 0.012103876359225926,
+          "reference": 0.01368269364338339,
           "seeds": 4
         },
         "seeds": [
