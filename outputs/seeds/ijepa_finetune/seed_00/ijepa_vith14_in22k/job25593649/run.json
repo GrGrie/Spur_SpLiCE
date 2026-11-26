@@ -1,0 +1,526 @@
+{
+  "checkpoint": null,
+  "config": {
+    "attempt_id": "job25593649",
+    "batch_size": 32,
+    "ckpt": "",
+    "data_folder": "/home/xar68reb/Datasets",
+    "device": "cuda",
+    "dfr_l2": 0.001,
+    "dfr_split": "val_half",
+    "epochs": 10,
+    "eval_batch_size": 64,
+    "final_test": true,
+    "gradient_checkpointing": false,
+    "head_lr": 0.001,
+    "lr": 1e-05,
+    "model": "ijepa_vith14_in22k",
+    "num_workers": 4,
+    "report_last": 5,
+    "save_checkpoint": false,
+    "seed": 0,
+    "study": "ijepa_finetune",
+    "train_split": "cb_train",
+    "trainable_blocks": 0,
+    "use_wandb": true,
+    "wandb_name": "CoSpRo",
+    "warmup_epochs": 1.0,
+    "weight_decay": 0.05
+  },
+  "evaluation": {
+    "dfr": "group-balanced half of val (seed 0)",
+    "dfr_images": 264,
+    "test_images": 5794,
+    "val": "held-out half of val",
+    "val_images": 601
+  },
+  "final": {
+    "dfr_head": {
+      "test": {
+        "accuracy": 90.66,
+        "group_accuracy": {
+          "landbird on land": 90.42,
+          "landbird on water": 91.71,
+          "waterbird on land": 89.72,
+          "waterbird on water": 88.79
+        },
+        "worst_group_accuracy": 88.79
+      },
+      "val": {
+        "accuracy": 90.35,
+        "group_accuracy": {
+          "landbird on land": 88.03,
+          "landbird on water": 90.56,
+          "waterbird on land": 92.54,
+          "waterbird on water": 95.52
+        },
+        "worst_group_accuracy": 88.03
+      }
+    },
+    "finetuned_head": {
+      "test": {
+        "accuracy": 77.44,
+        "group_accuracy": {
+          "landbird on land": 98.45,
+          "landbird on water": 54.01,
+          "waterbird on land": 66.04,
+          "waterbird on water": 97.35
+        },
+        "worst_group_accuracy": 54.01
+      },
+      "val": {
+        "accuracy": 76.87,
+        "group_accuracy": {
+          "landbird on land": 99.15,
+          "landbird on water": 51.5,
+          "waterbird on land": 64.18,
+          "waterbird on water": 100.0
+        },
+        "worst_group_accuracy": 51.5
+      }
+    }
+  },
+  "headline_split": "test",
+  "history": [
+    {
+      "epoch": 1,
+      "finetuned_head": {
+        "val": {
+          "accuracy": 70.88,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 41.63,
+            "waterbird on land": 44.78,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 41.63
+        }
+      },
+      "train": {
+        "accuracy": 90.9,
+        "loss": 0.42552
+      }
+    },
+    {
+      "epoch": 2,
+      "finetuned_head": {
+        "val": {
+          "accuracy": 75.54,
+          "group_accuracy": {
+            "landbird on land": 99.57,
+            "landbird on water": 50.64,
+            "waterbird on land": 53.73,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 50.64
+        }
+      },
+      "train": {
+        "accuracy": 95.24,
+        "loss": 0.15844
+      }
+    },
+    {
+      "epoch": 3,
+      "finetuned_head": {
+        "val": {
+          "accuracy": 77.37,
+          "group_accuracy": {
+            "landbird on land": 99.57,
+            "landbird on water": 55.36,
+            "waterbird on land": 55.22,
+            "waterbird on water": 98.51
+          },
+          "worst_group_accuracy": 55.22
+        }
+      },
+      "train": {
+        "accuracy": 96.38,
+        "loss": 0.12212
+      }
+    },
+    {
+      "epoch": 4,
+      "finetuned_head": {
+        "val": {
+          "accuracy": 77.54,
+          "group_accuracy": {
+            "landbird on land": 99.57,
+            "landbird on water": 54.08,
+            "waterbird on land": 59.7,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 54.08
+        }
+      },
+      "train": {
+        "accuracy": 95.97,
+        "loss": 0.11861
+      }
+    },
+    {
+      "epoch": 5,
+      "finetuned_head": {
+        "val": {
+          "accuracy": 76.54,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 51.5,
+            "waterbird on land": 61.19,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 51.5
+        }
+      },
+      "train": {
+        "accuracy": 95.92,
+        "loss": 0.10734
+      }
+    },
+    {
+      "dfr_converged": true,
+      "dfr_head": {
+        "test": {
+          "accuracy": 90.66,
+          "group_accuracy": {
+            "landbird on land": 90.42,
+            "landbird on water": 91.71,
+            "waterbird on land": 89.72,
+            "waterbird on water": 88.79
+          },
+          "worst_group_accuracy": 88.79
+        },
+        "val": {
+          "accuracy": 90.35,
+          "group_accuracy": {
+            "landbird on land": 88.03,
+            "landbird on water": 90.56,
+            "waterbird on land": 92.54,
+            "waterbird on water": 95.52
+          },
+          "worst_group_accuracy": 88.03
+        }
+      },
+      "epoch": 6,
+      "finetuned_head": {
+        "test": {
+          "accuracy": 78.39,
+          "group_accuracy": {
+            "landbird on land": 98.63,
+            "landbird on water": 56.63,
+            "waterbird on land": 65.26,
+            "waterbird on water": 96.88
+          },
+          "worst_group_accuracy": 56.63
+        },
+        "val": {
+          "accuracy": 77.87,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 54.51,
+            "waterbird on land": 62.69,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 54.51
+        }
+      },
+      "train": {
+        "accuracy": 96.33,
+        "loss": 0.10352
+      }
+    },
+    {
+      "dfr_converged": true,
+      "dfr_head": {
+        "test": {
+          "accuracy": 90.66,
+          "group_accuracy": {
+            "landbird on land": 90.42,
+            "landbird on water": 91.71,
+            "waterbird on land": 89.72,
+            "waterbird on water": 88.79
+          },
+          "worst_group_accuracy": 88.79
+        },
+        "val": {
+          "accuracy": 90.35,
+          "group_accuracy": {
+            "landbird on land": 88.03,
+            "landbird on water": 90.56,
+            "waterbird on land": 92.54,
+            "waterbird on water": 95.52
+          },
+          "worst_group_accuracy": 88.03
+        }
+      },
+      "epoch": 7,
+      "finetuned_head": {
+        "test": {
+          "accuracy": 78.13,
+          "group_accuracy": {
+            "landbird on land": 98.63,
+            "landbird on water": 56.14,
+            "waterbird on land": 64.8,
+            "waterbird on water": 96.73
+          },
+          "worst_group_accuracy": 56.14
+        },
+        "val": {
+          "accuracy": 77.54,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 54.08,
+            "waterbird on land": 61.19,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 54.08
+        }
+      },
+      "train": {
+        "accuracy": 96.33,
+        "loss": 0.10096
+      }
+    },
+    {
+      "dfr_converged": true,
+      "dfr_head": {
+        "test": {
+          "accuracy": 90.66,
+          "group_accuracy": {
+            "landbird on land": 90.42,
+            "landbird on water": 91.71,
+            "waterbird on land": 89.72,
+            "waterbird on water": 88.79
+          },
+          "worst_group_accuracy": 88.79
+        },
+        "val": {
+          "accuracy": 90.35,
+          "group_accuracy": {
+            "landbird on land": 88.03,
+            "landbird on water": 90.56,
+            "waterbird on land": 92.54,
+            "waterbird on water": 95.52
+          },
+          "worst_group_accuracy": 88.03
+        }
+      },
+      "epoch": 8,
+      "finetuned_head": {
+        "test": {
+          "accuracy": 77.6,
+          "group_accuracy": {
+            "landbird on land": 98.45,
+            "landbird on water": 54.37,
+            "waterbird on land": 66.2,
+            "waterbird on water": 97.35
+          },
+          "worst_group_accuracy": 54.37
+        },
+        "val": {
+          "accuracy": 77.04,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 51.93,
+            "waterbird on land": 64.18,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 51.93
+        }
+      },
+      "train": {
+        "accuracy": 96.47,
+        "loss": 0.0939
+      }
+    },
+    {
+      "dfr_converged": true,
+      "dfr_head": {
+        "test": {
+          "accuracy": 90.66,
+          "group_accuracy": {
+            "landbird on land": 90.42,
+            "landbird on water": 91.71,
+            "waterbird on land": 89.72,
+            "waterbird on water": 88.79
+          },
+          "worst_group_accuracy": 88.79
+        },
+        "val": {
+          "accuracy": 90.35,
+          "group_accuracy": {
+            "landbird on land": 88.03,
+            "landbird on water": 90.56,
+            "waterbird on land": 92.54,
+            "waterbird on water": 95.52
+          },
+          "worst_group_accuracy": 88.03
+        }
+      },
+      "epoch": 9,
+      "finetuned_head": {
+        "test": {
+          "accuracy": 77.41,
+          "group_accuracy": {
+            "landbird on land": 98.45,
+            "landbird on water": 53.92,
+            "waterbird on land": 66.04,
+            "waterbird on water": 97.35
+          },
+          "worst_group_accuracy": 53.92
+        },
+        "val": {
+          "accuracy": 76.71,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 51.07,
+            "waterbird on land": 64.18,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 51.07
+        }
+      },
+      "train": {
+        "accuracy": 96.92,
+        "loss": 0.0951
+      }
+    },
+    {
+      "dfr_converged": true,
+      "dfr_head": {
+        "test": {
+          "accuracy": 90.66,
+          "group_accuracy": {
+            "landbird on land": 90.42,
+            "landbird on water": 91.71,
+            "waterbird on land": 89.72,
+            "waterbird on water": 88.79
+          },
+          "worst_group_accuracy": 88.79
+        },
+        "val": {
+          "accuracy": 90.35,
+          "group_accuracy": {
+            "landbird on land": 88.03,
+            "landbird on water": 90.56,
+            "waterbird on land": 92.54,
+            "waterbird on water": 95.52
+          },
+          "worst_group_accuracy": 88.03
+        }
+      },
+      "epoch": 10,
+      "finetuned_head": {
+        "test": {
+          "accuracy": 77.44,
+          "group_accuracy": {
+            "landbird on land": 98.45,
+            "landbird on water": 54.01,
+            "waterbird on land": 66.04,
+            "waterbird on water": 97.35
+          },
+          "worst_group_accuracy": 54.01
+        },
+        "val": {
+          "accuracy": 76.87,
+          "group_accuracy": {
+            "landbird on land": 99.15,
+            "landbird on water": 51.5,
+            "waterbird on land": 64.18,
+            "waterbird on water": 100.0
+          },
+          "worst_group_accuracy": 51.5
+        }
+      },
+      "train": {
+        "accuracy": 96.83,
+        "loss": 0.09706
+      }
+    }
+  ],
+  "last_epochs": {
+    "dfr_head": {
+      "test": {
+        "accuracy": {
+          "mean": 90.66,
+          "std": 0.0
+        },
+        "group_accuracy": {
+          "landbird on land": 90.42,
+          "landbird on water": 91.71,
+          "waterbird on land": 89.72,
+          "waterbird on water": 88.79
+        },
+        "worst_group_accuracy": {
+          "mean": 88.79,
+          "std": 0.0
+        }
+      },
+      "val": {
+        "accuracy": {
+          "mean": 90.35,
+          "std": 0.0
+        },
+        "group_accuracy": {
+          "landbird on land": 88.03,
+          "landbird on water": 90.56,
+          "waterbird on land": 92.54,
+          "waterbird on water": 95.52
+        },
+        "worst_group_accuracy": {
+          "mean": 88.03,
+          "std": 0.0
+        }
+      }
+    },
+    "epochs": 5,
+    "finetuned_head": {
+      "test": {
+        "accuracy": {
+          "mean": 77.79,
+          "std": 0.44
+        },
+        "group_accuracy": {
+          "landbird on land": 98.52,
+          "landbird on water": 55.01,
+          "waterbird on land": 65.67,
+          "waterbird on water": 97.13
+        },
+        "worst_group_accuracy": {
+          "mean": 55.01,
+          "std": 1.27
+        }
+      },
+      "val": {
+        "accuracy": {
+          "mean": 77.21,
+          "std": 0.48
+        },
+        "group_accuracy": {
+          "landbird on land": 99.15,
+          "landbird on water": 52.62,
+          "waterbird on land": 63.28,
+          "waterbird on water": 100.0
+        },
+        "worst_group_accuracy": {
+          "mean": 52.62,
+          "std": 1.57
+        }
+      }
+    }
+  },
+  "schema": "ijepa-finetune-v2",
+  "seconds": 526.6,
+  "train_images": 2226,
+  "trainable_parameters": 5122,
+  "worst_group_accuracy": {
+    "dfr_head": {
+      "mean": 88.79,
+      "std": 0.0
+    },
+    "finetuned_head": {
+      "mean": 55.01,
+      "std": 1.27
+    }
+  }
+}
