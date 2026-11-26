@@ -71,8 +71,15 @@ def apply_like(args: argparse.Namespace) -> None:
         stored = torch.load(args.like, map_location="cpu", weights_only=False)
     args.concept_groups = Path(stored["concept_groups"])
     args.splice_cache = Path(stored["splice_cache"])
+    config = dict(stored.get("config", {}))
+    # Maps built before a setting was recorded: "targets" is the stored kind, any other setting the default.
+    config.setdefault("targets", stored.get("kind", "concepts"))
+    missing = [key for key in LIKE_SETTINGS if key not in config]
+    if missing:
+        print(f"[WARNING] {args.like} records no {', '.join(missing)}; using the defaults "
+              f"{', '.join(f'{key}={getattr(args, key)}' for key in missing)}.", flush=True)
     for key in LIKE_SETTINGS:
-        setattr(args, key, stored["config"][key])
+        setattr(args, key, config.get(key, getattr(args, key)))
 
 
 def principal_maps(dense: torch.Tensor, width: int, sample_rows: int = 200_000, seed: int = 0) -> torch.Tensor:

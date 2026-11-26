@@ -599,6 +599,13 @@ class InferenceAttributionTests(unittest.TestCase):
             apply_like(args)
             self.assertEqual((args.concept_groups, args.splice_cache), (Path("g/groups.json"), Path("c/cache.pt")))
             self.assertEqual((args.factor_min_frequency, args.resolution, args.split), (0.02, 448, "val"))
+            # Maps built before "targets" was recorded take it from their kind.
+            del config["targets"]
+            torch.save({"maps": torch.zeros(1, 2, 14, 14).half(), "config": config, "kind": "concepts",
+                        "concept_groups": "g/groups.json", "splice_cache": "c/cache.pt"}, stored)
+            args = parse_args(["--dataset", "metashift", "--like", str(stored), "--split", "val"])
+            apply_like(args)
+            self.assertEqual((args.targets, args.stride), ("concepts", 112))
         with self.assertRaises(SystemExit):
             parse_args(["--dataset", "metashift"])
 
